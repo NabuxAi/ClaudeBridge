@@ -1,15 +1,10 @@
-// Icon — a thin wrapper over lucide-react so components can take a
-// kebab-case icon name (matching the design system's <Icon name="…"/>).
-import * as Lucide from 'lucide-react'
-
-const pascal = (n) =>
-  String(n || '')
-    .split(/[-_]/)
-    .map((s) => (s ? s[0].toUpperCase() + s.slice(1) : s))
-    .join('')
+// Icon — a thin wrapper over lucide-react. Uses a generated map of deep
+// per-icon imports (src/lib/icon-map.js) so the bundle ships only the icons
+// this app actually uses, not the whole set. Unknown names fall back to Circle.
+import { ICONS, FALLBACK } from './icon-map.js'
 
 export default function Icon({ name, size = 18, strokeWidth = 2, className, style, ...rest }) {
-  const Cmp = Lucide[pascal(name)] || Lucide.Circle
+  const Cmp = ICONS[name] || FALLBACK
   return (
     <Cmp
       width={size}

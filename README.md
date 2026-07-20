@@ -43,6 +43,15 @@ No SaaS. No monthly fee. No external proxy. **Your server, your data, your rules
               (one URL, token inside — no headers, no middleman)
 ```
 
+> **Managing a fleet?** This repo also ships **DigiWP Ai Support** — a full hub for
+> watching and managing *many* WordPress sites *through your own server*, using the
+> plugin's optional **Hub Connector Mode**. The plugin then acts as a locked-down
+> bridge that only accepts HMAC-signed commands from your server (no direct access).
+>
+> - [`hub/`](hub) — the panel UI (React) · [`server/`](server) — the واسط server (Node) ·
+>   connector mode lives in `wp-claude-bridge.php` (Tools → Claude Bridge).
+> - Flow: `you → hub → your server → connector (this plugin) → managed WP site`.
+
 ---
 
 ## ✨ Highlights

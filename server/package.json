@@ -1,0 +1,16 @@
+{
+  "name": "digiwp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DigiWP Ai Support — the واسط server. Sits between the hub UI and the WP Claude Bridge connectors, relaying HMAC-signed commands to managed sites.",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.1"
+  }
+}
