@@ -15,7 +15,8 @@ connector — using the exact signature the plugin's *Hub Connector Mode* verifi
 ## Run
 
 Needs a **PostgreSQL** database (set `DATABASE_URL`). The quickest way is the
-whole stack — `docker compose up` from the repo root brings up Postgres + this
+whole stack — `docker compose -f docker-compose.yaml -f deploy/compose.local.yml up`
+from the repo root brings up Postgres + this
 server + the hub together. To run the server alone against your own Postgres:
 
 ```bash
