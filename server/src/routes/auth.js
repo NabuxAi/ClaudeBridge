@@ -1,23 +1,34 @@
 import { Router } from 'express'
-import { signToken } from '../auth.js'
-import { demoUser } from '../seed.js'
+import { signToken, verifyPassword, requireAuth } from '../auth.js'
+import { users, httpError } from '../store.js'
 
 const router = Router()
-const publicUser = ({ password, ...u }) => u
 
-// Demo auth — accepts the seed user, or any credentials in demo mode.
-router.post('/auth/login', (req, res) => {
-  const { email } = req.body || {}
-  const user = { ...demoUser, email: email || demoUser.email }
-  res.json({ token: signToken({ sub: user.id, name: user.name }), user: publicUser(user) })
+// Real registration — persists a hashed-password user.
+router.post('/auth/register', (req, res, next) => {
+  try {
+    const { name, email, password } = req.body || {}
+    const user = users.create({ name, email, password })
+    res.status(201).json({ token: signToken({ sub: user.id, name: user.name }), user })
+  } catch (e) { next(e) }
 })
 
-router.post('/auth/register', (req, res) => {
-  const { name, email } = req.body || {}
-  const user = { ...demoUser, name: name || demoUser.name, email: email || demoUser.email }
-  res.json({ token: signToken({ sub: user.id, name: user.name }), user: publicUser(user) })
+// Real login — verifies the password hash.
+router.post('/auth/login', (req, res, next) => {
+  try {
+    const { email, password } = req.body || {}
+    const row = users.byEmailRaw(email)
+    if (!row || !verifyPassword(password, row.pass_hash)) throw httpError(401, 'ایمیل یا رمز عبور نادرست است.')
+    const user = users.byId(row.id)
+    res.json({ token: signToken({ sub: user.id, name: user.name }), user })
+  } catch (e) { next(e) }
 })
 
-router.get('/auth/me', (req, res) => res.json(publicUser(demoUser)))
+// Current user from the session token.
+router.get('/auth/me', requireAuth, (req, res) => {
+  const user = users.byId(req.user.sub)
+  if (!user) return res.status(401).json({ message: 'Unauthorized' })
+  res.json(user)
+})
 
 export default router

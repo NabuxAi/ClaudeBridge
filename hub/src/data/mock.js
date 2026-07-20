@@ -37,7 +37,25 @@ export const sites = [
   },
 ]
 export const listSites = () => delay(sites)
-export const addSite = (b) => delay({ id: 'new', ...b, status: 'checking' })
+export const addSite = (b) => {
+  const name = (b?.name || 'site.example.ir').replace(/^https?:\/\//, '').replace(/\/$/, '')
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40) || 'new'
+  return delay({
+    id, name, title: b?.title || name, status: 'checking',
+    pairing: {
+      serverUrl: 'https://api.digiwp.example/v1',
+      siteKey: Math.random().toString(16).slice(2, 12),
+      secret: Array.from({ length: 8 }, () => Math.random().toString(16).slice(2, 10)).join(''),
+      steps: [
+        'در سایت مقصد: افزونه‌ها → WP Claude Bridge را نصب و فعال کنید.',
+        'ابزارها → Claude Bridge → Hub Connector Mode را باز کنید.',
+        'حالت کانکتور را روشن کنید و «Hub server URL» و «Shared secret» بالا را وارد کنید.',
+        'ذخیره کنید؛ سپس اینجا «بررسی اتصال» را بزنید.',
+      ],
+    },
+  })
+}
+export const pingSite = (id) => delay({ ok: true, connector: { site: id, version: '3.5.1' } }, 700)
 
 // ---- Billing / plans --------------------------------------
 export const plans = () => delay([

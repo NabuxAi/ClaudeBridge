@@ -8,12 +8,14 @@ import express from 'express'
 import cors from 'cors'
 import { config } from './config.js'
 import { requireAuth } from './auth.js'
+import { seedDemo } from './db.js'
 import authRouter from './routes/auth.js'
 import accountRouter from './routes/account.js'
 import sitesRouter from './routes/sites.js'
 import connectorRouter from './routes/connector.js'
 
 const app = express()
+app.set('trust proxy', true) // behind Coolify/Traefik/nginx — honor X-Forwarded-Proto/Host
 app.use(cors({ origin: config.corsOrigin }))
 // Capture the raw body so we can HMAC-verify inbound connector requests.
 app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8') } }))
@@ -28,12 +30,13 @@ app.use('/v1', requireAuth, accountRouter)
 app.use('/v1', requireAuth, sitesRouter)
 
 app.use((err, _req, res, _next) => {
-  console.error(err)
-  res.status(500).json({ message: err.message || 'server error' })
+  if (!err.status || err.status >= 500) console.error(err)
+  res.status(err.status || 500).json({ message: err.message || 'server error' })
 })
 
+seedDemo()
 app.listen(config.port, () => {
-  console.log(`DigiWP server on :${config.port}  (live relay: ${config.live ? 'on' : 'off'})`)
+  console.log(`DigiWP server on :${config.port}  (db: ${config.dbFile}, live relay: ${config.live ? 'on' : 'off'})`)
 })
 
 export default app

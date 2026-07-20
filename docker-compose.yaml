@@ -1,0 +1,92 @@
+# ============================================================
+# DigiWP Ai Support — Coolify deployment
+# ------------------------------------------------------------
+# Three parts, one stack:
+#   • server  — the واسط server (Node + SQLite)         [internal]
+#   • hub     — the panel / main site (React via nginx)  [public]  ← نصب اصلی
+#   • demo    — a real WordPress site + DB to pair with  [public]  ← دمو
+#
+# On Coolify: the `SERVICE_FQDN_*` vars make Coolify generate domains and
+# route its proxy to the right container. Set AUTH_SECRET in the app's env.
+# The hub serves the UI and proxies /api → server, so it's one origin.
+#
+# Local run (no Coolify):  AUTH_SECRET=dev docker compose up --build
+#   then open the hub on the port you map (see the note near `hub.ports`).
+# ============================================================
+
+services:
+  # ---- the واسط server (only backend the hub talks to) ----
+  server:
+    build:
+      context: ./server
+    restart: unless-stopped
+    environment:
+      - PORT=8787
+      - DB_FILE=/data/digiwp.db
+      - AUTH_SECRET=${AUTH_SECRET:-please-change-this-secret}
+      - CORS_ORIGIN=*
+      # Turn on live relay so paired sites are driven for real:
+      - LIVE=1
+      # Public URL of this API (where a connector reaches us) = hub domain + /api.
+      - PUBLIC_BASE_URL=${SERVICE_URL_HUB:-http://localhost:8080}/api
+    volumes:
+      - dw-data:/data
+    expose:
+      - "8787"
+
+  # ---- the panel / main site (this is your primary install) ----
+  hub:
+    build:
+      context: ./hub
+    restart: unless-stopped
+    environment:
+      # Coolify: generate a domain for the hub, routed to its port 80.
+      - SERVICE_FQDN_HUB_80
+    depends_on:
+      - server
+    # For a plain (non-Coolify) `docker compose up`, expose the hub locally.
+    # Coolify ignores this and routes via its own proxy instead.
+    ports:
+      - "${HUB_PORT:-8080}:80"
+
+  # ---- demo WordPress (a real managed site to pair with the hub) ----
+  demo-db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      - MARIADB_DATABASE=wordpress
+      - MARIADB_USER=wordpress
+      - MARIADB_PASSWORD=${DEMO_DB_PASSWORD:-wordpress}
+      - MARIADB_ROOT_PASSWORD=${DEMO_DB_ROOT_PASSWORD:-rootpw}
+    volumes:
+      - demo-db:/var/lib/mysql
+
+  demo:
+    image: wordpress:6.6-php8.2-apache
+    restart: unless-stopped
+    environment:
+      - SERVICE_FQDN_DEMO_80
+      - WORDPRESS_DB_HOST=demo-db
+      - WORDPRESS_DB_NAME=wordpress
+      - WORDPRESS_DB_USER=wordpress
+      - WORDPRESS_DB_PASSWORD=${DEMO_DB_PASSWORD:-wordpress}
+      # Make WordPress aware of its public URL behind the proxy.
+      - |
+        WORDPRESS_CONFIG_EXTRA=
+        if (!empty($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') { $$_SERVER['HTTPS'] = 'on'; }
+        define('WP_HOME', getenv('SERVICE_URL_DEMO') ?: 'http://localhost:8081');
+        define('WP_SITEURL', getenv('SERVICE_URL_DEMO') ?: 'http://localhost:8081');
+    volumes:
+      - demo-wp:/var/www/html
+      # Ship the WP Claude Bridge connector into the demo site.
+      - ./wp-claude-bridge.php:/var/www/html/wp-content/plugins/wp-claude-bridge/wp-claude-bridge.php:ro
+      - ./skills:/var/www/html/wp-content/plugins/wp-claude-bridge/skills:ro
+    depends_on:
+      - demo-db
+    ports:
+      - "${DEMO_PORT:-8081}:80"
+
+volumes:
+  dw-data:
+  demo-db:
+  demo-wp:

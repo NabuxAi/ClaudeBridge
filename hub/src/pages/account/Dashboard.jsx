@@ -43,7 +43,7 @@ export default function Dashboard() {
     return () => { alive = false }
   }, [])
 
-  const addAction = <Button variant="secondary" size="sm" leftIcon="plus" as={Link} to="/account/sites/new">افزودن سایت</Button>
+  const addAction = <Button variant="secondary" size="sm" leftIcon="plus" as={Link} to="/onboarding">افزودن سایت</Button>
 
   if (!sites) {
     return <PageHead title="داشبورد حساب" subtitle="نمای کلی و سلامت همهٔ سایت‌های تحت پوشش" action={addAction} />

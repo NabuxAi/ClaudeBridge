@@ -47,7 +47,7 @@ export default function AccountShell() {
             <Icon name="search" size={15} /> جستجوی سایت یا تنظیمات…
           </span>
           <span className="dwp-spacer" />
-          <Button as={Link} to="/app/sites" variant="primary" size="sm" leftIcon="plus">افزودن سایت</Button>
+          <Button as={Link} to="/onboarding" variant="primary" size="sm" leftIcon="plus">افزودن سایت</Button>
           <IconButton icon="bell" label="اعلان‌ها" />
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, paddingInlineStart: 10, borderInlineStart: '1px solid var(--gd-border)' }}>
             <span className="dwp-avatar">{user?.initials || 'م'}</span>
