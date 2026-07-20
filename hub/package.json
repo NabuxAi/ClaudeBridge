@@ -1,0 +1,23 @@
+{
+  "name": "digiwp-hub",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "DigiWP Ai Support — the hub UI (React) that manages many WordPress sites through your server and the WP Claude Bridge connector.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "dependencies": {
+    "lucide-react": "^0.454.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.2",
+    "vite": "^5.4.10"
+  }
+}

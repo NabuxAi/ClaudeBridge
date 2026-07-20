@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: WP Claude Bridge
- * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth (auto login + consent) or a static Bearer token. Free alternative to WPVibe.
- * Version: 3.1.0
+ * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Bundles WordPress engineering skills the connected model can load on demand (as tools, MCP resources, and prompts), and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
+ * Version: 3.5.1
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.1.0' );
+define( 'CB_VERSION', '3.5.1' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -445,6 +445,24 @@ function cb_tools() {
 			'name' => 'update_option', 'description' => 'Create or update any option. value may be a string, number, boolean, object, or array.',
 			'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string' ), 'value' => array( 'description' => 'Any JSON value.' ) ), 'required' => array( 'name', 'value' ) ), 'op' => 'cb_op_update_option',
 		),
+		array(
+			'name' => 'render_page', 'description' => 'Render a same-site page server-side and return its HTML (headless view-source), to inspect layout/markup. Optionally extract one selector: a bare tag ("header"), one .class, or one #id. Use max_length/offset to page through large output.',
+			'inputSchema' => array( 'type' => 'object', 'properties' => array(
+				'url'        => array( 'type' => 'string', 'description' => 'Full same-site URL to render (e.g. https://site.com/product/x/). Defaults to the home page.' ),
+				'selector'   => array( 'type' => 'string', 'description' => 'Optional: a bare tag, one .class, or one #id to extract.' ),
+				'max_length' => array( 'type' => 'integer', 'description' => 'Max characters to return (default 60000).' ),
+				'offset'     => array( 'type' => 'integer', 'description' => 'Character offset to start from (for paging).' ),
+			) ), 'op' => 'cb_op_render_page',
+		),
+		array(
+			'name' => 'screenshot', 'description' => 'Take a real screenshot of a public URL via WordPress.com mShots (free, no key needed). Returns a screenshot_url you can open plus the PNG byte size; add inline=true to also get a base64 PNG (large). Desktop viewport only. mShots renders async - if ready=false, call again in a few seconds.',
+			'inputSchema' => array( 'type' => 'object', 'properties' => array(
+				'url'    => array( 'type' => 'string', 'description' => 'Full public URL to screenshot. Defaults to the home page.' ),
+				'width'  => array( 'type' => 'integer', 'description' => 'Output width in px (default 1200).' ),
+				'height' => array( 'type' => 'integer', 'description' => 'Optional max height in px.' ),
+				'inline' => array( 'type' => 'boolean', 'description' => 'If true, include a base64 PNG in the response (large).' ),
+			) ), 'op' => 'cb_op_screenshot',
+		),
 	);
 
 	// ---- Auto-generated CRUD tools (WordPress + WooCommerce content) ----
@@ -500,7 +518,242 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'update_meta', 'description' => 'Set a metadata value.', 'inputSchema' => array( 'type' => 'object', 'properties' => $meta_props + array( 'value' => array( 'description' => 'Any JSON value.' ) ), 'required' => array( 'object_id', 'key', 'value' ) ), 'op' => 'cb_op_update_meta' );
 	$tools[] = array( 'name' => 'delete_meta', 'description' => 'Delete a metadata key.', 'inputSchema' => array( 'type' => 'object', 'properties' => $meta_props, 'required' => array( 'object_id', 'key' ) ), 'op' => 'cb_op_delete_meta' );
 
+	// Bundled WordPress skills (shipped inside this plugin).
+	$tools[] = array( 'name' => 'list_wp_skills', 'description' => 'List the WordPress engineering skills bundled in this plugin (security review, performance, blocks, themes, WooCommerce, REST API, ACF/content modeling, headless/WPGraphQL, migrations, accessibility, testing, CI/CD, WP-CLI/ops, PHPStan, Playground, admin UI, plugin development, site audit/onboarding). Each is a focused review or build playbook. Call this first, then get_wp_skill to load the matching one before doing WordPress work.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_list_wp_skills', 'noargs' => true );
+	$tools[] = array( 'name' => 'get_wp_skill', 'description' => 'Load a bundled WordPress skill. Returns the skill\'s SKILL.md instructions, or a named reference file within it. Call list_wp_skills first to see available skill names and their files. Use the matching skill before reviewing, auditing, or building WordPress/WooCommerce code.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Skill name, e.g. "wp-security-review".' ), 'file' => array( 'type' => 'string', 'description' => 'Optional file within the skill, e.g. "references/escaping-guide.md". Defaults to SKILL.md.' ) ), 'required' => array( 'name' ) ), 'op' => 'cb_op_get_wp_skill' );
+
+	$tools[] = array(
+		'name'        => 'conflict_scan',
+		'description' => 'Find which active plugin breaks a page (white screen / fatal error / "critical error"). It deactivates each active plugin ONE AT A TIME, reloads the URL server-side, checks health, then IMMEDIATELY reactivates it — stopping at the first plugin whose removal fixes the page. It never deactivates this bridge plugin, and fully restores every plugin before returning. Params: url (required, same-site page to test), expect (optional string that must appear when the page is healthy), forbid (optional extra error signature to treat as broken), only (optional array of plugin files to limit the scan to), skip (optional array of plugin files to never touch, e.g. ["woocommerce/woocommerce.php"]). NOTE: it tests page-LOAD health as an anonymous request; interaction/AJAX bugs (like a fatal only when removing a cart item) will not reproduce unless the URL itself fatals on load. Run during low traffic — each plugin is briefly off while its test request runs.',
+		'inputSchema' => array(
+			'type'       => 'object',
+			'properties' => array(
+				'url'    => array( 'type' => 'string', 'description' => 'Same-site page URL to test.' ),
+				'expect' => array( 'type' => 'string', 'description' => 'Substring that must be present when the page is healthy.' ),
+				'forbid' => array( 'type' => 'string', 'description' => 'Extra substring that marks the page as broken if present.' ),
+				'only'   => array( 'type' => 'array', 'items' => array( 'type' => 'string' ), 'description' => 'Only test these plugin files.' ),
+				'skip'   => array( 'type' => 'array', 'items' => array( 'type' => 'string' ), 'description' => 'Never deactivate these plugin files.' ),
+			),
+			'required'   => array( 'url' ),
+		),
+		'op'          => 'cb_op_conflict_scan',
+	);
+
 	return $tools;
+}
+
+function cb_op_render_page( $args ) {
+	$url = isset( $args['url'] ) ? esc_url_raw( (string) $args['url'] ) : '';
+	if ( '' === $url ) { $url = home_url( '/' ); }
+	$home = home_url();
+	$site = site_url();
+	if ( 0 !== strpos( $url, $home ) && 0 !== strpos( $url, $site ) ) {
+		return new WP_Error( 'cb_render_scope', 'Only same-site URLs are allowed.' );
+	}
+	$selector = isset( $args['selector'] ) ? trim( (string) $args['selector'] ) : '';
+	$max      = isset( $args['max_length'] ) ? (int) $args['max_length'] : 0;
+	if ( $max <= 0 ) { $max = 60000; }
+	$offset = isset( $args['offset'] ) ? max( 0, (int) $args['offset'] ) : 0;
+	$fetch = add_query_arg( 'cb_r', time(), $url );
+	$resp  = wp_remote_get( $fetch, array(
+		'timeout'     => 30,
+		'sslverify'   => false,
+		'redirection' => 3,
+		'headers'     => array( 'User-Agent' => 'ClaudeBridgeRender/1.0', 'Cache-Control' => 'no-cache' ),
+	) );
+	if ( is_wp_error( $resp ) ) {
+		return new WP_Error( 'cb_render_fetch', $resp->get_error_message() );
+	}
+	$code = (int) wp_remote_retrieve_response_code( $resp );
+	$html = (string) wp_remote_retrieve_body( $resp );
+	if ( '' !== $selector ) {
+		$html = cb_render_extract( $html, $selector );
+	}
+	$total = strlen( $html );
+	$html  = substr( $html, $offset, $max );
+	return array( 'status' => $code, 'total_length' => $total, 'html' => $html );
+}
+
+function cb_render_extract( $html, $sel ) {
+	if ( ! class_exists( 'DOMDocument' ) ) { return $html; }
+	libxml_use_internal_errors( true );
+	$doc = new DOMDocument();
+	$doc->loadHTML( '<?xml encoding="utf-8" ?>' . $html );
+	libxml_clear_errors();
+	$xp = new DOMXPath( $doc );
+	if ( 0 === strpos( $sel, '.' ) ) {
+		$c = substr( $sel, 1 );
+		$q = "//*[contains(concat(' ', normalize-space(@class), ' '), ' " . $c . " ')]";
+	} elseif ( 0 === strpos( $sel, '#' ) ) {
+		$q = "//*[@id='" . substr( $sel, 1 ) . "']";
+	} else {
+		$q = '//' . preg_replace( '/[^a-zA-Z0-9]/', '', $sel );
+	}
+	$nodes = $xp->query( $q );
+	if ( ! $nodes || 0 === $nodes->length ) {
+		return "[selector '" . $sel . "' matched nothing - full page follows]\n" . $html;
+	}
+	$out = '';
+	foreach ( $nodes as $n ) {
+		$out .= $doc->saveHTML( $n ) . "\n";
+	}
+	return $out;
+}
+
+function cb_op_screenshot( $args ) {
+	$url = isset( $args['url'] ) ? esc_url_raw( (string) $args['url'] ) : '';
+	if ( '' === $url ) { $url = home_url( '/' ); }
+	$w = isset( $args['width'] ) ? (int) $args['width'] : 0;
+	if ( $w <= 0 ) { $w = 1200; }
+	$h    = isset( $args['height'] ) ? (int) $args['height'] : 0;
+	$shot = 'https://s.wordpress.com/mshots/v1/' . rawurlencode( $url ) . '?w=' . $w . ( $h > 0 ? '&h=' . $h : '' );
+	$png  = '';
+	for ( $i = 0; $i < 4; $i++ ) {
+		$r = wp_remote_get( $shot, array( 'timeout' => 18, 'sslverify' => false ) );
+		if ( ! is_wp_error( $r ) ) {
+			$body = (string) wp_remote_retrieve_body( $r );
+			$ct   = (string) wp_remote_retrieve_header( $r, 'content-type' );
+			if ( false !== strpos( $ct, 'image' ) && strlen( $body ) > 25000 ) {
+				$png = $body;
+				break;
+			}
+		}
+		sleep( 3 );
+	}
+	if ( '' === $png ) {
+		return array( 'ready' => false, 'screenshot_url' => $shot, 'note' => 'Still generating; call again in a few seconds or open the URL.' );
+	}
+	$out = array( 'ready' => true, 'mime' => 'image/png', 'bytes' => strlen( $png ), 'width' => $w, 'screenshot_url' => $shot );
+	$inline = isset( $args['inline'] ) ? $args['inline'] : false;
+	if ( true === $inline || 'true' === $inline || '1' === (string) $inline ) {
+		$out['base64'] = base64_encode( $png );
+	}
+	return $out;
+}
+
+/** Fetch a same-site URL server-side and judge whether it loaded healthy. */
+function cb_conflict_health( $url, $expect, $forbid ) {
+	$fetch = add_query_arg( 'cb_cs', time() . '-' . wp_rand( 100, 999 ), $url );
+	$resp  = wp_remote_get( $fetch, array(
+		'timeout'     => 25,
+		'sslverify'   => false,
+		'redirection' => 3,
+		'headers'     => array( 'User-Agent' => 'ClaudeBridgeConflictScan/1.0', 'Cache-Control' => 'no-cache' ),
+	) );
+	if ( is_wp_error( $resp ) ) {
+		return array( 'healthy' => false, 'code' => 0, 'reason' => 'fetch_error: ' . $resp->get_error_message(), 'len' => 0 );
+	}
+	$code = (int) wp_remote_retrieve_response_code( $resp );
+	$body = (string) wp_remote_retrieve_body( $resp );
+	$len  = strlen( $body );
+	$sigs = array( 'There has been a critical error', 'critical error on this website', 'Fatal error', 'Parse error', 'Uncaught Error', 'Uncaught Exception', 'Notice: Undefined' );
+	if ( '' !== $forbid ) { $sigs[] = $forbid; }
+	$hit = '';
+	foreach ( $sigs as $s ) {
+		if ( '' !== $s && false !== stripos( $body, $s ) ) { $hit = $s; break; }
+	}
+	$healthy = true;
+	$reason  = 'ok';
+	if ( $code >= 500 ) {
+		$healthy = false;
+		$reason  = 'http_' . $code;
+	} elseif ( '' !== $hit ) {
+		$healthy = false;
+		$reason  = 'error_signature: ' . $hit;
+	} elseif ( $len < 200 ) {
+		$healthy = false;
+		$reason  = 'blank_page (' . $len . ' bytes)';
+	} elseif ( '' !== $expect && false === stripos( $body, $expect ) ) {
+		$healthy = false;
+		$reason  = 'missing_expected_content';
+	}
+	return array( 'healthy' => $healthy, 'code' => $code, 'reason' => $reason, 'len' => $len );
+}
+
+/** Bisect active plugins to find which one breaks a page. Always restores state. */
+function cb_op_conflict_scan( $args ) {
+	cb_become_admin();
+	cb_load_plugin_fns();
+	@set_time_limit( 0 );
+	$url = isset( $args['url'] ) ? esc_url_raw( (string) $args['url'] ) : '';
+	if ( '' === $url ) {
+		return new WP_Error( 'cb_no_url', 'url is required (a same-site page to test).' );
+	}
+	$home = home_url();
+	$site = site_url();
+	if ( 0 !== strpos( $url, $home ) && 0 !== strpos( $url, $site ) ) {
+		return new WP_Error( 'cb_scope', 'Only same-site URLs are allowed.' );
+	}
+	$expect = isset( $args['expect'] ) ? (string) $args['expect'] : '';
+	$forbid = isset( $args['forbid'] ) ? (string) $args['forbid'] : '';
+	$only   = ( isset( $args['only'] ) && is_array( $args['only'] ) ) ? array_map( 'strval', $args['only'] ) : array();
+	$skip   = ( isset( $args['skip'] ) && is_array( $args['skip'] ) ) ? array_map( 'strval', $args['skip'] ) : array();
+
+	$self     = plugin_basename( __FILE__ ); // never deactivate the bridge itself
+	$original = (array) get_option( 'active_plugins', array() );
+
+	$base = cb_conflict_health( $url, $expect, $forbid );
+	if ( ! empty( $base['healthy'] ) ) {
+		return array(
+			'url'      => $url,
+			'baseline' => $base,
+			'scanned'  => 0,
+			'culprit'  => null,
+			'note'     => 'The page loads healthy on a plain anonymous server-side request, so a load-time scan cannot reproduce the fault. This usually means the bug only happens during an interaction (AJAX/POST such as removing a cart item), or only inside a logged-in / cart session. Point url at a page that actually fatals on load, or pass an expect/forbid string that captures the broken state.',
+		);
+	}
+
+	$candidates = $only ? $only : $original;
+	$results    = array();
+	$culprit    = null;
+
+	foreach ( $candidates as $plugin ) {
+		if ( $plugin === $self ) {
+			continue;
+		}
+		if ( in_array( $plugin, $skip, true ) ) {
+			$results[] = array( 'plugin' => $plugin, 'skipped' => true );
+			continue;
+		}
+		if ( ! in_array( $plugin, $original, true ) ) {
+			continue; // only toggle plugins that were active to begin with
+		}
+		deactivate_plugins( array( $plugin ), true ); // silent: don't fire deactivation hooks
+		$h = cb_conflict_health( $url, $expect, $forbid );
+		activate_plugin( $plugin, '', false, true );  // silent restore
+		$fixed     = ( empty( $base['healthy'] ) && ! empty( $h['healthy'] ) );
+		$results[] = array(
+			'plugin'          => $plugin,
+			'healthy_without' => ! empty( $h['healthy'] ),
+			'code'            => $h['code'],
+			'reason'          => $h['reason'],
+			'fixed_it'        => $fixed,
+		);
+		if ( $fixed && null === $culprit ) {
+			$culprit = $plugin;
+			break; // stop at the first culprit
+		}
+	}
+
+	// Belt-and-suspenders: guarantee the original active set is fully restored.
+	$now = (array) get_option( 'active_plugins', array() );
+	foreach ( $original as $p ) {
+		if ( $p !== $self && ! in_array( $p, $now, true ) ) {
+			activate_plugin( $p, '', false, true );
+		}
+	}
+
+	return array(
+		'url'      => $url,
+		'baseline' => $base,
+		'scanned'  => count( $results ),
+		'culprit'  => $culprit,
+		'results'  => $results,
+		'restored' => true,
+		'note'     => $culprit
+			? ( 'Deactivating "' . $culprit . '" fixed the page — it is the likely conflict. It has been reactivated. Update, replace, or keep it off to resolve the issue.' )
+			: 'No single plugin fixed the page. The cause may be the active theme, a must-use plugin, a combination of plugins, or server config — try skip-listing WooCommerce/currency plugins, or test a different URL.',
+	);
 }
 
 function cb_run_tool( $name, $args ) {
@@ -814,21 +1067,205 @@ add_action( 'rest_api_init', function () {
 		},
 	) );
 
-	register_rest_route( $ns, '/mcp', array(
-		array(
-			'methods'             => 'POST',
-			'permission_callback' => '__return_true',
-			'callback'            => 'cb_mcp_handler',
-		),
-		array(
-			'methods'             => 'GET',
-			'permission_callback' => '__return_true',
-			'callback'            => function () {
-				return new WP_REST_Response( array( 'error' => 'Use POST for MCP JSON-RPC.' ), 405 );
-			},
-		),
-	) );
+	// Same MCP handler on three route names, so a blocked path can fall back to another.
+	foreach ( array( '/mcp', '/sse', '/rpc' ) as $cb_r ) {
+		register_rest_route( $ns, $cb_r, array(
+			array(
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => 'cb_mcp_handler',
+			),
+			array(
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => 'cb_mcp_get_info',
+			),
+		) );
+	}
 } );
+
+/* Fallback transport 1: admin-ajax — reachable when custom REST routes are blocked.
+ * POST /wp-admin/admin-ajax.php?action=cb_mcp  (auth via Bearer header or ?token=). */
+add_action( 'wp_ajax_cb_mcp', 'cb_mcp_run_raw' );
+add_action( 'wp_ajax_nopriv_cb_mcp', 'cb_mcp_run_raw' );
+
+/* Fallback transport 2: query-var endpoint — reachable when the REST API is fully off.
+ * POST /?cb_mcp=1  (auth via Bearer header or ?token=). */
+add_action( 'init', 'cb_mcp_altroute', 1 );
+function cb_mcp_altroute() {
+	if ( ! isset( $_GET['cb_mcp'] ) ) {
+		return;
+	}
+	$m = isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : 'GET';
+	if ( $m === 'POST' || $m === 'OPTIONS' ) {
+		cb_mcp_run_raw(); // handles auth + dispatch, then exits
+	}
+	// GET probe: return the same info document the REST GET serves.
+	status_header( 200 );
+	header( 'Content-Type: application/json; charset=utf-8' );
+	header( 'Access-Control-Allow-Origin: *' );
+	echo wp_json_encode( cb_mcp_get_info()->get_data() );
+	exit;
+}
+
+/* ============================================================================
+ * 5b. BUNDLED WORDPRESS SKILLS
+ * Ships a library of WordPress engineering skills inside the plugin so the
+ * connected model can pull them on demand. Exposed three ways for maximum
+ * client compatibility: as tools (list_wp_skills / get_wp_skill), as MCP
+ * resources (cbskill:// URIs), and as MCP prompts.
+ * ========================================================================== */
+
+function cb_skills_dir() {
+	return untrailingslashit( plugin_dir_path( __FILE__ ) ) . '/skills';
+}
+
+/** Resolve & sandbox a relative path inside a single bundled skill directory. */
+function cb_skill_path( $slug, $rel = '' ) {
+	$slug = trim( (string) $slug );
+	if ( $slug === '' || strpos( $slug, '..' ) !== false || strpos( $slug, '/' ) !== false || strpos( $slug, '\\' ) !== false ) {
+		return new WP_Error( 'cb_bad_skill', 'Invalid skill name.' );
+	}
+	$root = realpath( cb_skills_dir() . '/' . $slug );
+	if ( ! $root || ! is_dir( $root ) ) {
+		return new WP_Error( 'cb_no_skill', "Skill '$slug' not found." );
+	}
+	$rel = ltrim( str_replace( '\\', '/', (string) $rel ), '/' );
+	if ( $rel === '' ) {
+		return $root;
+	}
+	foreach ( explode( '/', $rel ) as $seg ) {
+		if ( $seg === '..' || $seg === '.' ) {
+			return new WP_Error( 'cb_traversal', 'Path traversal is not allowed.' );
+		}
+	}
+	$real = realpath( $root . '/' . $rel );
+	if ( $real === false || strpos( $real, $root ) !== 0 || ! is_file( $real ) ) {
+		return new WP_Error( 'cb_no_file', "File '$rel' not found in skill '$slug'." );
+	}
+	return $real;
+}
+
+/** Parse the name/description frontmatter at the top of a SKILL.md. */
+function cb_skill_frontmatter( $md ) {
+	$out = array( 'name' => '', 'description' => '' );
+	if ( ! preg_match( '/^---\s*\n(.*?)\n---/s', (string) $md, $m ) ) {
+		return $out;
+	}
+	if ( preg_match( '/^name:\s*(.+)$/m', $m[1], $n ) ) {
+		$out['name'] = trim( $n[1] );
+	}
+	if ( preg_match( '/^description:\s*(.+)$/m', $m[1], $d ) ) {
+		$out['description'] = trim( $d[1] );
+	}
+	return $out;
+}
+
+/** List every bundled skill with its metadata and available files. Cached per-request. */
+function cb_skill_list() {
+	static $cache = null;
+	if ( $cache !== null ) {
+		return $cache;
+	}
+	$dir    = cb_skills_dir();
+	$skills = array();
+	if ( is_dir( $dir ) ) {
+		foreach ( scandir( $dir ) as $slug ) {
+			if ( $slug === '.' || $slug === '..' ) {
+				continue;
+			}
+			$base     = $dir . '/' . $slug;
+			$skill_md = $base . '/SKILL.md';
+			if ( ! is_dir( $base ) || ! is_file( $skill_md ) ) {
+				continue;
+			}
+			$fm    = cb_skill_frontmatter( file_get_contents( $skill_md ) );
+			$files = array();
+			$it    = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $base, FilesystemIterator::SKIP_DOTS ) );
+			foreach ( $it as $f ) {
+				if ( $f->isFile() ) {
+					$files[] = ltrim( str_replace( '\\', '/', substr( $f->getPathname(), strlen( $base ) ) ), '/' );
+				}
+			}
+			sort( $files );
+			$skills[] = array(
+				'name'        => $slug,
+				'title'       => $fm['name'] !== '' ? $fm['name'] : $slug,
+				'description' => $fm['description'],
+				'files'       => $files,
+			);
+		}
+	}
+	usort( $skills, function ( $a, $b ) {
+		return strcmp( $a['name'], $b['name'] );
+	} );
+	$cache = $skills;
+	return $skills;
+}
+
+/** Tool op: list all bundled skills. */
+function cb_op_list_wp_skills() {
+	$skills = cb_skill_list();
+	return array(
+		'count'  => count( $skills ),
+		'usage'  => 'Call get_wp_skill with {"name":"<skill>"} to load a skill\'s SKILL.md, or add {"file":"references/<file>.md"} for a specific reference file. Use the matching skill before reviewing or building WordPress/WooCommerce code.',
+		'skills' => $skills,
+	);
+}
+
+/** Tool op: return the contents of a bundled skill file (SKILL.md by default). */
+function cb_op_get_wp_skill( $args ) {
+	$slug = isset( $args['name'] ) ? $args['name'] : ( isset( $args['skill'] ) ? $args['skill'] : '' );
+	$file = ( isset( $args['file'] ) && $args['file'] !== '' ) ? $args['file'] : 'SKILL.md';
+	$path = cb_skill_path( $slug, $file );
+	if ( is_wp_error( $path ) ) {
+		return $path;
+	}
+	$content = file_get_contents( $path );
+	if ( $content === false ) {
+		return new WP_Error( 'cb_read_fail', 'Could not read skill file.' );
+	}
+	return array(
+		'skill'   => (string) $slug,
+		'file'    => ltrim( str_replace( '\\', '/', $file ), '/' ),
+		'content' => $content,
+	);
+}
+
+/** Every bundled skill file as an MCP resource descriptor. */
+function cb_skill_resources() {
+	$res = array();
+	foreach ( cb_skill_list() as $s ) {
+		foreach ( $s['files'] as $rel ) {
+			$res[] = array(
+				'uri'      => 'cbskill://' . $s['name'] . '/' . $rel,
+				'name'     => $s['name'] . '/' . $rel,
+				'title'    => $s['title'] . ' — ' . $rel,
+				'mimeType' => ( substr( $rel, -3 ) === '.md' ) ? 'text/markdown' : 'text/plain',
+			);
+		}
+	}
+	return $res;
+}
+
+/** Read a cbskill:// resource URI. Returns text, or WP_Error. */
+function cb_skill_resource_read( $uri ) {
+	$uri = (string) $uri;
+	if ( strpos( $uri, 'cbskill://' ) !== 0 ) {
+		return new WP_Error( 'cb_bad_uri', 'Unknown resource URI.' );
+	}
+	$rest = substr( $uri, strlen( 'cbskill://' ) );
+	$slug = $rest;
+	$rel  = 'SKILL.md';
+	if ( strpos( $rest, '/' ) !== false ) {
+		list( $slug, $rel ) = explode( '/', $rest, 2 );
+	}
+	$path = cb_skill_path( $slug, $rel );
+	if ( is_wp_error( $path ) ) {
+		return $path;
+	}
+	return (string) file_get_contents( $path );
+}
 
 /* ============================================================================
  * 6. MCP LAYER  (JSON-RPC 2.0 over HTTP)
@@ -846,6 +1283,11 @@ function cb_check_bearer( $bearer ) {
 	}
 	$at = get_transient( 'cb_oauth_at_' . $bearer );
 	if ( $at && ! empty( $at['user_id'] ) ) {
+		// Tokens minted via the native Application Password flow honour revocation:
+		// removing the Application Password in wp-admin instantly cuts Claude's access.
+		if ( ! empty( $at['app_password'] ) && ! cb_app_password_valid( (int) $at['user_id'], $at['app_password'] ) ) {
+			return false;
+		}
 		wp_set_current_user( (int) $at['user_id'] );
 		return true;
 	}
@@ -879,50 +1321,247 @@ function cb_rpc_error( $id, $code, $message ) {
 	return new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => $code, 'message' => $message ) ) );
 }
 
+/**
+ * Primary transport: REST POST at claude-bridge/v1/mcp (and /sse, /rpc aliases).
+ * Returns JSON by default (unchanged contract). Opts into SSE only when the
+ * caller explicitly asks (?transport=sse or an SSE-only Accept header).
+ */
 function cb_mcp_handler( $request ) {
-	$body   = $request->get_json_params();
-	$id     = isset( $body['id'] ) ? $body['id'] : null;
-	$method = isset( $body['method'] ) ? $body['method'] : '';
-
-	if ( strpos( $method, 'notifications/' ) === 0 ) {
-		return new WP_REST_Response( null, 202 );
-	}
-
 	if ( ! cb_mcp_authorized( $request ) ) {
-		$resp = new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ), 401 );
+		$resp = new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => null, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ), 401 );
 		$resp->header( 'WWW-Authenticate', 'Bearer resource_metadata="' . esc_url_raw( home_url( '/.well-known/oauth-protected-resource' ) ) . '"' );
 		return $resp;
+	}
+	$out = cb_mcp_dispatch( $request->get_json_params() );
+	if ( $out === null ) {
+		return new WP_REST_Response( null, 202 ); // notification: no response body
+	}
+	if ( cb_wants_sse( $request ) ) {
+		cb_mcp_emit_sse( $out ); // emits an SSE stream and exits
+	}
+	return new WP_REST_Response( $out );
+}
+
+/** GET on an MCP endpoint: describe the server and its connection modes (never 405). */
+function cb_mcp_get_info() {
+	return new WP_REST_Response( array(
+		'server'    => 'wp-claude-bridge',
+		'version'   => CB_VERSION,
+		'transport' => 'POST JSON-RPC 2.0. JSON response by default; append ?transport=sse for a Server-Sent-Events response.',
+		'endpoints' => array(
+			'rest'       => rest_url( 'claude-bridge/v1/mcp' ),
+			'rest_alias' => array( rest_url( 'claude-bridge/v1/sse' ), rest_url( 'claude-bridge/v1/rpc' ) ),
+			'admin_ajax' => admin_url( 'admin-ajax.php?action=cb_mcp' ),
+			'query_var'  => home_url( '/?cb_mcp=1' ),
+		),
+		'auth'      => array( 'Authorization: Bearer <token>', '?token=<token>', 'OAuth (Application Passwords)', 'logged-in admin cookie' ),
+	), 200 );
+}
+
+/** True when the caller explicitly opts into an SSE (text/event-stream) response. */
+function cb_wants_sse( $request = null ) {
+	if ( isset( $_GET['transport'] ) && strtolower( sanitize_text_field( wp_unslash( $_GET['transport'] ) ) ) === 'sse' ) {
+		return true;
+	}
+	$accept = '';
+	if ( $request instanceof WP_REST_Request ) {
+		$accept = (string) $request->get_header( 'accept' );
+	} elseif ( isset( $_SERVER['HTTP_ACCEPT'] ) ) {
+		$accept = (string) $_SERVER['HTTP_ACCEPT'];
+	}
+	// Only for SSE-only clients (accept event-stream but not plain JSON), so the
+	// existing JSON contract used by current connectors is never altered.
+	return ( stripos( $accept, 'text/event-stream' ) !== false && stripos( $accept, 'application/json' ) === false );
+}
+
+/** Emit one JSON-RPC payload as a single-event SSE stream, then exit. */
+function cb_mcp_emit_sse( $payload ) {
+	if ( function_exists( 'nocache_headers' ) ) {
+		nocache_headers();
+	}
+	while ( ob_get_level() > 0 ) {
+		ob_end_clean();
+	}
+	header( 'Content-Type: text/event-stream; charset=utf-8' );
+	header( 'Cache-Control: no-cache, no-transform' );
+	header( 'Connection: keep-alive' );
+	header( 'X-Accel-Buffering: no' );
+	header( 'Access-Control-Allow-Origin: *' );
+	echo 'event: message' . "\n";
+	echo 'data: ' . wp_json_encode( $payload ) . "\n\n";
+	@ob_flush();
+	@flush();
+	exit;
+}
+
+/**
+ * Transport-agnostic JSON-RPC 2.0 dispatcher. Assumes the caller is already
+ * authorized. Returns the response array, or null for a notification.
+ */
+function cb_mcp_dispatch( $body ) {
+	$id     = ( is_array( $body ) && isset( $body['id'] ) ) ? $body['id'] : null;
+	$method = ( is_array( $body ) && isset( $body['method'] ) ) ? $body['method'] : '';
+	$params = ( is_array( $body ) && isset( $body['params'] ) && is_array( $body['params'] ) ) ? $body['params'] : array();
+
+	if ( is_string( $method ) && strpos( $method, 'notifications/' ) === 0 ) {
+		return null;
 	}
 
 	switch ( $method ) {
 		case 'initialize':
-			return cb_rpc( $id, array(
-				'protocolVersion' => '2024-11-05',
-				'capabilities'    => array( 'tools' => new stdClass() ),
-				'serverInfo'      => array( 'name' => 'wp-claude-bridge', 'version' => CB_VERSION ),
-			) );
+			$ver = ( isset( $params['protocolVersion'] ) && is_string( $params['protocolVersion'] ) && $params['protocolVersion'] !== '' )
+				? $params['protocolVersion'] : '2024-11-05';
+			return array(
+				'jsonrpc' => '2.0',
+				'id'      => $id,
+				'result'  => array(
+					'protocolVersion' => $ver,
+					'capabilities'    => array(
+						'tools'     => new stdClass(),
+						'resources' => new stdClass(),
+						'prompts'   => new stdClass(),
+					),
+					'serverInfo'      => array( 'name' => 'wp-claude-bridge', 'version' => CB_VERSION ),
+				),
+			);
 
 		case 'ping':
-			return cb_rpc( $id, new stdClass() );
+			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => new stdClass() );
 
 		case 'tools/list':
 			$tools = array();
 			foreach ( cb_tools() as $t ) {
 				$tools[] = array( 'name' => $t['name'], 'description' => $t['description'], 'inputSchema' => $t['inputSchema'] );
 			}
-			return cb_rpc( $id, array( 'tools' => $tools ) );
+			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array( 'tools' => $tools ) );
 
 		case 'tools/call':
-			$name = isset( $body['params']['name'] ) ? $body['params']['name'] : '';
-			$args = isset( $body['params']['arguments'] ) ? (array) $body['params']['arguments'] : array();
+			$name = isset( $params['name'] ) ? $params['name'] : '';
+			$args = isset( $params['arguments'] ) ? (array) $params['arguments'] : array();
 			$res  = cb_run_tool( $name, $args );
 			if ( is_wp_error( $res ) ) {
-				return cb_rpc( $id, array( 'isError' => true, 'content' => array( array( 'type' => 'text', 'text' => $res->get_error_message() ) ) ) );
+				return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array( 'isError' => true, 'content' => array( array( 'type' => 'text', 'text' => $res->get_error_message() ) ) ) );
 			}
-			return cb_rpc( $id, array( 'content' => array( array( 'type' => 'text', 'text' => wp_json_encode( $res, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) ) ) ) );
+			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array( 'content' => array( array( 'type' => 'text', 'text' => wp_json_encode( $res, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) ) ) ) );
+
+		case 'resources/list':
+			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array( 'resources' => cb_skill_resources() ) );
+
+		case 'resources/read':
+			$uri = isset( $params['uri'] ) ? $params['uri'] : '';
+			$txt = cb_skill_resource_read( $uri );
+			if ( is_wp_error( $txt ) ) {
+				return array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32602, 'message' => $txt->get_error_message() ) );
+			}
+			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array( 'contents' => array( array( 'uri' => (string) $uri, 'mimeType' => 'text/markdown', 'text' => $txt ) ) ) );
+
+		case 'prompts/list':
+			$prompts = array();
+			foreach ( cb_skill_list() as $s ) {
+				$prompts[] = array( 'name' => $s['name'], 'title' => $s['title'], 'description' => $s['description'] );
+			}
+			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array( 'prompts' => $prompts ) );
+
+		case 'prompts/get':
+			$pname = isset( $params['name'] ) ? $params['name'] : '';
+			$path  = cb_skill_path( $pname, 'SKILL.md' );
+			if ( is_wp_error( $path ) ) {
+				return array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32602, 'message' => $path->get_error_message() ) );
+			}
+			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array(
+				'description' => 'WordPress skill: ' . (string) $pname,
+				'messages'    => array( array(
+					'role'    => 'user',
+					'content' => array( 'type' => 'text', 'text' => (string) file_get_contents( $path ) ),
+				) ),
+			) );
 	}
 
-	return cb_rpc_error( $id, -32601, "Unknown method: $method" );
+	return array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32601, 'message' => "Unknown method: $method" ) );
+}
+
+/** Read the Authorization header across SAPIs (for the non-REST transports). */
+function cb_raw_auth_header() {
+	if ( ! empty( $_SERVER['HTTP_AUTHORIZATION'] ) ) {
+		return $_SERVER['HTTP_AUTHORIZATION'];
+	}
+	if ( ! empty( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) ) {
+		return $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+	}
+	if ( function_exists( 'getallheaders' ) ) {
+		foreach ( (array) getallheaders() as $k => $v ) {
+			if ( strtolower( $k ) === 'authorization' ) {
+				return $v;
+			}
+		}
+	}
+	return '';
+}
+
+/** Authorize a request that did NOT arrive through the REST controller. */
+function cb_mcp_authorized_any() {
+	if ( current_user_can( 'edit_themes' ) ) {
+		return true;
+	}
+	$auth = cb_raw_auth_header();
+	if ( $auth && preg_match( '/Bearer\s+(.+)/i', $auth, $m ) && cb_check_bearer( trim( $m[1] ) ) ) {
+		return true;
+	}
+	if ( ! empty( $_GET['token'] ) && cb_check_bearer( sanitize_text_field( wp_unslash( $_GET['token'] ) ) ) ) {
+		return true;
+	}
+	if ( ! empty( $_POST['token'] ) && cb_check_bearer( sanitize_text_field( wp_unslash( $_POST['token'] ) ) ) ) {
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Shared entry point for the fallback transports (admin-ajax action and the
+ * query-var endpoint). Reads the raw JSON-RPC body, authorizes, dispatches,
+ * and prints the response as JSON (or SSE on request), then exits.
+ */
+function cb_mcp_run_raw() {
+	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : 'GET' ) === 'OPTIONS' ) {
+		header( 'Access-Control-Allow-Origin: *' );
+		header( 'Access-Control-Allow-Methods: GET, POST, OPTIONS' );
+		header( 'Access-Control-Allow-Headers: Authorization, Content-Type, Accept' );
+		status_header( 204 );
+		exit;
+	}
+
+	$raw  = file_get_contents( 'php://input' );
+	$body = json_decode( $raw, true );
+	$id   = ( is_array( $body ) && isset( $body['id'] ) ) ? $body['id'] : null;
+
+	if ( ! cb_mcp_authorized_any() ) {
+		status_header( 401 );
+		header( 'Content-Type: application/json; charset=utf-8' );
+		header( 'WWW-Authenticate: Bearer resource_metadata="' . esc_url_raw( home_url( '/.well-known/oauth-protected-resource' ) ) . '"' );
+		echo wp_json_encode( array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ) );
+		exit;
+	}
+
+	if ( ! is_array( $body ) ) {
+		status_header( 400 );
+		header( 'Content-Type: application/json; charset=utf-8' );
+		echo wp_json_encode( array( 'jsonrpc' => '2.0', 'id' => null, 'error' => array( 'code' => -32700, 'message' => 'Parse error.' ) ) );
+		exit;
+	}
+
+	$out = cb_mcp_dispatch( $body );
+	if ( $out === null ) {
+		status_header( 202 );
+		exit;
+	}
+	if ( cb_wants_sse() ) {
+		cb_mcp_emit_sse( $out );
+	}
+	status_header( 200 );
+	header( 'Content-Type: application/json; charset=utf-8' );
+	header( 'Access-Control-Allow-Origin: *' );
+	echo wp_json_encode( $out );
+	exit;
 }
 
 /* ============================================================================
@@ -993,6 +1632,8 @@ function cb_oauth_router() {
 			cb_oauth_register();
 		} elseif ( $ep === 'authorize' ) {
 			cb_oauth_authorize();
+		} elseif ( $ep === 'app-return' ) {
+			cb_oauth_app_return();
 		} elseif ( $ep === 'token' ) {
 			cb_oauth_token();
 		}
@@ -1046,6 +1687,28 @@ function cb_oauth_authorize() {
 	if ( $cmethod !== 'S256' || ! $challenge ) {
 		$redir_err( 'invalid_request' );
 	}
+
+	// Preferred consent: delegate to WordPress's native Application Passwords screen
+	// (the same structure WPVibe uses). Access becomes a real, revocable Application
+	// Password. Falls back to the built-in consent screen below if unavailable.
+	if ( function_exists( 'wp_is_application_passwords_available' ) && wp_is_application_passwords_available() ) {
+		$ap = wp_generate_password( 32, false );
+		set_transient( 'cb_oauth_pending_' . $ap, array(
+			'client_id' => $client_id,
+			'redirect'  => $redirect,
+			'state'     => $state,
+			'challenge' => $challenge,
+		), 15 * MINUTE_IN_SECONDS );
+		$return  = add_query_arg( 'cb_ap', $ap, home_url( '/claude-bridge-oauth/app-return' ) );
+		$connect = add_query_arg( array(
+			'app_name'    => 'Claude (' . $clients[ $client_id ]['name'] . ')',
+			'success_url' => $return,
+			'reject_url'  => add_query_arg( 'cb_denied', '1', $return ),
+		), admin_url( 'authorize-application.php' ) );
+		wp_redirect( $connect );
+		exit;
+	}
+
 	if ( ! is_user_logged_in() ) {
 		wp_redirect( wp_login_url( cb_request_url() ) );
 		exit;
@@ -1093,6 +1756,69 @@ function cb_oauth_authorize() {
 	exit;
 }
 
+/**
+ * Return point for WordPress's native Application Passwords screen. WordPress sends
+ * the approving user + a freshly minted application password here; we verify it, then
+ * hand Claude a normal OAuth authorization code bound to that user.
+ */
+function cb_oauth_app_return() {
+	$ap      = isset( $_GET['cb_ap'] ) ? sanitize_text_field( wp_unslash( $_GET['cb_ap'] ) ) : '';
+	$pending = $ap ? get_transient( 'cb_oauth_pending_' . $ap ) : false;
+	if ( ! $pending ) {
+		wp_die( 'This authorization request has expired. Please start the connection from Claude again.' );
+	}
+	delete_transient( 'cb_oauth_pending_' . $ap );
+
+	$redirect = $pending['redirect'];
+	$state    = $pending['state'];
+	$sep      = ( strpos( $redirect, '?' ) !== false ) ? '&' : '?';
+	$fail     = function ( $err ) use ( $redirect, $sep, $state ) {
+		wp_redirect( $redirect . $sep . 'error=' . rawurlencode( $err ) . '&state=' . rawurlencode( $state ) );
+		exit;
+	};
+
+	if ( ! empty( $_GET['cb_denied'] ) || empty( $_GET['password'] ) || empty( $_GET['user_login'] ) ) {
+		$fail( 'access_denied' );
+	}
+
+	$user = get_user_by( 'login', sanitize_user( wp_unslash( $_GET['user_login'] ) ) );
+	if ( ! $user || ! user_can( $user, 'edit_themes' ) ) {
+		$fail( 'access_denied' );
+	}
+
+	// Verify the application password really belongs to this user (prevents forgery).
+	$raw = str_replace( ' ', '', (string) wp_unslash( $_GET['password'] ) );
+	if ( ! cb_app_password_valid( $user->ID, $raw ) ) {
+		$fail( 'access_denied' );
+	}
+
+	$code = wp_generate_password( 40, false );
+	set_transient( 'cb_oauth_code_' . $code, array(
+		'client_id'    => $pending['client_id'],
+		'redirect_uri' => $redirect,
+		'challenge'    => $pending['challenge'],
+		'user_id'      => $user->ID,
+		'app_password' => $raw,
+	), 300 );
+
+	wp_redirect( $redirect . $sep . 'code=' . rawurlencode( $code ) . '&state=' . rawurlencode( $state ) );
+	exit;
+}
+
+/** True if $raw is currently a valid Application Password for the user (honours revocation). */
+function cb_app_password_valid( $user_id, $raw ) {
+	if ( ! class_exists( 'WP_Application_Passwords' ) ) {
+		return true; // Can't verify on very old cores; don't lock the user out.
+	}
+	$raw = str_replace( ' ', '', (string) $raw );
+	foreach ( WP_Application_Passwords::get_user_application_passwords( (int) $user_id ) as $item ) {
+		if ( ! empty( $item['password'] ) && wp_check_password( $raw, $item['password'], $user_id ) ) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function cb_oauth_token() {
 	$p = $_POST;
 	if ( empty( $p ) ) {
@@ -1122,7 +1848,7 @@ function cb_oauth_token() {
 		if ( ! hash_equals( $data['challenge'], cb_b64url( hash( 'sha256', $verifier, true ) ) ) ) {
 			cb_oauth_json( array( 'error' => 'invalid_grant', 'error_description' => 'PKCE verification failed' ), 400 );
 		}
-		cb_oauth_issue( $data['user_id'], $client );
+		cb_oauth_issue( $data['user_id'], $client, isset( $data['app_password'] ) ? $data['app_password'] : '' );
 	} elseif ( $grant === 'refresh_token' ) {
 		$rt = isset( $p['refresh_token'] ) ? $p['refresh_token'] : '';
 		$rd = get_transient( 'cb_oauth_rt_' . $rt );
@@ -1130,17 +1856,21 @@ function cb_oauth_token() {
 			cb_oauth_json( array( 'error' => 'invalid_grant' ), 400 );
 		}
 		delete_transient( 'cb_oauth_rt_' . $rt );
-		cb_oauth_issue( $rd['user_id'], $rd['client_id'] );
+		cb_oauth_issue( $rd['user_id'], $rd['client_id'], isset( $rd['app_password'] ) ? $rd['app_password'] : '' );
 	}
 	cb_oauth_json( array( 'error' => 'unsupported_grant_type' ), 400 );
 }
 
-function cb_oauth_issue( $user_id, $client_id ) {
-	$at  = wp_generate_password( 64, false );
-	$rt  = wp_generate_password( 64, false );
-	$ttl = 30 * DAY_IN_SECONDS;
-	set_transient( 'cb_oauth_at_' . $at, array( 'user_id' => (int) $user_id, 'client_id' => $client_id ), $ttl );
-	set_transient( 'cb_oauth_rt_' . $rt, array( 'user_id' => (int) $user_id, 'client_id' => $client_id ), 90 * DAY_IN_SECONDS );
+function cb_oauth_issue( $user_id, $client_id, $app_password = '' ) {
+	$at   = wp_generate_password( 64, false );
+	$rt   = wp_generate_password( 64, false );
+	$ttl  = 30 * DAY_IN_SECONDS;
+	$meta = array( 'user_id' => (int) $user_id, 'client_id' => $client_id );
+	if ( $app_password !== '' ) {
+		$meta['app_password'] = $app_password;
+	}
+	set_transient( 'cb_oauth_at_' . $at, $meta, $ttl );
+	set_transient( 'cb_oauth_rt_' . $rt, $meta, 90 * DAY_IN_SECONDS );
 	cb_oauth_json( array(
 		'access_token'  => $at,
 		'token_type'    => 'Bearer',
@@ -1182,8 +1912,8 @@ function cb_settings_page() {
 		<p><input type="text" readonly onclick="this.select()" style="width:100%;max-width:760px;padding:10px;font-family:monospace;font-size:13px" value="<?php echo esc_attr( $mcp_tok ); ?>"></p>
 		<p class="description">Keep this URL secret — anyone with it has admin access. Regenerate the token below to revoke.</p>
 
-		<h2 style="margin-top:24px">Alternative: OAuth (login + consent)</h2>
-		<p>Add a Custom Connector with the plain URL below; Claude will send you to log in and approve.</p>
+		<h2 style="margin-top:24px">Alternative: OAuth via native Application Passwords</h2>
+		<p>Add a Custom Connector with the plain URL below. Claude sends you to WordPress's own <b>Authorize Application</b> screen (one click, no header). Access is a standard Application Password you can revoke any time under <b>Users &rarr; Profile &rarr; Application Passwords</b>.</p>
 		<p><code style="font-size:13px;padding:6px;background:#f6f7f7;display:inline-block"><?php echo esc_html( $mcp ); ?></code></p>
 
 		<h2 style="margin-top:24px">Alternative: Bearer header</h2>
@@ -1191,6 +1921,21 @@ function cb_settings_page() {
 			<tr><th>URL</th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
 			<tr><th>Header</th><td><code>Authorization: Bearer <?php echo esc_html( $token ); ?></code></td></tr>
 		</table>
+		<h2 style="margin-top:24px">Bundled WordPress skills</h2>
+		<p>This plugin ships <b><?php echo count( cb_skill_list() ); ?></b> WordPress engineering skills. The connected model lists them with the <code>list_wp_skills</code> tool and loads any one with <code>get_wp_skill</code> — also exposed as MCP <b>resources</b> and <b>prompts</b>. No setup required.</p>
+		<p class="description"><?php echo esc_html( implode( ', ', wp_list_pluck( cb_skill_list(), 'name' ) ) ); ?></p>
+
+		<h2 style="margin-top:24px">Connection modes (built-in fallback)</h2>
+		<p>All endpoints below speak the same MCP protocol and accept the same token. If a host, security plugin, or proxy blocks one, point Claude at another:</p>
+		<table class="form-table">
+			<tr><th>Primary (REST)</th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
+			<tr><th>REST aliases</th><td><code><?php echo esc_html( rest_url( 'claude-bridge/v1/sse' ) ); ?></code> · <code><?php echo esc_html( rest_url( 'claude-bridge/v1/rpc' ) ); ?></code></td></tr>
+			<tr><th>admin-ajax</th><td><code><?php echo esc_html( admin_url( 'admin-ajax.php?action=cb_mcp' ) ); ?></code> <span class="description">— when <code>/wp-json/</code> REST routes are disabled</span></td></tr>
+			<tr><th>Query-var</th><td><code><?php echo esc_html( home_url( '/?cb_mcp=1' ) ); ?></code> <span class="description">— when the REST API is fully off</span></td></tr>
+			<tr><th>Response format</th><td>JSON by default · append <code>&amp;transport=sse</code> for Server-Sent Events</td></tr>
+		</table>
+		<p class="description">If your host strips the <code>Authorization</code> header, append <code>?token=…</code> (or <code>&amp;token=…</code>) to any endpoint above.</p>
+
 		<form method="post"><?php wp_nonce_field( 'cb_regen' ); ?>
 			<input type="hidden" name="cb_regen" value="1"><?php submit_button( 'Regenerate token', 'secondary' ); ?>
 		</form>

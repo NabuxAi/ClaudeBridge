@@ -1,0 +1,82 @@
+/* ============================================================
+   DigiWP hub — app layout layer (on top of digiwp.css tokens)
+   Scaffolding for the marketing chrome, the auth split, and the
+   two dashboard shells (account + per-site), plus responsive rules
+   that fold the desktop layouts down to the mobile variants.
+   ============================================================ */
+
+#root { min-height: 100vh; }
+
+/* ---- generic helpers -------------------------------------- */
+.dwp-container { max-width: 1120px; margin-inline: auto; padding-inline: 40px; }
+.dwp-row { display: flex; align-items: center; gap: var(--gd-space-3); }
+.dwp-spacer { flex: 1; }
+.dwp-stack { display: flex; flex-direction: column; }
+.dwp-grid { display: grid; gap: var(--gd-space-4); }
+.dwp-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.dwp-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.dwp-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.dwp-muted { color: var(--gd-text-muted); }
+.dwp-mono { font-family: var(--gd-font-mono); font-feature-settings: "tnum" 1; }
+.dwp-card { background: var(--gd-bg-surface); border: 1px solid var(--gd-border); border-radius: var(--gd-radius-lg); box-shadow: var(--gd-shadow-sm); }
+.dwp-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--gd-primary); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex: 0 0 auto; }
+.dwp-brandmark { width: 38px; height: 38px; border-radius: 11px; background: var(--gd-primary); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+
+/* ---- dashboard shell (account + site) --------------------- */
+.dwp-shell { display: flex; min-height: 100vh; background: var(--gd-bg-app); color: var(--gd-text); }
+.dwp-aside {
+  width: var(--gd-sidebar-width); flex: 0 0 auto; background: var(--gd-bg-surface);
+  border-inline-end: 1px solid var(--gd-border); display: flex; flex-direction: column;
+  padding: 16px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+.dwp-aside__brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 14px; }
+.dwp-aside__nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.dwp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dwp-topbar {
+  height: var(--gd-topbar-height); flex: 0 0 auto; border-bottom: 1px solid var(--gd-border);
+  background: var(--gd-bg-surface); display: flex; align-items: center; gap: 12px; padding: 0 20px;
+  position: sticky; top: 0; z-index: 20;
+}
+.dwp-content { flex: 1; min-width: 0; padding: 24px 28px 48px; }
+.dwp-pagehead { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.dwp-pagehead h1 { font-size: 25px; font-weight: 800; letter-spacing: -.01em; margin: 0; }
+.dwp-pagehead p { font-size: 14px; color: var(--gd-text-secondary); margin: 3px 0 0; }
+.dwp-burger { display: none; }
+
+/* Section headings used across panel pages */
+.dwp-sec-title { font-size: 16px; font-weight: 800; letter-spacing: -.01em; margin: 0 0 12px; }
+
+/* ---- marketing chrome ------------------------------------- */
+.dwp-mkt-nav { border-bottom: 1px solid var(--gd-border); background: var(--gd-bg-surface); position: sticky; top: 0; z-index: 30; }
+.dwp-mkt-nav__inner { display: flex; align-items: center; gap: 24px; height: 70px; }
+.dwp-mkt-links { display: flex; align-items: center; gap: 26px; font-size: 14px; font-weight: 600; color: var(--gd-text-secondary); }
+.dwp-mkt-links a { color: inherit; }
+.dwp-footer { border-top: 1px solid var(--gd-border); background: var(--gd-bg-subtle); }
+
+/* ---- responsive: fold to the mobile variants -------------- */
+.dwp-mobile-only { display: none; }
+
+@media (max-width: 1024px) {
+  .dwp-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .dwp-grid-3 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 860px) {
+  .dwp-container { padding-inline: 20px; }
+  .dwp-aside {
+    position: fixed; inset-inline-start: 0; top: 0; z-index: 60; height: 100vh;
+    transform: translateX(var(--dwp-aside-shift, 110%)); transition: transform var(--gd-duration) var(--gd-ease-standard);
+    box-shadow: var(--gd-shadow-xl);
+  }
+  [dir="rtl"] .dwp-aside { --dwp-aside-shift: 110%; }
+  [dir="ltr"] .dwp-aside { --dwp-aside-shift: -110%; }
+  .dwp-shell.is-open .dwp-aside { transform: translateX(0); }
+  .dwp-scrim { display: none; position: fixed; inset: 0; z-index: 50; background: color-mix(in srgb, var(--gd-ink) 45%, transparent); }
+  .dwp-shell.is-open .dwp-scrim { display: block; }
+  .dwp-burger { display: inline-flex; }
+  .dwp-content { padding: 18px 16px 40px; }
+  .dwp-mkt-links { display: none; }
+  .dwp-grid-2, .dwp-grid-3, .dwp-grid-4 { grid-template-columns: 1fr; }
+  .dwp-desktop-only { display: none !important; }
+  .dwp-mobile-only { display: revert; }
+}
