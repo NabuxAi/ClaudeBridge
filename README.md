@@ -8,7 +8,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-3.1.0-6c47ff?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/version-3.5.1-6c47ff?style=for-the-badge)](https://github.com/)
 [![License](https://img.shields.io/badge/license-GPLv2-blue?style=for-the-badge)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-5.6%2B-21759B?style=for-the-badge&logo=wordpress&logoColor=white)](https://wordpress.org)
@@ -56,8 +56,10 @@ No SaaS. No monthly fee. No external proxy. **Your server, your data, your rules
 | 🛒 **WooCommerce CRUD** | products, orders, coupons, customers, product categories — list/get/create/update/delete. |
 | 🧰 **Do-anything proxy** | `wp_rest` calls **any** WP or WooCommerce REST route with full admin rights. |
 | 🗄️ **Read-only DB query** | Safe `SELECT` access with `{prefix}` table substitution. |
-| 🔐 **3 auth modes** | Token-in-URL (simplest), Bearer header, or full OAuth (PKCE + Dynamic Client Registration). |
-| 📦 **Zero dependencies** | One `.php` file. No composer, no build step, no npm. |
+| 🔐 **3 auth modes** | Token-in-URL (simplest), Bearer header, or OAuth via native WordPress **Application Passwords** (revocable). |
+| 📡 **Streaming (SSE)** | MCP responses can stream over Server-Sent Events for long-running tools. |
+| 🧠 **18 bundled WP skills** | Ships WordPress review skills (security, performance, block/theme dev…) queryable as MCP resources. |
+| 📦 **Zero dependencies** | One `.php` file + skills. No composer, no build step, no npm. |
 
 ---
 
@@ -107,6 +109,8 @@ No SaaS. No monthly fee. No external proxy. **Your server, your data, your rules
 `search` · `count_posts` · `count_terms` · `upload_media_from_url`
 `get_meta` · `update_meta` · `delete_meta` · `list_revisions` · `restore_revision`
 `get_option` · `update_option` · `db_query` *(read-only SELECT)*
+`render_page` · `screenshot` · `conflict_scan` *(health/plugin-conflict scan)*
+`list_wp_skills` · `get_wp_skill` *(18 bundled WordPress review skills)*
 `wp_rest` — **call any REST route, the do-anything tool**
 </details>
 
