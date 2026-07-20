@@ -63,6 +63,7 @@ export const auth = {
 export const account = {
   sites: call(mock.listSites, () => http('/sites')),
   addSite: call(mock.addSite, (b) => http('/sites', { method: 'POST', body: b })),
+  pingSite: call(mock.pingSite, (id) => http(`/sites/${id}/ping`, { method: 'POST' })),
   billing: call(mock.billing, () => http('/billing')),
   invoices: call(mock.invoices, () => http('/billing/invoices')),
   invoice: call(mock.invoice, (id) => http(`/billing/invoices/${id}`)),

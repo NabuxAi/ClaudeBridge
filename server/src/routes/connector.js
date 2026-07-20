@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { store } from '../store.js'
+import { sites } from '../store.js'
 import { verifySignature } from '../connector.js'
 
 const router = Router()
@@ -13,12 +13,12 @@ router.post('/connector/register', (req, res) => {
   const pluginSiteId = req.get('X-DigiWP-Site')
   const rawBody = req.rawBody || ''
 
-  const match = store.candidates().find((c) => verifySignature(c.secret, { timestamp, signature, rawBody }))
+  const match = sites.candidates().find((c) => verifySignature(c.secret, { timestamp, signature, rawBody }))
   if (!match) return res.status(401).json({ ok: false, message: 'signature did not match any known site' })
 
   let body = {}
   try { body = JSON.parse(rawBody || '{}') } catch { /* ignore */ }
-  const site = store.recordRegister(match.id, {
+  const site = sites.recordRegister(match.id, {
     url: body.site_url, pluginSiteId, name: body.name, version: body.version,
   })
   res.json({ ok: true, site })

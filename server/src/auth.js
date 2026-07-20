@@ -28,6 +28,21 @@ export function verifyToken(token) {
   }
 }
 
+// ---- Password hashing (scrypt, no external deps) ----------
+export function hashPassword(pw) {
+  const salt = crypto.randomBytes(16)
+  const dk = crypto.scryptSync(String(pw), salt, 64)
+  return `scrypt$${salt.toString('hex')}$${dk.toString('hex')}`
+}
+
+export function verifyPassword(pw, stored) {
+  const [alg, saltHex, hashHex] = String(stored || '').split('$')
+  if (alg !== 'scrypt' || !saltHex || !hashHex) return false
+  const dk = crypto.scryptSync(String(pw), Buffer.from(saltHex, 'hex'), 64)
+  const a = Buffer.from(hashHex, 'hex')
+  return a.length === dk.length && crypto.timingSafeEqual(a, dk)
+}
+
 /** Express middleware: require a valid hub session token. */
 export function requireAuth(req, res, next) {
   const auth = req.get('authorization') || ''
