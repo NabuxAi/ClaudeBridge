@@ -15,6 +15,22 @@
 # ============================================================
 
 services:
+  # ---- PostgreSQL — the hub's database ----
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=digiwp
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-digiwp}
+      - POSTGRES_DB=digiwp
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digiwp -d digiwp"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   # ---- the واسط server (only backend the hub talks to) ----
   server:
     build:
@@ -22,15 +38,16 @@ services:
     restart: unless-stopped
     environment:
       - PORT=8787
-      - DB_FILE=/data/digiwp.db
+      - DATABASE_URL=postgres://digiwp:${POSTGRES_PASSWORD:-digiwp}@db:5432/digiwp
       - AUTH_SECRET=${AUTH_SECRET:-please-change-this-secret}
       - CORS_ORIGIN=*
       # Turn on live relay so paired sites are driven for real:
       - LIVE=1
       # Public URL of this API (where a connector reaches us) = hub domain + /api.
       - PUBLIC_BASE_URL=${SERVICE_URL_HUB:-http://localhost:8080}/api
-    volumes:
-      - dw-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
     expose:
       - "8787"
 
@@ -87,6 +104,6 @@ services:
       - "${DEMO_PORT:-8081}:80"
 
 volumes:
-  dw-data:
+  pg-data:
   demo-db:
   demo-wp:

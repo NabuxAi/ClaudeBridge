@@ -5,30 +5,32 @@ import { users, httpError } from '../store.js'
 const router = Router()
 
 // Real registration — persists a hashed-password user.
-router.post('/auth/register', (req, res, next) => {
+router.post('/auth/register', async (req, res, next) => {
   try {
     const { name, email, password } = req.body || {}
-    const user = users.create({ name, email, password })
+    const user = await users.create({ name, email, password })
     res.status(201).json({ token: signToken({ sub: user.id, name: user.name }), user })
   } catch (e) { next(e) }
 })
 
 // Real login — verifies the password hash.
-router.post('/auth/login', (req, res, next) => {
+router.post('/auth/login', async (req, res, next) => {
   try {
     const { email, password } = req.body || {}
-    const row = users.byEmailRaw(email)
+    const row = await users.byEmailRaw(email)
     if (!row || !verifyPassword(password, row.pass_hash)) throw httpError(401, 'ایمیل یا رمز عبور نادرست است.')
-    const user = users.byId(row.id)
+    const user = await users.byId(row.id)
     res.json({ token: signToken({ sub: user.id, name: user.name }), user })
   } catch (e) { next(e) }
 })
 
 // Current user from the session token.
-router.get('/auth/me', requireAuth, (req, res) => {
-  const user = users.byId(req.user.sub)
-  if (!user) return res.status(401).json({ message: 'Unauthorized' })
-  res.json(user)
+router.get('/auth/me', requireAuth, async (req, res, next) => {
+  try {
+    const user = await users.byId(req.user.sub)
+    if (!user) return res.status(401).json({ message: 'Unauthorized' })
+    res.json(user)
+  } catch (e) { next(e) }
 })
 
 export default router

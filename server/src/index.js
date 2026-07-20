@@ -8,7 +8,7 @@ import express from 'express'
 import cors from 'cors'
 import { config } from './config.js'
 import { requireAuth } from './auth.js'
-import { seedDemo } from './db.js'
+import { init as initDb } from './db.js'
 import authRouter from './routes/auth.js'
 import accountRouter from './routes/account.js'
 import sitesRouter from './routes/sites.js'
@@ -34,9 +34,16 @@ app.use((err, _req, res, _next) => {
   res.status(err.status || 500).json({ message: err.message || 'server error' })
 })
 
-seedDemo()
-app.listen(config.port, () => {
-  console.log(`DigiWP server on :${config.port}  (db: ${config.dbFile}, live relay: ${config.live ? 'on' : 'off'})`)
-})
+// Connect + migrate + seed before accepting traffic.
+initDb()
+  .then(() => {
+    app.listen(config.port, () => {
+      console.log(`DigiWP server on :${config.port}  (Postgres, live relay: ${config.live ? 'on' : 'off'})`)
+    })
+  })
+  .catch((e) => {
+    console.error('Failed to initialise the database:', e.message)
+    process.exit(1)
+  })
 
 export default app
