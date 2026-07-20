@@ -37,14 +37,17 @@ services:
       context: ./server
     restart: unless-stopped
     environment:
+      # Coolify: give the واسط API its own public domain, routed to port 8787.
+      # (Health at <server-domain>/health, API under <server-domain>/v1.)
+      - SERVICE_FQDN_SERVER_8787
       - PORT=8787
       - DATABASE_URL=postgres://digiwp:${POSTGRES_PASSWORD:-digiwp}@db:5432/digiwp
       - AUTH_SECRET=${AUTH_SECRET:-please-change-this-secret}
       - CORS_ORIGIN=*
       # Turn on live relay so paired sites are driven for real:
       - LIVE=1
-      # Public URL of this API (where a connector reaches us) = hub domain + /api.
-      - PUBLIC_BASE_URL=${SERVICE_URL_HUB:-http://localhost:8080}/api
+      # Public URL a connector uses to reach us = the server's own domain + /v1.
+      - PUBLIC_BASE_URL=${SERVICE_URL_SERVER:-http://localhost:8787}/v1
     depends_on:
       db:
         condition: service_healthy
