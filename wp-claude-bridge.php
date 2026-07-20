@@ -15,6 +15,7 @@ define( 'CB_VERSION', '3.5.1' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
+define( 'CB_CONNECTOR_OPTION', 'cb_connector' ); // Hub-connector pairing: server URL + shared secret.
 
 /* ============================================================================
  * 1. PATH SANDBOX
@@ -1067,6 +1068,21 @@ add_action( 'rest_api_init', function () {
 		},
 	) );
 
+	// Connector handshake check — the hub server calls this (signed) to verify pairing.
+	register_rest_route( $ns, '/connector/ping', array(
+		'methods'             => 'GET',
+		'permission_callback' => 'cb_connector_request_signed',
+		'callback'            => function () {
+			return rest_ensure_response( array(
+				'ok'        => true,
+				'site'      => home_url(),
+				'name'      => get_bloginfo( 'name' ),
+				'version'   => CB_VERSION,
+				'connector' => cb_connector_enabled(),
+			) );
+		},
+	) );
+
 	// Same MCP handler on three route names, so a blocked path can fall back to another.
 	foreach ( array( '/mcp', '/sse', '/rpc' ) as $cb_r ) {
 		register_rest_route( $ns, $cb_r, array(
@@ -1295,6 +1311,10 @@ function cb_check_bearer( $bearer ) {
 }
 
 function cb_mcp_authorized( $request ) {
+	// Connector mode: ONLY hub-signed requests pass — nothing direct.
+	if ( cb_connector_enabled() ) {
+		return cb_connector_request_signed();
+	}
 	if ( current_user_can( 'edit_themes' ) ) {
 		return true;
 	}
@@ -1500,6 +1520,10 @@ function cb_raw_auth_header() {
 
 /** Authorize a request that did NOT arrive through the REST controller. */
 function cb_mcp_authorized_any() {
+	// Connector mode: ONLY hub-signed requests pass — nothing direct.
+	if ( cb_connector_enabled() ) {
+		return cb_connector_request_signed();
+	}
 	if ( current_user_can( 'edit_themes' ) ) {
 		return true;
 	}
@@ -1514,6 +1538,98 @@ function cb_mcp_authorized_any() {
 		return true;
 	}
 	return false;
+}
+
+/* ============================================================================
+ * 5c. HUB CONNECTOR MODE  (optional; OFF by default)
+ * ----------------------------------------------------------------------------
+ * When enabled, this plugin stops being a directly-operable MCP endpoint.
+ * Every MCP request must be signed by the paired hub server (HMAC-SHA256 over
+ * timestamp + raw body with a shared secret); direct token / Application
+ * Password / logged-in access is refused. The plugin becomes a pure bridge:
+ * things only happen through YOUR server (the "واسط"), never on the site
+ * directly. Backward-compatible — existing installs are unaffected until an
+ * admin turns it on under Tools -> Claude Bridge.
+ * ========================================================================== */
+
+/** Current connector config, with defaults. */
+function cb_connector() {
+	$d = array( 'enabled' => false, 'server_url' => '', 'secret' => '', 'site_id' => '', 'paired_at' => 0 );
+	$c = get_option( CB_CONNECTOR_OPTION );
+	return is_array( $c ) ? array_merge( $d, $c ) : $d;
+}
+
+/** True when connector mode is active and a shared secret is present. */
+function cb_connector_enabled() {
+	$c = cb_connector();
+	return ! empty( $c['enabled'] ) && ! empty( $c['secret'] );
+}
+
+/** Read a request header across SAPIs. */
+function cb_connector_header( $name ) {
+	$key = 'HTTP_' . strtoupper( str_replace( '-', '_', $name ) );
+	if ( ! empty( $_SERVER[ $key ] ) ) {
+		return trim( (string) wp_unslash( $_SERVER[ $key ] ) );
+	}
+	if ( function_exists( 'getallheaders' ) ) {
+		foreach ( getallheaders() as $k => $v ) {
+			if ( strtolower( $k ) === strtolower( $name ) ) {
+				return trim( (string) $v );
+			}
+		}
+	}
+	return '';
+}
+
+/** Verify the current request was signed by the paired hub server. */
+function cb_connector_request_signed() {
+	$c = cb_connector();
+	if ( empty( $c['secret'] ) ) {
+		return false;
+	}
+	$ts  = cb_connector_header( 'X-DigiWP-Timestamp' );
+	$sig = cb_connector_header( 'X-DigiWP-Signature' );
+	if ( ! $ts || ! $sig ) {
+		return false;
+	}
+	if ( abs( time() - (int) $ts ) > 300 ) { // 5-minute replay window
+		return false;
+	}
+	$body     = file_get_contents( 'php://input' );
+	$expected = hash_hmac( 'sha256', $ts . "\n" . $body, $c['secret'] );
+	return hash_equals( $expected, (string) $sig );
+}
+
+/** Sign an outbound payload to YOUR server the same way (register / heartbeat). */
+function cb_connector_sign( $body ) {
+	$c  = cb_connector();
+	$ts = (string) time();
+	return array(
+		'X-DigiWP-Timestamp' => $ts,
+		'X-DigiWP-Signature' => hash_hmac( 'sha256', $ts . "\n" . $body, $c['secret'] ),
+		'X-DigiWP-Site'      => $c['site_id'],
+	);
+}
+
+/** Announce this site to the hub server (opt-in, best-effort). */
+function cb_connector_register() {
+	$c = cb_connector();
+	if ( empty( $c['enabled'] ) || empty( $c['server_url'] ) || empty( $c['secret'] ) ) {
+		return new WP_Error( 'cb_connector', 'Connector not configured.' );
+	}
+	$payload = wp_json_encode( array(
+		'site_id'  => $c['site_id'],
+		'site_url' => home_url(),
+		'name'     => get_bloginfo( 'name' ),
+		'version'  => CB_VERSION,
+		'wp'       => get_bloginfo( 'version' ),
+	) );
+	$res = wp_remote_post( untrailingslashit( $c['server_url'] ) . '/connector/register', array(
+		'timeout' => 15,
+		'headers' => array_merge( array( 'Content-Type' => 'application/json' ), cb_connector_sign( $payload ) ),
+		'body'    => $payload,
+	) );
+	return is_wp_error( $res ) ? $res : array( 'status' => wp_remote_retrieve_response_code( $res ) );
 }
 
 /**
@@ -1892,6 +2008,27 @@ add_action( 'admin_init', function () {
 	if ( isset( $_POST['cb_regen'] ) && check_admin_referer( 'cb_regen' ) && current_user_can( 'manage_options' ) ) {
 		update_option( CB_TOKEN_OPTION, wp_generate_password( 48, false ) );
 	}
+	if ( isset( $_POST['cb_connector_save'] ) && check_admin_referer( 'cb_connector' ) && current_user_can( 'manage_options' ) ) {
+		$c            = cb_connector();
+		$c['enabled'] = ! empty( $_POST['cb_conn_enabled'] );
+		$c['server_url'] = isset( $_POST['cb_conn_server'] ) ? esc_url_raw( wp_unslash( $_POST['cb_conn_server'] ) ) : '';
+		$secret = isset( $_POST['cb_conn_secret'] ) ? sanitize_text_field( wp_unslash( $_POST['cb_conn_secret'] ) ) : '';
+		if ( $secret !== '' ) {
+			$c['secret'] = $secret;
+		}
+		if ( empty( $c['site_id'] ) ) {
+			$c['site_id'] = wp_generate_password( 20, false );
+		}
+		if ( $c['enabled'] && empty( $c['paired_at'] ) ) {
+			$c['paired_at'] = time();
+		}
+		update_option( CB_CONNECTOR_OPTION, $c );
+
+		// Optional: announce this site to the hub right away.
+		if ( ! empty( $_POST['cb_conn_register'] ) ) {
+			cb_connector_register();
+		}
+	}
 } );
 
 function cb_settings_page() {
@@ -1938,6 +2075,40 @@ function cb_settings_page() {
 
 		<form method="post"><?php wp_nonce_field( 'cb_regen' ); ?>
 			<input type="hidden" name="cb_regen" value="1"><?php submit_button( 'Regenerate token', 'secondary' ); ?>
+		</form>
+
+		<hr style="margin:28px 0">
+		<h2>🔗 Hub Connector Mode <span style="font-size:12px;color:#888">— route everything through your server</span></h2>
+		<?php $conn = cb_connector(); ?>
+		<p>Turn this plugin into a <b>bridge</b> instead of a directly-operable endpoint. When on, this site accepts MCP requests <b>only</b> when they are signed by your paired hub server — direct token, Application&nbsp;Password and logged-in access are refused. Nothing happens on the site except through <b>your</b> server (the واسط).</p>
+		<?php if ( cb_connector_enabled() ) : ?>
+			<div class="notice notice-success inline" style="margin:10px 0;padding:10px 12px"><b>Connector mode is ON.</b> Direct MCP endpoints are locked; only <code><?php echo esc_html( $conn['server_url'] ?: 'your hub server' ); ?></code> can operate this site (HMAC-signed).</div>
+		<?php else : ?>
+			<div class="notice notice-info inline" style="margin:10px 0;padding:10px 12px">Connector mode is <b>off</b> — this site still works as a standalone MCP server via the URLs above.</div>
+		<?php endif; ?>
+		<form method="post"><?php wp_nonce_field( 'cb_connector' ); ?>
+			<input type="hidden" name="cb_connector_save" value="1">
+			<table class="form-table">
+				<tr><th scope="row">Enable connector mode</th><td>
+					<label><input type="checkbox" name="cb_conn_enabled" value="1" <?php checked( ! empty( $conn['enabled'] ) ); ?>> Only accept commands signed by my hub server</label>
+				</td></tr>
+				<tr><th scope="row">Hub server URL</th><td>
+					<input type="url" name="cb_conn_server" class="regular-text" placeholder="https://api.digiwp.com/v1" value="<?php echo esc_attr( $conn['server_url'] ); ?>">
+					<p class="description">Your server's API base — the only origin allowed to drive this site.</p>
+				</td></tr>
+				<tr><th scope="row">Shared secret</th><td>
+					<input type="password" name="cb_conn_secret" class="regular-text" autocomplete="new-password" placeholder="<?php echo $conn['secret'] ? '•••••••• (saved — leave blank to keep)' : 'paste the secret generated by your hub'; ?>">
+					<p class="description">Used to HMAC-sign every request. Generate it on your hub and paste it here once.</p>
+				</td></tr>
+				<tr><th scope="row">Site key</th><td>
+					<code><?php echo esc_html( $conn['site_id'] ?: '— (created on save)' ); ?></code>
+					<p class="description">Give this to your hub so it can address this site.</p>
+				</td></tr>
+				<tr><th scope="row">On save</th><td>
+					<label><input type="checkbox" name="cb_conn_register" value="1"> Announce this site to the hub now (POST <code>/connector/register</code>)</label>
+				</td></tr>
+			</table>
+			<?php submit_button( 'Save connector settings' ); ?>
 		</form>
 	</div>
 	<?php
