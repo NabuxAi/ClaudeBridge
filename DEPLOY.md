@@ -39,14 +39,22 @@
 
 ## اجرای محلی (بدون Coolify)
 
+برای اجرای محلی، فایل پورت‌های `deploy/compose.local.yml` را هم صریحاً بدهید تا
+سرویس‌ها روی `localhost` باز شوند (این فایل عمداً `docker-compose.override.yaml`
+نیست تا Coolify آن را برندارد):
+
 ```bash
-AUTH_SECRET=dev docker compose up --build
+AUTH_SECRET=dev docker compose -f docker-compose.yaml -f deploy/compose.local.yml up --build
 ```
 
 - پنل: <http://localhost:8080>
+- API / سرور واسط: <http://localhost:8787>  (`/health` و `/v1`)
 - وردپرس دمو: <http://localhost:8081>
 
-(پورت‌ها با `HUB_PORT` و `DEMO_PORT` قابل تغییرند.)
+(پورت‌ها با `HUB_PORT` / `SERVER_PORT` / `DEMO_PORT` قابل تغییرند.)
+
+> Coolify فقط از `docker-compose.yaml` استفاده می‌کند و این فایل را نمی‌بیند —
+> پس تداخل پورت روی سرور Coolify پیش نمی‌آید.
 
 ---
 

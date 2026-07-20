@@ -1,10 +1,12 @@
 # ============================================================
-# Local development overrides.
+# Local development port mappings — publish the services on localhost.
 #
-# `docker compose up` auto-merges this file, so the hub + demo are
-# reachable on localhost. Coolify runs `docker compose -f docker-compose.yaml`
-# explicitly, which does NOT auto-load overrides — so these host port
-# bindings never apply on Coolify (where routing is via its proxy).
+# NOT a `docker-compose.override.yaml` on purpose: that name is auto-merged
+# by `docker compose` AND gets picked up by Coolify (which then tries to build
+# from it and fails). Living under deploy/ keeps it invisible to Coolify.
+#
+# Use it explicitly:
+#   docker compose -f docker-compose.yaml -f deploy/compose.local.yml up --build
 #
 #   hub:    http://localhost:8080   (change with HUB_PORT)
 #   server: http://localhost:8787   (the واسط API — health at /health, API under /v1)
