@@ -61,10 +61,11 @@ services:
       - SERVICE_FQDN_HUB_80
     depends_on:
       - server
-    # For a plain (non-Coolify) `docker compose up`, expose the hub locally.
-    # Coolify ignores this and routes via its own proxy instead.
-    ports:
-      - "${HUB_PORT:-8080}:80"
+    expose:
+      - "80"
+    # No host `ports:` here — on Coolify, routing is via its proxy (the
+    # SERVICE_FQDN_HUB_80 var above). For local access, docker-compose.override.yaml
+    # publishes a host port (auto-merged by `docker compose up`, ignored by Coolify).
 
   # ---- demo WordPress (a real managed site to pair with the hub) ----
   demo-db:
@@ -100,8 +101,9 @@ services:
       - ./skills:/var/www/html/wp-content/plugins/wp-claude-bridge/skills:ro
     depends_on:
       - demo-db
-    ports:
-      - "${DEMO_PORT:-8081}:80"
+    expose:
+      - "80"
+    # No host `ports:` (see the hub note) — Coolify routes via SERVICE_FQDN_DEMO_80.
 
 volumes:
   pg-data:
