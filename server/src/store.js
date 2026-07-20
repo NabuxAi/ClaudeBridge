@@ -1,6 +1,6 @@
-// Persistent store backed by SQLite (src/db.js). Users + sites are real.
+// Persistent store backed by PostgreSQL (src/db.js). All methods are async.
 import crypto from 'node:crypto'
-import { db, newId } from './db.js'
+import { one, all, newId } from './db.js'
 import { hashPassword } from './auth.js'
 
 const publicUser = (u) => u && ({
@@ -11,80 +11,86 @@ const publicUser = (u) => u && ({
 const publicSite = (s) => s && ({
   id: s.id, name: s.name, title: s.title, status: s.status, authority: s.authority,
   url: s.url, paired: !!s.paired, hasSecret: !!s.secret,
-  connector: s.connector ? safeJson(s.connector) : null,
+  connector: s.connector || null, // JSONB → already an object
   // display metrics (real ones come from the connector once paired)
   uptime: s.paired ? 99.98 : 100, checks: s.paired ? 9 : 0, lastCheck: 2,
   incidents: 0, pendingUpdates: s.paired ? 5 : 0,
 })
 
-const safeJson = (v) => { try { return JSON.parse(v) } catch { return null } }
-
 export const users = {
-  create({ email, name, password }) {
+  async create({ email, name, password }) {
     email = String(email || '').trim().toLowerCase()
     if (!email || !password) throw httpError(400, 'ایمیل و رمز عبور لازم است.')
     if (String(password).length < 8) throw httpError(400, 'رمز عبور باید حداقل ۸ نویسه باشد.')
-    if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw httpError(409, 'این ایمیل قبلاً ثبت شده است.')
+    if (await one('SELECT 1 FROM users WHERE email = $1', [email])) throw httpError(409, 'این ایمیل قبلاً ثبت شده است.')
     const id = newId('u_')
-    db.prepare(`INSERT INTO users (id, email, name, pass_hash, created_at) VALUES (?, ?, ?, ?, ?)`)
-      .run(id, email, name || email.split('@')[0], hashPassword(password), Date.now())
-    return this.byId(id)
+    const row = await one(
+      `INSERT INTO users (id, email, name, pass_hash, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [id, email, name || email.split('@')[0], hashPassword(password), Date.now()]
+    )
+    return publicUser(row)
   },
-  byEmailRaw: (email) => db.prepare('SELECT * FROM users WHERE email = ?').get(String(email || '').trim().toLowerCase()),
-  byId: (id) => publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id)),
-  rawById: (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id),
-  update(id, fields) {
+  byEmailRaw: (email) => one('SELECT * FROM users WHERE email = $1', [String(email || '').trim().toLowerCase()]),
+  byId: async (id) => publicUser(await one('SELECT * FROM users WHERE id = $1', [id])),
+  async update(id, fields) {
     const allowed = ['name', 'two_factor', 'lang', 'timezone']
-    const sets = Object.keys(fields).filter((k) => allowed.includes(k))
-    if (!sets.length) return this.byId(id)
-    db.prepare(`UPDATE users SET ${sets.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`).run({ id, ...fields })
-    return this.byId(id)
+    const keys = Object.keys(fields).filter((k) => allowed.includes(k))
+    if (!keys.length) return this.byId(id)
+    const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(', ')
+    const row = await one(`UPDATE users SET ${sets} WHERE id = $1 RETURNING *`, [id, ...keys.map((k) => fields[k])])
+    return publicUser(row)
   },
 }
 
 export const sites = {
-  listByUser: (userId) => db.prepare('SELECT * FROM sites WHERE user_id = ? ORDER BY created_at').all(userId).map(publicSite),
+  listByUser: async (userId) =>
+    (await all('SELECT * FROM sites WHERE user_id = $1 ORDER BY created_at', [userId])).map(publicSite),
 
-  getForUser(id, userId) {
-    const s = db.prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?').get(id, userId)
-    return s ? publicSite(s) : null
-  },
+  getForUser: async (id, userId) =>
+    publicSite(await one('SELECT * FROM sites WHERE id = $1 AND user_id = $2', [id, userId])),
 
   /** Internal row incl. secret — for the relay. Caller must have checked ownership. */
-  rawForUser: (id, userId) => db.prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?').get(id, userId),
+  rawForUser: (id, userId) => one('SELECT * FROM sites WHERE id = $1 AND user_id = $2', [id, userId]),
 
-  add(userId, { name, title }) {
+  async add(userId, { name, title }) {
     if (!name) throw httpError(400, 'دامنهٔ سایت لازم است.')
     const clean = String(name).replace(/^https?:\/\//, '').replace(/\/$/, '')
     const id = slug(clean) || newId('s_')
-    if (db.prepare('SELECT 1 FROM sites WHERE id = ?').get(id)) throw httpError(409, 'این سایت قبلاً افزوده شده است.')
+    if (await one('SELECT 1 FROM sites WHERE id = $1', [id])) throw httpError(409, 'این سایت قبلاً افزوده شده است.')
     const site = {
       id, user_id: userId, name: clean, title: title || clean, status: 'checking', authority: 'report',
       url: name.startsWith('http') ? name : `https://${clean}`,
       secret: crypto.randomBytes(32).toString('hex'), site_key: crypto.randomBytes(10).toString('hex'),
       created_at: Date.now(),
     }
-    db.prepare(`INSERT INTO sites (id, user_id, name, title, status, authority, url, secret, site_key, created_at)
-                VALUES (@id, @user_id, @name, @title, @status, @authority, @url, @secret, @site_key, @created_at)`).run(site)
-    return { ...publicSite(site), secret: site.secret, siteKey: site.site_key } // secret shown ONCE
+    const row = await one(
+      `INSERT INTO sites (id, user_id, name, title, status, authority, url, secret, site_key, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [site.id, site.user_id, site.name, site.title, site.status, site.authority, site.url, site.secret, site.site_key, site.created_at]
+    )
+    return { ...publicSite(row), secret: site.secret, siteKey: site.site_key } // secret shown ONCE
   },
 
-  markPaired(id, connector = {}) {
-    const c = JSON.stringify({ ...connector, lastSeen: Date.now() })
-    db.prepare(`UPDATE sites SET paired = 1, status = 'healthy', connector = ? WHERE id = ?`).run(c, id)
-    return publicSite(db.prepare('SELECT * FROM sites WHERE id = ?').get(id))
+  async markPaired(id, connector = {}) {
+    const row = await one(
+      `UPDATE sites SET paired = true, status = 'healthy', connector = $2 WHERE id = $1 RETURNING *`,
+      [id, JSON.stringify({ ...connector, lastSeen: Date.now() })]
+    )
+    return publicSite(row)
   },
 
-  recordRegister(id, { url, pluginSiteId, name, version } = {}) {
-    const c = JSON.stringify({ version: version || '3.5.1', lastSeen: Date.now(), pluginSiteId })
-    db.prepare(`UPDATE sites SET paired = 1, status = 'healthy', connector = ?,
-                url = COALESCE(NULLIF(?, ''), url), title = COALESCE(NULLIF(?, ''), title),
-                plugin_site_id = ? WHERE id = ?`).run(c, url || '', name || '', pluginSiteId || '', id)
-    return publicSite(db.prepare('SELECT * FROM sites WHERE id = ?').get(id))
+  async recordRegister(id, { url, pluginSiteId, name, version } = {}) {
+    const row = await one(
+      `UPDATE sites SET paired = true, status = 'healthy', connector = $2,
+        url = COALESCE(NULLIF($3,''), url), title = COALESCE(NULLIF($4,''), title),
+        plugin_site_id = $5 WHERE id = $1 RETURNING *`,
+      [id, JSON.stringify({ version: version || '3.5.1', lastSeen: Date.now(), pluginSiteId }), url || '', name || '', pluginSiteId || '']
+    )
+    return publicSite(row)
   },
 
   /** {id, secret} for every site — to match an inbound signed register call. */
-  candidates: () => db.prepare("SELECT id, secret FROM sites WHERE secret != ''").all(),
+  candidates: () => all("SELECT id, secret FROM sites WHERE secret <> ''"),
 }
 
 function slug(v) {

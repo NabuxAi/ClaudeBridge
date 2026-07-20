@@ -6,13 +6,15 @@ import * as seed from '../seed.js'
 const router = Router()
 
 // The signed-in user's sites (empty for a brand-new account).
-router.get('/sites', (req, res) => res.json(sites.listByUser(req.user.sub)))
+router.get('/sites', async (req, res, next) => {
+  try { res.json(await sites.listByUser(req.user.sub)) } catch (e) { next(e) }
+})
 
 // Create a site → returns the one-time shared secret + server URL for the plugin.
-router.post('/sites', (req, res, next) => {
+router.post('/sites', async (req, res, next) => {
   try {
     const { name, title } = req.body || {}
-    const site = sites.add(req.user.sub, { name, title })
+    const site = await sites.add(req.user.sub, { name, title })
     res.status(201).json({
       id: site.id, name: site.name, title: site.title, status: site.status,
       pairing: {
@@ -37,18 +39,19 @@ router.get('/billing/invoices', (_req, res) => res.json(seed.invoices))
 router.get('/billing/invoices/:id', (req, res) => res.json(seed.invoiceDetail(req.params.id)))
 router.get('/team', (_req, res) => res.json(seed.team))
 router.get('/notifications', (_req, res) => res.json(seed.notifications))
-router.get('/profile', (req, res) => {
-  const u = users.byId(req.user.sub)
-  res.json({ ...u, initials: u.initials })
+router.get('/profile', async (req, res, next) => {
+  try { res.json(await users.byId(req.user.sub)) } catch (e) { next(e) }
 })
-router.patch('/profile', (req, res) => {
-  const { name, twoFactor, lang, timezone } = req.body || {}
-  const fields = {}
-  if (name != null) fields.name = name
-  if (twoFactor != null) fields.two_factor = twoFactor ? 1 : 0
-  if (lang != null) fields.lang = lang
-  if (timezone != null) fields.timezone = timezone
-  res.json(users.update(req.user.sub, fields))
+router.patch('/profile', async (req, res, next) => {
+  try {
+    const { name, twoFactor, lang, timezone } = req.body || {}
+    const fields = {}
+    if (name != null) fields.name = name
+    if (twoFactor != null) fields.two_factor = !!twoFactor
+    if (lang != null) fields.lang = lang
+    if (timezone != null) fields.timezone = timezone
+    res.json(await users.update(req.user.sub, fields))
+  } catch (e) { next(e) }
 })
 
 export default router

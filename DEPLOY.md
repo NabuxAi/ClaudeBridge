@@ -1,11 +1,12 @@
 # استقرار DigiWP Ai Support (Coolify)
 
-یک استک، سه بخش — همه در [`docker-compose.yaml`](docker-compose.yaml):
+یک استک، چند سرویس — همه در [`docker-compose.yaml`](docker-compose.yaml):
 
 | سرویس | چیست | دسترسی |
 |---|---|---|
 | **hub** | پنل / سایت اصلی (React روی nginx) | عمومی — نصب اصلی شما |
-| **server** | سرور واسط (Node + SQLite) | داخلی — هاب از مسیر `/api` به آن پراکسی می‌کند |
+| **server** | سرور واسط (Node) | داخلی — هاب از مسیر `/api` به آن پراکسی می‌کند |
+| **db** | **PostgreSQL** — دیتابیس هاب | داخلی |
 | **demo** (+ **demo-db**) | یک وردپرس واقعی با افزونهٔ کانکتور نصب‌شده | عمومی — برای دیدن حلقهٔ کامل |
 
 ```
@@ -23,11 +24,13 @@
 1. **New Resource → Docker Compose** و این ریپو را انتخاب کنید (فایل `docker-compose.yaml` در ریشه).
 2. در بخش **Environment Variables** این‌ها را ست کنید:
    - `AUTH_SECRET` — یک رشتهٔ تصادفی بلند (کلید امضای نشست‌ها). **حتماً عوض کنید.**
+   - `POSTGRES_PASSWORD` — رمز دیتابیس PostgreSQL هاب.
    - `DEMO_DB_PASSWORD`, `DEMO_DB_ROOT_PASSWORD` — رمزهای دیتابیس دمو.
 3. **Deploy**. Coolify برای `hub` و `demo` به‌صورت خودکار دامنه می‌سازد
    (متغیرهای `SERVICE_FQDN_HUB_80` و `SERVICE_FQDN_DEMO_80`). سرور `PUBLIC_BASE_URL`
    را از دامنهٔ هاب می‌گیرد (`${SERVICE_URL_HUB}/api`).
-4. دیتابیس هاب روی والیوم `dw-data` می‌ماند؛ با ری‌دیپلوی پاک نمی‌شود.
+4. دیتابیس PostgreSQL هاب روی والیوم `pg-data` می‌ماند؛ با ری‌دیپلوی پاک نمی‌شود.
+   سرور تا آمادهٔ‌کار شدن دیتابیس صبر می‌کند (retry داخلی + healthcheck).
 
 > اگر می‌خواهید سرور دامنهٔ مستقل هم داشته باشد، کافی است `SERVICE_FQDN_SERVER_8787`
 > را به env سرویس `server` اضافه کنید — ولی برای کار کردن لازم نیست.

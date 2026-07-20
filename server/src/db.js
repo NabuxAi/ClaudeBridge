@@ -1,19 +1,24 @@
 // ============================================================
-// SQLite database — real, persistent storage for users + sites.
-// Zero external service: a single file (config.dbFile). Swap the
-// driver for Postgres/MySQL in production without touching routes.
+// PostgreSQL database — real, persistent storage for users + sites.
+// A connection pool + idempotent schema migration + a one-time demo
+// seed. This is the only file that knows about the driver; routes go
+// through the async store in src/store.js.
 // ============================================================
-import Database from 'better-sqlite3'
+import pg from 'pg'
 import crypto from 'node:crypto'
 import { config } from './config.js'
 import { hashPassword } from './auth.js'
 import { demoSites } from './seed.js'
 
-export const db = new Database(config.dbFile)
-db.pragma('journal_mode = WAL')
-db.pragma('foreign_keys = ON')
+export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 })
 
-db.exec(`
+/** Small helpers so callers read cleanly. */
+export const query = (text, params) => pool.query(text, params)
+export const one = async (text, params) => (await pool.query(text, params)).rows[0] || null
+export const all = async (text, params) => (await pool.query(text, params)).rows
+export const newId = (prefix = '') => prefix + crypto.randomBytes(8).toString('hex')
+
+const SCHEMA = `
   CREATE TABLE IF NOT EXISTS users (
     id         TEXT PRIMARY KEY,
     email      TEXT UNIQUE NOT NULL,
@@ -21,15 +26,15 @@ db.exec(`
     pass_hash  TEXT NOT NULL,
     role       TEXT NOT NULL DEFAULT 'مدیر حساب',
     plan       TEXT NOT NULL DEFAULT 'حرفه‌ای',
-    two_factor INTEGER NOT NULL DEFAULT 0,
+    two_factor BOOLEAN NOT NULL DEFAULT false,
     lang       TEXT NOT NULL DEFAULT 'fa',
     timezone   TEXT NOT NULL DEFAULT 'Asia/Tehran',
-    created_at INTEGER NOT NULL
+    created_at BIGINT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS sites (
     id             TEXT PRIMARY KEY,
-    user_id        TEXT NOT NULL,
+    user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name           TEXT NOT NULL,
     title          TEXT,
     status         TEXT NOT NULL DEFAULT 'checking',
@@ -38,30 +43,49 @@ db.exec(`
     secret         TEXT NOT NULL DEFAULT '',
     site_key       TEXT NOT NULL DEFAULT '',
     plugin_site_id TEXT NOT NULL DEFAULT '',
-    paired         INTEGER NOT NULL DEFAULT 0,
-    connector      TEXT NOT NULL DEFAULT '',
-    created_at     INTEGER NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    paired         BOOLEAN NOT NULL DEFAULT false,
+    connector      JSONB,
+    created_at     BIGINT NOT NULL
   );
 
   CREATE INDEX IF NOT EXISTS idx_sites_user ON sites(user_id);
-`)
+`
 
-// One-time demo seed so the app is populated on first run AND real signups work.
-export function seedDemo() {
-  const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n
-  if (count > 0) return
+/** Wait for Postgres to accept connections (compose may start us first). */
+async function waitForDb(retries = 30) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await pool.query('SELECT 1')
+      return
+    } catch (e) {
+      if (i === retries - 1) throw e
+      await new Promise((r) => setTimeout(r, 1000))
+    }
+  }
+}
+
+/** Connect, migrate the schema, and seed demo data once. */
+export async function init() {
+  await waitForDb()
+  await pool.query(SCHEMA)
+  await seedDemo()
+}
+
+async function seedDemo() {
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM users')
+  if (rows[0].n > 0) return
   const uid = 'u_demo'
-  db.prepare(`INSERT INTO users (id, email, name, pass_hash, role, plan, two_factor, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, 1, ?)`).run(
-    uid, 'maryam@example.com', 'مریم رضایی', hashPassword('demo1234'), 'مدیر حساب', 'حرفه‌ای', Date.now()
+  await pool.query(
+    `INSERT INTO users (id, email, name, pass_hash, role, plan, two_factor, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
+    [uid, 'maryam@example.com', 'مریم رضایی', hashPassword('demo1234'), 'مدیر حساب', 'حرفه‌ای', Date.now()]
   )
-  const ins = db.prepare(`INSERT INTO sites (id, user_id, name, title, status, authority, paired, created_at)
-                          VALUES (@id, @user_id, @name, @title, @status, @authority, @paired, @created_at)`)
   for (const s of demoSites) {
-    ins.run({ id: s.id, user_id: uid, name: s.name, title: s.title, status: s.status, authority: s.authority, paired: 0, created_at: Date.now() })
+    await pool.query(
+      `INSERT INTO sites (id, user_id, name, title, status, authority, paired, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, false, $7)`,
+      [s.id, uid, s.name, s.title, s.status, s.authority, Date.now()]
+    )
   }
   console.log('Seeded demo user maryam@example.com / demo1234 with 3 sites.')
 }
-
-export const newId = (prefix = '') => prefix + crypto.randomBytes(8).toString('hex')

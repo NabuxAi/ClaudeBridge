@@ -5,8 +5,8 @@ export const config = {
   authSecret: process.env.AUTH_SECRET || 'dev-only-change-me',
   // Where the hub is served from, for CORS.
   corsOrigin: process.env.CORS_ORIGIN || '*',
-  // SQLite database file (created if missing).
-  dbFile: process.env.DB_FILE || './digiwp.db',
+  // PostgreSQL connection string. Individual PG* env vars also work via `pg`.
+  databaseUrl: process.env.DATABASE_URL || 'postgres://digiwp:digiwp@localhost:5432/digiwp',
   // When '1', per-site reads try the live connector before falling back to seed data.
   live: process.env.LIVE === '1',
   // Public base URL of THIS server's API, as reachable from the internet
