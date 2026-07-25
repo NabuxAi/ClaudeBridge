@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: WP Claude Bridge
- * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Bundles WordPress engineering skills the connected model can load on demand (as tools, MCP resources, and prompts), and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.5.1
+ * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Bundles WordPress engineering skills the connected model can load on demand (as tools, MCP resources, and prompts), ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
+ * Version: 3.6.0
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,11 +11,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.5.1' );
+define( 'CB_VERSION', '3.6.0' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
 define( 'CB_CONNECTOR_OPTION', 'cb_connector' ); // Hub-connector pairing: server URL + shared secret.
+define( 'CB_ACTIVITY_OPTION', 'cb_activity_log' );      // Ring buffer of recent tool calls.
+define( 'CB_ACTIVITY_OPTION_ON', 'cb_activity_on' );    // "1" = log calls (default), "0" = off.
+define( 'CB_ACTIVITY_MAX', 40 );                        // Entries kept.
+define( 'CB_LASTSEEN_OPTION', 'cb_last_seen' );         // Unix time of the last authorized call.
 
 /* ============================================================================
  * 1. PATH SANDBOX
@@ -523,6 +527,10 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'list_wp_skills', 'description' => 'List the WordPress engineering skills bundled in this plugin (security review, performance, blocks, themes, WooCommerce, REST API, ACF/content modeling, headless/WPGraphQL, migrations, accessibility, testing, CI/CD, WP-CLI/ops, PHPStan, Playground, admin UI, plugin development, site audit/onboarding). Each is a focused review or build playbook. Call this first, then get_wp_skill to load the matching one before doing WordPress work.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_list_wp_skills', 'noargs' => true );
 	$tools[] = array( 'name' => 'get_wp_skill', 'description' => 'Load a bundled WordPress skill. Returns the skill\'s SKILL.md instructions, or a named reference file within it. Call list_wp_skills first to see available skill names and their files. Use the matching skill before reviewing, auditing, or building WordPress/WooCommerce code.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Skill name, e.g. "wp-security-review".' ), 'file' => array( 'type' => 'string', 'description' => 'Optional file within the skill, e.g. "references/escaping-guide.md". Defaults to SKILL.md.' ) ), 'required' => array( 'name' ) ), 'op' => 'cb_op_get_wp_skill' );
 
+	// Cookbook: the same recipes the site owner sees in wp-admin.
+	$tools[] = array( 'name' => 'list_recipes', 'description' => 'List the cookbook recipes bundled with this plugin — ready-made playbooks for the jobs people hand to an AI on a WordPress site (security audit, speed audit, plugin conflict hunt, child theme, alt text sweep, content calendar, WooCommerce restock/sale/checkout review, Elementor header & footer, theme.json rebrand, and more). Each returns an id; call get_recipe for the full prompt. Set for_this_site=true to see only the recipes whose stack this site actually has.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'tag' => array( 'type' => 'string', 'description' => 'Filter by tag, e.g. "WooCommerce", "Security", "Performance".' ), 'search' => array( 'type' => 'string' ), 'for_this_site' => array( 'type' => 'boolean', 'description' => 'Only recipes matching this site (WooCommerce, Elementor, block theme, …).' ) ) ), 'op' => 'cb_op_list_recipes' );
+	$tools[] = array( 'name' => 'get_recipe', 'description' => 'Load one cookbook recipe in full: what it does, which bridge tools it uses, and the complete prompt with its [bracketed] placeholders. Call list_recipes first for valid ids. Use a recipe as the plan when the user asks for something it covers.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string', 'description' => 'Recipe id, e.g. "security-audit".' ) ), 'required' => array( 'id' ) ), 'op' => 'cb_op_get_recipe' );
+
 	$tools[] = array(
 		'name'        => 'conflict_scan',
 		'description' => 'Find which active plugin breaks a page (white screen / fatal error / "critical error"). It deactivates each active plugin ONE AT A TIME, reloads the URL server-side, checks health, then IMMEDIATELY reactivates it — stopping at the first plugin whose removal fixes the page. It never deactivates this bridge plugin, and fully restores every plugin before returning. Params: url (required, same-site page to test), expect (optional string that must appear when the page is healthy), forbid (optional extra error signature to treat as broken), only (optional array of plugin files to limit the scan to), skip (optional array of plugin files to never touch, e.g. ["woocommerce/woocommerce.php"]). NOTE: it tests page-LOAD health as an anonymous request; interaction/AJAX bugs (like a fatal only when removing a cart item) will not reproduce unless the URL itself fatals on load. Run during low traffic — each plugin is briefly off while its test request runs.',
@@ -757,7 +765,15 @@ function cb_op_conflict_scan( $args ) {
 	);
 }
 
+/** Run a tool and record the call, so the dashboard can show what happened. */
 function cb_run_tool( $name, $args ) {
+	$started = microtime( true );
+	$res     = cb_run_tool_dispatch( $name, $args );
+	cb_activity_record( $name, ! is_wp_error( $res ), (int) round( ( microtime( true ) - $started ) * 1000 ) );
+	return $res;
+}
+
+function cb_run_tool_dispatch( $name, $args ) {
 	foreach ( cb_tools() as $t ) {
 		if ( $t['name'] === $name ) {
 			if ( isset( $t['rest'] ) ) {
@@ -1060,6 +1076,7 @@ add_action( 'rest_api_init', function () {
 		'methods'             => 'POST',
 		'permission_callback' => 'cb_rest_permission',
 		'callback'            => function ( $req ) {
+			cb_activity_channel( 'rest' );
 			$res = cb_run_tool( $req['name'], (array) $req->get_json_params() );
 			if ( is_wp_error( $res ) ) {
 				return new WP_REST_Response( array( 'error' => $res->get_error_message() ), 400 );
@@ -1458,6 +1475,7 @@ function cb_mcp_dispatch( $body ) {
 		case 'tools/call':
 			$name = isset( $params['name'] ) ? $params['name'] : '';
 			$args = isset( $params['arguments'] ) ? (array) $params['arguments'] : array();
+			cb_activity_channel( 'mcp' );
 			$res  = cb_run_tool( $name, $args );
 			if ( is_wp_error( $res ) ) {
 				return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array( 'isError' => true, 'content' => array( array( 'type' => 'text', 'text' => $res->get_error_message() ) ) ) );
@@ -2029,6 +2047,12 @@ add_action( 'admin_init', function () {
 			cb_connector_register();
 		}
 	}
+	if ( isset( $_POST['cb_activity_save'] ) && check_admin_referer( 'cb_activity' ) && current_user_can( 'manage_options' ) ) {
+		update_option( CB_ACTIVITY_OPTION_ON, empty( $_POST['cb_activity_on'] ) ? '0' : '1', false );
+		if ( ! empty( $_POST['cb_activity_clear'] ) ) {
+			cb_activity_clear();
+		}
+	}
 } );
 
 function cb_settings_page() {
@@ -2061,6 +2085,10 @@ function cb_settings_page() {
 		<h2 style="margin-top:24px">Bundled WordPress skills</h2>
 		<p>This plugin ships <b><?php echo count( cb_skill_list() ); ?></b> WordPress engineering skills. The connected model lists them with the <code>list_wp_skills</code> tool and loads any one with <code>get_wp_skill</code> — also exposed as MCP <b>resources</b> and <b>prompts</b>. No setup required.</p>
 		<p class="description"><?php echo esc_html( implode( ', ', wp_list_pluck( cb_skill_list(), 'name' ) ) ); ?></p>
+
+		<h2 style="margin-top:24px">📕 Cookbook</h2>
+		<p>The plugin ships <b><?php echo count( cb_cookbook_recipes() ); ?></b> ready-to-paste recipes — the jobs people actually hand to an AI on a WordPress site, each written for the tools above. The ones that fit this site's stack also show on your <b>Dashboard</b>. The connected model can read them itself with <code>list_recipes</code> and <code>get_recipe</code>.</p>
+		<p><a href="<?php echo esc_url( cb_cookbook_url() ); ?>" class="button">Browse the cookbook</a></p>
 
 		<h2 style="margin-top:24px">Connection modes (built-in fallback)</h2>
 		<p>All endpoints below speak the same MCP protocol and accept the same token. If a host, security plugin, or proxy blocks one, point Claude at another:</p>
@@ -2110,6 +2138,1180 @@ function cb_settings_page() {
 			</table>
 			<?php submit_button( 'Save connector settings' ); ?>
 		</form>
+
+		<hr style="margin:28px 0">
+		<h2 id="cb-activity">📓 Activity log <span style="font-size:12px;color:#888">— the last <?php echo (int) CB_ACTIVITY_MAX; ?> tool calls</span></h2>
+		<?php
+		$cb_last = cb_last_seen();
+		$cb_log  = cb_activity_entries();
+		?>
+		<p>Last authorized call: <b><?php echo $cb_last ? esc_html( cb_time_ago( $cb_last ) . ' (' . wp_date( 'Y-m-d H:i', $cb_last ) . ')' ) : 'never'; ?></b>.</p>
+		<?php if ( $cb_log ) : ?>
+			<table class="widefat striped" style="max-width:820px">
+				<thead><tr><th>When</th><th>Call</th><th>Result</th><th style="text-align:right">Took</th></tr></thead>
+				<tbody>
+				<?php foreach ( $cb_log as $cb_e ) : ?>
+					<tr>
+						<td style="white-space:nowrap"><?php echo esc_html( wp_date( 'Y-m-d H:i:s', $cb_e['t'] ) ); ?></td>
+						<td><code style="font-size:12px"><?php echo esc_html( cb_activity_label( $cb_e ) ); ?></code></td>
+						<td><?php echo empty( $cb_e['ok'] ) ? '<span style="color:#b32d2e">error</span>' : 'ok'; ?></td>
+						<td style="text-align:right"><?php echo (int) $cb_e['ms']; ?> ms</td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php else : ?>
+			<p class="description">Nothing logged yet — the log fills up as Claude works on this site.</p>
+		<?php endif; ?>
+		<form method="post" style="margin-top:12px"><?php wp_nonce_field( 'cb_activity' ); ?>
+			<input type="hidden" name="cb_activity_save" value="1">
+			<p><label><input type="checkbox" name="cb_activity_on" value="1" <?php checked( cb_activity_enabled() ); ?>> Log tool calls (tool name, transport, result and duration — never arguments or content)</label></p>
+			<p><label><input type="checkbox" name="cb_activity_clear" value="1"> Clear the log now</label></p>
+			<?php submit_button( 'Save log settings', 'secondary' ); ?>
+		</form>
+	</div>
+	<?php
+}
+
+/* ============================================================================
+ * 9. ACTIVITY LOG
+ * A tiny ring buffer of what the connected model actually did on this site,
+ * so the dashboard widget can show "Connected · active 2 hours ago" and the
+ * last few calls. Stored in one non-autoloaded option; never grows.
+ * ========================================================================== */
+
+/** Is call logging on? (Option, default on.) */
+function cb_activity_enabled() {
+	return get_option( CB_ACTIVITY_OPTION_ON, '1' ) === '1';
+}
+
+/** Get (or set) the transport the current call arrived on: rest | mcp. */
+function cb_activity_channel( $set = null ) {
+	static $channel = 'rest';
+	if ( $set !== null ) {
+		$channel = $set;
+	}
+	return $channel;
+}
+
+/** Record one tool call. Keeps the newest CB_ACTIVITY_MAX entries. */
+function cb_activity_record( $tool, $ok, $ms ) {
+	// "Last seen" only needs minute accuracy — don't write it on every call.
+	$now = time();
+	if ( $now - cb_last_seen() > MINUTE_IN_SECONDS ) {
+		update_option( CB_LASTSEEN_OPTION, $now, false );
+	}
+	if ( ! cb_activity_enabled() ) {
+		return;
+	}
+	$log = get_option( CB_ACTIVITY_OPTION, array() );
+	if ( ! is_array( $log ) ) {
+		$log = array();
+	}
+	array_unshift( $log, array(
+		't'    => $now,
+		'tool' => (string) $tool,
+		'ch'   => cb_activity_channel(),
+		'ok'   => $ok ? 1 : 0,
+		'ms'   => (int) $ms,
+	) );
+	if ( count( $log ) > CB_ACTIVITY_MAX ) {
+		$log = array_slice( $log, 0, CB_ACTIVITY_MAX );
+	}
+	update_option( CB_ACTIVITY_OPTION, $log, false );
+}
+
+/** Newest-first log entries. */
+function cb_activity_entries( $limit = 0 ) {
+	$log = get_option( CB_ACTIVITY_OPTION, array() );
+	if ( ! is_array( $log ) ) {
+		return array();
+	}
+	return $limit > 0 ? array_slice( $log, 0, $limit ) : $log;
+}
+
+function cb_activity_clear() {
+	update_option( CB_ACTIVITY_OPTION, array(), false );
+}
+
+/** Unix time of the last authorized call, or 0 if this site was never driven. */
+function cb_last_seen() {
+	return (int) get_option( CB_LASTSEEN_OPTION, 0 );
+}
+
+/** Render one entry the way it looked on the wire. */
+function cb_activity_label( $entry ) {
+	$tool = isset( $entry['tool'] ) ? $entry['tool'] : '?';
+	$ch   = isset( $entry['ch'] ) ? $entry['ch'] : 'rest';
+	if ( $ch === 'mcp' ) {
+		return 'MCP tools/call → ' . $tool;
+	}
+	return 'POST /claude-bridge/v1/tool/' . $tool;
+}
+
+/* ============================================================================
+ * 10. COOKBOOK
+ * A library of ready-to-paste prompts — "recipes" — for the things people
+ * actually ask an AI to do on a WordPress site. Each recipe knows which
+ * stack it needs (WooCommerce, Elementor, a block theme…), so the dashboard
+ * widget can surface the ones that fit THIS site.
+ * ========================================================================== */
+
+/** What this site is built on — the keys recipes match against. */
+function cb_site_stack() {
+	static $stack = null;
+	if ( $stack !== null ) {
+		return $stack;
+	}
+	$active = (array) get_option( 'active_plugins', array() );
+	if ( is_multisite() ) {
+		$active = array_merge( $active, array_keys( (array) get_site_option( 'active_sitewide_plugins', array() ) ) );
+	}
+	$has = function ( $needles ) use ( $active ) {
+		foreach ( (array) $needles as $n ) {
+			foreach ( $active as $p ) {
+				if ( strpos( $p, $n ) === 0 ) {
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+
+	$stack = array();
+	if ( $has( 'woocommerce/' ) || class_exists( 'WooCommerce' ) ) {
+		$stack[] = 'woocommerce';
+	}
+	if ( $has( array( 'elementor/', 'elementor-pro/' ) ) || did_action( 'elementor/loaded' ) ) {
+		$stack[] = 'elementor';
+	}
+	if ( $has( array( 'seo-by-rank-math/', 'wordpress-seo/', 'all-in-one-seo-pack/', 'wp-seopress/' ) ) ) {
+		$stack[] = 'seo';
+	}
+	if ( $has( array( 'advanced-custom-fields/', 'advanced-custom-fields-pro/', 'secure-custom-fields/' ) ) || class_exists( 'ACF' ) ) {
+		$stack[] = 'acf';
+	}
+	if ( $has( array( 'contact-form-7/', 'wpforms-lite/', 'wpforms/', 'gravityforms/', 'fluentform/' ) ) ) {
+		$stack[] = 'forms';
+	}
+	if ( $has( array( 'litespeed-cache/', 'wp-rocket/', 'w3-total-cache/', 'wp-super-cache/', 'wp-fastest-cache/' ) ) ) {
+		$stack[] = 'cache';
+	}
+	if ( function_exists( 'wp_is_block_theme' ) && wp_is_block_theme() ) {
+		$stack[] = 'block-theme';
+	} else {
+		$stack[] = 'classic-theme';
+	}
+	if ( is_multisite() ) {
+		$stack[] = 'multisite';
+	}
+	return $stack;
+}
+
+/** Human labels for the stack keys, used on recipe cards. */
+function cb_stack_labels() {
+	return array(
+		'woocommerce'   => 'WooCommerce',
+		'elementor'     => 'Elementor',
+		'seo'           => 'SEO plugin',
+		'acf'           => 'ACF',
+		'forms'         => 'Forms',
+		'cache'         => 'Caching plugin',
+		'block-theme'   => 'Block theme',
+		'classic-theme' => 'Classic theme',
+		'multisite'     => 'Multisite',
+	);
+}
+
+/**
+ * The cookbook itself.
+ *
+ * id       — stable slug, also the anchor on the cookbook page
+ * title    — what the recipe does
+ * tags     — browsing/filtering labels
+ * requires — stack keys; the recipe is offered when the site has ANY of them.
+ *            Empty means it fits every site.
+ * time     — rough wall-clock estimate
+ * summary  — one line, shown on the card
+ * prompt   — the thing you paste into Claude; [brackets] are yours to fill in
+ * tools    — bridge tools the model will reach for
+ */
+function cb_cookbook_recipes() {
+	$r = array();
+
+	/* ---- Security, health, troubleshooting ------------------------------ */
+
+	$r[] = array(
+		'id'       => 'security-audit',
+		'title'    => 'Run a Security Audit and Fix What It Finds',
+		'tags'     => array( 'Security', 'Code review' ),
+		'requires' => array(),
+		'time'     => '20–40 min',
+		'summary'  => 'Review every custom theme and plugin file for the vulnerabilities that actually get sites hacked, then patch them one at a time.',
+		'tools'    => array( 'list_wp_skills', 'get_wp_skill', 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
+		'prompt'   => 'Audit this WordPress site for security problems in the code we control.
+
+1. Load the bundled wp-security-review skill (list_wp_skills, then get_wp_skill) and follow it.
+2. Scope: the active theme plus these custom plugins: [plugin folder names, or "every plugin not from wordpress.org"]. Skip well-known third-party plugins.
+3. Look for missing capability checks, missing nonces on form/AJAX/REST handlers, unescaped output, unsanitized input, direct SQL without $wpdb->prepare, unrestricted file uploads, and anything using eval/unserialize on user input.
+4. Report findings first, ranked by how exploitable they are, with file:line and a one-line proof of how it would be abused. Do not change anything yet.
+5. Then fix them one file at a time, showing me the diff before each edit, starting with the worst.
+
+Do not touch wp-config.php or core files.',
+	);
+
+	$r[] = array(
+		'id'       => 'white-screen',
+		'title'    => 'Track Down the Plugin Breaking a Page',
+		'tags'     => array( 'Troubleshooting', 'Plugins' ),
+		'requires' => array(),
+		'time'     => '5–15 min',
+		'summary'  => 'A page is white, fatal, or "critical error". Bisect the active plugins automatically and name the culprit.',
+		'tools'    => array( 'conflict_scan', 'render_page', 'site_info', 'read_file' ),
+		'prompt'   => 'This page is broken: [full URL of the broken page]. It shows [white screen / "There has been a critical error" / wrong layout].
+
+Use the conflict_scan tool on that URL to find which active plugin causes it. Skip these plugins so the shop keeps working during the scan: [comma-separated plugin files, or "none"]. Run it now — I understand each plugin is briefly off during its own test.
+
+When you have the culprit: explain what it collides with, check the debug log if one is readable, and propose the smallest safe fix (a snippet, a version pin, or a replacement plugin). Ask me before deactivating anything permanently.',
+	);
+
+	$r[] = array(
+		'id'       => 'speed-audit',
+		'title'    => 'Find What Is Actually Making This Site Slow',
+		'tags'     => array( 'Performance' ),
+		'requires' => array(),
+		'time'     => '20–40 min',
+		'summary'  => 'Hunt down slow queries, uncached loops, autoloaded option bloat and render-blocking assets — then fix the top offenders.',
+		'tools'    => array( 'get_wp_skill', 'db_query', 'read_file', 'edit_file', 'render_page', 'flush_cache' ),
+		'prompt'   => 'Find out why [page URL, e.g. the shop or homepage] is slow, and fix the top three causes.
+
+1. Load the bundled wp-performance-review skill and follow it.
+2. Check the size of autoloaded options with db_query (sum of option data where autoload = yes, plus the ten biggest rows) and tell me what is bloating it.
+3. Read the active theme and our custom plugins for the classic offenders: queries inside loops, posts_per_page => -1, meta_query without an index, uncached remote requests, get_option in a loop, missing transients.
+4. Render the page and list render-blocking scripts and styles that are loaded site-wide but only used on one template.
+5. Report findings ranked by expected impact, then fix the top three, showing me each diff first. Flush caches when done.',
+	);
+
+	$r[] = array(
+		'id'       => 'plugin-bloat',
+		'title'    => 'Audit Plugin Bloat and Retire the Dead Weight',
+		'tags'     => array( 'Maintenance', 'Plugins' ),
+		'requires' => array(),
+		'time'     => '15–30 min',
+		'summary'  => 'Inventory every plugin, flag the abandoned and the redundant, and lay out a safe removal order.',
+		'tools'    => array( 'list_plugins', 'site_info', 'db_query', 'set_plugin_state' ),
+		'prompt'   => 'Give me an honest inventory of the plugins on this site.
+
+List every installed plugin with version and active state. For each one tell me: what it does here, whether anything on the site still uses it, whether two plugins overlap (two SEO plugins, three caching plugins, four form plugins), and which look abandoned or superseded by core.
+
+Then give me a removal plan in a safe order — deactivate first, what to watch after each removal, and what data each one leaves behind in the database. Do not deactivate or delete anything until I confirm the list.',
+	);
+
+	$r[] = array(
+		'id'       => 'user-audit',
+		'title'    => 'Audit Users, Roles and Admin Access',
+		'tags'     => array( 'Security', 'Users' ),
+		'requires' => array(),
+		'time'     => '10–20 min',
+		'summary'  => 'Find stale administrators, unexpected role grants and accounts nobody remembers creating.',
+		'tools'    => array( 'list_users', 'get_users', 'db_query', 'update_users' ),
+		'prompt'   => 'Audit who can get into this site.
+
+List every user with the administrator or editor role, when they last posted, and their registration date. Use db_query to check usermeta for capability grants that do not match a normal role, and flag any account whose email domain is not [our domain].
+
+Give me a table of "keep / downgrade / remove", with a reason per row. Do not change any account until I approve the table — then apply exactly what I approve.',
+	);
+
+	$r[] = array(
+		'id'       => 'health-report',
+		'title'    => 'Weekly Site Health Report',
+		'tags'     => array( 'Reporting', 'Maintenance' ),
+		'requires' => array(),
+		'time'     => '5–10 min',
+		'summary'  => 'One readable status page: versions, content counts, pending updates, database weight and anything that changed.',
+		'tools'    => array( 'site_info', 'count_posts', 'count_terms', 'list_plugins', 'db_query', 'list_comments' ),
+		'prompt'   => 'Write me a site health report for this WordPress install, in plain language, as a short markdown document.
+
+Cover: WordPress and PHP versions, active theme, how many plugins are active vs installed and which are outdated, content counts by post type and status, pending comments and spam, the ten largest database tables, total autoloaded option size, and the last few things changed on the site.
+
+End with a "what I would do this week" section: at most five concrete items, ordered by value. No filler.',
+	);
+
+	/* ---- Building things ------------------------------------------------- */
+
+	$r[] = array(
+		'id'       => 'build-plugin',
+		'title'    => 'Turn a Plain-English Spec into a Real Plugin',
+		'tags'     => array( 'Development', 'Plugins' ),
+		'requires' => array(),
+		'time'     => '30–60 min',
+		'summary'  => 'Describe the behaviour you want; get a properly structured, escaped, nonce-checked plugin scaffolded and activated on the site.',
+		'tools'    => array( 'get_wp_skill', 'create_plugin', 'write_file', 'edit_file', 'set_plugin_state' ),
+		'prompt'   => 'Build me a small WordPress plugin on this site.
+
+What it should do: [describe the behaviour in plain language — e.g. "add a Delivery Date field to the checkout, store it on the order, show it in the admin order screen and in the order confirmation email"].
+
+Rules:
+- Load the bundled wp-plugin-development skill first and follow its structure and naming conventions.
+- Prefix everything with [your prefix], text domain [your-text-domain].
+- Escape all output, sanitize all input, check capabilities and nonces on every write path.
+- Scaffold with create_plugin, then write the real files. Show me the plan and the file list before you write code.
+- Activate it when it is done and tell me exactly how to test it.',
+	);
+
+	$r[] = array(
+		'id'       => 'rest-endpoint',
+		'title'    => 'Add a Custom REST Endpoint the Right Way',
+		'tags'     => array( 'Development', 'REST API' ),
+		'requires' => array(),
+		'time'     => '20–40 min',
+		'summary'  => 'A registered route with a real permission callback, an argument schema, and a response shape that will not drift.',
+		'tools'    => array( 'get_wp_skill', 'write_file', 'edit_file', 'wp_rest' ),
+		'prompt'   => 'Add a REST endpoint to this site.
+
+Route: [namespace/v1/thing]. It should [what it returns or accepts]. Who may call it: [logged-out / logged-in / a specific capability].
+
+Load the bundled wp-rest-api-development skill first and follow it. I want a real permission_callback (never __return_true unless the data is genuinely public and you say so out loud), an args schema with sanitize and validate callbacks, and a documented response shape.
+
+Put it in [existing plugin folder, or scaffold a new one]. When it is live, call it through the bridge and show me the actual response.',
+	);
+
+	$r[] = array(
+		'id'       => 'child-theme',
+		'title'    => 'Restyle the Site Safely with a Child Theme',
+		'tags'     => array( 'Theme', 'Design' ),
+		'requires' => array(),
+		'time'     => '20–40 min',
+		'summary'  => 'Move custom CSS and template overrides out of the parent theme so the next update stops eating your work.',
+		'tools'    => array( 'list_themes', 'list_files', 'read_file', 'write_file', 'preview_url', 'activate_theme' ),
+		'prompt'   => 'Set up a proper child theme for the active theme on this site, then move my customizations into it.
+
+1. Create the child theme (style.css header, functions.php enqueueing the parent stylesheet correctly, screenshot optional).
+2. Find customizations that currently live in the parent theme or in Additional CSS and move them across, template overrides included.
+3. Then make this design change: [describe the change — colors, spacing, header layout, fonts].
+4. Give me a preview URL of the child theme before activating anything. I will tell you when to activate.',
+	);
+
+	$r[] = array(
+		'id'       => 'preview-before-publish',
+		'title'    => 'Redesign a Theme and Preview It Before Publishing',
+		'tags'     => array( 'Theme', 'Design' ),
+		'requires' => array(),
+		'time'     => '30–60 min',
+		'summary'  => 'Work on an inactive theme, look at it through a tokened preview URL, and only publish when it is right.',
+		'tools'    => array( 'list_themes', 'read_file', 'write_file', 'edit_file', 'preview_url', 'render_page', 'activate_theme' ),
+		'prompt'   => 'Redesign [theme slug] without touching the live site.
+
+The theme is installed but not active. Work directly in its files, then give me a preview_url so I can see it while visitors still get the current design.
+
+The brief: [what should change — "make it feel like [reference site]", brand colors [hex codes], the header should [ … ]].
+
+Iterate with me on the preview. Render the page yourself between changes to check you did not break the layout. Only activate the theme when I say so.',
+	);
+
+	$r[] = array(
+		'id'       => 'landing-page',
+		'title'    => 'Build a Landing Page from a Brief',
+		'tags'     => array( 'Content', 'Design' ),
+		'requires' => array(),
+		'time'     => '20–40 min',
+		'summary'  => 'One paragraph of intent in, a complete published page with real sections and internal links out.',
+		'tools'    => array( 'create_pages', 'update_pages', 'list_pages', 'upload_media_from_url', 'render_page' ),
+		'prompt'   => 'Build a landing page on this site.
+
+Goal: [what the page must get people to do]. Audience: [who they are]. Offer: [what we are selling or giving away]. Tone: [how it should read].
+
+Structure it as hero, problem, solution, proof, objections, call to action — adapt if something else fits better and tell me why. Match the existing site voice: read two or three published pages first.
+
+Create it as a draft at [/slug], link it from [where], and give me the preview link. Do not publish until I approve.',
+	);
+
+	$r[] = array(
+		'id'       => 'navigation-rebuild',
+		'title'    => 'Rebuild the Site Navigation',
+		'tags'     => array( 'Content', 'UX' ),
+		'requires' => array(),
+		'time'     => '15–30 min',
+		'summary'  => 'Audit the menus against what the site actually contains, then rebuild them so people can find things.',
+		'tools'    => array( 'list_menus', 'list_menu_items', 'create_menu_items', 'update_menu_items', 'delete_menu_items', 'list_pages' ),
+		'prompt'   => 'Fix this site\'s navigation.
+
+List every menu and every menu item, and cross-check against the published pages and post types. Tell me which items point at missing or redirected pages, which important pages are unreachable from the menu, and where the hierarchy is confusing.
+
+Then propose a new structure for [menu name] — maximum [number] top-level items — and once I approve it, build it. Keep the old menu intact until the new one is live.',
+	);
+
+	/* ---- Content, media, SEO --------------------------------------------- */
+
+	$r[] = array(
+		'id'       => 'alt-text-sweep',
+		'title'    => 'Fill In Every Missing Image Alt Text',
+		'tags'     => array( 'Media', 'Accessibility', 'SEO' ),
+		'requires' => array(),
+		'time'     => '15–30 min',
+		'summary'  => 'Find media items with no alt text, write descriptive alternatives that fit the page they are used on, and save them.',
+		'tools'    => array( 'list_media', 'get_media', 'update_media', 'db_query', 'get_meta', 'update_meta' ),
+		'prompt'   => 'Fix the missing image alt text on this site.
+
+Find attachments with an empty _wp_attachment_image_alt. For each one, look at the filename, caption and the post it is attached to, then write an alt text that describes what is in the image for someone who cannot see it — not a keyword list, and no "image of".
+
+Do the first ten, show me the before/after table, and wait for my go-ahead before doing the rest. Skip purely decorative images and tell me which ones you skipped.',
+	);
+
+	$r[] = array(
+		'id'       => 'content-calendar',
+		'title'    => 'Draft and Schedule a Month of Posts',
+		'tags'     => array( 'Content' ),
+		'requires' => array(),
+		'time'     => '30–60 min',
+		'summary'  => 'Turn a list of topics into scheduled drafts with categories, tags, excerpts and internal links already in place.',
+		'tools'    => array( 'list_posts', 'create_posts', 'update_posts', 'list_categories', 'create_tags' ),
+		'prompt'   => 'Plan and draft a month of posts for this site.
+
+Topics: [list them, or say "propose them from what already ranks here"]. Publishing rhythm: [e.g. every Tuesday and Thursday at 09:00]. Length: [words]. Voice: read the five most recent published posts and match them.
+
+For each post: a working title, an excerpt, the right existing category (do not invent new ones without asking), tags, and two or three internal links to relevant existing posts. Create them as scheduled drafts. Give me the calendar as a table when you are done.',
+	);
+
+	$r[] = array(
+		'id'       => 'bulk-find-replace',
+		'title'    => 'Bulk Find-and-Replace Across Posts and Pages',
+		'tags'     => array( 'Content', 'Maintenance' ),
+		'requires' => array(),
+		'time'     => '10–20 min',
+		'summary'  => 'Change a name, a URL or a phone number everywhere it appears — with a dry run first and revisions to fall back on.',
+		'tools'    => array( 'search', 'db_query', 'get_posts', 'update_posts', 'list_revisions', 'restore_revision' ),
+		'prompt'   => 'Replace [old text] with [new text] across this site\'s content.
+
+First, a dry run: use search and db_query to show me every post, page and custom post type item that contains it, with the surrounding sentence, and count them. Include post content, excerpts and titles. Flag anything inside a shortcode, a block attribute or a URL, because those need care.
+
+After I approve the list, apply the change post by post so WordPress records a revision each time, and give me the list of edited IDs so we can roll back.',
+	);
+
+	$r[] = array(
+		'id'       => 'media-cleanup',
+		'title'    => 'Spring-Clean the Media Library',
+		'tags'     => array( 'Media', 'Performance' ),
+		'requires' => array(),
+		'time'     => '20–40 min',
+		'summary'  => 'Find oversized, duplicated and completely unused uploads, and get the disk back without breaking a page.',
+		'tools'    => array( 'list_media', 'db_query', 'delete_media', 'get_posts' ),
+		'prompt'   => 'Clean up the media library on this site.
+
+Report, do not delete yet: the 30 largest files with their dimensions, images wider than 2500px that are only ever displayed small, obvious duplicates (same name with -1, -2 suffixes), and attachments that no post, page, meta field or theme option references.
+
+For the unused list, be conservative and say how you checked. Then propose what to delete and what to regenerate at a sane size. I will approve in batches.',
+	);
+
+	$r[] = array(
+		'id'       => 'broken-links',
+		'title'    => 'Find Broken Links and Fix the 404s',
+		'tags'     => array( 'SEO', 'Maintenance' ),
+		'requires' => array(),
+		'time'     => '20–40 min',
+		'summary'  => 'Crawl your own content for dead internal links, missing images and old URLs, then repair or redirect them.',
+		'tools'    => array( 'db_query', 'search', 'get_posts', 'update_posts', 'render_page', 'preview_url' ),
+		'prompt'   => 'Find and fix broken links on this site.
+
+Pull every internal link and image URL out of published content, check which ones resolve, and give me a table of broken targets with the posts that link to them.
+
+For each broken link, propose the fix: the correct current URL, a redirect, or removal. Apply the ones I approve, editing the content directly. List anything that needs a redirect rule I have to add at the server or plugin level.',
+	);
+
+	$r[] = array(
+		'id'       => 'accessibility-pass',
+		'title'    => 'Accessibility Pass on the Templates People Actually Use',
+		'tags'     => array( 'Accessibility', 'Theme' ),
+		'requires' => array(),
+		'time'     => '30–60 min',
+		'summary'  => 'Keyboard traps, unlabelled controls, heading order and focus states — reviewed in the markup and fixed at the source.',
+		'tools'    => array( 'get_wp_skill', 'render_page', 'read_file', 'edit_file' ),
+		'prompt'   => 'Do an accessibility pass on this site.
+
+Load the bundled wp-accessibility-review skill and follow it. Templates to review: [homepage, single post, the main archive, checkout — adjust to this site].
+
+Render each one and check the real markup: heading order, landmarks, form labels, alt text, focus styles, keyboard operability of menus and modals, ARIA that contradicts the element it sits on, and controls that are only reachable with a mouse.
+
+Report issues grouped by template with the offending markup, then fix them in the theme files, showing me each diff. Do not add an accessibility overlay.',
+	);
+
+	/* ---- Stack-specific: block themes ------------------------------------ */
+
+	$r[] = array(
+		'id'       => 'theme-json-rebrand',
+		'title'    => 'Rebrand the Whole Site from theme.json',
+		'tags'     => array( 'Block theme', 'Design' ),
+		'requires' => array( 'block-theme' ),
+		'time'     => '20–40 min',
+		'summary'  => 'Set real design tokens once — palette, type scale, spacing — instead of sprinkling CSS overrides everywhere.',
+		'tools'    => array( 'get_wp_skill', 'read_file', 'write_file', 'edit_file', 'render_page' ),
+		'prompt'   => 'Rebrand this block theme through theme.json instead of custom CSS.
+
+Brand colors: [hex codes and what each is for]. Heading font: [font]. Body font: [font]. Feel: [tight and technical / soft and editorial / …].
+
+Load the bundled wp-theme-development skill first. Read the current theme.json, then set the palette, gradients, font families and sizes, and spacing scale as proper presets. Replace hardcoded colors and font sizes in templates and CSS with the presets you just defined.
+
+Work in a child theme if the active theme is from wordpress.org. Render the homepage and a single post before and after, and tell me what still needs manual attention.',
+	);
+
+	$r[] = array(
+		'id'       => 'reusable-pattern',
+		'title'    => 'Turn a Page Section into a Reusable Pattern',
+		'tags'     => array( 'Block theme', 'Content' ),
+		'requires' => array( 'block-theme' ),
+		'time'     => '15–30 min',
+		'summary'  => 'Stop rebuilding the same call-to-action by hand: register it as a real pattern editors can drop in.',
+		'tools'    => array( 'get_pages', 'get_posts', 'write_file', 'list_blocks', 'create_blocks' ),
+		'prompt'   => 'Turn the [name the section — e.g. "book a call" band at the bottom of the services page] into a reusable block pattern.
+
+Read the block markup from [page URL or ID], clean it up (no leftover inline styles, use theme.json presets, keep it responsive), and register it as a pattern in the active theme with a sensible title, category and keywords.
+
+Then show me which existing pages contain a hand-built copy of that section, so I can decide whether to swap them over.',
+	);
+
+	/* ---- Stack-specific: classic themes ---------------------------------- */
+
+	$r[] = array(
+		'id'       => 'classic-to-block',
+		'title'    => 'Plan the Move from a Classic Theme to a Block Theme',
+		'tags'     => array( 'Theme', 'Migration' ),
+		'requires' => array( 'classic-theme' ),
+		'time'     => '30–60 min',
+		'summary'  => 'An honest inventory of what a full-site-editing migration would cost here, before anyone commits to it.',
+		'tools'    => array( 'get_wp_skill', 'list_themes', 'list_files', 'read_file', 'site_info' ),
+		'prompt'   => 'Tell me what it would really take to move this site from its classic theme to a block theme.
+
+Load the bundled wp-theme-development skill. Then inventory the active theme: template files and what each does, custom template tags, widget areas, menus, customizer settings, shortcodes, custom post types tied to templates, and anything that depends on the loop being classic.
+
+Give me a migration plan in phases with an effort estimate per phase, what breaks if we do nothing, and what could move to a hybrid setup first. Be blunt about the parts that are not worth migrating. Do not change anything yet.',
+	);
+
+	/* ---- Stack-specific: WooCommerce ------------------------------------- */
+
+	$r[] = array(
+		'id'       => 'woo-noindex-categories',
+		'title'    => 'Bulk Noindex WooCommerce Product Categories',
+		'tags'     => array( 'WooCommerce', 'SEO' ),
+		'requires' => array( 'woocommerce' ),
+		'time'     => '10–20 min',
+		'summary'  => 'Thin and duplicate category archives quietly eat your crawl budget. Mark the right ones noindex in one pass.',
+		'tools'    => array( 'list_product_categories', 'get_meta', 'update_meta', 'db_query', 'count_terms' ),
+		'prompt'   => 'Set the right WooCommerce product categories to noindex.
+
+List every product category with its product count, whether it has a description, and its current index setting from the SEO plugin\'s term meta. Recommend noindex for: categories with fewer than [number] products, categories with no description, and [any other rule you want].
+
+Show me the table with your recommendation per category first. After I approve, write the noindex term meta for exactly the approved ones and confirm what changed. Do not touch categories that receive traffic — flag those instead.',
+	);
+
+	$r[] = array(
+		'id'       => 'woo-low-stock',
+		'title'    => 'Low-Stock Report and Restock Plan',
+		'tags'     => array( 'WooCommerce', 'Reporting' ),
+		'requires' => array( 'woocommerce' ),
+		'time'     => '10–20 min',
+		'summary'  => 'What is nearly out, what sells fastest, and what to order first — from the real order data.',
+		'tools'    => array( 'list_products', 'get_products', 'list_orders', 'db_query', 'update_products' ),
+		'prompt'   => 'Give me a restock plan for this shop.
+
+List products at or below their low-stock threshold, and for each one work out how many units sold in the last [30/60/90] days from completed orders, so I can see how long the remaining stock lasts.
+
+Sort by urgency (days of cover remaining, revenue at risk). Include out-of-stock products that still get orders attempted. Present it as a table I can hand to a supplier. Do not change any stock levels.',
+	);
+
+	$r[] = array(
+		'id'       => 'woo-sale',
+		'title'    => 'Launch a Seasonal Sale: Coupons and Scheduled Prices',
+		'tags'     => array( 'WooCommerce', 'Marketing' ),
+		'requires' => array( 'woocommerce' ),
+		'time'     => '20–40 min',
+		'summary'  => 'Set sale prices with real start and end dates, generate the coupons, and check nothing sells below cost.',
+		'tools'    => array( 'list_products', 'update_products', 'create_coupons', 'list_coupons', 'create_pages' ),
+		'prompt'   => 'Set up a [occasion] sale on this shop.
+
+Scope: [which categories or products]. Discount: [percentage or amount]. Runs from [date] to [date].
+
+1. Show me the affected products with current price, proposed sale price, and margin if cost data exists. Flag anything that would sell at a loss.
+2. After I approve, set scheduled sale prices with the exact start and end dates so they expire on their own.
+3. Create a coupon: code [CODE], [restrictions — minimum spend, one per customer, excluded categories].
+4. Draft a sale landing page listing the discounted products, and tell me what to check on the day the sale ends.',
+	);
+
+	$r[] = array(
+		'id'       => 'woo-failed-orders',
+		'title'    => 'Investigate Failed and Stuck Orders',
+		'tags'     => array( 'WooCommerce', 'Troubleshooting' ),
+		'requires' => array( 'woocommerce' ),
+		'time'     => '15–30 min',
+		'summary'  => 'Money that never arrived: group the failures by cause, and separate the payment problems from the site problems.',
+		'tools'    => array( 'list_orders', 'get_orders', 'db_query', 'get_meta', 'render_page' ),
+		'prompt'   => 'Work out why orders are failing on this shop.
+
+Pull orders with status failed, pending or on-hold from the last [30] days. Group them by payment method, error note, product, country and total value, and tell me which pattern accounts for most of the lost revenue.
+
+Separate gateway declines (the customer\'s bank) from site-side failures (fatal errors, timeouts, a plugin conflict at checkout). For the site-side ones, dig into the order notes and reproduce what you can. Give me the top three causes and the fix for each.',
+	);
+
+	$r[] = array(
+		'id'       => 'woo-product-copy',
+		'title'    => 'Rewrite Thin Product Descriptions',
+		'tags'     => array( 'WooCommerce', 'Content', 'SEO' ),
+		'requires' => array( 'woocommerce' ),
+		'time'     => '30–60 min',
+		'summary'  => 'Find products with copy pasted from the manufacturer or no copy at all, and give them something worth reading.',
+		'tools'    => array( 'list_products', 'get_products', 'update_products', 'db_query' ),
+		'prompt'   => 'Improve the product copy in this shop.
+
+Find products whose description is empty, under [80] words, or identical to another product\'s. Start with the [20] that sell best.
+
+For each: a short description that leads with the benefit and the one fact that decides the purchase, and a long description covering what it is, who it is for, specifications, and what is in the box. Keep our voice — read three of the best existing descriptions first. Never invent specifications; if you need a fact I have not given you, leave a clearly marked [TO CONFIRM].
+
+Show me the first five before continuing, then update the products.',
+	);
+
+	$r[] = array(
+		'id'       => 'woo-checkout-review',
+		'title'    => 'Review a Customized Checkout Before It Costs You Sales',
+		'tags'     => array( 'WooCommerce', 'Code review' ),
+		'requires' => array( 'woocommerce' ),
+		'time'     => '30–60 min',
+		'summary'  => 'Custom checkout code is where HPOS breakage, security holes and silent order failures hide.',
+		'tools'    => array( 'get_wp_skill', 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
+		'prompt'   => 'Review every customization we have made to the WooCommerce checkout and cart.
+
+Load the bundled wp-woocommerce-dev skill and follow it. Look in the active theme (including any woocommerce/ template overrides) and in our custom plugins.
+
+I want to know: which template overrides are outdated compared to the plugin\'s current versions, any direct post-meta access that breaks under HPOS, missing nonce or capability checks on checkout hooks, anything doing remote requests during checkout, and cart fragment abuse.
+
+Report first, with file:line and impact. Then fix in order of risk, one diff at a time.',
+	);
+
+	/* ---- Stack-specific: Elementor --------------------------------------- */
+
+	$r[] = array(
+		'id'       => 'elementor-header-footer',
+		'title'    => 'Create a Global Elementor Header and Footer',
+		'tags'     => array( 'Elementor', 'Design' ),
+		'requires' => array( 'elementor' ),
+		'time'     => '20–40 min',
+		'summary'  => 'One header and one footer applied everywhere, instead of a slightly different copy on each page.',
+		'tools'    => array( 'list_templates', 'get_templates', 'create_templates', 'list_pages', 'update_pages', 'render_page' ),
+		'prompt'   => 'Build a global header and footer for this Elementor site.
+
+First tell me what exists today: theme header/footer, Elementor templates, and any per-page overrides that would fight a global one.
+
+Header should contain: [logo, menu, phone number, call-to-action button — adjust]. Footer should contain: [columns, links, contact details, copyright].
+
+Build them as templates applied site-wide, match the existing brand colors and fonts (read them from the site, do not guess), and make sure they work on mobile. Then list the pages that still carry their own copy so I can clear them out.',
+	);
+
+	$r[] = array(
+		'id'       => 'elementor-slim-down',
+		'title'    => 'Slim Down a Bloated Elementor Page',
+		'tags'     => array( 'Elementor', 'Performance' ),
+		'requires' => array( 'elementor' ),
+		'time'     => '20–40 min',
+		'summary'  => 'Nested sections, unused widgets and five font weights: find the weight and take it out without changing the design.',
+		'tools'    => array( 'get_pages', 'db_query', 'render_page', 'list_plugins', 'flush_cache' ),
+		'prompt'   => 'Make [page URL] lighter without changing how it looks.
+
+Render it and analyze what is actually loaded: Elementor widget CSS and JS files, Google Fonts and their weights, icon libraries, images served far larger than displayed, and third-party embeds.
+
+Read the page\'s Elementor data and tell me about deeply nested sections, empty containers, widgets that are hidden on every breakpoint, and animations nobody sees. Give me a ranked list of what to remove or replace with the expected saving, then apply the ones I approve and flush the cache.',
+	);
+
+	/* ---- Stack-specific: SEO plugin, ACF, forms, multisite --------------- */
+
+	$r[] = array(
+		'id'       => 'seo-meta-sweep',
+		'title'    => 'Fix Missing SEO Titles and Meta Descriptions',
+		'tags'     => array( 'SEO', 'Content' ),
+		'requires' => array( 'seo' ),
+		'time'     => '20–40 min',
+		'summary'  => 'Every page that leaves it to the plugin default gets a written title and description that matches its content.',
+		'tools'    => array( 'db_query', 'list_posts', 'list_pages', 'get_meta', 'update_meta' ),
+		'prompt'   => 'Fill in the missing SEO titles and meta descriptions on this site.
+
+Find published posts, pages and product pages with no custom SEO title or description in the SEO plugin\'s meta (check what this site actually uses first). Start with the [30] that get the most internal links.
+
+Write a title under 60 characters and a description between 140 and 160 that reflects what is really on the page — read the content, do not pattern-match the title. No clickbait, no keyword stuffing.
+
+Show me the first ten as a table, then write the rest after I approve the style.',
+	);
+
+	$r[] = array(
+		'id'       => 'acf-content-model',
+		'title'    => 'Model a New Content Type with ACF',
+		'tags'     => array( 'ACF', 'Development' ),
+		'requires' => array( 'acf' ),
+		'time'     => '30–60 min',
+		'summary'  => 'Design the fields before building the templates, and keep the definitions in version control where they belong.',
+		'tools'    => array( 'get_wp_skill', 'list_post_types', 'write_file', 'read_file', 'list_files' ),
+		'prompt'   => 'Design and build a content type on this site: [e.g. "case studies", "team members", "properties"].
+
+Load the bundled wp-acf-and-content-modeling skill and follow it. Look at how existing post types and field groups are defined here and stay consistent.
+
+Give me the model first: post type, taxonomies, every field with its type, name, and why it exists — plus what should NOT be a field. Point out anything that will be slow to query later.
+
+After I approve the model: register the post type in a plugin (not the theme), create the field group, save it as ACF JSON in the repo, and build the template that renders it.',
+	);
+
+	$r[] = array(
+		'id'       => 'forms-review',
+		'title'    => 'Audit the Forms People Actually Submit',
+		'tags'     => array( 'Forms', 'Security' ),
+		'requires' => array( 'forms' ),
+		'time'     => '15–30 min',
+		'summary'  => 'Check that submissions arrive, that notifications work, and that the form is not leaking or storing what it should not.',
+		'tools'    => array( 'list_plugins', 'db_query', 'get_posts', 'render_page', 'get_settings' ),
+		'prompt'   => 'Audit the forms on this site.
+
+List every form, where it is embedded, where its submissions go (email, database, external service), and when it last received one. Flag forms with no recent submissions — they are usually broken, not unpopular.
+
+Check the notification addresses still exist, whether the site can send mail at all, whether spam protection is active, and whether any form stores personal data it does not need or exposes entries to the wrong role.
+
+Give me the problems with a fix for each, worst first.',
+	);
+
+	$r[] = array(
+		'id'       => 'multisite-plugin-audit',
+		'title'    => 'Network-Wide Plugin and Theme Audit',
+		'tags'     => array( 'Multisite', 'Maintenance' ),
+		'requires' => array( 'multisite' ),
+		'time'     => '20–40 min',
+		'summary'  => 'See what every site in the network is running, and where the versions have drifted apart.',
+		'tools'    => array( 'list_plugins', 'list_themes', 'db_query', 'site_info' ),
+		'prompt'   => 'Audit this multisite network.
+
+For every site: active theme, active plugins, WordPress version state, and anything network-activated but disabled locally. Show me where the drift is — plugins active on some sites and not others, themes nobody uses, sites left on abandoned plugins.
+
+Then recommend what to network-activate, what to remove, and what needs a per-site decision. Be explicit about which changes touch every site at once. Change nothing until I approve.',
+	);
+
+	/* ---- Working with the bridge itself ---------------------------------- */
+
+	$r[] = array(
+		'id'       => 'onboard-site',
+		'title'    => 'Onboard: Tell Me What This Site Even Is',
+		'tags'     => array( 'Onboarding', 'Reporting' ),
+		'requires' => array(),
+		'time'     => '10–20 min',
+		'summary'  => 'You just inherited a WordPress site. Get an orientation before you touch anything.',
+		'tools'    => array( 'get_wp_skill', 'site_info', 'list_plugins', 'list_themes', 'list_files', 'count_posts', 'db_query' ),
+		'prompt'   => 'I just inherited this WordPress site and know nothing about it. Orient me.
+
+Load the bundled wp-site-audit-and-onboarding skill and follow it.
+
+Tell me: what the site is for, what stack it runs (page builder, shop, headless, multisite, custom plugins), which code is custom and therefore ours to maintain, where the customizations live, what looks abandoned, and what would scare you if you had to deploy a change tomorrow.
+
+Finish with the three things I should look at first, and which of this cookbook\'s recipes fit this site.',
+	);
+
+	return $r;
+}
+
+/** One recipe by id, or null. */
+function cb_cookbook_recipe( $id ) {
+	foreach ( cb_cookbook_recipes() as $r ) {
+		if ( $r['id'] === $id ) {
+			return $r;
+		}
+	}
+	return null;
+}
+
+/** Every tag in the cookbook, sorted, for the filter bar. */
+function cb_cookbook_tags() {
+	$tags = array();
+	foreach ( cb_cookbook_recipes() as $r ) {
+		foreach ( $r['tags'] as $t ) {
+			$tags[ $t ] = isset( $tags[ $t ] ) ? $tags[ $t ] + 1 : 1;
+		}
+	}
+	ksort( $tags );
+	return $tags;
+}
+
+/** Does this recipe fit this site? (No requirements = fits everything.) */
+function cb_recipe_fits( $recipe, $stack = null ) {
+	if ( empty( $recipe['requires'] ) ) {
+		return true;
+	}
+	$stack = $stack === null ? cb_site_stack() : $stack;
+	return (bool) array_intersect( (array) $recipe['requires'], $stack );
+}
+
+/**
+ * The recipes to show on the dashboard: ones that need something this site
+ * actually has come first, then the universal ones. Rotates daily so the
+ * widget is not the same three cards forever.
+ */
+function cb_cookbook_picks( $count = 3 ) {
+	$stack    = cb_site_stack();
+	$specific = array();
+	$general  = array();
+	foreach ( cb_cookbook_recipes() as $r ) {
+		if ( ! cb_recipe_fits( $r, $stack ) ) {
+			continue;
+		}
+		if ( empty( $r['requires'] ) ) {
+			$general[] = $r;
+		} else {
+			$specific[] = $r;
+		}
+	}
+	// Deterministic per site per day — no randomness, so the widget is stable
+	// while you read it but different tomorrow.
+	$seed = abs( (int) floor( time() / DAY_IN_SECONDS ) + (int) sprintf( '%u', crc32( home_url() ) ) );
+	$rot  = function ( $list ) use ( $seed ) {
+		$n = count( $list );
+		if ( $n < 2 ) {
+			return $list;
+		}
+		$k = $seed % $n;
+		return array_merge( array_slice( $list, $k ), array_slice( $list, 0, $k ) );
+	};
+	$picks = array_merge( $rot( $specific ), $rot( $general ) );
+	return array_slice( $picks, 0, $count );
+}
+
+/** Admin URL of the cookbook page, optionally anchored on one recipe. */
+function cb_cookbook_url( $recipe_id = '' ) {
+	$url = admin_url( 'tools.php?page=claude-bridge-cookbook' );
+	if ( $recipe_id !== '' ) {
+		$url = add_query_arg( 'recipe', $recipe_id, $url ) . '#recipe-' . $recipe_id;
+	}
+	return $url;
+}
+
+/** What lands on the clipboard: the prompt plus a link back to the recipe. */
+function cb_recipe_clipboard( $recipe ) {
+	return $recipe['prompt'] . "\n\n— " . $recipe['title'] . ': ' . cb_cookbook_url( $recipe['id'] );
+}
+
+/** Tool op: list cookbook recipes (optionally filtered). */
+function cb_op_list_recipes( $args ) {
+	$tag   = isset( $args['tag'] ) ? strtolower( (string) $args['tag'] ) : '';
+	$q     = isset( $args['search'] ) ? strtolower( (string) $args['search'] ) : '';
+	$mine  = ! empty( $args['for_this_site'] );
+	$stack = cb_site_stack();
+	$out   = array();
+	foreach ( cb_cookbook_recipes() as $r ) {
+		if ( $mine && ! cb_recipe_fits( $r, $stack ) ) {
+			continue;
+		}
+		if ( $tag !== '' ) {
+			$hit = false;
+			foreach ( $r['tags'] as $t ) {
+				if ( strtolower( $t ) === $tag ) {
+					$hit = true;
+				}
+			}
+			if ( ! $hit ) {
+				continue;
+			}
+		}
+		if ( $q !== '' && strpos( strtolower( $r['title'] . ' ' . $r['summary'] . ' ' . implode( ' ', $r['tags'] ) ), $q ) === false ) {
+			continue;
+		}
+		$out[] = array(
+			'id'        => $r['id'],
+			'title'     => $r['title'],
+			'tags'      => $r['tags'],
+			'requires'  => $r['requires'],
+			'time'      => $r['time'],
+			'summary'   => $r['summary'],
+			'fits_site' => cb_recipe_fits( $r, $stack ),
+		);
+	}
+	return array(
+		'count'   => count( $out ),
+		'stack'   => $stack,
+		'usage'   => 'Call get_recipe with {"id":"<id>"} for the full prompt and the tools it uses.',
+		'recipes' => $out,
+	);
+}
+
+/** Tool op: one recipe, in full. */
+function cb_op_get_recipe( $args ) {
+	$id = isset( $args['id'] ) ? (string) $args['id'] : '';
+	$r  = cb_cookbook_recipe( $id );
+	if ( ! $r ) {
+		return new WP_Error( 'cb_no_recipe', 'Unknown recipe id: ' . $id . '. Call list_recipes for valid ids.' );
+	}
+	$r['fits_site'] = cb_recipe_fits( $r );
+	$r['url']       = cb_cookbook_url( $r['id'] );
+	return $r;
+}
+
+/* ============================================================================
+ * 11. COOKBOOK IN WP-ADMIN  (dashboard widget + full recipe browser)
+ * ========================================================================== */
+
+add_action( 'admin_menu', function () {
+	add_management_page( 'Claude Cookbook', 'Claude Cookbook', 'manage_options', 'claude-bridge-cookbook', 'cb_cookbook_page' );
+} );
+
+add_action( 'wp_dashboard_setup', function () {
+	if ( current_user_can( 'manage_options' ) ) {
+		wp_add_dashboard_widget( 'cb_dashboard_widget', 'Claude Bridge', 'cb_dashboard_widget' );
+	}
+} );
+
+/** Shared styles for the widget and the cookbook page. Printed once. */
+function cb_print_ui_css() {
+	static $done = false;
+	if ( $done ) {
+		return;
+	}
+	$done = true;
+	?>
+	<style>
+	.cb-ui-hd{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#646970;margin:14px 0 6px}
+	.cb-ui-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid #f0f0f1}
+	.cb-ui-row:first-of-type{border-top:0}
+	.cb-ui-grow{flex:1;min-width:0}
+	.cb-ui-mono{font-family:Consolas,Monaco,monospace;font-size:12px;color:#1d2327;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	.cb-ui-when{color:#787c82;font-size:12px;white-space:nowrap}
+	.cb-ui-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#00a32a;margin-right:7px;vertical-align:middle}
+	.cb-ui-dot.cb-idle{background:#dba617}
+	.cb-ui-dot.cb-off{background:#c3c4c7}
+	.cb-ui-chip{display:inline-block;padding:1px 9px;border:1px solid #dcdcde;border-radius:999px;font-size:11px;line-height:18px;color:#50575e;background:#fff;white-space:nowrap}
+	.cb-ui-chip.cb-fit{border-color:#a7d5b0;background:#f2fbf4;color:#1f6f39}
+	.cb-ui-note{color:#787c82;font-size:12px;margin:10px 0 4px}
+	.cb-ui-foot{margin-top:12px;padding-top:10px;border-top:1px solid #f0f0f1;font-size:12px}
+	.cb-ui-fail{color:#b32d2e}
+	.cb-card{background:#fff;border:1px solid #dcdcde;border-radius:6px;padding:16px 18px;margin:0 0 14px}
+	.cb-card h2{margin:0 0 4px;font-size:15px}
+	.cb-card .cb-meta{color:#787c82;font-size:12px;margin:0 0 8px}
+	.cb-card .cb-sum{margin:0 0 10px;color:#3c434a}
+	.cb-card pre{background:#f6f7f7;border:1px solid #e0e0e0;border-radius:4px;padding:12px;margin:8px 0 0;white-space:pre-wrap;font-size:12.5px;line-height:1.55;max-height:420px;overflow:auto}
+	.cb-card summary{cursor:pointer;color:#2271b1;font-size:13px}
+	.cb-filters{margin:12px 0 18px}
+	.cb-filters a{display:inline-block;margin:0 6px 6px 0;padding:3px 11px;border:1px solid #dcdcde;border-radius:999px;background:#fff;text-decoration:none;font-size:12px;color:#50575e}
+	.cb-filters a.cb-on{background:#2271b1;border-color:#2271b1;color:#fff}
+	.cb-cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px}
+	@media (max-width:782px){.cb-cols{grid-template-columns:1fr}}
+	</style>
+	<?php
+}
+
+/** Clipboard helper used by every "Copy prompt" button. Printed once. */
+function cb_print_copy_js() {
+	static $done = false;
+	if ( $done ) {
+		return;
+	}
+	$done = true;
+	?>
+	<script>
+	(function(){
+		function flash(btn){
+			var old = btn.getAttribute('data-cb-label') || btn.textContent;
+			btn.setAttribute('data-cb-label', old);
+			btn.textContent = 'Copied ✓';
+			setTimeout(function(){ btn.textContent = old; }, 1800);
+		}
+		document.addEventListener('click', function(e){
+			var btn = e.target.closest ? e.target.closest('[data-cb-copy]') : null;
+			if (!btn) { return; }
+			e.preventDefault();
+			var src = document.getElementById(btn.getAttribute('data-cb-copy'));
+			if (!src) { return; }
+			var text = ('value' in src) ? src.value : src.textContent;
+			if (navigator.clipboard && window.isSecureContext) {
+				navigator.clipboard.writeText(text).then(function(){ flash(btn); });
+				return;
+			}
+			var ta = document.createElement('textarea');
+			ta.value = text;
+			ta.style.position = 'fixed';
+			ta.style.opacity = '0';
+			document.body.appendChild(ta);
+			ta.select();
+			try { document.execCommand('copy'); flash(btn); } catch (err) {}
+			document.body.removeChild(ta);
+		});
+	})();
+	</script>
+	<?php
+}
+
+/** "active 2 hours ago" / "never" */
+function cb_time_ago( $ts ) {
+	if ( ! $ts ) {
+		return 'never';
+	}
+	return human_time_diff( $ts, time() ) . ' ago';
+}
+
+/** The Dashboard widget: connection state, what ran, and recipes for this site. */
+function cb_dashboard_widget() {
+	cb_print_ui_css();
+	cb_print_copy_js();
+
+	$last   = cb_last_seen();
+	$recent = cb_activity_entries( 3 );
+	$picks  = cb_cookbook_picks( 3 );
+	$fresh  = $last && ( time() - $last ) < WEEK_IN_SECONDS;
+	$dot    = $last ? ( $fresh ? '' : ' cb-idle' ) : ' cb-off';
+	$state  = $last ? ( $fresh ? 'Connected' : 'Idle' ) : 'Not connected yet';
+	?>
+	<p style="margin:0 0 4px">
+		<span class="cb-ui-dot<?php echo esc_attr( $dot ); ?>"></span>
+		<b><?php echo esc_html( $state ); ?></b>
+		<?php if ( $last ) : ?>
+			<span style="color:#787c82">&middot; active <?php echo esc_html( cb_time_ago( $last ) ); ?></span>
+		<?php else : ?>
+			<span style="color:#787c82">&middot; <a href="<?php echo esc_url( admin_url( 'tools.php?page=claude-bridge' ) ); ?>">connect Claude to this site</a></span>
+		<?php endif; ?>
+		<?php if ( cb_connector_enabled() ) : ?>
+			<span class="cb-ui-chip" style="margin-left:6px">Hub connector</span>
+		<?php endif; ?>
+	</p>
+
+	<?php if ( $recent ) : ?>
+		<div class="cb-ui-hd">Recent activity</div>
+		<?php foreach ( $recent as $e ) : ?>
+			<div class="cb-ui-row">
+				<span class="cb-ui-grow cb-ui-mono<?php echo empty( $e['ok'] ) ? ' cb-ui-fail' : ''; ?>"><?php echo esc_html( cb_activity_label( $e ) ); ?></span>
+				<span class="cb-ui-when"><?php echo esc_html( cb_time_ago( $e['t'] ) ); ?></span>
+			</div>
+		<?php endforeach; ?>
+	<?php endif; ?>
+
+	<div class="cb-ui-hd">Recipes picked for this site</div>
+	<?php foreach ( $picks as $i => $r ) : $tid = 'cb-w-prompt-' . $r['id']; ?>
+		<div class="cb-ui-row">
+			<span class="cb-ui-grow">
+				<a href="<?php echo esc_url( cb_cookbook_url( $r['id'] ) ); ?>"><?php echo esc_html( $r['title'] ); ?></a>
+				<?php foreach ( array_slice( $r['tags'], 0, 1 ) as $t ) : ?>
+					<span class="cb-ui-chip" style="margin-left:6px"><?php echo esc_html( $t ); ?></span>
+				<?php endforeach; ?>
+			</span>
+			<button type="button" class="button button-small" data-cb-copy="<?php echo esc_attr( $tid ); ?>">Copy prompt</button>
+			<textarea id="<?php echo esc_attr( $tid ); ?>" readonly hidden><?php echo esc_textarea( cb_recipe_clipboard( $r ) ); ?></textarea>
+		</div>
+	<?php endforeach; ?>
+
+	<p class="cb-ui-note">Prompts copy with the recipe link. Fill the [bracketed] parts, or let your AI ask.</p>
+	<p style="margin:0"><a href="<?php echo esc_url( cb_cookbook_url() ); ?>">Browse all <?php echo count( cb_cookbook_recipes() ); ?> recipes &rarr;</a></p>
+
+	<div class="cb-ui-foot">
+		<a href="<?php echo esc_url( admin_url( 'tools.php?page=claude-bridge#cb-activity' ) ); ?>">Activity log</a> &middot;
+		<a href="<?php echo esc_url( admin_url( 'tools.php?page=claude-bridge' ) ); ?>">Connection</a> &middot;
+		<a href="<?php echo esc_url( cb_cookbook_url() ); ?>">Cookbook</a>
+	</div>
+	<?php
+}
+
+/** Tools &rarr; Claude Cookbook: every recipe, filterable, with copy buttons. */
+function cb_cookbook_page() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( 'Insufficient permissions.' );
+	}
+	cb_print_ui_css();
+	cb_print_copy_js();
+
+	$tag    = isset( $_GET['tag'] ) ? sanitize_text_field( wp_unslash( $_GET['tag'] ) ) : '';
+	$search = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
+	$only   = ! empty( $_GET['fits'] );
+	$single = isset( $_GET['recipe'] ) ? sanitize_key( wp_unslash( $_GET['recipe'] ) ) : '';
+	$stack  = cb_site_stack();
+	$labels = cb_stack_labels();
+	$base   = admin_url( 'tools.php?page=claude-bridge-cookbook' );
+
+	$recipes = array();
+	foreach ( cb_cookbook_recipes() as $r ) {
+		$fits = cb_recipe_fits( $r, $stack );
+		if ( $only && ! $fits ) {
+			continue;
+		}
+		if ( $tag !== '' && ! in_array( $tag, $r['tags'], true ) ) {
+			continue;
+		}
+		if ( $search !== '' ) {
+			$hay = strtolower( $r['title'] . ' ' . $r['summary'] . ' ' . $r['prompt'] . ' ' . implode( ' ', $r['tags'] ) );
+			if ( strpos( $hay, strtolower( $search ) ) === false ) {
+				continue;
+			}
+		}
+		$r['fits'] = $fits;
+		$recipes[] = $r;
+	}
+	// A direct link to one recipe opens it expanded, at the top.
+	if ( $single !== '' ) {
+		usort( $recipes, function ( $a, $b ) use ( $single ) {
+			return ( $a['id'] === $single ? 0 : 1 ) - ( $b['id'] === $single ? 0 : 1 );
+		} );
+	}
+
+	$stack_names = array();
+	foreach ( $stack as $k ) {
+		$stack_names[] = esc_html( isset( $labels[ $k ] ) ? $labels[ $k ] : $k );
+	}
+	?>
+	<div class="wrap">
+		<h1>Claude Cookbook</h1>
+		<p style="max-width:820px">Prompts for the jobs people actually hand to an AI on a WordPress site. Copy one, fill in the [bracketed] parts, and paste it into Claude with this site connected — every recipe is written for the tools this bridge exposes.</p>
+		<p class="cb-ui-note">This site looks like: <?php echo implode( ' &middot; ', $stack_names ); // Each part escaped above. ?>. Recipes needing something you do not have are marked.</p>
+
+		<form method="get" action="<?php echo esc_url( admin_url( 'tools.php' ) ); ?>" style="margin:14px 0 0">
+			<input type="hidden" name="page" value="claude-bridge-cookbook">
+			<?php if ( $tag !== '' ) : ?><input type="hidden" name="tag" value="<?php echo esc_attr( $tag ); ?>"><?php endif; ?>
+			<input type="search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="Search recipes&hellip;" style="width:280px">
+			<label style="margin-left:10px"><input type="checkbox" name="fits" value="1" <?php checked( $only ); ?>> Only what fits this site</label>
+			<?php submit_button( 'Filter', 'secondary', '', false ); ?>
+			<?php if ( $search !== '' || $only || $tag !== '' ) : ?>
+				<a href="<?php echo esc_url( $base ); ?>" style="margin-left:8px">Reset</a>
+			<?php endif; ?>
+		</form>
+
+		<div class="cb-filters">
+			<a href="<?php echo esc_url( add_query_arg( array( 's' => $search ? $search : null, 'fits' => $only ? 1 : null ), $base ) ); ?>" class="<?php echo $tag === '' ? 'cb-on' : ''; ?>">All</a>
+			<?php foreach ( cb_cookbook_tags() as $t => $n ) : ?>
+				<a href="<?php echo esc_url( add_query_arg( array( 'tag' => $t, 's' => $search ? $search : null, 'fits' => $only ? 1 : null ), $base ) ); ?>" class="<?php echo $tag === $t ? 'cb-on' : ''; ?>"><?php echo esc_html( $t ); ?> <span style="opacity:.6"><?php echo (int) $n; ?></span></a>
+			<?php endforeach; ?>
+		</div>
+
+		<?php if ( ! $recipes ) : ?>
+			<p>No recipe matches that. <a href="<?php echo esc_url( $base ); ?>">Show everything</a>.</p>
+		<?php endif; ?>
+
+		<div class="cb-cols">
+		<?php foreach ( $recipes as $r ) :
+			$tid  = 'cb-prompt-' . $r['id'];
+			$open = ( $single !== '' && $r['id'] === $single );
+			$need = array();
+			foreach ( (array) $r['requires'] as $k ) {
+				$need[] = isset( $labels[ $k ] ) ? $labels[ $k ] : $k;
+			}
+			?>
+			<div class="cb-card" id="recipe-<?php echo esc_attr( $r['id'] ); ?>">
+				<h2><?php echo esc_html( $r['title'] ); ?></h2>
+				<p class="cb-meta">
+					<?php foreach ( $r['tags'] as $t ) : ?>
+						<span class="cb-ui-chip"><?php echo esc_html( $t ); ?></span>
+					<?php endforeach; ?>
+					<?php if ( $need ) : ?>
+						<span class="cb-ui-chip<?php echo $r['fits'] ? ' cb-fit' : ''; ?>">Needs <?php echo esc_html( implode( ' / ', $need ) ); ?><?php echo $r['fits'] ? ' &check;' : ' &mdash; not installed'; ?></span>
+					<?php endif; ?>
+					<span style="margin-left:6px"><?php echo esc_html( $r['time'] ); ?></span>
+				</p>
+				<p class="cb-sum"><?php echo esc_html( $r['summary'] ); ?></p>
+				<p style="margin:0 0 6px">
+					<button type="button" class="button button-primary button-small" data-cb-copy="<?php echo esc_attr( $tid ); ?>">Copy prompt</button>
+					<span class="cb-ui-note" style="margin-left:8px">Tools: <code style="font-size:11px"><?php echo esc_html( implode( ', ', $r['tools'] ) ); ?></code></span>
+				</p>
+				<details<?php echo $open ? ' open' : ''; ?>>
+					<summary>Show the prompt</summary>
+					<pre><?php echo esc_html( $r['prompt'] ); ?></pre>
+				</details>
+				<textarea id="<?php echo esc_attr( $tid ); ?>" readonly hidden><?php echo esc_textarea( cb_recipe_clipboard( $r ) ); ?></textarea>
+			</div>
+		<?php endforeach; ?>
+		</div>
+
+		<p style="margin-top:18px">Connected model? It can read this cookbook itself with the <code>list_recipes</code> and <code>get_recipe</code> tools &mdash; ask Claude &ldquo;what recipes fit this site?&rdquo;</p>
 	</div>
 	<?php
 }

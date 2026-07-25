@@ -8,7 +8,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-3.5.1-6c47ff?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/version-3.6.0-6c47ff?style=for-the-badge)](https://github.com/)
 [![License](https://img.shields.io/badge/license-GPLv2-blue?style=for-the-badge)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-5.6%2B-21759B?style=for-the-badge&logo=wordpress&logoColor=white)](https://wordpress.org)
@@ -68,6 +68,8 @@ No SaaS. No monthly fee. No external proxy. **Your server, your data, your rules
 | 🔐 **3 auth modes** | Token-in-URL (simplest), Bearer header, or OAuth via native WordPress **Application Passwords** (revocable). |
 | 📡 **Streaming (SSE)** | MCP responses can stream over Server-Sent Events for long-running tools. |
 | 🧠 **18 bundled WP skills** | Ships WordPress review skills (security, performance, block/theme dev…) queryable as MCP resources. |
+| 📕 **34-recipe cookbook** | Ready-to-paste prompts for real jobs, browsable at **Tools → Claude Cookbook** and surfaced on the **WP Dashboard** — the ones that match this site's stack. |
+| 📓 **Activity log** | Every tool call (name, transport, result, duration) in a capped ring buffer, shown on the dashboard widget. |
 | 📦 **Zero dependencies** | One `.php` file + skills. No composer, no build step, no npm. |
 
 ---
@@ -120,8 +122,31 @@ No SaaS. No monthly fee. No external proxy. **Your server, your data, your rules
 `get_option` · `update_option` · `db_query` *(read-only SELECT)*
 `render_page` · `screenshot` · `conflict_scan` *(health/plugin-conflict scan)*
 `list_wp_skills` · `get_wp_skill` *(18 bundled WordPress review skills)*
+`list_recipes` · `get_recipe` *(the bundled cookbook — filter by tag or by what this site runs)*
 `wp_rest` — **call any REST route, the do-anything tool**
 </details>
+
+---
+
+## 📕 The cookbook
+
+The plugin ships a **cookbook**: 34 ready-to-paste prompts for the jobs people actually
+hand to an AI on a WordPress site — a security audit, a speed audit, hunting the plugin
+that white-screens a page, a child-theme restyle, an alt-text sweep, a month of scheduled
+posts, a WooCommerce restock report or seasonal sale, a global Elementor header and
+footer, a `theme.json` rebrand, and more. Each recipe is written for the tools above.
+
+Three ways to reach it:
+
+| Where | What you get |
+|---|---|
+| **Dashboard widget** | Connection state, the last few calls, and the three recipes that fit *this* site — with **Copy prompt** buttons. Rotates daily. |
+| **Tools → Claude Cookbook** | Every recipe, searchable and filterable by tag, with the full prompt and the tools it uses. |
+| **`list_recipes` / `get_recipe`** | The connected model reads the same cookbook. Ask Claude *"what recipes fit this site?"* |
+
+Recipes declare what they need (WooCommerce, Elementor, ACF, a block theme, multisite…),
+so the site only gets offered what it can actually run. Prompts copy with the recipe link;
+fill in the `[bracketed]` parts, or let the model ask you.
 
 ---
 
