@@ -1686,6 +1686,99 @@ function cb_mcp_authorized_any() {
  * ========================================================================== */
 
 /** Current connector config, with defaults. */
+/* -------------------------------------------------------------------------
+ * Self-update from the DigiWP server. When a connector server URL is set
+ * (the DigiWp Ai Bridge build bakes in https://api.digiwp.com/v1), the plugin
+ * checks {server}/plugin/manifest for a newer version and lets WordPress
+ * update — and auto-update — it straight from the server. Standalone installs
+ * with no server URL are unaffected.
+ * ---------------------------------------------------------------------- */
+function cb_update_server_base() {
+	$c = cb_connector();
+	return ! empty( $c['server_url'] ) ? rtrim( (string) $c['server_url'], '/' ) : '';
+}
+
+function cb_update_manifest() {
+	$base = cb_update_server_base();
+	if ( '' === $base ) {
+		return null;
+	}
+	$cached = get_transient( 'cb_update_manifest' );
+	if ( is_array( $cached ) ) {
+		return $cached;
+	}
+	$resp = wp_remote_get( $base . '/plugin/manifest', array( 'timeout' => 12 ) );
+	if ( is_wp_error( $resp ) || 200 !== (int) wp_remote_retrieve_response_code( $resp ) ) {
+		return null;
+	}
+	$data = json_decode( (string) wp_remote_retrieve_body( $resp ), true );
+	if ( ! is_array( $data ) || empty( $data['version'] ) || empty( $data['download_url'] ) ) {
+		return null;
+	}
+	set_transient( 'cb_update_manifest', $data, 6 * HOUR_IN_SECONDS );
+	return $data;
+}
+
+add_filter( 'pre_set_site_transient_update_plugins', 'cb_inject_update' );
+function cb_inject_update( $transient ) {
+	if ( ! is_object( $transient ) ) {
+		return $transient;
+	}
+	$m = cb_update_manifest();
+	if ( ! $m || version_compare( (string) $m['version'], CB_VERSION, '<=' ) ) {
+		return $transient;
+	}
+	$basename = plugin_basename( __FILE__ );
+	if ( ! isset( $transient->response ) || ! is_array( $transient->response ) ) {
+		$transient->response = array();
+	}
+	$transient->response[ $basename ] = (object) array(
+		'slug'        => dirname( $basename ),
+		'plugin'      => $basename,
+		'new_version' => (string) $m['version'],
+		'package'     => (string) $m['download_url'],
+		'url'         => isset( $m['homepage'] ) ? (string) $m['homepage'] : 'https://ai.digiwp.com',
+		'tested'      => isset( $m['tested'] ) ? (string) $m['tested'] : '',
+		'icons'       => array(),
+	);
+	return $transient;
+}
+
+add_filter( 'plugins_api', 'cb_update_info', 20, 3 );
+function cb_update_info( $res, $action, $args ) {
+	if ( 'plugin_information' !== $action ) {
+		return $res;
+	}
+	$basename = plugin_basename( __FILE__ );
+	if ( ! isset( $args->slug ) || $args->slug !== dirname( $basename ) ) {
+		return $res;
+	}
+	$m = cb_update_manifest();
+	if ( ! $m ) {
+		return $res;
+	}
+	return (object) array(
+		'name'          => isset( $m['name'] ) ? (string) $m['name'] : 'DigiWp Ai Bridge',
+		'slug'          => dirname( $basename ),
+		'version'       => (string) $m['version'],
+		'author'        => 'DigiWP',
+		'homepage'      => isset( $m['homepage'] ) ? (string) $m['homepage'] : 'https://ai.digiwp.com',
+		'download_link' => (string) $m['download_url'],
+		'sections'      => array( 'description' => isset( $m['notes'] ) ? (string) $m['notes'] : 'به‌روزرسانی از سرور DigiWP.' ),
+	);
+}
+
+// Let WordPress auto-update it in the background (wp-cron) when server updates are on.
+add_filter( 'auto_update_plugin', 'cb_auto_update', 10, 2 );
+function cb_auto_update( $update, $item ) {
+	$basename = plugin_basename( __FILE__ );
+	if ( isset( $item->plugin ) && $item->plugin === $basename && '' !== cb_update_server_base() ) {
+		$c = cb_connector();
+		return ! array_key_exists( 'auto_update', $c ) || false !== $c['auto_update'];
+	}
+	return $update;
+}
+
 function cb_connector() {
 	$d = array( 'enabled' => false, 'server_url' => '', 'secret' => '', 'site_id' => '', 'paired_at' => 0 );
 	$c = get_option( CB_CONNECTOR_OPTION );

@@ -50,6 +50,21 @@ TXT
 # 4) Zip it (top-level folder = the slug, as WordPress expects).
 ( cd "$ROOT/dist" && zip -qr "$ZIP" "$SLUG" )
 
+# 5) Emit the update manifest the server serves at /v1/plugin/manifest.
+#    Version is read from the canonical plugin so it is always in sync with the zip.
+VER=$(grep -oE "CB_VERSION', '[0-9.]+'" "$SRC" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+cat > "$ROOT/server/plugin-manifest.json" <<JSON
+{
+  "name": "DigiWp Ai Bridge",
+  "slug": "$SLUG",
+  "version": "$VER",
+  "download_url": "https://ai.digiwp.com/$SLUG.zip",
+  "homepage": "https://ai.digiwp.com",
+  "tested": "6.7"
+}
+JSON
+
 php -l "$OUT/$SLUG.php" >/dev/null && echo "OK: $OUT/$SLUG.php (syntax valid)"
 echo "ZIP: $ZIP  ($(du -h "$ZIP" | cut -f1))"
+echo "Manifest: server/plugin-manifest.json (version $VER)"
 echo "Default server URL baked in: $SERVER_URL"

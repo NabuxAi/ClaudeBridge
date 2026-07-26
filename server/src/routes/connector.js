@@ -1,8 +1,24 @@
 import { Router } from 'express'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { sites } from '../store.js'
 import { verifySignature } from '../connector.js'
 
 const router = Router()
+
+// Plugin self-update manifest (public). The DigiWp Ai Bridge connector polls this
+// to discover + auto-install newer versions straight from the server.
+const MANIFEST_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugin-manifest.json')
+router.get('/plugin/manifest', (_req, res) => {
+  try {
+    const m = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'))
+    if (process.env.PLUGIN_DOWNLOAD_URL) m.download_url = process.env.PLUGIN_DOWNLOAD_URL
+    res.json(m)
+  } catch {
+    res.status(404).json({ message: 'plugin manifest not available' })
+  }
+})
 
 // Receiver for the plugin's opt-in "announce this site to the hub" (signed).
 // The plugin POSTs here with X-DigiWP-{Timestamp,Signature,Site}. We don't know
