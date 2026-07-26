@@ -642,6 +642,11 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'list_wp_skills', 'description' => 'List the WordPress engineering skills bundled in this plugin (security review, performance, blocks, themes, WooCommerce, REST API, ACF/content modeling, headless/WPGraphQL, migrations, accessibility, testing, CI/CD, WP-CLI/ops, PHPStan, Playground, admin UI, plugin development, site audit/onboarding). Each is a focused review or build playbook. Call this first, then get_wp_skill to load the matching one before doing WordPress work.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_list_wp_skills', 'noargs' => true );
 	$tools[] = array( 'name' => 'get_wp_skill', 'description' => 'Load a bundled WordPress skill. Returns the skill\'s SKILL.md instructions, or a named reference file within it. Call list_wp_skills first to see available skill names and their files. Use the matching skill before reviewing, auditing, or building WordPress/WooCommerce code.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Skill name, e.g. "wp-security-review".' ), 'file' => array( 'type' => 'string', 'description' => 'Optional file within the skill, e.g. "references/escaping-guide.md". Defaults to SKILL.md.' ) ), 'required' => array( 'name' ) ), 'op' => 'cb_op_get_wp_skill' );
 
+	// Update policy: the panel writes it, the site obeys it, and update_status
+	// reports what is genuinely still pending rather than echoing the switches.
+	$tools[] = array( 'name' => 'set_update_policy', 'description' => 'Set whether WordPress core, plugins and themes keep themselves up to date on this site. Sent by the DigiWP panel. When safe_mode is true the three switches are forced on and cannot be turned off — there is no secure configuration that is also out of date.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'auto_core' => array( 'type' => 'boolean' ), 'auto_plugins' => array( 'type' => 'boolean' ), 'auto_themes' => array( 'type' => 'boolean' ), 'safe_mode' => array( 'type' => 'boolean' ) ) ), 'op' => 'cb_op_set_update_policy' );
+	$tools[] = array( 'name' => 'update_status', 'description' => 'What is actually pending on this site right now: current WordPress version vs latest, and every plugin and theme with an update waiting, with from/to versions. Forces a fresh check against wordpress.org rather than trusting cached transients. This is measured state, not the configured intent.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_update_status' );
+
 	// Cookbook: the same recipes the site owner sees in wp-admin.
 	$tools[] = array( 'name' => 'list_recipes', 'description' => 'List the cookbook recipes bundled with this plugin — ready-made playbooks for the jobs people hand to an AI on a WordPress site (security audit, speed audit, plugin conflict hunt, child theme, alt text sweep, content calendar, WooCommerce restock/sale/checkout review, Elementor header & footer, theme.json rebrand, and more). Each returns an id; call get_recipe for the full prompt. Set for_this_site=true to see only the recipes whose stack this site actually has.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'tag' => array( 'type' => 'string', 'description' => 'Filter by tag, e.g. "WooCommerce", "Security", "Performance".' ), 'search' => array( 'type' => 'string' ), 'for_this_site' => array( 'type' => 'boolean', 'description' => 'Only recipes matching this site (WooCommerce, Elementor, block theme, …).' ) ) ), 'op' => 'cb_op_list_recipes' );
 	$tools[] = array( 'name' => 'get_recipe', 'description' => 'Load one cookbook recipe in full: what it does, which bridge tools it uses, and the complete prompt with its [bracketed] placeholders. Call list_recipes first for valid ids. Use a recipe as the plan when the user asks for something it covers.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string', 'description' => 'Recipe id, e.g. "security-audit".' ) ), 'required' => array( 'id' ) ), 'op' => 'cb_op_get_recipe' );
@@ -1777,6 +1782,144 @@ function cb_auto_update( $update, $item ) {
 		return ! array_key_exists( 'auto_update', $c ) || false !== $c['auto_update'];
 	}
 	return $update;
+}
+
+/* -----------------------------------------------------------------
+ * Update policy — core, plugins and themes keeping themselves current.
+ *
+ * The panel owns the three switches; this side obeys them. The policy is stored
+ * locally so updates keep running on schedule even when our server is
+ * unreachable — an update that only happens while a SaaS is up is a dependency,
+ * not a security guarantee.
+ *
+ * WordPress's own auto-updater does the work, through wp-cron. That is
+ * deliberate: it is the path core tests, it retries, it emails on failure, and
+ * it already refuses updates the site's PHP cannot run. Driving each update
+ * over the connector instead would be more code doing the same job worse, and
+ * it would stop the moment our server had a bad day.
+ * -------------------------------------------------------------- */
+
+if ( ! defined( 'CB_POLICY_OPTION' ) ) {
+	define( 'CB_POLICY_OPTION', 'cb_update_policy' );
+}
+
+/** The stored policy, with safe defaults for a site nobody has configured yet. */
+function cb_update_policy() {
+	$d = array( 'auto_core' => true, 'auto_plugins' => true, 'auto_themes' => true, 'safe_mode' => true );
+	$p = get_option( CB_POLICY_OPTION );
+	return is_array( $p ) ? array_merge( $d, $p ) : $d;
+}
+
+/** Store a policy pushed from the panel. Booleans only; nothing else is kept. */
+function cb_set_update_policy( $in ) {
+	$p = cb_update_policy();
+	foreach ( array( 'auto_core', 'auto_plugins', 'auto_themes', 'safe_mode' ) as $k ) {
+		if ( isset( $in[ $k ] ) ) {
+			$p[ $k ] = (bool) $in[ $k ];
+		}
+	}
+	// Safe mode is a lock, not a preset: it cannot coexist with a switch that is
+	// off. The server enforces this too — on both sides, because either one can
+	// be the copy that is wrong.
+	if ( $p['safe_mode'] ) {
+		$p['auto_core']    = true;
+		$p['auto_plugins'] = true;
+		$p['auto_themes']  = true;
+	}
+	update_option( CB_POLICY_OPTION, $p, false );
+	return $p;
+}
+
+// Core. Major releases too, not only security patches — a site parked on an old
+// major branch eventually stops receiving security fixes at all.
+add_filter( 'allow_major_auto_core_updates', 'cb_policy_core' );
+add_filter( 'allow_minor_auto_core_updates', 'cb_policy_core' );
+add_filter( 'auto_update_core', 'cb_policy_core' );
+function cb_policy_core( $update ) {
+	$p = cb_update_policy();
+	return $p['auto_core'] ? true : $update;
+}
+
+// Every plugin except this one, which has its own server-driven path above.
+add_filter( 'auto_update_plugin', 'cb_policy_plugins', 20, 2 );
+function cb_policy_plugins( $update, $item ) {
+	if ( isset( $item->plugin ) && plugin_basename( __FILE__ ) === $item->plugin ) {
+		return $update;
+	}
+	$p = cb_update_policy();
+	return $p['auto_plugins'] ? true : $update;
+}
+
+add_filter( 'auto_update_theme', 'cb_policy_themes', 20, 2 );
+function cb_policy_themes( $update, $item ) {
+	$p = cb_update_policy();
+	return $p['auto_themes'] ? true : $update;
+}
+
+// Hosts commonly switch the updater off wholesale in wp-config.php. A site
+// cannot be kept current and also have that set, so an active policy wins.
+add_filter( 'automatic_updater_disabled', 'cb_policy_updater_enabled' );
+function cb_policy_updater_enabled( $disabled ) {
+	$p = cb_update_policy();
+	return ( $p['auto_core'] || $p['auto_plugins'] || $p['auto_themes'] ) ? false : $disabled;
+}
+
+/**
+ * What is actually still pending, for the panel to report instead of assume.
+ *
+ * Zero pending is the only evidence the policy is working; anything else is a
+ * claim. This is why the panel shows counts from here rather than echoing the
+ * switches back.
+ */
+function cb_update_status() {
+	if ( ! function_exists( 'get_plugin_updates' ) ) {
+		require_once ABSPATH . 'wp-admin/includes/update.php';
+	}
+	if ( ! function_exists( 'get_plugins' ) ) {
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+	}
+	wp_update_plugins();
+	wp_update_themes();
+	wp_version_check();
+
+	$core     = get_site_transient( 'update_core' );
+	$core_new = '';
+	if ( $core && ! empty( $core->updates ) ) {
+		foreach ( $core->updates as $u ) {
+			if ( isset( $u->response ) && 'upgrade' === $u->response ) {
+				$core_new = (string) $u->current;
+				break;
+			}
+		}
+	}
+	$plugins = function_exists( 'get_plugin_updates' ) ? get_plugin_updates() : array();
+	$themes  = function_exists( 'get_theme_updates' ) ? get_theme_updates() : array();
+
+	$map_plugin = function ( $p ) {
+		return array(
+			'name' => isset( $p->Name ) ? $p->Name : '',
+			'from' => isset( $p->Version ) ? $p->Version : '',
+			'to'   => isset( $p->update->new_version ) ? $p->update->new_version : '',
+		);
+	};
+	$map_theme = function ( $t ) {
+		return array(
+			'name' => $t->get( 'Name' ),
+			'from' => $t->get( 'Version' ),
+			'to'   => isset( $t->update['new_version'] ) ? $t->update['new_version'] : '',
+		);
+	};
+
+	return array(
+		'policy'          => cb_update_policy(),
+		'wp_version'      => get_bloginfo( 'version' ),
+		'wp_latest'       => '' !== $core_new ? $core_new : get_bloginfo( 'version' ),
+		'core_outdated'   => '' !== $core_new,
+		'plugins_pending' => array_values( array_map( $map_plugin, $plugins ) ),
+		'themes_pending'  => array_values( array_map( $map_theme, $themes ) ),
+		'php_version'     => PHP_VERSION,
+		'checked_at'      => time(),
+	);
 }
 
 function cb_connector() {
@@ -3197,6 +3340,16 @@ function cb_recipe_clipboard( $recipe ) {
 }
 
 /** Tool op: list cookbook recipes (optionally filtered). */
+/** Panel → site: store the three switches. Returns the policy as stored. */
+function cb_op_set_update_policy( $args ) {
+	return cb_set_update_policy( is_array( $args ) ? $args : array() );
+}
+
+/** Site → panel: what is genuinely still pending. */
+function cb_op_update_status() {
+	return cb_update_status();
+}
+
 function cb_op_list_recipes( $args ) {
 	$tag   = isset( $args['tag'] ) ? strtolower( (string) $args['tag'] ) : '';
 	$q     = isset( $args['search'] ) ? strtolower( (string) $args['search'] ) : '';

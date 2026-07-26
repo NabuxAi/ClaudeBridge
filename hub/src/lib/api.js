@@ -85,6 +85,13 @@ export function site(siteId) {
     security: call(() => mock.siteSecurity(siteId), () => http(p('/security'))),
     backups: call(() => mock.siteBackups(siteId), () => http(p('/backups'))),
     settings: call(() => mock.siteSettings(siteId), () => http(p('/settings'))),
+    // Auto-update switches. The server refuses to turn any of them off while
+    // safe mode is on, and names the ones it refused — so the UI can say why
+    // instead of letting a switch silently spring back.
+    setUpdatePolicy: call(
+      (patch) => mock.setUpdatePolicy(siteId, patch),
+      (patch) => http(p('/update-policy'), { method: 'PATCH', body: patch })
+    ),
     // A guarded action = a command your server relays to the connector.
     // Sensitive actions ALWAYS require approval regardless of authority level.
     runAction: call(

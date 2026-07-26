@@ -49,6 +49,23 @@ const SCHEMA = `
   );
 
   CREATE INDEX IF NOT EXISTS idx_sites_user ON sites(user_id);
+
+  -- Update policy per site: whether core, plugins and themes keep themselves
+  -- current, and whether safe mode is holding those switches down.
+  --
+  -- A column rather than part of the connector JSONB, because this is the one
+  -- piece of site state the panel writes and the connector only reads — and
+  -- because safe mode has to be enforced somewhere the server can see. A policy
+  -- that lives only in the browser is a policy anyone can turn off with curl.
+  --
+  -- Defaults are deliberately the safe ones: a site added today updates itself
+  -- from the moment it pairs, without anyone having to remember to switch it on.
+  ALTER TABLE sites ADD COLUMN IF NOT EXISTS policy JSONB
+    NOT NULL DEFAULT '{"safeMode":true,"autoCore":true,"autoPlugins":true,"autoThemes":true}'::jsonb;
+
+  -- What the last update run actually did, written back by the connector, so
+  -- the panel reports observed reality instead of the intent it sent.
+  ALTER TABLE sites ADD COLUMN IF NOT EXISTS update_state JSONB;
 `
 
 /** Wait for Postgres to accept connections (compose may start us first). */

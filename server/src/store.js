@@ -2,6 +2,7 @@
 import crypto from 'node:crypto'
 import { one, all, newId } from './db.js'
 import { hashPassword } from './auth.js'
+import { applyPolicyChange, readPolicy } from './policy.js'
 
 const publicUser = (u) => u && ({
   id: u.id, email: u.email, name: u.name, role: u.role, plan: u.plan,
@@ -12,6 +13,8 @@ const publicSite = (s) => s && ({
   id: s.id, name: s.name, title: s.title, status: s.status, authority: s.authority,
   url: s.url, paired: !!s.paired, hasSecret: !!s.secret,
   connector: s.connector || null, // JSONB → already an object
+  policy: readPolicy(s.policy),
+  updateState: s.update_state || null,
   // display metrics (real ones come from the connector once paired)
   uptime: s.paired ? 99.98 : 100, checks: s.paired ? 9 : 0, lastCheck: 2,
   incidents: 0, pendingUpdates: s.paired ? 5 : 0,
@@ -91,6 +94,36 @@ export const sites = {
 
   /** {id, secret} for every site — to match an inbound signed register call. */
   candidates: () => all("SELECT id, secret FROM sites WHERE secret <> ''"),
+
+  /**
+   * Change a site's update policy.
+   *
+   * The safe-mode lock is applied here rather than in the route, so every path
+   * that can reach the policy — the panel, a future CLI, a scheduled job —
+   * gets the same enforcement without having to remember it.
+   *
+   * Returns the stored policy and anything the lock refused, so the caller can
+   * say so instead of letting a switch spring back with no explanation.
+   */
+  async setPolicy(id, userId, patch) {
+    const row = await one('SELECT policy FROM sites WHERE id = $1 AND user_id = $2', [id, userId])
+    if (!row) throw httpError(404, 'سایت پیدا نشد.')
+    const { policy, refused } = applyPolicyChange(row.policy, patch)
+    const saved = await one(
+      'UPDATE sites SET policy = $2 WHERE id = $1 RETURNING *',
+      [id, JSON.stringify(policy)]
+    )
+    return { site: publicSite(saved), policy, refused }
+  },
+
+  /** What the connector reported after it last ran updates. */
+  async recordUpdateRun(id, state) {
+    const row = await one(
+      'UPDATE sites SET update_state = $2 WHERE id = $1 RETURNING *',
+      [id, JSON.stringify({ ...state, at: Date.now() })]
+    )
+    return publicSite(row)
+  },
 }
 
 function slug(v) {

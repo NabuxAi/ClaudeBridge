@@ -100,6 +100,18 @@ export default function Settings() {
         })}
       </div>
 
+      {/* Auto-update policy. Rendered from the server's own description of the
+          switches, including whether each is locked, so the panel never has to
+          re-derive the rule and drift from the enforcement. */}
+      {data.updatePolicy && (
+        <UpdatePolicyCard
+          siteId={siteId}
+          policy={data.updatePolicy}
+          state={data.updateState}
+          onChange={(next) => setData((d) => ({ ...d, updatePolicy: next }))}
+        />
+      )}
+
       {/* Feature toggles */}
       <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '18px 20px', marginBottom: 22 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>
@@ -176,5 +188,132 @@ export default function Settings() {
         <Button variant="primary" size="md" leftIcon="check">ذخیرهٔ تغییرات</Button>
       </div>
     </>
+  )
+}
+
+/**
+ * The three auto-update switches.
+ *
+ * Each saves on its own — there is no "save changes" step, because a security
+ * setting that only takes effect if you remember to press a button somewhere
+ * else is a setting that will be left half-applied.
+ *
+ * Locked state comes from the server, and so does the refusal: when safe mode
+ * rejects a change, the switch snaps back AND the reason is shown. A control
+ * that silently reverts reads as a bug and teaches people to distrust the panel.
+ */
+function UpdatePolicyCard({ siteId, policy, state, onChange }) {
+  const [busy, setBusy] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function flip(id, on) {
+    setBusy(id)
+    setNotice('')
+    try {
+      const next = await siteApi(siteId).setUpdatePolicy({ [id]: on })
+      onChange(next)
+      if (next.message) setNotice(next.message)
+      else if (next.pushed === false) setNotice('ذخیره شد، ولی هنوز به سایت اعمال نشده — در بررسی بعدی دوباره تلاش می‌شود.')
+    } catch (e) {
+      setNotice(e?.message || 'ذخیره نشد.')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function flipSafeMode(on) {
+    setBusy('safeMode')
+    setNotice('')
+    try {
+      onChange(await siteApi(siteId).setUpdatePolicy({ safeMode: on }))
+    } catch (e) {
+      setNotice(e?.message || 'ذخیره نشد.')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const pending =
+    (state?.plugins_pending?.length || 0) +
+    (state?.themes_pending?.length || 0) +
+    (state?.core_outdated ? 1 : 0)
+
+  return (
+    <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '18px 20px', marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 700 }}>
+          <Icon name="shield-check" size={17} style={{ color: 'var(--gd-success)' }} /> به‌روزرسانی خودکار
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <span style={{ fontSize: 12.5, color: 'var(--gd-text-muted)' }}>حالت ایمنی</span>
+          <Switch
+            checked={policy.safeMode}
+            disabled={busy === 'safeMode'}
+            onChange={(v) => flipSafeMode(v)}
+            size="md"
+          />
+        </div>
+      </div>
+
+      {policy.lockReason && (
+        <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '0 0 14px', lineHeight: 1.7 }}>
+          <Icon name="lock" size={13} style={{ verticalAlign: '-2px', marginLeft: 5, color: 'var(--gd-success)' }} />
+          {policy.lockReason}
+        </p>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 18px' }}>
+        {policy.switches.map((s) => (
+          <div
+            key={s.id}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+              background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border-subtle)',
+              borderRadius: 'var(--gd-radius-md)', padding: '12px 14px',
+              opacity: busy === s.id ? 0.6 : 1,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {s.label}
+                {s.locked && <Icon name="lock" size={12} style={{ color: 'var(--gd-text-muted)' }} />}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2, lineHeight: 1.5 }}>{s.desc}</div>
+            </div>
+            <Switch
+              checked={s.on}
+              disabled={s.locked || busy === s.id}
+              onChange={(v) => flip(s.id, v)}
+              size="md"
+            />
+          </div>
+        ))}
+      </div>
+
+      {notice && (
+        <p style={{ fontSize: 12.5, color: 'var(--gd-warning-text)', background: 'var(--gd-warning-bg)', border: '1px solid var(--gd-warning)', borderRadius: 'var(--gd-radius-md)', padding: '9px 12px', margin: '14px 0 0', lineHeight: 1.6 }}>
+          {notice}
+        </p>
+      )}
+
+      {/* Measured, not claimed: what the site reports is still pending. */}
+      {state && (
+        <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--gd-border-subtle)', lineHeight: 1.7 }}>
+          {pending === 0 ? (
+            <>
+              <Icon name="check" size={13} style={{ verticalAlign: '-2px', marginLeft: 5, color: 'var(--gd-success)' }} />
+              وردپرس {faNum(state.wp_version)} — هیچ به‌روزرسانی معلقی نیست.
+            </>
+          ) : (
+            <>
+              وردپرس {faNum(state.wp_version)}
+              {state.core_outdated && ` (آخرین نسخه: ${faNum(state.wp_latest)})`}
+              {' — '}
+              {faNum(state.plugins_pending?.length || 0)} افزونه و {faNum(state.themes_pending?.length || 0)} قالب در انتظار به‌روزرسانی.
+            </>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

@@ -215,7 +215,49 @@ export const siteSettings = (id) => delay({
     { id: 'speed', label: 'بهینه‌سازی سرعت', desc: 'فشرده‌سازی تصاویر و پاک‌سازی دیتابیس', on: false },
   ],
   connector: { paired: true, server: 'api.digiwp.com', lastSeen: '۴۰ ثانیه پیش', version: '3.5.1' },
+  updatePolicy: describeMockPolicy(mockPolicy),
+  updateState: null,
 })
+
+// The demo has to lock the switches the same way the server does. A mock that
+// lets you turn safe mode's switches off teaches the wrong thing about the
+// product, and hides the bug where the real lock is missing.
+let mockPolicy = { safeMode: true, autoCore: true, autoPlugins: true, autoThemes: true }
+
+function describeMockPolicy(p) {
+  const locked = p.safeMode
+  return {
+    safeMode: p.safeMode,
+    locked,
+    lockReason: locked
+      ? 'حالت ایمنی روشن است. بدون به‌روز بودن، امنیت معنا ندارد — این سه گزینه تا وقتی حالت ایمنی روشن است خاموش نمی‌شوند.'
+      : null,
+    switches: [
+      { id: 'autoCore', label: 'به‌روزرسانی خودکار هستهٔ وردپرس', desc: 'نصب خودکار نسخه‌های جدید وردپرس، شامل نسخه‌های اصلی', on: p.autoCore, locked },
+      { id: 'autoPlugins', label: 'به‌روزرسانی خودکار افزونه‌ها', desc: 'همهٔ افزونه‌های مخزن وردپرس روی آخرین نسخه می‌مانند', on: p.autoPlugins, locked },
+      { id: 'autoThemes', label: 'به‌روزرسانی خودکار قالب‌ها', desc: 'همهٔ قالب‌های مخزن وردپرس روی آخرین نسخه می‌مانند', on: p.autoThemes, locked },
+    ],
+  }
+}
+
+export const setUpdatePolicy = (id, patch = {}) => {
+  const refused = []
+  const next = { ...mockPolicy }
+  if (typeof patch.safeMode === 'boolean') next.safeMode = patch.safeMode
+  for (const k of ['autoCore', 'autoPlugins', 'autoThemes']) {
+    if (typeof patch[k] !== 'boolean') continue
+    if (next.safeMode && patch[k] === false) { refused.push(k); continue }
+    next[k] = patch[k]
+  }
+  if (next.safeMode) for (const k of ['autoCore', 'autoPlugins', 'autoThemes']) next[k] = true
+  mockPolicy = next
+  return delay({
+    ...describeMockPolicy(next),
+    pushed: null,
+    refused,
+    message: refused.length ? 'حالت ایمنی روشن است؛ به‌روزرسانی خودکار خاموش نشد.' : null,
+  })
+}
 
 export const runAction = (id, action) => delay({ ok: true, action, requiresApproval: false })
 export const askGuardian = (id, message) => delay({
