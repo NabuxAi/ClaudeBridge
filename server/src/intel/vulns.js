@@ -25,14 +25,24 @@ import { compareVersions, slugOf } from './match.js'
 // Re-exported so callers have one import for "the vulnerability feature".
 export { slugOf }
 
-/** Everything we hold about the slugs a site actually has installed. */
+/**
+ * Everything we hold about the slugs a site actually has installed.
+ *
+ * `confirmed = true` is not optional. A CVE names its product in prose — "WP
+ * Super Cache plugin before 1.7.2 for WordPress" — while a site reports the
+ * slug `wp-super-cache`, and getting from one to the other is a guess. The
+ * ingest only marks a row confirmed once it has corroborated the slug against
+ * wordpress.org; of the 7,998 rows currently stored, 5,743 are unconfirmed
+ * guesses. Showing those would mean telling people their healthy plugin is
+ * vulnerable. Under-reporting is recoverable; crying wolf is not.
+ */
 async function knownFor(slugs) {
   if (!slugs.length) return []
   return all(
-    `SELECT cve_id, slug, kind, fixed_in, severity, cvss, summary, published
+    `SELECT cve_id, slug, kind, fixed_in, severity, cvss, summary, published_at
        FROM vulnerabilities
-      WHERE slug = ANY($1)
-      ORDER BY published DESC NULLS LAST`,
+      WHERE slug = ANY($1) AND confirmed = true
+      ORDER BY published_at DESC NULLS LAST`,
     [slugs]
   )
 }
@@ -88,8 +98,9 @@ export async function checkInventory(inventory = []) {
     // Our database is a keyword walk of NVD; plenty of WordPress plugin
     // vulnerabilities are only ever published in vendor advisories.
     note:
-      'این بررسی روی پایگاه CVE خودمان انجام می‌شود که از NVD ساخته شده. ' +
-      'خالی بودن نتیجه یعنی در این پایگاه چیزی نبود، نه اینکه افزونه‌ها قطعاً امن‌اند.',
+      'این بررسی روی پایگاه CVE خودمان انجام می‌شود که از NVD ساخته شده، و فقط مواردی گزارش می‌شود که ' +
+      'اسلاگشان با مخزن وردپرس تطبیق داده شده. خالی بودن نتیجه یعنی در این پایگاه چیز تأییدشده‌ای نبود، ' +
+      'نه اینکه افزونه‌ها قطعاً امن‌اند.',
   }
 }
 
@@ -104,7 +115,7 @@ function describe(cve, item) {
     severity: (cve.severity || '').toLowerCase() || null,
     cvss: cve.cvss != null ? Number(cve.cvss) : null,
     summary: cve.summary || null,
-    published: cve.published || null,
+    published: cve.published_at ? Number(cve.published_at) : null,
     active: Boolean(item.active),
     // The action, spelled out rather than left implied. An inactive plugin
     // with a known hole is still a file on disk that can be reached directly,
