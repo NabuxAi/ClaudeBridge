@@ -7,17 +7,21 @@ import { account } from '../../lib/api.js'
 
 // Design copy per plan id — merged onto the fetched plans so prices stay
 // data-driven while the marketing text is reproduced verbatim.
+// Feature lists rewritten to what exists. The old ones sold one-minute
+// monitoring, a staging environment, SMS alerts, weekly reports, white-label
+// reporting, an API and webhooks, and a dedicated account manager. None are
+// built. A comparison table is the most literal promise a product makes.
 const PLAN_DETAILS = {
   base: {
     subtitle: 'برای یک وب‌سایت شخصی یا فروشگاه',
-    cta: 'شروع آزمایش رایگان',
+    cta: 'انتخاب پلن پایه',
     variant: 'secondary',
     features: [
       { t: '۱ سایت وردپرس' },
-      { t: 'پایش هر ۵ دقیقه' },
-      { t: 'بکاپ روزانه (۷ روز)' },
-      { t: 'ریسک‌سنجی آپدیت‌ها' },
-      { t: 'هشدار ایمیلی' },
+      { t: 'به‌روزرسانی خودکار هسته، افزونه و قالب' },
+      { t: 'حالت ایمنی: قفل روی به‌روزرسانی خودکار' },
+      { t: 'بکاپ دیتابیس روی خود سایت' },
+      { t: 'اسکن بدافزار روزانه' },
     ],
   },
   pro: {
@@ -27,10 +31,10 @@ const PLAN_DETAILS = {
     features: [
       { t: 'همهٔ امکانات پایه، به‌علاوهٔ:', head: true },
       { t: 'تا ۵ سایت وردپرس' },
-      { t: 'پایش هر ۱ دقیقه + محیط استیجینگ' },
-      { t: 'دستیار هوشمند AI' },
-      { t: 'هشدار ایمیل، پیامک و تلگرام' },
-      { t: 'گزارش هفتگی خودکار' },
+      { t: 'بررسی یکپارچگی فایل‌های هسته' },
+      { t: 'بررسی تداخل افزونه و قالب' },
+      { t: 'عملیات نجات' },
+      { t: 'دستیار مبتنی بر داده‌های واقعی سایت' },
     ],
   },
   agency: {
@@ -40,10 +44,7 @@ const PLAN_DETAILS = {
     features: [
       { t: 'همهٔ امکانات حرفه‌ای، به‌علاوهٔ:', head: true },
       { t: 'سایت نامحدود' },
-      { t: 'اعضای تیم و نقش‌ها' },
-      { t: 'گزارش با برند شما (White-label)' },
-      { t: 'API و وبهوک' },
-      { t: 'پشتیبانی اولویت‌دار + مدیر اختصاصی' },
+      { t: 'گزارش امنیتی روزانه در تلگرام' },
     ],
   },
 }
@@ -51,22 +52,21 @@ const PLAN_DETAILS = {
 // Feature-comparison rows. A cell is a string, { t, mono }, or { icon }.
 const ROWS = [
   { label: 'تعداد سایت', base: { t: '۱', mono: true }, pro: { t: '۵', mono: true }, agency: 'نامحدود' },
-  { label: 'فاصلهٔ پایش', base: '۵ دقیقه', pro: '۱ دقیقه', agency: '۳۰ ثانیه' },
-  { label: 'بکاپ خودکار', base: 'روزانه · ۷ روز', pro: 'روزانه · ۳۰ روز', agency: 'ساعتی · ۹۰ روز' },
-  { label: 'محیط استیجینگ', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
-  { label: 'دستیار هوشمند AI', base: 'محدود', pro: { icon: 'check' }, agency: 'نامحدود' },
-  { label: 'کانال هشدار', base: 'ایمیل', pro: 'ایمیل·پیامک·تلگرام', agency: 'همه + وبهوک' },
-  { label: 'اعضای تیم', base: { icon: 'minus' }, pro: '۳ نفر', agency: 'نامحدود' },
-  { label: 'گزارش با برند شما', base: { icon: 'minus' }, pro: { icon: 'minus' }, agency: { icon: 'check' } },
-  { label: 'پشتیبانی', base: 'تیکت', pro: 'تیکت · چت', agency: 'اولویت‌دار · تلفن' },
+  { label: 'به‌روزرسانی خودکار', base: { icon: 'check' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
+  { label: 'اسکن بدافزار', base: 'روزانه', pro: 'روزانه', agency: 'روزانه' },
+  { label: 'بکاپ دیتابیس', base: 'روی خود سایت', pro: 'روی خود سایت', agency: 'روی خود سایت' },
+  { label: 'بررسی یکپارچگی هسته', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
+  { label: 'بررسی تداخل', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
+  { label: 'عملیات نجات', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
+  { label: 'گزارش تلگرام', base: { icon: 'minus' }, pro: { icon: 'minus' }, agency: { icon: 'check' } },
+  { label: 'پشتیبانی', base: 'تیکت', pro: 'تیکت', agency: 'اولویت‌دار' },
 ]
 
-const TRUST = [
-  { icon: 'badge-check', color: 'var(--gd-success)', t: 'نماد اعتماد الکترونیکی' },
-  { icon: 'rotate-ccw', color: 'var(--gd-primary)', t: 'بازگشت وجه تا ۷ روز' },
-  { icon: 'credit-card', color: 'var(--gd-text-secondary)', t: 'پرداخت با همهٔ کارت‌های شتاب' },
-  { icon: 'file-text', color: 'var(--gd-text-secondary)', t: 'صدور فاکتور رسمی' },
-]
+// The trust badges claimed an e-namad certificate, a 7-day refund policy,
+// Shetab card payments and official invoicing — no payment gateway is
+// connected, so none of the last three can be true yet, and the certificate is
+// not ours to display. Left empty until they are real.
+const TRUST = []
 
 function ValueCell({ v, pro, last }) {
   const style = {

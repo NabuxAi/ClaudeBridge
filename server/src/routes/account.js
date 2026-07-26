@@ -33,12 +33,39 @@ router.post('/sites', async (req, res, next) => {
 })
 
 // Presentational data (real product config; not per-user dynamic in this reference).
+// Three views with no system behind them. Each was returning seed data as if
+// it were the signed-in user's own: a saved card ending 8824, three paid
+// invoices, two colleagues with names and email addresses, and notification
+// channels pointing at a phone number and a Telegram handle that belong to
+// nobody. Personal-looking data is the most believable kind, so these now say
+// plainly that the feature does not exist rather than showing a plausible
+// version of it.
+//
+// The plan list stays: it is a price list, the same for everyone, and true.
+const NOT_BUILT = (what) => ({
+  provenance: { live: [], unavailable: what },
+})
+
 router.get('/billing/plans', (_req, res) => res.json(seed.plans))
-router.get('/billing', (_req, res) => res.json(seed.billing))
-router.get('/billing/invoices', (_req, res) => res.json(seed.invoices))
-router.get('/billing/invoices/:id', (req, res) => res.json(seed.invoiceDetail(req.params.id)))
-router.get('/team', (_req, res) => res.json(seed.team))
-router.get('/notifications', (_req, res) => res.json(seed.notifications))
+router.get('/billing', (_req, res) =>
+  res.json(NOT_BUILT('صورتحساب و پرداخت هنوز ساخته نشده — هیچ درگاه پرداختی متصل نیست و کارتی ذخیره نمی‌شود.')))
+router.get('/billing/invoices', (_req, res) =>
+  res.json({ ...NOT_BUILT('فاکتوری صادر نمی‌شود چون سیستم پرداخت هنوز وجود ندارد.'), list: [] }))
+router.get('/billing/invoices/:id', (_req, res) =>
+  res.status(404).json({ message: 'فاکتوری وجود ندارد — سیستم پرداخت هنوز ساخته نشده.' }))
+router.get('/team', async (req, res, next) => {
+  try {
+    // The one real member: whoever is signed in. Inviting others needs an
+    // invitation flow and per-site permissions, neither of which exists.
+    const me = await users.byId(req.user.sub)
+    res.json({
+      ...NOT_BUILT('دعوت هم‌تیمی و دسترسی چندکاربره هنوز ساخته نشده. فقط حساب خودتان وجود دارد.'),
+      list: me ? [{ id: me.id, name: me.name, email: me.email, role: 'owner', roleLabel: 'مالک', initials: (me.name || me.email)[0], sites: 'همه' }] : [],
+    })
+  } catch (e) { next(e) }
+})
+router.get('/notifications', (_req, res) =>
+  res.json(NOT_BUILT('تنظیمات اعلان هنوز ساخته نشده. گزارش امنیتی روزانه فقط به تلگرامی می‌رود که در سرور پیکربندی شده.')))
 router.get('/profile', async (req, res, next) => {
   try { res.json(await users.byId(req.user.sub)) } catch (e) { next(e) }
 })

@@ -23,6 +23,14 @@ export const config = {
     token: process.env.TELEGRAM_BOT_TOKEN || '',
     chatId: process.env.TELEGRAM_CHAT_ID || '',
   },
+  // Optional OpenAI-compatible gateway for the assistant. Absent is a fully
+  // supported state: without it the assistant still answers, from the site's
+  // own readings rather than from a model.
+  assistant: {
+    url: process.env.ASSISTANT_URL || '',
+    key: process.env.ASSISTANT_API_KEY || '',
+    model: process.env.ASSISTANT_MODEL || 'claude-sonnet-5',
+  },
   // Hour (UTC, 0–23) to send the daily digest.
   digestHour: Number.isFinite(Number(process.env.DIGEST_HOUR)) ? Number(process.env.DIGEST_HOUR) : 8,
 }

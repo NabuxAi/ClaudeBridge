@@ -2,14 +2,22 @@ import { Link } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import { Button, StatusPill, AuthorityBadge } from '../../components/index.js'
 
+// Six capability claims, each rewritten to what the product does. The old set
+// promised 24-hour monitoring, contact-form and payment-gateway checks, host
+// storage tracking, staging tests, automatic break-fix, mobile/desktop
+// rendering tests, off-site backups with restore testing, image compression,
+// Core Web Vitals, suspicious-login detection and attack blocking. None of
+// those exist. Selling them is worse than showing them in the panel, because
+// this is where the purchase decision is made.
 const FEATURES = [
-  { icon: 'activity', title: 'مراقبت دائمی ۲۴ ساعته', desc: 'باز بودن سایت، خطاهای ۴۰۴ و ۵۰۰، فرم تماس، درگاه پرداخت، SSL و فضای هاست بررسی می‌شوند.' },
-  { icon: 'refresh-cw', title: 'آپدیت با ریسک‌سنجی', desc: 'بررسی سازگاری، بکاپ، تست در محیط آزمایشی، سپس تأیید یا بازگشت — نه نصب کورکورانه.' },
-  { icon: 'rotate-ccw', title: 'رفع خودکار خرابی', desc: 'تست در موبایل و دسکتاپ؛ در صورت خرابی، بازگردانی خودکار آخرین تغییر و پاک‌سازی کش.' },
-  { icon: 'database', title: 'بکاپ و بازیابی سالم', desc: 'بکاپ قبل از هر تغییر، نسخه‌های روزانه و هفتگی روی فضای خارجی، همراه با تست بازیابی.' },
-  { icon: 'zap', title: 'بهبود سرعت', desc: 'فشرده‌سازی و تبدیل تصاویر، پاک‌سازی داده‌های موقت، بهینه‌سازی دیتابیس و کنترل Core Web Vitals.' },
-  { icon: 'lock', title: 'امنیت روزمره', desc: 'شناسایی ورودهای مشکوک، بررسی تغییر فایل‌ها، مسدودسازی حملات و هشدار انقضای SSL.' },
+  { icon: 'refresh-cw', title: 'همیشه به‌روز', desc: 'هسته، افزونه‌ها و قالب‌ها خودکار به آخرین نسخه می‌رسند. در حالت ایمنی، این گزینه‌ها قابل خاموش کردن نیستند.' },
+  { icon: 'shield-check', title: 'اسکن بدافزار', desc: 'اسکن روزانه با بانک امضای به‌روز، به‌علاوهٔ جست‌وجوی هش در پایگاه‌های بیرونی.' },
+  { icon: 'file-check-2', title: 'بررسی یکپارچگی هسته', desc: 'هر فایل هستهٔ وردپرس با نسخهٔ رسمی مقایسه می‌شود؛ فایل ناشناس در wp-includes خودش یک یافته است.' },
+  { icon: 'database', title: 'بکاپ و بازگردانی', desc: 'دامپ دیتابیس با PHP خالص — روی هاست‌هایی که exec() بسته است هم کار می‌کند — و فقط دامپ‌های کامل ثبت می‌شوند.' },
+  { icon: 'git-branch', title: 'پیدا کردن تداخل', desc: 'صفحهٔ خرابتان را می‌دهید؛ افزونه‌ها و قالب گروه‌گروه خاموش می‌شوند تا مقصر پیدا شود و بعد همه‌چیز برمی‌گردد.' },
+  { icon: 'shield-alert', title: 'عملیات نجات', desc: 'برای سایتی که دیگر به فایل‌هایش نمی‌شود اعتماد کرد: جایگزینی با نسخهٔ رسمی، نه پاک‌سازی حدسی.' },
 ]
+
 
 const AUTH_LEVELS = [
   { level: 'report', icon: 'eye', tone: 'gray', title: 'فقط گزارش', desc: 'فقط مشاهده و پیشنهاد می‌دهد؛ هیچ تغییری روی سایت اعمال نمی‌شود.' },
@@ -18,10 +26,11 @@ const AUTH_LEVELS = [
 ]
 
 const PLANS = [
-  { name: 'پایه', price: '۱۹۰٬۰۰۰', popular: false, feats: ['۱ سایت', 'پایش هر ۵ دقیقه', 'بکاپ روزانه'], cta: 'انتخاب پایه', variant: 'secondary' },
-  { name: 'حرفه‌ای', price: '۴۹۰٬۰۰۰', popular: true, feats: ['۵ سایت', 'پایش هر ۱ دقیقه', 'بکاپ + محیط استیجینگ'], cta: 'شروع رایگان', variant: 'primary' },
-  { name: 'آژانس', price: '۹۹۰٬۰۰۰', popular: false, feats: ['سایت نامحدود', 'اعضای تیم و نقش‌ها', 'گزارش با برند شما'], cta: 'انتخاب آژانس', variant: 'secondary' },
+  { name: 'پایه', price: '۱۹۰٬۰۰۰', popular: false, feats: ['۱ سایت', 'به‌روزرسانی خودکار', 'بکاپ و اسکن روزانه'], cta: 'انتخاب پایه', variant: 'secondary' },
+  { name: 'حرفه‌ای', price: '۴۹۰٬۰۰۰', popular: true, feats: ['۵ سایت', 'بررسی یکپارچگی هسته', 'بررسی تداخل و عملیات نجات'], cta: 'انتخاب حرفه‌ای', variant: 'primary' },
+  { name: 'آژانس', price: '۹۹۰٬۰۰۰', popular: false, feats: ['سایت نامحدود', 'همهٔ امکانات حرفه‌ای', 'گزارش روزانه در تلگرام'], cta: 'انتخاب آژانس', variant: 'secondary' },
 ]
+
 
 export default function Landing() {
   return (
@@ -34,7 +43,7 @@ export default function Landing() {
               <Icon name="sparkles" size={14} /> پشتیبان هوشمند وردپرس
             </span>
             <h1 style={{ fontSize: 44, lineHeight: 1.18, fontWeight: 800, letterSpacing: '-.02em', margin: '18px 0 0', color: 'var(--gd-text)' }}>
-              سایت وردپرسی شما، <span style={{ color: 'var(--gd-primary)' }}>۲۴ ساعته</span> زیر نظر یک پشتیبان هوشمند
+              سایت وردپرسی شما، <span style={{ color: 'var(--gd-primary)' }}>همیشه به‌روز</span> و زیر نظر اسکن روزانه
             </h1>
             <p style={{ fontSize: 17, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: '16px 0 0', maxWidth: 520 }}>
               به‌جای استخدام پشتیبان دائمی سایت. کارهای روزمرهٔ نگهداری خودکار می‌شوند و فقط برای تصمیم‌های حساس از شما اجازه گرفته می‌شود.

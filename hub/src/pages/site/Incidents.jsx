@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Badge, AlertCard, Tabs, NotMeasured } from '../../components/index.js'
+import { Button, Badge, AlertCard, Tabs, NotMeasured, Provenance } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
 
@@ -25,12 +25,23 @@ export default function Incidents() {
   const { siteId } = useOutletContext()
   const [data, setData] = useState(null)
   const [tab, setTab] = useState('all')
+  const [busy, setBusy] = useState('')
+
+  const load = () => siteApi(siteId).incidents().then(setData)
 
   useEffect(() => {
     let alive = true
     siteApi(siteId).incidents().then((d) => alive && setData(d))
     return () => { alive = false }
   }, [siteId])
+
+  // Dismissing closes our record of the alert. It does not touch the site, and
+  // the next scan that still sees the problem will open it again — so the
+  // button is worded as ignoring, never as resolving.
+  async function dismiss(id) {
+    setBusy(id)
+    try { await siteApi(siteId).dismissIncident(id); await load() } finally { setBusy('') }
+  }
 
   if (!data) return <PageHead title="هشدارها" subtitle="رخدادها و اقدام‌های خودکار پشتیبان" />
 
@@ -54,7 +65,11 @@ export default function Incidents() {
       <PageHead
         title="هشدارها"
         subtitle="رخدادها و اقدام‌های خودکار پشتیبان"
-        action={<Button variant="primary" size="sm" leftIcon="refresh-cw">بررسی دوباره</Button>}
+        action={(
+          <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={load}>
+            بارگیری دوباره
+          </Button>
+        )}
       />
 
       {/* Severity filter */}
@@ -72,11 +87,13 @@ export default function Incidents() {
             desc={featured.desc}
             fields={featured.fields}
             actions={(
-              <>
-                <Button variant="primary" size="sm" leftIcon="file-text">گزارش کامل رخداد</Button>
-                <Button variant="secondary" size="sm" leftIcon="git-compare">مشاهدهٔ نسخهٔ افزونه</Button>
-                <Button variant="ghost" size="sm">نادیده گرفتن</Button>
-              </>
+              <Button
+                variant="ghost" size="sm"
+                disabled={busy === featured.id}
+                onClick={() => featured.id && dismiss(featured.id)}
+              >
+                نادیده گرفتن
+              </Button>
             )}
           />
         </div>
@@ -113,8 +130,8 @@ export default function Incidents() {
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>رخدادهای اخیر</div>
       <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '4px 20px' }}>
         {filtered.length === 0 && (
-          <div style={{ padding: '28px 0', textAlign: 'center', fontSize: 13.5, color: 'var(--gd-text-muted)' }}>
-            موردی در این دسته یافت نشد
+          <div style={{ padding: '28px 0', textAlign: 'center', fontSize: 13.5, color: 'var(--gd-text-muted)', lineHeight: 1.9 }}>
+            {data.empty ? (data.emptyNote || 'هنوز رخدادی ثبت نشده.') : 'موردی در این دسته یافت نشد'}
           </div>
         )}
         {filtered.map((it, i) => {
@@ -130,12 +147,21 @@ export default function Incidents() {
               </div>
               <span style={{ fontFamily: 'var(--gd-font-mono)', fontSize: 12, color: 'var(--gd-text-muted)', whiteSpace: 'nowrap' }}>{it.time}</span>
               {it.resolved
-                ? <Badge variant="success" appearance="soft">حل شد</Badge>
-                : <Badge variant="warning" appearance="soft">در انتظار</Badge>}
+                ? <Badge variant="success" appearance="soft">بسته شد</Badge>
+                : (
+                  <>
+                    <Badge variant="warning" appearance="soft">باز</Badge>
+                    <Button variant="ghost" size="sm" disabled={busy === it.id} onClick={() => dismiss(it.id)}>
+                      نادیده گرفتن
+                    </Button>
+                  </>
+                )}
             </div>
           )
         })}
       </div>
+
+      <Provenance data={data} />
     </>
   )
 }

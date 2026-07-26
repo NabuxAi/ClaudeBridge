@@ -63,10 +63,27 @@ test('garbage in gives null, so the caller keeps its own error path', () => {
   assert.equal(updatesFromStatus('nope'), null)
 })
 
-test('views without a data source declare it instead of being filled in', () => {
-  // Incidents is still the honest gap: nothing records them yet.
-  assert.ok(PROVENANCE.incidents.unavailable, 'incidents has no source and says so')
-  assert.deepEqual(PROVENANCE.incidents.live, [])
+test('alerts come from the event log, and still name what they cannot see', () => {
+  // This used to assert that incidents had no source at all. The event log was
+  // built instead of the screen being removed, so the expectation moved — but
+  // the important half stayed: a source existing does not make the view
+  // complete, and the gaps have to keep being declared.
+  assert.equal(PROVENANCE.incidents.unavailable, undefined)
+  assert.deepEqual(PROVENANCE.incidents.live, ['لاگ رخداد'])
+  // We only see a site when we ask it, so downtime between scans is invisible
+  // and this list must never be read as uptime monitoring.
+  assert.ok(PROVENANCE.incidents.partial.downtime)
+  assert.ok(PROVENANCE.incidents.partial.logins)
+})
+
+test('the overview measures what it can and disowns the rest', () => {
+  assert.equal(PROVENANCE.overview.unavailable, undefined)
+  assert.ok(PROVENANCE.overview.live.includes('HTTP probe'))
+  assert.ok(PROVENANCE.overview.live.includes('TLS handshake'))
+  // The three numbers that used to be invented on the first screen.
+  assert.ok(PROVENANCE.overview.partial.uptime)
+  assert.ok(PROVENANCE.overview.partial.responseMs)
+  assert.ok(PROVENANCE.overview.partial.hostSpace, 'host storage is not measurable from outside')
 })
 
 test('backups are measured now that the feature exists', () => {

@@ -123,23 +123,13 @@ export default function Settings() {
         />
       )}
 
-      {/* Feature toggles */}
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '18px 20px', marginBottom: 22 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>
-          <Icon name="sliders-horizontal" size={17} style={{ color: 'var(--gd-primary)' }} /> ویژگی‌های خودکار
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 18px' }}>
-          {data.toggles.map((t) => (
-            <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border-subtle)', borderRadius: 'var(--gd-radius-md)', padding: '12px 14px' }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700 }}>{t.label}</div>
-                <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2, lineHeight: 1.5 }}>{t.desc}</div>
-              </div>
-              <Switch defaultChecked={t.on} size="md" />
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* The four switches that used to sit here — ۲۴-hour monitoring, automatic
+          break-fix, backup-before-every-change, speed optimisation — were
+          `defaultChecked` with no handler: nothing behind them existed, and
+          nothing was saved when they were flipped. Three of the four described
+          capabilities this system does not have at all. The real switches, the
+          ones that write to the server and are enforced by safe mode, are the
+          update-policy card above. */}
 
       {/* Sensitive actions + connector/monitoring */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 18, marginBottom: 22 }}>

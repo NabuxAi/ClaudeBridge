@@ -20,10 +20,13 @@
  */
 export const PROVENANCE = {
   overview: {
-    live: ['site_info'],
+    // site_info from the connector; the rest measured from here with a real
+    // HTTP request and a real TLS handshake at the moment the page loads.
+    live: ['site_info', 'HTTP probe', 'TLS handshake'],
     partial: {
-      uptime: 'نیازمند پایش مستمر از سمت ما — هنوز ساخته نشده',
-      responseMs: 'نیازمند پایش مستمر — هنوز ساخته نشده',
+      uptime: 'آپ‌تایم نیاز به پایش پیوسته دارد — ما فقط هنگام باز کردن این صفحه بررسی می‌کنیم',
+      responseMs: 'یک نمونه از سرور ما، نه میانگین و نه تجربهٔ بازدیدکننده',
+      hostSpace: 'فضای دیسک هاست از بیرون قابل اندازه‌گیری نیست',
     },
   },
   updates: {
@@ -38,8 +41,17 @@ export const PROVENANCE = {
     },
   },
   incidents: {
-    live: [],
-    unavailable: 'ثبت رخداد هنوز ساخته نشده. برای این بخش هیچ دادهٔ واقعی وجود ندارد.',
+    // Our own event log. Every row is something this system observed on the
+    // site or did to it — scans, sensitive actions, policy changes, rescues.
+    liveLabel: 'ثبت‌شده روی سرور ما',
+    live: ['لاگ رخداد'],
+    partial: {
+      // Stated because the absence is easy to misread: we see the site when we
+      // ask, so an outage between two scans leaves nothing here. This list is
+      // an audit trail, not uptime monitoring.
+      downtime: 'قطعی بین دو اسکن ثبت نمی‌شود — پایش مستمر هنوز ساخته نشده',
+      logins: 'ورودهای ناموفق نیازمند ثبت رویداد ورود روی سایت است — هنوز ساخته نشده',
+    },
   },
   backups: {
     // Built for real: the connector dumps the database in pure PHP (so it works

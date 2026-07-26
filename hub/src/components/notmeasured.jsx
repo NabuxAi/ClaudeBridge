@@ -48,7 +48,10 @@ export function Provenance({ data }) {
       {p.live?.length > 0 && (
         <div>
           <Icon name="check" size={12} style={{ verticalAlign: '-1px', marginLeft: 4, color: 'var(--gd-success)' }} />
-          اندازه‌گیری‌شده از سایت: <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{p.live.join('، ')}</span>
+          {/* Overridable, because not every view reads the site: the alerts
+              log is our own record of what we did and saw, and calling that
+              "measured from the site" would misstate where it came from. */}
+          {p.liveLabel || 'اندازه‌گیری‌شده از سایت'}: <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{p.live.join('، ')}</span>
         </div>
       )}
       {partial.map(([field, why]) => (

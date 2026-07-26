@@ -20,10 +20,10 @@ export default function AuthLayout() {
           <Icon name="shield-check" size={30} />
         </span>
         <h3 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.35, letterSpacing: '-.01em', margin: '22px 0 0' }}>
-          سایت شما، ۲۴ ساعته زیر نظر یک پشتیبان هوشمند.
+          سایت شما، همیشه به‌روز و زیر نظر اسکن روزانه.
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13, marginTop: 26 }}>
-          {['مراقبت و رفع خودکار خرابی', 'آپدیت با ریسک‌سنجی و تست', 'بکاپ سالم و برگشت‌پذیر'].map((t) => (
+          {['به‌روزرسانی خودکار با حالت ایمنی', 'اسکن بدافزار و بررسی یکپارچگی هسته', 'بکاپ دیتابیس با بازگردانی'].map((t) => (
             <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 11, fontSize: 14, color: 'var(--gd-text-secondary)' }}>
               <Icon name="check-circle-2" size={19} style={{ color: 'var(--gd-primary)' }} /> {t}
             </span>

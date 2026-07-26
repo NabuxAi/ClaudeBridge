@@ -2,37 +2,30 @@ import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Badge } from '../../components/index.js'
+import { Button } from '../../components/index.js'
 import { site as siteApi } from '../../lib/api.js'
 
+// Only questions answerable from readings we really take. "وضعیت پرداخت چطوره؟"
+// was here and nothing in this system watches payments — a suggested question
+// with no possible honest answer is a promise the product breaks on click.
 const SUGGESTIONS = [
-  'وضعیت پرداخت چطوره؟',
   'آخرین بکاپ کی بود؟',
   'چه آپدیت‌هایی در انتظارند؟',
+  'الان چه هشدار بازی دارم؟',
 ]
 
 const mono = { fontFamily: 'var(--gd-font-mono)' }
-
-function Stat({ value, label, color }) {
-  return (
-    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border-subtle)', borderRadius: 'var(--gd-radius-md)', padding: '9px 13px' }}>
-      <span style={{ ...mono, fontSize: 16, fontWeight: 800, color }}>{value}</span>
-      <span style={{ fontSize: 11, color: 'var(--gd-text-muted)' }}>{label}</span>
-    </span>
-  )
-}
 
 export default function Assistant() {
   const { siteId, site } = useOutletContext()
   const siteName = site?.name || 'mystore.ir'
 
-  const initialMessages = [
-    { from: 'ai', kind: 'intro' },
-    { from: 'user', text: 'چرا سایت امروز کمی کند شده؟' },
-    { from: 'ai', kind: 'slowdown' },
-    { from: 'user', text: 'بله، انجامش بده' },
-    { from: 'ai', kind: 'done' },
-  ]
+  // Just the greeting. What used to be here was a scripted exchange —
+  // "response time went from ۲۱۰ to ۲۴۸ms", "I compressed ۱۸ images",
+  // "I optimised the database and freed ۳۴۰MB" — presented as this site's own
+  // history. None of it was measured, none of those actions exist, and it read
+  // as a log of work already done on the customer's behalf.
+  const initialMessages = [{ from: 'ai', kind: 'intro' }]
 
   const [messages, setMessages] = useState(initialMessages)
   const [input, setInput] = useState('')
@@ -52,7 +45,7 @@ export default function Assistant() {
     setSending(true)
     try {
       const res = await siteApi(siteId).ask(q)
-      setMessages((m) => [...m, { from: 'ai', text: res.reply, refs: res.refs }])
+      setMessages((m) => [...m, { from: 'ai', text: res.reply, refs: res.refs, note: res.note, unknown: res.unknown }])
     } finally {
       setSending(false)
     }
@@ -79,44 +72,26 @@ export default function Assistant() {
     if (m.kind === 'intro') {
       body = (
         <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 16, padding: '14px 17px', fontSize: 14, lineHeight: 1.85, color: 'var(--gd-text)', boxShadow: 'var(--gd-shadow-xs)' }}>
-          من پشتیبان هوشمند سایت شما هستم. می‌توانید به زبان ساده هر سوالی دربارهٔ وضعیت، سرعت یا امنیت <span style={mono}>{siteName}</span> بپرسید.
-        </div>
-      )
-    } else if (m.kind === 'slowdown') {
-      maxWidth = '82%'
-      body = (
-        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 16, padding: '15px 18px', boxShadow: 'var(--gd-shadow-xs)' }}>
-          <div style={{ fontSize: 14, lineHeight: 1.9, color: 'var(--gd-text)' }}>
-            میانگین زمان پاسخ امروز از <b>۲۱۰</b> به <b>۲۴۸</b> میلی‌ثانیه رسید. علت اصلی، بارگذاری ۱۸ تصویر بهینه‌نشده در صفحهٔ «محصولات جدید» بود که آن‌ها را فشرده و به WebP تبدیل کردم. عامل دوم، بزرگ‌شدن جدول‌های موقت دیتابیس است.
-          </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-            <Stat value="۲۴۸ms" label="زمان پاسخ فعلی" />
-            <Stat value="۱۸" label="تصویر بهینه‌شده" color="var(--gd-success-text)" />
-            <Stat value="۳۴۰MB" label="قابل آزادسازی" color="var(--gd-warning-text)" />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
-            <Button variant="primary" size="sm" leftIcon="sparkles">اجرای بهینه‌سازی دیتابیس</Button>
-            <span style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <Icon name="user-check" size={13} /> با تأیید شما انجام می‌شود
-            </span>
-          </div>
-        </div>
-      )
-    } else if (m.kind === 'done') {
-      body = (
-        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 16, padding: '14px 17px', boxShadow: 'var(--gd-shadow-xs)' }}>
-          <div style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--gd-text)' }}>
-            پیش از تغییر یک بکاپ کامل گرفتم، سپس دیتابیس را بهینه کردم. <b>۳۴۰MB</b> آزاد شد و زمان پاسخ به <b>۲۱۲ms</b> برگشت.
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <Badge variant="success" appearance="soft" icon="check-circle-2">انجام شد</Badge>
-          </div>
+          من پشتیبان سایت <span style={mono}>{siteName}</span> هستم. آنچه می‌گویم از خواندن مستقیم خود سایت می‌آید — نسخه‌ها، صف به‌روزرسانی، هشدارهای باز و بکاپ‌ها. هر چیزی که اندازه نگرفته باشیم را هم صریح می‌گویم که نمی‌دانم.
         </div>
       )
     } else {
       body = (
         <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 16, padding: '14px 17px', boxShadow: 'var(--gd-shadow-xs)' }}>
           <div style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--gd-text)' }}>{m.text}</div>
+          {/* The limits travel with the answer, not in a footnote somewhere
+              else. Someone reading "no open alerts" needs to know in the same
+              breath that uptime is not among the things being watched. */}
+          {m.note && (
+            <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 9, lineHeight: 1.8, paddingTop: 9, borderTop: '1px solid var(--gd-border-subtle)' }}>
+              {m.note}
+            </div>
+          )}
+          {m.unknown?.length > 0 && (
+            <ul style={{ margin: '7px 0 0', paddingInlineStart: 16, fontSize: 11.5, color: 'var(--gd-text-muted)', lineHeight: 1.8 }}>
+              {m.unknown.map((u, k) => <li key={k}>{u}</li>)}
+            </ul>
+          )}
           {m.refs?.length > 0 && (
             <div style={{ display: 'flex', gap: 8, marginTop: 11, flexWrap: 'wrap' }}>
               {m.refs.map((r) => (

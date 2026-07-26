@@ -15,19 +15,23 @@ const ROLE_CFG = {
 const COLS = '2.2fr 1fr 1.4fr 1fr 0.6fr'
 
 export default function Team() {
-  const [members, setMembers] = useState(null)
+  const [data, setData] = useState(null)
 
   useEffect(() => {
     let alive = true
-    account.team().then((d) => alive && setMembers(d))
+    // The server now answers with { provenance, list } — the list holds the one
+    // real member (whoever is signed in) instead of three invented colleagues.
+    account.team().then((d) => alive && setData(Array.isArray(d) ? { list: d } : d))
     return () => { alive = false }
   }, [])
+
+  const members = data?.list || null
 
   const head = (
     <PageHead
       title="اعضای تیم"
       subtitle="افراد و سطح دسترسی آن‌ها به سایت‌ها"
-      action={<Button variant="primary" size="sm" leftIcon="user-plus">دعوت عضو</Button>}
+      action={null}
     />
   )
 

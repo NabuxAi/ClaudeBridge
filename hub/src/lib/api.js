@@ -70,6 +70,10 @@ export const account = {
   team: call(mock.team, () => http('/team')),
   notifications: call(mock.notifications, () => http('/notifications')),
   profile: call(mock.profile, () => http('/profile')),
+  saveProfile: call(
+    (body) => mock.saveProfile(body),
+    (body) => http('/profile', { method: 'PATCH', body })
+  ),
   plans: call(mock.plans, () => http('/billing/plans')),
 }
 
@@ -81,6 +85,12 @@ export function site(siteId) {
   return {
     overview: call(() => mock.siteOverview(siteId), () => http(p('/overview'))),
     incidents: call(() => mock.siteIncidents(siteId), () => http(p('/incidents'))),
+    // Closes the alert without touching the site. Named "dismiss" all the way
+    // down so nothing in the chain can be read as "fixed".
+    dismissIncident: call(
+      (eventId) => mock.dismissIncident(siteId, eventId),
+      (eventId) => http(p(`/incidents/${eventId}/dismiss`), { method: 'POST', body: {} })
+    ),
     updates: call(() => mock.siteUpdates(siteId), () => http(p('/updates'))),
     security: call(() => mock.siteSecurity(siteId), () => http(p('/security'))),
     backups: call(() => mock.siteBackups(siteId), () => http(p('/backups'))),
@@ -97,6 +107,56 @@ export function site(siteId) {
     setAuthority: call(
       (level) => mock.setAuthority(siteId, level),
       (level) => http(p('/authority'), { method: 'PATCH', body: { authority: level } })
+    ),
+    // Apply updates. Queued and paced one item per pass on the site.
+    runUpdates: call(
+      (items) => mock.runUpdates(siteId, items),
+      (items) => http(p('/updates/run'), { method: 'POST', body: items ? { items } : {} })
+    ),
+    // Backups. Both writes are queued on the site — a dump or a replay inside
+    // a request would hold a PHP worker for minutes.
+    runBackup: call(
+      (body) => mock.runBackup(siteId, body),
+      (body) => http(p('/backups'), { method: 'POST', body: body || {} })
+    ),
+    restoreBackup: call(
+      (backupId, body) => mock.restoreBackup(siteId, backupId, body),
+      (backupId, body) => http(p(`/backups/${backupId}/restore`), { method: 'POST', body: body || {} })
+    ),
+    // Fetched rather than linked, because the API is Bearer-authenticated and
+    // an <a href> carries no header. The response is buffered into a Blob,
+    // which does mean a large dump briefly sits in browser memory — acceptable
+    // for a deliberate download, and the alternative (a URL that works without
+    // the header) would be a link to a database dump that anyone can replay.
+    downloadBackup: async (backupId, what = 'db') => {
+      if (USE_MOCK) return mock.downloadBackup(siteId, backupId, what)
+      const res = await fetch(`${BASE}/sites/${siteId}/backups/${backupId}/download?what=${what}`, {
+        headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new ApiError(data?.message || res.statusText, res.status, data)
+      }
+      const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1]
+        || `${backupId}.${what === 'files' ? 'zip' : 'sql'}`
+      const url = URL.createObjectURL(await res.blob())
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name
+      a.click()
+      URL.revokeObjectURL(url)
+      return { ok: true, name }
+    },
+    // Conflict hunt. Queued on the site, so this returns a job id in
+    // milliseconds rather than holding a connection open while plugins are
+    // flipped one group at a time.
+    findConflict: call(
+      (body) => mock.findConflict(siteId, body),
+      (body) => http(p('/conflict'), { method: 'POST', body })
+    ),
+    job: call(
+      (jobId) => mock.jobStatus(siteId, jobId),
+      (jobId) => http(p(`/jobs/${jobId}`))
     ),
     // Rescue runs one step at a time. Deliberately not a single "rescue this
     // site" call: each step is separately runnable and separately stoppable,

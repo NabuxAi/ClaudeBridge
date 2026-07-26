@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Icon from '../../lib/icons.jsx'
 import PageHead from '../../layouts/PageHead.jsx'
-import { Switch, Select, Badge } from '../../components/index.js'
+import { Switch, Select, Badge, NotMeasured } from '../../components/index.js'
 import { account } from '../../lib/api.js'
 
 const CHANNEL_TONE = {
@@ -34,6 +34,15 @@ export default function Notifications() {
   )
 
   if (!data) return head
+
+  if (data.provenance?.unavailable) {
+    return (
+      <>
+        <PageHead title="اعلان‌ها" subtitle="کانال‌ها و ترجیحات اطلاع‌رسانی" />
+        <NotMeasured title="اعلان‌ها" reason={data.provenance.unavailable} />
+      </>
+    )
+  }
 
   return (
     <>

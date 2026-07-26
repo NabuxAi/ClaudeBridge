@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import PageHead from '../../layouts/PageHead.jsx'
-import { Button, Badge } from '../../components/index.js'
+import { Button, Badge, NotMeasured } from '../../components/index.js'
 import { faMoney, faNum } from '../../lib/format.js'
 import { account } from '../../lib/api.js'
 
@@ -27,6 +27,31 @@ export default function Billing() {
   }, [])
 
   if (!data) return <PageHead {...HEAD} />
+
+  // Everything except the price list is unbuilt: no payment gateway, no stored
+  // card, no invoices. The page says so instead of showing a plausible account.
+  if (data.billing?.provenance?.unavailable) {
+    return (
+      <>
+        <PageHead {...HEAD} />
+        <NotMeasured title="اشتراک و صورت‌حساب" reason={data.billing.provenance.unavailable} />
+        <div style={{ fontSize: 15, fontWeight: 700, margin: '22px 0 12px' }}>پلن‌ها</div>
+        <div className="dwp-grid dwp-grid-3">
+          {(data.plans || []).map((plan) => (
+            <div key={plan.name} style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '20px 22px' }}>
+              <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>{plan.name}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 10 }}>
+                {faMoney(plan.price)} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gd-text-muted)' }}>تومان / ماه</span>
+              </div>
+              <ul style={{ margin: 0, paddingInlineStart: 18, fontSize: 12.5, color: 'var(--gd-text-muted)', lineHeight: 2 }}>
+                {(plan.features || []).map((f) => <li key={f}>{f}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </>
+    )
+  }
 
   const { billing, invoices, plans } = data
   const usagePct = billing.sitesLimit ? Math.round((billing.sitesUsed / billing.sitesLimit) * 100) : 0

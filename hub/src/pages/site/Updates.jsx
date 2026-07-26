@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
@@ -26,18 +26,50 @@ const COLS = '2fr 1.1fr 1fr 1.3fr 0.9fr'
 export default function Updates() {
   const { siteId } = useOutletContext()
   const [data, setData] = useState(null)
+  const [job, setJob] = useState(null)
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const timer = useRef(null)
+
+  // update_status forces a fresh check against wordpress.org rather than
+  // reading a cached transient, so reloading the view really is re-checking.
+  const load = () => siteApi(siteId).updates().then(setData)
 
   useEffect(() => {
     let alive = true
     siteApi(siteId).updates().then((d) => alive && setData(d))
-    return () => { alive = false }
+    return () => { alive = false; clearTimeout(timer.current) }
   }, [siteId])
+
+  function poll(jobId) {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(async () => {
+      const s = await siteApi(siteId).job(jobId)
+      setJob(s)
+      if (s.state !== 'done' && s.state !== 'failed') poll(jobId)
+      else load()
+    }, 2000)
+  }
+
+  async function apply(items) {
+    setBusy(items ? items[0].name : 'all'); setError('')
+    try {
+      const res = await siteApi(siteId).runUpdates(items)
+      const started = res.job || res
+      setJob(started)
+      poll(started.id)
+    } catch (e) { setError(e?.message || 'اجرا نشد.') } finally { setBusy('') }
+  }
 
   const head = (
     <PageHead
       title="آپدیت‌های ریسک‌سنجی‌شده"
-      subtitle="هر آپدیت پیش از اجرا ریسک‌سنجی و در محیط آزمایشی تست می‌شود"
-      action={<Button variant="primary" size="sm" leftIcon="refresh-cw">بررسی آپدیت جدید</Button>}
+      subtitle="ریسک هر آپدیت از نوع تغییر نسخه سنجیده می‌شود؛ محیط استیجینگ نداریم"
+      action={(
+        <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={load}>
+          بررسی دوباره
+        </Button>
+      )}
     />
   )
 
@@ -55,11 +87,16 @@ export default function Updates() {
     { icon: 'user-check', value: confirmCount, label: 'نیازمند تأیید شما', bg: 'var(--gd-warning-bg)', color: 'var(--gd-warning)' },
   ]
 
+  // Three of the four lines here used to be unconditional green ticks:
+  // "compatibility checked", "full backup taken before the change", "staging
+  // test passed". None had happened — the backup is taken when the update
+  // actually runs, and there is no staging environment at all. What is left is
+  // what can be said truthfully before the button is pressed.
   const featuredChecklist = featured && [
-    { icon: 'check-circle-2', color: 'var(--gd-success)', text: 'سازگاری با نسخهٔ وردپرس بررسی شد' },
-    { icon: 'check-circle-2', color: 'var(--gd-success)', text: 'بکاپ کامل پیش از تغییر گرفته شد' },
-    { icon: 'check-circle-2', color: 'var(--gd-success)', text: 'تست در محیط استیجینگ موفق بود' },
-    { icon: 'alert-triangle', color: 'var(--gd-warning)', text: featured.note },
+    { icon: 'info', color: 'var(--gd-text-muted)', text: 'ریسک از روی نوع تغییر نسخه سنجیده شده، نه از اجرای واقعی' },
+    { icon: 'database-backup', color: 'var(--gd-text-secondary)', text: 'هنگام اجرا، پیش از هر تغییر یک بکاپ دیتابیس گرفته می‌شود' },
+    { icon: 'alert-triangle', color: 'var(--gd-warning)', text: 'محیط استیجینگ نداریم — تغییر مستقیم روی سایت زنده اعمال می‌شود' },
+    ...(featured.note ? [{ icon: 'alert-triangle', color: 'var(--gd-warning)', text: featured.note }] : []),
   ]
 
   return (
@@ -116,10 +153,16 @@ export default function Updates() {
                 </span>
               ))}
             </div>
+            {/* "مشاهدهٔ تفاوت‌ها" and "فعلاً نه" were here with no handler and
+                no backend — there is no diff viewer and no defer list. */}
             <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
-              <Button variant="primary" size="md" leftIcon="check">تأیید و اجرا</Button>
-              <Button variant="secondary" size="md" leftIcon="git-compare">مشاهدهٔ تفاوت‌ها</Button>
-              <Button variant="ghost" size="md">فعلاً نه</Button>
+              <Button
+                variant="primary" size="md" leftIcon="check"
+                disabled={Boolean(busy) || job?.state === 'running'}
+                onClick={() => apply([{ type: featured.kind === 'theme' ? 'theme' : 'plugin', name: featured.file || featured.name }])}
+              >
+                تأیید و اجرا
+              </Button>
             </div>
           </div>
         </div>
@@ -149,7 +192,15 @@ export default function Updates() {
               <span style={{ color: 'var(--gd-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <Icon name={st.icon} size={14} style={{ color: st.color, flex: '0 0 auto' }} /> {st.label}
               </span>
-              <Button variant="ghost" size="sm">جزئیات</Button>
+              {/* Was a "جزئیات" button with nowhere to go. The row already
+                  carries every field we hold about the update. */}
+              <Button
+                variant="ghost" size="sm"
+                disabled={Boolean(busy) || job?.state === 'running'}
+                onClick={() => apply([{ type: u.kind === 'theme' ? 'theme' : 'plugin', name: u.file || u.name }])}
+              >
+                اجرا
+              </Button>
             </div>
           )
         })}
@@ -171,10 +222,42 @@ export default function Updates() {
                 <span>{d.when}</span>
               </div>
             </div>
-            <Button variant="ghost" size="sm" leftIcon="rotate-ccw">بازگردانی</Button>
+            {/* Rolling a plugin back to its previous version is a real thing
+                WordPress can do, but nothing here implements it — the button
+                did nothing. Removed rather than left as decoration. */}
           </div>
         ))}
       </div>
+
+      {error && (
+        <p style={{ fontSize: 13, color: 'var(--gd-danger-text)', background: 'var(--gd-danger-bg)', border: '1px solid var(--gd-danger)', borderRadius: 'var(--gd-radius-md)', padding: '11px 14px', marginTop: 16 }}>
+          {error}
+        </p>
+      )}
+
+      {job && (
+        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: '14px 18px', marginTop: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 9, fontSize: 13.5, fontWeight: 700 }}>
+            <span>{job.message || 'در حال اجرا'}</span>
+            <Badge variant={job.state === 'failed' ? 'danger' : job.state === 'done' ? 'success' : 'info'} appearance="soft">
+              {job.state === 'failed' ? 'ناموفق' : job.state === 'done' ? 'تمام' : `${faNum(job.progress || 0)}٪`}
+            </Badge>
+          </div>
+          <div style={{ height: 6, borderRadius: 3, background: 'var(--gd-bg-inset)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${job.state === 'done' ? 100 : job.progress || 0}%`, background: job.state === 'failed' ? 'var(--gd-danger)' : 'var(--gd-primary)', transition: 'width .4s ease' }} />
+          </div>
+          {job.result?.failed?.length > 0 && (
+            <ul style={{ margin: '10px 0 0', paddingInlineStart: 18, fontSize: 12, color: 'var(--gd-danger-text)', lineHeight: 1.9 }}>
+              {job.result.failed.map((f, i) => <li key={i}>{f.name}: {f.error}</li>)}
+            </ul>
+          )}
+          {job.result?.safety_backup && (
+            <p style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', margin: '9px 0 0', lineHeight: 1.8 }}>
+              بکاپ پیش از به‌روزرسانی: <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{job.result.safety_backup}</span>
+            </p>
+          )}
+        </div>
+      )}
     </>
   )
 }

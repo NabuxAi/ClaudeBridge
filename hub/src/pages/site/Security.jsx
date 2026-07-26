@@ -176,10 +176,14 @@ export default function Security() {
         <span style={{ width: 36, height: 36, borderRadius: 9, background: 'var(--gd-info)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
           <Icon name="bot" size={19} />
         </span>
+        {/* Was: "the guardian watches file changes and logins in real time and
+            alerts you immediately". It does neither — scanning happens on this
+            page and once a night, and nothing observes logins at all. The
+            button beside it ("security report") had no handler. */}
         <div style={{ flex: 1, fontSize: 13.5, lineHeight: 1.7, color: 'var(--gd-info-text)' }}>
-          همهٔ اقدام‌های امنیتی برگشت‌پذیرند. پشتیبان تغییرات فایل و ورودها را لحظه‌ای رصد می‌کند و در صورت تهدید جدی بلافاصله به شما هشدار می‌دهد.
+          اسکن هنگام باز کردن این صفحه و یک بار در شبانه‌روز انجام می‌شود — رصد لحظه‌ای نیست.
+          یافته‌ها در «هشدارها» ثبت می‌شوند و تا وقتی اسکن بعدی نبودنشان را تأیید نکند، باز می‌مانند.
         </div>
-        <Button variant="secondary" size="sm">گزارش امنیتی</Button>
       </div>
     </>
   )

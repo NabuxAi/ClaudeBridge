@@ -25,7 +25,7 @@ export const me = () => delay(currentUser)
 export const sites = [
   {
     id: 'mystore', name: 'mystore.ir', title: 'فروشگاه من', status: 'healthy',
-    authority: 'auto', uptime: null, checks: null, lastCheck: null, incidents: null, pendingUpdates: null,
+    authority: 'auto', uptime: null, checks: null, lastCheck: null, incidents: 3, pendingUpdates: null,
   },
   {
     id: 'blog', name: 'blog.myco.ir', title: 'وبلاگ شرکت', status: 'warning',
@@ -59,22 +59,21 @@ export const pingSite = (id) => delay({ ok: true, connector: { site: id, version
 
 // ---- Billing / plans --------------------------------------
 export const plans = () => delay([
-  { id: 'base', name: 'پایه', price: 190000, popular: false,
-    features: ['۱ سایت', 'پایش هر ۵ دقیقه', 'بکاپ روزانه'] },
-  { id: 'pro', name: 'حرفه‌ای', price: 490000, popular: true,
-    features: ['۵ سایت', 'پایش هر ۱ دقیقه', 'بکاپ + محیط استیجینگ', 'رفع خودکار خرابی'] },
-  { id: 'agency', name: 'آژانس', price: 990000, popular: false,
-    features: ['سایت نامحدود', 'اعضای تیم و نقش‌ها', 'گزارش با برند شما', 'پشتیبانی اولویت‌دار'] },
+  { id: 'base', name: 'پایه', price: 190000, popular: false, features: [
+    '۱ سایت', 'به‌روزرسانی خودکار هسته، افزونه و قالب', 'بکاپ دیتابیس روی خود سایت', 'اسکن امنیتی روزانه',
+  ] },
+  { id: 'pro', name: 'حرفه‌ای', price: 490000, popular: true, features: [
+    '۵ سایت', 'همهٔ امکانات پلن پایه', 'بررسی یکپارچگی فایل‌های هسته', 'بررسی تداخل افزونه و قالب', 'عملیات نجات',
+  ] },
+  { id: 'agency', name: 'آژانس', price: 990000, popular: false, features: [
+    'سایت نامحدود', 'همهٔ امکانات پلن حرفه‌ای', 'گزارش امنیتی روزانه در تلگرام',
+  ] },
 ])
-export const billing = () => delay({
-  plan: 'حرفه‌ای', price: 490000, cycle: 'ماهانه', sitesUsed: 3, sitesLimit: 5,
-  renewsAt: '۱۴۰۳/۰۵/۱۲', card: '•••• ۸۸۲۴',
+export const billing = () => delay({ provenance: { live: [], unavailable: 'صورتحساب و پرداخت هنوز ساخته نشده — هیچ درگاه پرداختی متصل نیست و کارتی ذخیره نمی‌شود.' } })
+export const invoices = () => delay({
+  provenance: { live: [], unavailable: 'فاکتوری صادر نمی‌شود چون سیستم پرداخت هنوز وجود ندارد.' },
+  list: [],
 })
-export const invoices = () => delay([
-  { id: 'INV-1403-014', date: '۱۴۰۳/۰۴/۱۲', amount: 490000, status: 'paid' },
-  { id: 'INV-1403-009', date: '۱۴۰۳/۰۳/۱۲', amount: 490000, status: 'paid' },
-  { id: 'INV-1403-004', date: '۱۴۰۳/۰۲/۱۲', amount: 490000, status: 'paid' },
-])
 export const invoice = (id) => delay({
   id, date: '۱۴۰۳/۰۴/۱۲', dueDate: '۱۴۰۳/۰۴/۱۲', status: 'paid',
   seller: { name: 'دیجی‌وردپرس (DigiWP Ai Support)', id: 'ai.digiwp.com', taxId: '۱۴۰۱۲۳۴۵۶۷۸' },
@@ -84,81 +83,103 @@ export const invoice = (id) => delay({
 })
 
 // ---- Team --------------------------------------------------
-export const team = () => delay([
-  { id: 't1', name: 'مریم رضایی', email: 'maryam@example.com', role: 'owner', roleLabel: 'مالک', initials: 'م', sites: 'همه' },
-  { id: 't2', name: 'سینا احمدی', email: 'sina@example.com', role: 'admin', roleLabel: 'مدیر', initials: 'س', sites: 'mystore.ir' },
-  { id: 't3', name: 'نگار موسوی', email: 'negar@example.com', role: 'viewer', roleLabel: 'ناظر', initials: 'ن', sites: 'blog.myco.ir' },
-])
-
-// ---- Notifications ----------------------------------------
-export const notifications = () => delay({
-  channels: [
-    { id: 'email', label: 'ایمیل', icon: 'mail', value: 'maryam@example.com', on: true },
-    { id: 'sms', label: 'پیامک', icon: 'message-square', value: '۰۹۱۲•••۴۵۶۷', on: true },
-    { id: 'telegram', label: 'تلگرام', icon: 'send', value: '@maryam', on: false },
-  ],
-  prefs: [
-    { id: 'critical', label: 'هشدارهای بحرانی', desc: 'خطای ۵۰۰، از دسترس خارج شدن سایت، نفوذ', on: true, locked: true },
-    { id: 'approvals', label: 'درخواست‌های تأیید', desc: 'وقتی اقدامی نیازمند تأیید شماست', on: true },
-    { id: 'updates', label: 'آپدیت‌ها', desc: 'آپدیت‌های انجام‌شده و در صف', on: true },
-    { id: 'reports', label: 'گزارش روزانه', desc: 'خلاصهٔ روزانهٔ وضعیت سایت‌ها', on: false },
-  ],
+export const team = () => delay({
+  provenance: { live: [], unavailable: 'دعوت هم‌تیمی و دسترسی چندکاربره هنوز ساخته نشده. فقط حساب خودتان وجود دارد.' },
+  list: [{ id: 'me', name: 'مریم رضایی', email: 'maryam@example.com', role: 'owner', roleLabel: 'مالک', initials: 'م', sites: 'همه' }],
 })
+export const notifications = () => delay({ provenance: { live: [], unavailable: 'تنظیمات اعلان هنوز ساخته نشده. گزارش امنیتی روزانه فقط به تلگرامی می‌رود که در سرور پیکربندی شده.' } })
 export const profile = () => delay({ ...currentUser, twoFactor: true, lang: 'fa', timezone: 'Asia/Tehran' })
 
 // ---- Per-site ---------------------------------------------
+// The demo overview shows the same three real readings the live one does —
+// an HTTP probe, a TLS handshake, and the event log — and the same absences.
+// It used to carry a 99.98% uptime, a host-storage bar and a five-line report
+// of work nothing performs.
 export const siteOverview = (id) => delay({
+  provenance: {
+    live: ['site_info', 'HTTP probe', 'TLS handshake'],
+    partial: {
+      uptime: 'آپ‌تایم نیاز به پایش پیوسته دارد — ما فقط هنگام باز کردن این صفحه بررسی می‌کنیم',
+      responseMs: 'یک نمونه از سرور ما، نه میانگین و نه تجربهٔ بازدیدکننده',
+      hostSpace: 'فضای دیسک هاست از بیرون قابل اندازه‌گیری نیست',
+    },
+  },
   id, name: sites.find((s) => s.id === id)?.name || 'mystore.ir',
-  status: 'healthy', uptime: 99.98, responseMs: 412, hostSpace: 82, sslDays: 68,
+  status: 'healthy',
+  authority: 'auto',
+  uptime: null,
+  hostSpace: null,
+  info: { wp_version: '6.8.2', php_version: '8.2' },
+  probe: {
+    reachable: true,
+    responseMs: 340,
+    cert: { ok: true, daysLeft: 68, issuer: "Let's Encrypt", expiresAt: '2026-10-02T00:00:00.000Z' },
+  },
   metrics: [
-    { label: 'آپ‌تایم ۳۰ روزه', value: '۹۹٫۹۸', unit: '٪', icon: 'activity', tone: 'success', trend: '+۰٫۰۲', dir: 'up' },
-    { label: 'زمان پاسخ', value: '۴۱۲', unit: 'ms', icon: 'gauge', tone: 'primary', trend: '−۳۸ms', dir: 'down' },
-    { label: 'فضای هاست', value: '۸۲', unit: '٪', icon: 'hard-drive', tone: 'warning', trend: 'رو به افزایش', dir: 'flat' },
-    { label: 'اعتبار SSL', value: '۶۸', unit: 'روز', icon: 'lock', tone: 'success', trend: 'معتبر', dir: 'flat' },
+    { label: 'وردپرس', value: '6.8.2', unit: '', icon: 'boxes', tone: 'neutral' },
+    { label: 'PHP', value: '8.2', unit: '', icon: 'code', tone: 'neutral' },
+    { label: 'پاسخ همین حالا', value: '340', unit: 'ms', icon: 'gauge', tone: 'primary' },
+    { label: 'اعتبار SSL', value: '68', unit: 'روز', icon: 'lock', tone: 'success' },
   ],
   services: [
-    { label: 'صفحهٔ اصلی', ok: true }, { label: 'ورود مدیریت', ok: true },
-    { label: 'سبد خرید', ok: true }, { label: 'درگاه پرداخت', ok: true },
-    { label: 'فرم تماس', ok: true }, { label: 'SSL', ok: true },
-    { label: 'WP-Cron', ok: true }, { label: 'فضای دیتابیس', ok: true }, { label: 'رندر موبایل', ok: true },
+    { label: 'صفحهٔ اصلی', ok: true, detail: '200 در 340ms' },
+    { label: 'صفحهٔ ورود مدیریت', ok: true, detail: '200 در 410ms' },
+    { label: 'گواهی SSL', ok: true, detail: "68 روز اعتبار — Let's Encrypt" },
   ],
   report: [
-    { icon: 'check-circle-2', tone: 'done', label: 'بکاپ روزانه با موفقیت گرفته شد', time: '۰۳:۰۰' },
-    { icon: 'refresh-cw', tone: 'done', label: '۳ افزونه پس از تست به‌روزرسانی شدند', time: '۰۴:۱۲' },
-    { icon: 'zap', tone: 'done', label: '۱۸ تصویر فشرده و به WebP تبدیل شد', time: '۰۵:۳۰' },
-    { icon: 'shield-check', tone: 'done', label: 'اسکن امنیتی — موردی یافت نشد', time: '۰۶:۰۰' },
-    { icon: 'alert-triangle', tone: 'warning', label: 'فضای هاست به ۸۲٪ رسید — پیشنهاد پاک‌سازی', time: '۰۹:۱۴' },
+    { icon: 'alert-octagon', tone: 'danger', label: 'فایل آلوده پیدا شد: wp-content/uploads/2024/01/x.php', time: '۰۲:۱۴' },
+    { icon: 'info', tone: 'info', label: 'سیاست به‌روزرسانی تغییر کرد', time: '۱۸:۳۰' },
+    { icon: 'alert-triangle', tone: 'warning', label: 'اقدام حساس اجرا شد: delete_plugin', time: '۱۷:۰۵' },
   ],
+  reportEmpty: false,
 })
+
+// Demo alerts mirror the real log's shape — including the parts that make it
+// honest: a critical still open, its own history as the timeline, and an
+// "ignored" entry that is not the same thing as fixed.
+const demoEvents = [
+  { id: 'ev_1', kind: 'malware', severity: 'critical', title: 'فایل آلوده پیدا شد: wp-content/uploads/2024/01/x.php', resolved: false, time: '۳ روز پیش',
+    detail: { file: 'wp-content/uploads/2024/01/x.php', rule: 'webshell_generic_eval' } },
+  { id: 'ev_2', kind: 'policy', severity: 'info', title: 'سیاست به‌روزرسانی تغییر کرد', resolved: false, time: 'دیروز' },
+  { id: 'ev_3', kind: 'action', severity: 'warning', title: 'اقدام حساس اجرا شد: delete_plugin', resolved: false, time: 'دیروز' },
+  { id: 'ev_4', kind: 'malware', severity: 'warning', title: 'فایل مشکوک: wp-content/themes/astra/inc/z.php', resolved: true, time: '۵ روز پیش' },
+  { id: 'ev_5', kind: 'scan_failed', severity: 'warning', title: 'اسکن امنیتی به سایت نرسید', resolved: true, time: '۶ روز پیش' },
+]
 
 export const siteIncidents = (id) => delay({
-  provenance: { live: [], unavailable: 'ثبت رخداد هنوز ساخته نشده. برای این بخش هیچ دادهٔ واقعی وجود ندارد.' },
-
+  provenance: {
+    liveLabel: 'ثبت‌شده روی سرور ما',
+    live: ['لاگ رخداد'],
+    partial: {
+      downtime: 'قطعی بین دو اسکن ثبت نمی‌شود — پایش مستمر هنوز ساخته نشده',
+      logins: 'ورودهای ناموفق نیازمند ثبت رویداد ورود روی سایت است — هنوز ساخته نشده',
+    },
+  },
   id,
+  empty: false,
+  emptyNote: null,
   featured: {
-    severity: 'critical', title: 'خطای ۵۰۰ در صفحهٔ پرداخت', time: '۱۴:۳۲',
-    desc: 'صفحهٔ پرداخت از ۱۲ دقیقه قبل خطای ۵۰۰ داشت. پشتیبان به‌صورت خودکار علت را یافت و برطرف کرد.',
+    id: demoEvents[0].id,
+    severity: 'critical',
+    title: demoEvents[0].title,
+    time: demoEvents[0].time,
+    desc: 'این مورد در اسکن دیده شد و هنوز باز است. تا وقتی اسکن بعدی نبودنش را تأیید نکند، حل‌شده علامت نمی‌خورد.',
     fields: [
-      { label: 'علت', value: 'آپدیت افزونهٔ درگاه پرداخت' },
-      { label: 'اقدام انجام‌شده', value: 'نسخهٔ قبلی افزونه بازیابی شد' },
-      { label: 'وضعیت فعلی', value: 'سایت سالم است', tone: 'success' },
-      { label: 'کد خطا', value: 'HTTP 500', mono: true },
+      { label: 'نوع', value: 'بدافزار' },
+      { label: 'اولین مشاهده', value: '۳ روز پیش' },
+      { label: 'فایل', value: demoEvents[0].detail.file, mono: true },
+      { label: 'قاعدهٔ منطبق', value: demoEvents[0].detail.rule, mono: true },
+      { label: 'وضعیت', value: 'هنوز باز است', tone: 'danger' },
     ],
     timeline: [
-      { t: '۱۴:۲۰', label: 'خطای ۵۰۰ در /checkout شناسایی شد', tone: 'danger' },
-      { t: '۱۴:۲۱', label: 'علت: آپدیت افزونهٔ درگاه پرداخت', tone: 'info' },
-      { t: '۱۴:۲۳', label: 'بکاپ سالم پیش از اقدام گرفته شد', tone: 'done' },
-      { t: '۱۴:۲۵', label: 'نسخهٔ قبلی افزونه بازیابی شد', tone: 'done' },
-      { t: '۱۴:۳۲', label: 'تست مجدد پرداخت موفق — سایت سالم', tone: 'done' },
+      { t: '۰۲:۱۴', label: demoEvents[0].title, tone: 'danger' },
+      { t: '۰۲:۱۴', label: 'اسکن شبانه — همچنان دیده می‌شود', tone: 'warning' },
     ],
   },
-  list: [
-    { id: 'i1', severity: 'critical', title: 'خطای ۵۰۰ در صفحهٔ پرداخت', time: '۱۴:۳۲', resolved: true },
-    { id: 'i2', severity: 'warning', title: 'فضای هاست به ۸۲٪ رسید', time: 'دیروز', resolved: false },
-    { id: 'i3', severity: 'info', title: 'ورود ناموفق مکرر از یک IP', time: 'دیروز', resolved: true },
-    { id: 'i4', severity: 'warning', title: 'کندی موقت در بارگذاری صفحهٔ محصول', time: '۲ روز پیش', resolved: true },
-  ],
+  list: demoEvents.map(({ detail, ...rest }) => rest),
 })
+
+export const dismissIncident = (id, eventId) => delay({ ok: true, eventId })
 
 export const siteUpdates = (id) => delay({
   provenance: { live: ['update_status'], partial: {} },
@@ -166,11 +187,11 @@ export const siteUpdates = (id) => delay({
   id,
   queue: [
     { id: 'u1', name: 'Elementor', from: '3.21.4', to: '3.23.0', type: 'افزونه', risk: 'high', riskLabel: 'ریسک بالا',
-      note: 'تغییرات عمده در رندر؛ نیازمند تست استیجینگ و تأیید شما.', authority: 'confirm' },
+      note: 'جهش نسخهٔ فرعی — احتمال تغییر رفتار وجود دارد.', authority: 'confirm' },
     { id: 'u2', name: 'WooCommerce', from: '9.1.2', to: '9.1.4', type: 'افزونه', risk: 'low', riskLabel: 'کم‌ریسک',
-      note: 'وصلهٔ امنیتی جزئی؛ در محیط استیجینگ تست شد.', authority: 'auto' },
+      note: 'فقط تغییر نسخهٔ وصله.', authority: 'auto' },
     { id: 'u3', name: 'Yoast SEO', from: '23.2', to: '23.4', type: 'افزونه', risk: 'low', riskLabel: 'کم‌ریسک',
-      note: 'سازگار؛ آمادهٔ اعمال خودکار.', authority: 'auto' },
+      note: 'تغییر نسخهٔ فرعی.', authority: 'auto' },
     { id: 'u4', name: 'WordPress Core', from: '6.5.4', to: '6.6', type: 'هسته', risk: 'medium', riskLabel: 'ریسک متوسط',
       note: 'ارتقای نسخهٔ اصلی؛ بکاپ کامل و تست جامع لازم است.', authority: 'confirm' },
   ],
@@ -202,15 +223,22 @@ export const siteSecurity = (id) => delay({
   events: [],
 })
 
+// Backups are real now — the connector dumps the database in pure PHP and only
+// records dumps it verified complete. The demo reflects that, including the two
+// claims the old mock quietly overstated: snapshots live on the site itself,
+// not in encrypted off-site storage, and "verified" means the dump ends the way
+// a complete dump ends — nothing here has been test-restored.
 export const siteBackups = (id) => delay({
-  provenance: { live: [], unavailable: 'سیستم پشتیبان‌گیری هنوز ساخته نشده. هیچ بکاپی گرفته نمی‌شود.' },
-
-  id, lastBackup: '۲ ساعت پیش', nextBackup: 'امشب ۰۳:۰۰', location: 'فضای خارجی (رمزنگاری‌شده)', totalSize: '۱٫۸ گیگابایت',
+  provenance: { live: ['backup_list', 'backup_run'], partial: {} },
+  id,
+  lastBackup: '۱۴۰۴/۰۵/۰۳ ۰۳:۱۰',
+  location: 'wp-content/uploads/cb-backups',
+  totalSize: '۲۴۰ مگابایت',
+  empty: false,
   list: [
-    { id: 'b1', when: 'امروز ۰۳:۰۰', type: 'خودکار روزانه', size: '۱٫۸ GB', verified: true, db: true, files: true },
-    { id: 'b2', when: 'دیروز ۱۴:۲۳', type: 'پیش از اقدام (پرداخت)', size: '۱٫۸ GB', verified: true, db: true, files: true },
-    { id: 'b3', when: 'دیروز ۰۳:۰۰', type: 'خودکار روزانه', size: '۱٫۷ GB', verified: true, db: true, files: true },
-    { id: 'b4', when: '۲ روز پیش ۰۳:۰۰', type: 'خودکار روزانه', size: '۱٫۷ GB', verified: true, db: true, files: true },
+    { id: 'cb_1a2b3c', when: '۱۴۰۴/۰۵/۰۳ ۰۳:۱۰', type: 'خودکار روزانه', size: '۶۲ MB', verified: true, db: true, files: false },
+    { id: 'cb_9f8e7d', when: '۱۴۰۴/۰۵/۰۲ ۰۳:۱۰', type: 'خودکار روزانه', size: '۶۱ MB', verified: true, db: true, files: false },
+    { id: 'cb_4c5d6e', when: '۱۴۰۴/۰۵/۰۱ ۱۹:۴۲', type: 'دستی', size: '۵۹ MB', verified: false, db: true, files: false },
   ],
 })
 
@@ -218,12 +246,6 @@ export const siteSettings = (id) => delay({
   id, authority: 'auto',
   sensitive: [
     'حذف افزونه', 'تعویض قالب', 'ویرایش کد PHP', 'تغییر درگاه پرداخت', 'تغییر DNS', 'حذف دادهٔ دیتابیس',
-  ],
-  toggles: [
-    { id: 'monitor', label: 'پایش ۲۴ ساعته', desc: 'بررسی مداوم دسترس‌پذیری و سرویس‌ها', on: true },
-    { id: 'autofix', label: 'رفع خودکار خرابی', desc: 'بازگردانی آخرین تغییر در صورت خرابی', on: true },
-    { id: 'autobackup', label: 'بکاپ پیش از هر تغییر', desc: 'گرفتن بکاپ سالم قبل از هر اقدام', on: true },
-    { id: 'speed', label: 'بهینه‌سازی سرعت', desc: 'فشرده‌سازی تصاویر و پاک‌سازی دیتابیس', on: false },
   ],
   connector: { paired: true, server: 'api.digiwp.com', lastSeen: '۴۰ ثانیه پیش', version: '3.5.1' },
   updatePolicy: describeMockPolicy(mockPolicy),
@@ -271,9 +293,19 @@ export const setUpdatePolicy = (id, patch = {}) => {
 }
 
 export const runAction = (id, action) => delay({ ok: true, action, requiresApproval: false })
+// The demo answer mirrors the real one's shape and its limits: a briefing built
+// only from readings, an explicit note that free conversation is off without a
+// model, and the list of things nobody is measuring. A demo that answers
+// anything fluently sets an expectation the product does not meet.
 export const askGuardian = (id, message) => delay({
-  reply: 'در ۲۴ ساعت گذشته سایت سالم بوده است. یک آپدیت پرریسک (Elementor) در صف تأیید شماست و فضای هاست به ۸۲٪ رسیده که پیشنهاد پاک‌سازی داده‌ام.',
-  refs: ['گزارش امروز', 'صف آپدیت‌ها'],
+  reply: 'سایت روی وردپرس ۶.۸.۲ و PHP ۸.۲ است. ۵ به‌روزرسانی در صف است؛ از جمله Elementor → ۳.۲۵.۱۱. ۱ هشدار بحرانی باز دارید: فایل آلوده پیدا شد: wp-content/uploads/2024/01/x.php. آخرین بکاپ: ۱۴۰۴/۰۵/۰۳ ۰۳:۱۰ (کامل بودنش بررسی شده).',
+  refs: ['صف به‌روزرسانی‌ها', 'لاگ هشدارها', 'فهرست بکاپ‌ها'],
+  grounded: true,
+  note: 'این خلاصه مستقیماً از خود سایت خوانده شده. پاسخ‌گویی آزاد به سؤال هنوز فعال نیست، چون مدل زبانی پیکربندی نشده است.',
+  unknown: [
+    'آپ‌تایم و سرعت پاسخ سایت را نمی‌سنجیم — پایش مستمر هنوز ساخته نشده.',
+    'فضای دیسک و منابع هاست را نمی‌بینیم.',
+  ],
   echo: message,
 })
 
@@ -324,3 +356,64 @@ export const rescueStep = (id, step, body = {}) => {
 }
 
 export const setAuthority = (id, authority) => delay({ authority })
+
+// The demo walks the same queued path the real thing does — returning a
+// finished result immediately would hide the polling the UI has to handle.
+let mockJobTick = 0
+export const findConflict = (id, body) => {
+  mockJobTick = 0
+  return delay({ queued: true, job: { id: 'job_demo', state: 'queued', progress: 0, message: 'در صف' } })
+}
+export const jobStatus = (id, jobId) => {
+  mockJobTick++
+  if (mockJobTick < 3) {
+    return delay({
+      id: jobId, state: 'running', progress: mockJobTick * 30,
+      message: `بررسی گروه ${['۱','۲','۳'][mockJobTick - 1]} از ۳`,
+    }, 700)
+  }
+  return delay({
+    id: jobId, state: 'done', progress: 100,
+    message: 'افزونهٔ «slider-x/slider-x.php» عامل خرابی است.',
+    result: {
+      url: 'https://mystore.ir/checkout',
+      baseline: { healthy: false, status: 500 },
+      theme: { tested: true, current: 'astra', compared: 'twentytwentyfive', is_cause: false },
+      bisect: {
+        culprit: 'slider-x/slider-x.php', tested: 5,
+        rounds: [
+          { disabled: ['a/a.php', 'b/b.php', 'c/c.php'], healthy: true, status: 200 },
+          { disabled: ['a/a.php'], healthy: false, status: 500 },
+          { disabled: ['b/b.php'], healthy: false, status: 500 },
+        ],
+      },
+      culprit: { kind: 'plugin', name: 'slider-x/slider-x.php' },
+      verdict: 'افزونهٔ «slider-x/slider-x.php» عامل خرابی است. با ۵ مرحله پیدا شد، به‌جای ۲۴ بار خاموش و روشن کردن.',
+      restored: true,
+      final_health: { healthy: false, status: 500 },
+    },
+  })
+}
+
+// Backup writes in the demo behave like the real ones: queued, polled, and —
+// for restore — refused outright without an explicit confirm.
+export const runBackup = (id, body = {}) =>
+  delay({ queued: true, job: { id: 'job_backup_demo', state: 'queued', progress: 0, message: 'در صف' } })
+
+export const restoreBackup = (id, backupId, body = {}) => {
+  if (!body.confirm) {
+    return Promise.reject(Object.assign(
+      new Error('بازگردانی، دیتابیس فعلی را با نسخهٔ قدیمی جایگزین می‌کند و هر تغییری پس از آن بکاپ از بین می‌رود. برای اجرا confirm=true بفرستید.'),
+      { status: 400 }
+    ))
+  }
+  return delay({ queued: true, job: { id: 'job_restore_demo', state: 'queued', progress: 0, message: 'در صف' } })
+}
+
+export const downloadBackup = (id, backupId, what) =>
+  delay({ ok: false, demo: true, message: 'در حالت نمایشی فایلی برای دانلود وجود ندارد.' })
+
+export const runUpdates = (id, items) =>
+  delay({ queued: true, job: { id: 'job_update_demo', state: 'queued', progress: 0, message: 'در صف' } })
+
+export const saveProfile = (body) => delay({ ...body, saved: true })

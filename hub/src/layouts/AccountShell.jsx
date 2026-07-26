@@ -25,18 +25,14 @@ export default function AccountShell() {
         <nav className="dwp-aside__nav" onClick={() => setOpen(false)}>
           {NAV.map((n) => <SidebarItem key={n.to} {...n} />)}
         </nav>
-        <div style={{ marginTop: 14, background: 'var(--gd-primary-subtle)', border: '1px solid var(--gd-primary-border)', borderRadius: 'var(--gd-radius-lg)', padding: 13, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ width: 26, height: 26, borderRadius: 8, background: 'var(--gd-primary)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}><Icon name="crown" size={15} /></span>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>پلن حرفه‌ای</div>
-          </div>
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--gd-text-secondary)', marginBottom: 5 }}>
-              <span>سایت‌های فعال</span><span className="dwp-mono">۳ / ۵</span>
-            </div>
-            <ProgressBar value={3} max={5} tone="primary" size="sm" />
-          </div>
-          <Button as={Link} to="/pricing" variant="primary" size="sm" fullWidth leftIcon="arrow-up-circle">ارتقای پلن</Button>
+        {/* A "پلن حرفه‌ای · ۳/۵ سایت فعال" card used to sit here with a
+            progress bar and an upgrade button. There is no subscription
+            system, no plan attached to any account, and the ۳/۵ was a
+            constant. A link to the price list is the honest version. */}
+        <div style={{ marginTop: 14, background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border-subtle)', borderRadius: 'var(--gd-radius-lg)', padding: 13 }}>
+          <Link to="/pricing" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: 'var(--gd-text-secondary)', textDecoration: 'none' }}>
+            <Icon name="crown" size={15} /> دیدن پلن‌ها و قیمت‌ها
+          </Link>
         </div>
       </aside>
 

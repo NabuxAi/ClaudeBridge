@@ -238,6 +238,27 @@ function concern(name) {
           : null
       }
 
+      // A view that could not read the site must say so, not render empty.
+      // The seed used to paper over this with invented numbers, which made an
+      // unreachable site look healthier than a reachable one.
+      if (!site.paired || !site.url || !site.secret) {
+        if (['updates', 'security', 'backups'].includes(name)) {
+          data.provenance = {
+            live: [],
+            unavailable: !site.url
+              ? 'آدرس سایت ثبت نشده.'
+              : 'سایت هنوز به سرور ما وصل نشده — افزونهٔ واسط را نصب و جفت کنید.',
+          }
+          return res.json(data)
+        }
+      } else if (!config.live && ['updates', 'security', 'backups'].includes(name)) {
+        data.provenance = {
+          live: [],
+          unavailable: 'حالت زنده روی این سرور خاموش است (LIVE=1)، پس چیزی از سایت خوانده نمی‌شود.',
+        }
+        return res.json(data)
+      }
+
       // Say where this view's numbers come from — and, more importantly, which
       // of them have no source yet. A panel that cannot distinguish measured
       // from invented teaches people to trust none of it.
