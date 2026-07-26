@@ -28,6 +28,7 @@ import Backups from './pages/site/Backups.jsx'
 import Assistant from './pages/site/Assistant.jsx'
 import Rescue from './pages/site/Rescue.jsx'
 import Conflict from './pages/site/Conflict.jsx'
+import Speed from './pages/site/Speed.jsx'
 import Settings from './pages/site/Settings.jsx'
 // E · payment
 import Pricing from './pages/billing/Pricing.jsx'
@@ -71,6 +72,7 @@ export default function App() {
         <Route path="assistant" element={<Assistant />} />
         <Route path="rescue" element={<Rescue />} />
         <Route path="conflict" element={<Conflict />} />
+        <Route path="speed" element={<Speed />} />
         <Route path="settings" element={<Settings />} />
       </Route>
 

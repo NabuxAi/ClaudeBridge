@@ -8,6 +8,7 @@ import { PROVENANCE, updatesFromStatus } from '../live.js'
 import * as events from '../events.js'
 import * as assistant from '../assistant.js'
 import { probeSite } from '../probe.js'
+import { analyse as analysePerf } from '../perf/recipes.js'
 import { measureUrl } from '../speedtest.js'
 
 const router = Router()
@@ -540,6 +541,51 @@ router.post('/sites/:id/conflict', async (req, res, next) => {
   } catch (e) {
     res.status(e.status || 502).json({ message: e.message })
   }
+})
+
+/**
+ * Measure what makes a page slow.
+ *
+ * Queued, because profiling deliberately slows the request it profiles —
+ * SAVEQUERIES makes wpdb store a backtrace for every query — and because the
+ * site-wide read walks the options table.
+ */
+router.post('/sites/:id/perf', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    const raw = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      'job_start',
+      { type: 'perf', url: req.body?.url || '' }
+    )
+    const text = raw?.content?.[0]?.text
+    res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
+  } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
+/**
+ * Turn a finished profile into recipes.
+ *
+ * The matching runs here rather than on the site: the recipe book changes as
+ * we learn more, and a rule improved today should apply to every site tonight
+ * without anyone updating a plugin.
+ */
+router.post('/sites/:id/perf/analyse', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const profile = req.body?.profile
+    if (!profile || typeof profile !== 'object') {
+      return res.status(400).json({ message: 'گزارش سرعت لازم است.' })
+    }
+    res.json(analysePerf(profile))
+  } catch (e) { next(e) }
 })
 
 /**

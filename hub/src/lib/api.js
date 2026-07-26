@@ -108,6 +108,17 @@ export function site(siteId) {
       (level) => mock.setAuthority(siteId, level),
       (level) => http(p('/authority'), { method: 'PATCH', body: { authority: level } })
     ),
+    // Speed. Measuring costs the request it measures, so it queues like
+    // everything else; the recipe matching runs on our server so improvements
+    // to the rules reach every site without a plugin update.
+    measureSpeed: call(
+      (body) => mock.measureSpeed(siteId, body),
+      (body) => http(p('/perf'), { method: 'POST', body: body || {} })
+    ),
+    analyseSpeed: call(
+      (profile) => mock.analyseSpeed(siteId, profile),
+      (profile) => http(p('/perf/analyse'), { method: 'POST', body: { profile } })
+    ),
     // Apply updates. Queued and paced one item per pass on the site.
     runUpdates: call(
       (items) => mock.runUpdates(siteId, items),

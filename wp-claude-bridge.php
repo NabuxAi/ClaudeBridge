@@ -1535,6 +1535,9 @@ function cb_tools() {
 	// Backups, taken by this plugin. Real snapshots, not a status screen.
 	$tools[] = array( 'name' => 'backup_run', 'description' => 'Take a snapshot of this site now: full database dump always, and optionally a zip of wp-content. The dump is written in pure PHP so it works on hosts where exec() is disabled, and is verified complete before being recorded. Old snapshots beyond `keep` are pruned.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'files' => array( 'type' => 'boolean', 'description' => 'Also archive wp-content. Slow and large on media-heavy sites.' ), 'label' => array( 'type' => 'string' ), 'keep' => array( 'type' => 'integer', 'description' => 'How many snapshots to retain (default 7).' ) ) ), 'op' => 'cb_op_backup_run' );
 	$tools[] = array( 'name' => 'backup_list', 'description' => 'Every snapshot this site actually holds, with size, table and row counts, and whether the dump was verified complete. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_list', 'noargs' => true );
+	// Performance. perf_report measures; perf_clean_transients is the only fix
+	// here safe enough to run without a human deciding.
+	$tools[] = array( 'name' => 'perf_clean_transients', 'description' => 'Delete transients that have already expired. Safe: nothing relies on an expired transient, and anything that needs one rebuilds it. Batched, so run again while `remaining` is above zero.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'limit' => array( 'type' => 'integer' ) ) ), 'op' => 'cb_op_perf_clean_transients' );
 	$tools[] = array( 'name' => 'backup_read', 'description' => 'Read one slice of a snapshot file (base64). Walk `offset` forward until `eof` is true. Downloads go through this signed path so a database dump is never a web-reachable URL. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string' ), 'what' => array( 'type' => 'string', 'enum' => array( 'db', 'files' ) ), 'offset' => array( 'type' => 'integer' ), 'length' => array( 'type' => 'integer' ) ), 'required' => array( 'id' ) ), 'op' => 'cb_op_backup_read' );
 
 	// Rescue: recovering a site too compromised to trust any of its files.
@@ -2078,6 +2081,7 @@ function cb_job_types() {
 		'conflict_hunt'   => 'cb_job_conflict',
 		'backup_restore'  => 'cb_job_backup_restore',
 		'update_apply'    => 'cb_job_update_apply',
+		'perf'            => 'cb_job_perf',
 	);
 }
 
@@ -2086,6 +2090,416 @@ function cb_job_backup( $job ) {
 	$out = cb_backup_run( is_array( $job['args'] ) ? $job['args'] : array() );
 	return array( 'done' => true, 'result' => $out,
 		'message' => ! empty( $out['ok'] ) ? 'بکاپ گرفته شد' : 'بکاپ ناموفق' );
+}
+
+/* -----------------------------------------------------------------
+ * PERFORMANCE — measuring what makes a page slow, per page.
+ *
+ * The premise is the same one the rest of this plugin runs on: do not guess.
+ * "Your site is slow, install a cache plugin" is advice anyone can give
+ * without looking. What a page actually spends its time on — which plugin
+ * fired 340 queries, which option table row is 4MB and loaded on every single
+ * request, which query runs eleven times identically — is knowable, and the
+ * fix follows from it.
+ *
+ * Two things are measured separately because they fail differently:
+ *
+ *   site-wide  — autoloaded options, object cache, cron backlog, table sizes.
+ *                Cheap, safe to read any time, and the source of the most
+ *                common real problem on a WordPress site.
+ *   per-page   — the query log for one URL, with each query attributed to the
+ *                plugin or theme that issued it.
+ *
+ * Profiling genuinely slows the request being profiled: SAVEQUERIES makes wpdb
+ * store a backtrace for every query. So it is opt-in, aimed at one URL, armed
+ * for a single request by a one-shot token, and disarmed the moment that
+ * request finishes. It is never left on.
+ * -------------------------------------------------------------- */
+
+/**
+ * Site-wide readings. Read-only and cheap enough to run whenever.
+ *
+ * Autoloaded options first, because it is the most under-diagnosed slowdown in
+ * WordPress: every one of these rows is fetched and unserialised on every
+ * request, including admin-ajax and REST calls. A plugin that stores a cache
+ * in an autoloaded option — and many do — quietly taxes every page on the site
+ * forever, including after the plugin is deleted, because uninstall routines
+ * rarely clean up.
+ */
+function cb_perf_site() {
+	global $wpdb;
+	$out = array();
+
+	$autoload = $wpdb->get_results(
+		"SELECT option_name, LENGTH(option_value) AS bytes
+		   FROM {$wpdb->options}
+		  WHERE autoload IN ('yes','on','auto','auto-on')
+		  ORDER BY bytes DESC
+		  LIMIT 25",
+		ARRAY_A
+	);
+	$total = (int) $wpdb->get_var(
+		"SELECT SUM(LENGTH(option_value)) FROM {$wpdb->options} WHERE autoload IN ('yes','on','auto','auto-on')"
+	);
+	$count = (int) $wpdb->get_var(
+		"SELECT COUNT(*) FROM {$wpdb->options} WHERE autoload IN ('yes','on','auto','auto-on')"
+	);
+
+	$out['autoload'] = array(
+		'bytes'   => $total,
+		'count'   => $count,
+		// WordPress core itself warns above 800KB in Site Health. Past ~1MB the
+		// unserialise cost alone is measurable on every request.
+		'verdict' => $total > 1048576 ? 'bad' : ( $total > 512000 ? 'warn' : 'ok' ),
+		'largest' => array_map( function ( $r ) {
+			return array(
+				'name'  => $r['option_name'],
+				'bytes' => (int) $r['bytes'],
+				// Naming the owner is what turns a number into an action. An
+				// orphan — a big autoloaded row whose plugin is long gone — is
+				// the single safest performance win on most sites.
+				'owner' => cb_perf_guess_owner( $r['option_name'] ),
+			);
+		}, (array) $autoload ),
+	);
+
+	// Transients that expired but were never collected. On a site without an
+	// external object cache these live in the options table forever.
+	$out['transients'] = array(
+		'total'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_%'" ),
+		'expired' => (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$wpdb->options} o
+			  WHERE o.option_name LIKE '\_transient\_timeout\_%'
+			    AND o.option_value < UNIX_TIMESTAMP()"
+		),
+	);
+
+	$out['object_cache'] = array(
+		'external' => (bool) wp_using_ext_object_cache(),
+		'dropin'   => file_exists( WP_CONTENT_DIR . '/object-cache.php' ),
+	);
+
+	// A cron backlog means scheduled work is not running — and on a site with
+	// no real cron, that work fires on visitors' page loads instead.
+	$crons = _get_cron_array();
+	$overdue = 0;
+	$now = time();
+	if ( is_array( $crons ) ) {
+		foreach ( $crons as $ts => $hooks ) {
+			if ( $ts < $now - 3600 ) {
+				$overdue += is_array( $hooks ) ? count( $hooks ) : 0;
+			}
+		}
+	}
+	$out['cron'] = array(
+		'overdue'  => $overdue,
+		'disabled' => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,
+	);
+
+	// Post revisions and spam are the two tables that grow without limit and
+	// are never queried by visitors.
+	$out['bloat'] = array(
+		'revisions'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'revision'" ),
+		'spam'        => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'spam'" ),
+		'trash_posts' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'trash'" ),
+		'orphan_meta' => (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$wpdb->postmeta} pm
+			  LEFT JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			  WHERE p.ID IS NULL"
+		),
+	);
+
+	$out['php'] = array(
+		'version'       => PHP_VERSION,
+		'memory_limit'  => ini_get( 'memory_limit' ),
+		'opcache'       => function_exists( 'opcache_get_status' ) && @opcache_get_status( false ) !== false,
+	);
+
+	$out['plugins_active'] = count( (array) get_option( 'active_plugins', array() ) );
+
+	return $out;
+}
+
+/**
+ * Whose option is this?
+ *
+ * Prefix matching against installed plugin and theme slugs. Deliberately
+ * conservative: a wrong owner sends someone to delete a working plugin's data,
+ * so anything unrecognised is reported as unknown rather than guessed at.
+ */
+function cb_perf_guess_owner( $option_name ) {
+	static $slugs = null;
+	if ( null === $slugs ) {
+		$slugs = array();
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		foreach ( array_keys( get_plugins() ) as $file ) {
+			$dir = strpos( $file, '/' ) !== false ? dirname( $file ) : basename( $file, '.php' );
+			$slugs[ str_replace( '-', '_', $dir ) ] = $dir;
+			$slugs[ $dir ] = $dir;
+		}
+		foreach ( array_keys( wp_get_themes() ) as $theme ) {
+			$slugs[ str_replace( '-', '_', $theme ) ] = $theme;
+			$slugs[ $theme ] = $theme;
+		}
+	}
+	$name = ltrim( (string) $option_name, '_' );
+	foreach ( $slugs as $key => $slug ) {
+		if ( strlen( $key ) >= 4 && 0 === stripos( $name, $key ) ) {
+			return $slug;
+		}
+	}
+	// Core's own big ones, named so they are not mistaken for orphans.
+	foreach ( array( 'rewrite_rules', 'cron', 'active_plugins', 'wp_user_roles', 'uninstall_plugins' ) as $core ) {
+		if ( 0 === stripos( $name, $core ) ) {
+			return 'wordpress';
+		}
+	}
+	return null;
+}
+
+/* --- Per-page profiling ------------------------------------------------- */
+
+/**
+ * Arm the profiler for exactly one request.
+ *
+ * A one-shot token in a transient, not a setting. If the profiled request
+ * never arrives — a firewall blocks the loopback, the URL 404s — the token
+ * expires on its own and nothing is left switched on. There is no state that
+ * can be forgotten in the on position.
+ */
+function cb_perf_arm() {
+	$token = wp_generate_password( 20, false, false );
+	set_transient( 'cb_perf_arm_' . $token, 1, 300 );
+	return $token;
+}
+
+/**
+ * Turn on query logging if this request is the armed one.
+ *
+ * Runs on plugins_loaded. SAVEQUERIES is read by wpdb per query rather than
+ * once at boot, so setting it here captures everything from this point on —
+ * which is every plugin, the theme, and the main query. A handful of very
+ * early core queries are missed; the report says so rather than pretending
+ * the count is complete.
+ */
+function cb_perf_maybe_start() {
+	if ( empty( $_GET['cb_perf'] ) ) {
+		return;
+	}
+	$token = preg_replace( '/[^A-Za-z0-9]/', '', (string) $_GET['cb_perf'] );
+	if ( ! $token || ! get_transient( 'cb_perf_arm_' . $token ) ) {
+		return;
+	}
+	// One shot. Even if this exact URL is fetched again by a crawler that
+	// picked the link up, profiling does not happen twice.
+	delete_transient( 'cb_perf_arm_' . $token );
+
+	if ( ! defined( 'SAVEQUERIES' ) ) {
+		define( 'SAVEQUERIES', true );
+	}
+	$GLOBALS['cb_perf_token'] = $token;
+	$GLOBALS['cb_perf_start'] = microtime( true );
+	add_action( 'shutdown', 'cb_perf_capture', PHP_INT_MAX );
+}
+add_action( 'plugins_loaded', 'cb_perf_maybe_start', 1 );
+
+/**
+ * At the end of the profiled request, summarise and store.
+ *
+ * Stores a summary, never the raw log: a query log on a busy page is megabytes
+ * and can contain user data in WHERE clauses. What is kept is shapes and
+ * totals — enough to act on, small enough to hand back over the API.
+ */
+function cb_perf_capture() {
+	global $wpdb;
+	$token = isset( $GLOBALS['cb_perf_token'] ) ? $GLOBALS['cb_perf_token'] : '';
+	if ( ! $token || empty( $wpdb->queries ) ) {
+		return;
+	}
+
+	$by_source = array();
+	$shapes    = array();
+	$slow      = array();
+	$total_ms  = 0.0;
+
+	foreach ( $wpdb->queries as $q ) {
+		$sql   = isset( $q[0] ) ? (string) $q[0] : '';
+		$ms    = isset( $q[1] ) ? (float) $q[1] * 1000 : 0.0;
+		$stack = isset( $q[2] ) ? (string) $q[2] : '';
+		$total_ms += $ms;
+
+		$src = cb_perf_attribute( $stack );
+		if ( ! isset( $by_source[ $src ] ) ) {
+			$by_source[ $src ] = array( 'source' => $src, 'queries' => 0, 'ms' => 0.0 );
+		}
+		$by_source[ $src ]['queries']++;
+		$by_source[ $src ]['ms'] += $ms;
+
+		// Normalise so the same query with different ids collapses together —
+		// that is how N+1 patterns become visible instead of looking like 340
+		// unrelated queries.
+		$shape = cb_perf_shape( $sql );
+		if ( ! isset( $shapes[ $shape ] ) ) {
+			$shapes[ $shape ] = array( 'shape' => $shape, 'count' => 0, 'ms' => 0.0, 'source' => $src );
+		}
+		$shapes[ $shape ]['count']++;
+		$shapes[ $shape ]['ms'] += $ms;
+
+		if ( $ms >= 50 ) {
+			$slow[] = array( 'ms' => round( $ms, 1 ), 'source' => $src, 'sql' => substr( $sql, 0, 240 ) );
+		}
+	}
+
+	usort( $by_source, function ( $a, $b ) { return $b['ms'] <=> $a['ms']; } );
+	uasort( $shapes, function ( $a, $b ) { return $b['count'] <=> $a['count']; } );
+	usort( $slow, function ( $a, $b ) { return $b['ms'] <=> $a['ms']; } );
+
+	$repeated = array_values( array_filter( array_slice( array_values( $shapes ), 0, 40 ), function ( $s ) {
+		return $s['count'] >= 5;
+	} ) );
+
+	$result = array(
+		'url'          => home_url( add_query_arg( array() ) ),
+		'queries'      => count( $wpdb->queries ),
+		'query_ms'     => round( $total_ms, 1 ),
+		'generated_ms' => round( ( microtime( true ) - $GLOBALS['cb_perf_start'] ) * 1000, 1 ),
+		'peak_memory'  => size_format( memory_get_peak_usage( true ) ),
+		'by_source'    => array_map( function ( $s ) {
+			$s['ms'] = round( $s['ms'], 1 );
+			return $s;
+		}, array_slice( $by_source, 0, 12 ) ),
+		'repeated'     => array_map( function ( $s ) {
+			$s['ms'] = round( $s['ms'], 1 );
+			return $s;
+		}, array_slice( $repeated, 0, 10 ) ),
+		'slow'         => array_slice( $slow, 0, 10 ),
+		// Said plainly rather than left for someone to discover: the count is a
+		// floor, not an exact total.
+		'note'         => 'شمارش از لحظهٔ بارگذاری افزونه‌ها شروع می‌شود؛ چند کوئری اولیهٔ هسته در آن نیست.',
+	);
+
+	set_transient( 'cb_perf_result_' . $token, $result, 900 );
+}
+
+/** Which plugin or theme issued this query, from its backtrace. */
+function cb_perf_attribute( $stack ) {
+	if ( preg_match( '#wp-content/plugins/([^/]+)/#', $stack, $m ) ) {
+		return 'plugin: ' . $m[1];
+	}
+	if ( preg_match( '#wp-content/(?:themes|mu-plugins)/([^/]+)#', $stack, $m ) ) {
+		return 'theme/mu: ' . $m[1];
+	}
+	// Everything that never left core. Not "fast" — just not attributable to
+	// anything the owner installed.
+	return 'wordpress core';
+}
+
+/** Collapse literals so identical query shapes group together. */
+function cb_perf_shape( $sql ) {
+	$s = preg_replace( '/\s+/', ' ', trim( (string) $sql ) );
+	$s = preg_replace( "/'[^']*'/", "'?'", $s );
+	$s = preg_replace( '/\b\d+\b/', '?', $s );
+	$s = preg_replace( '/IN \([^)]*\)/i', 'IN (?)', $s );
+	return substr( $s, 0, 200 );
+}
+
+/**
+ * Delete expired transients.
+ *
+ * The one performance fix here that is genuinely safe to automate: these rows
+ * have already passed their own expiry, so nothing is relying on them and
+ * anything that needs one will simply rebuild it. Deleted in bounded batches
+ * so a site with half a million of them does not time out mid-delete.
+ */
+function cb_op_perf_clean_transients( $args = array() ) {
+	global $wpdb;
+	$limit = isset( $args['limit'] ) ? max( 100, min( 20000, (int) $args['limit'] ) ) : 5000;
+
+	$names = $wpdb->get_col( $wpdb->prepare(
+		"SELECT option_name FROM {$wpdb->options}
+		  WHERE option_name LIKE %s
+		    AND option_value < UNIX_TIMESTAMP()
+		  LIMIT %d",
+		$wpdb->esc_like( '_transient_timeout_' ) . '%',
+		$limit
+	) );
+
+	$deleted = 0;
+	foreach ( (array) $names as $timeout_name ) {
+		// delete_transient rather than a DELETE, so object-cache backends and
+		// any hooks on the option see it happen.
+		$key = substr( $timeout_name, strlen( '_transient_timeout_' ) );
+		if ( delete_transient( $key ) ) {
+			$deleted++;
+		} else {
+			// Orphaned timeout with no value row. Remove it directly.
+			delete_option( $timeout_name );
+			$deleted++;
+		}
+	}
+
+	$left = (int) $wpdb->get_var(
+		"SELECT COUNT(*) FROM {$wpdb->options}
+		  WHERE option_name LIKE '\_transient\_timeout\_%'
+		    AND option_value < UNIX_TIMESTAMP()"
+	);
+
+	return array(
+		'ok'        => true,
+		'deleted'   => $deleted,
+		'remaining' => $left,
+		'message'   => sprintf( '%d ترنزینت منقضی حذف شد%s', $deleted,
+			$left ? sprintf( '، %d مورد باقی مانده — دوباره اجرا کنید', $left ) : '' ),
+	);
+}
+
+/**
+ * The job: read the site, then profile one page.
+ *
+ * Two passes so neither is rushed — the site-wide read is one pass, the page
+ * fetch is another, and the fetch is a plain loopback request that waits for
+ * the profiled page to store its own summary.
+ */
+function cb_job_perf( $job ) {
+	$args  = is_array( $job['args'] ) ? $job['args'] : array();
+	$state = is_array( $job['cursor'] ) ? $job['cursor'] : array();
+
+	if ( empty( $state['site'] ) ) {
+		$state['site'] = cb_perf_site();
+		return array( 'cursor' => $state, 'progress' => 40, 'message' => 'بررسی کلی سایت انجام شد' );
+	}
+
+	$url = isset( $args['url'] ) && $args['url'] ? esc_url_raw( (string) $args['url'] ) : home_url( '/' );
+	$token = cb_perf_arm();
+	$fetch = add_query_arg( 'cb_perf', $token, $url );
+
+	$resp = wp_remote_get( $fetch, array(
+		'timeout'     => 45,
+		'sslverify'   => false,
+		'redirection' => 3,
+		'headers'     => array( 'User-Agent' => 'ClaudeBridgePerf/1.0', 'Cache-Control' => 'no-cache' ),
+	) );
+
+	$page = get_transient( 'cb_perf_result_' . $token );
+	delete_transient( 'cb_perf_result_' . $token );
+	delete_transient( 'cb_perf_arm_' . $token );
+
+	$result = array( 'site' => $state['site'], 'url' => $url );
+
+	if ( is_wp_error( $resp ) ) {
+		$result['page_error'] = 'صفحه بارگذاری نشد: ' . $resp->get_error_message();
+	} elseif ( ! $page ) {
+		// A cache plugin serving a static file never reaches PHP, so no queries
+		// run. That is not a failure — it is the answer.
+		$result['page_error'] = 'گزارش صفحه ثبت نشد. معمولاً یعنی صفحه از کش سرو شده و اصلاً به PHP نرسیده — که خودش خبر خوبی است.';
+		$result['http_code']  = (int) wp_remote_retrieve_response_code( $resp );
+	} else {
+		$result['page'] = $page;
+	}
+
+	return array( 'done' => true, 'message' => 'بررسی سرعت انجام شد', 'result' => $result );
 }
 
 /**

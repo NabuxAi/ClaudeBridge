@@ -366,6 +366,17 @@ export const findConflict = (id, body) => {
 }
 export const jobStatus = (id, jobId) => {
   mockJobTick++
+  // Jobs are keyed by id in the real thing too, so the demo branches the same
+  // way rather than returning one shape for every job type.
+  if (jobId === 'job_perf_demo') {
+    if (mockJobTick < 3) {
+      return delay({
+        id: jobId, state: 'running', progress: mockJobTick * 40,
+        message: mockJobTick === 1 ? 'بررسی کلی سایت انجام شد' : 'در حال اندازه‌گیری صفحه',
+      }, 700)
+    }
+    return delay({ id: jobId, state: 'done', progress: 100, message: 'بررسی سرعت انجام شد', result: demoProfile })
+  }
   if (mockJobTick < 3) {
     return delay({
       id: jobId, state: 'running', progress: mockJobTick * 30,
@@ -417,3 +428,59 @@ export const runUpdates = (id, items) =>
   delay({ queued: true, job: { id: 'job_update_demo', state: 'queued', progress: 0, message: 'در صف' } })
 
 export const saveProfile = (body) => delay({ ...body, saved: true })
+
+// The demo profile is a real-shaped one: a site whose autoload table has been
+// quietly taxing every request for a year, one plugin dominating the page, and
+// an N+1 pattern. It runs through the same matcher the server uses, so the
+// demo cannot drift from the real recipe book.
+const demoProfile = {
+  url: 'https://mystore.ir/',
+  site: {
+    autoload: {
+      bytes: 2_640_000, count: 780, verdict: 'bad',
+      largest: [
+        { name: 'wpseo_sitemap_cache_validator', bytes: 1_180_000, owner: null },
+        { name: 'rewrite_rules', bytes: 410_000, owner: 'wordpress' },
+        { name: 'slider_x_slides_cache', bytes: 260_000, owner: null },
+        { name: 'elementor_global_css', bytes: 88_000, owner: 'elementor' },
+        { name: 'cb_last_scan', bytes: 4_100, owner: 'digiwp-ai-bridge' },
+      ],
+    },
+    transients: { total: 9_240, expired: 4_880 },
+    object_cache: { external: false, dropin: false },
+    cron: { overdue: 34, disabled: false },
+    bloat: { revisions: 18_400, spam: 2_100, trash_posts: 41, orphan_meta: 9_600 },
+    php: { version: '8.0.30', memory_limit: '256M', opcache: true },
+    plugins_active: 31,
+  },
+  page: {
+    url: 'https://mystore.ir/',
+    queries: 412, query_ms: 890, generated_ms: 1_640, peak_memory: '196 MB',
+    by_source: [
+      { source: 'plugin: slider-x', queries: 244, ms: 520 },
+      { source: 'wordpress core', queries: 96, ms: 190 },
+      { source: 'plugin: woocommerce', queries: 48, ms: 120 },
+      { source: 'theme/mu: astra', queries: 24, ms: 60 },
+    ],
+    repeated: [
+      { shape: 'SELECT * FROM wp_postmeta WHERE post_id = ? AND meta_key = ?', count: 212, ms: 430, source: 'plugin: slider-x' },
+      { shape: 'SELECT option_value FROM wp_options WHERE option_name = ?', count: 38, ms: 22, source: 'wordpress core' },
+    ],
+    slow: [
+      { ms: 184, source: 'plugin: slider-x', sql: 'SELECT p.* FROM wp_posts p INNER JOIN wp_postmeta pm ON …' },
+    ],
+    note: 'شمارش از لحظهٔ بارگذاری افزونه‌ها شروع می‌شود؛ چند کوئری اولیهٔ هسته در آن نیست.',
+  },
+}
+
+export const measureSpeed = (id, body = {}) =>
+  delay({ queued: true, job: { id: 'job_perf_demo', state: 'queued', progress: 0, message: 'در صف' } })
+
+export const analyseSpeed = async (id, profile) => {
+  // Same matcher as the server. A demo with its own hardcoded advice would be
+  // exactly the kind of fake this pass exists to remove.
+  const { analyse } = await import('../../../server/src/perf/recipes.js')
+  return delay(analyse(profile || demoProfile))
+}
+
+export { demoProfile }
