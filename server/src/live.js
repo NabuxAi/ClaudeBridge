@@ -42,8 +42,11 @@ export const PROVENANCE = {
     unavailable: 'ثبت رخداد هنوز ساخته نشده. برای این بخش هیچ دادهٔ واقعی وجود ندارد.',
   },
   backups: {
-    live: [],
-    unavailable: 'سیستم پشتیبان‌گیری هنوز ساخته نشده. هیچ بکاپی گرفته نمی‌شود.',
+    // Built for real: the connector dumps the database in pure PHP (so it works
+    // on hosts with exec() disabled) and records only dumps it verified
+    // complete. The panel shows snapshots the site actually holds.
+    live: ['backup_list', 'backup_run'],
+    partial: {},
   },
 }
 

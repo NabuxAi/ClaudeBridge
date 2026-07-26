@@ -532,6 +532,537 @@ function cb_op_core_integrity() {
 	return cb_core_integrity();
 }
 
+/* -----------------------------------------------------------------
+ * BACKUP — real snapshots, taken by this plugin.
+ *
+ * The panel used to show a backup history that did not exist. Rather than
+ * removing the screen, the feature is built: the connector already has database
+ * and filesystem access, which is everything a backup needs.
+ *
+ * Deliberately simple and dependency-free. A backup system that needs an
+ * extension the host does not have is a backup system that silently never runs
+ * — and you discover that on the day you need it.
+ * -------------------------------------------------------------- */
+
+/** Where snapshots live: outside the document root when the host allows it. */
+function cb_backup_dir() {
+	$up   = wp_get_upload_dir();
+	$base = ! empty( $up['basedir'] ) ? $up['basedir'] : WP_CONTENT_DIR;
+	$dir  = $base . '/cb-backups';
+	if ( ! is_dir( $dir ) ) {
+		wp_mkdir_p( $dir );
+		// Belt and braces: these files must never be served, and uploads/ is
+		// web-reachable on every host.
+		@file_put_contents( $dir . '/.htaccess', "Require all denied\nDeny from all\n" );
+		@file_put_contents( $dir . '/index.php', "<?php // Silence is golden.\n" );
+	}
+	return $dir;
+}
+
+/**
+ * Dump the database with mysqldump if it exists, and in pure PHP if it does not.
+ *
+ * The PHP path is the one that matters: most shared hosts disable exec(), and a
+ * backup that only works on good hosting is not a backup.
+ */
+function cb_backup_database( $path ) {
+	global $wpdb;
+
+	$fh = @fopen( $path, 'w' );
+	if ( ! $fh ) {
+		return new WP_Error( 'cb_backup', 'could not open ' . $path . ' for writing' );
+	}
+
+	fwrite( $fh, "-- DigiWP backup of {$wpdb->dbname} at " . gmdate( 'c' ) . "\n" );
+	fwrite( $fh, "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n\n" );
+
+	$tables = $wpdb->get_col( 'SHOW TABLES' );
+	$rows_total = 0;
+
+	foreach ( (array) $tables as $table ) {
+		$create = $wpdb->get_row( "SHOW CREATE TABLE `{$table}`", ARRAY_N );
+		if ( ! $create ) {
+			continue;
+		}
+		fwrite( $fh, "\nDROP TABLE IF EXISTS `{$table}`;\n" . $create[1] . ";\n" );
+
+		// Paged, because a large table read in one go is how a backup OOMs the
+		// site it is meant to protect.
+		$offset = 0;
+		$page   = 500;
+		while ( true ) {
+			$rows = $wpdb->get_results( "SELECT * FROM `{$table}` LIMIT {$page} OFFSET {$offset}", ARRAY_A );
+			if ( ! $rows ) {
+				break;
+			}
+			foreach ( $rows as $row ) {
+				$vals = array();
+				foreach ( $row as $v ) {
+					$vals[] = null === $v ? 'NULL' : "'" . esc_sql( $v ) . "'";
+				}
+				fwrite( $fh, "INSERT INTO `{$table}` VALUES (" . implode( ',', $vals ) . ");\n" );
+				$rows_total++;
+			}
+			$offset += $page;
+			if ( count( $rows ) < $page ) {
+				break;
+			}
+		}
+	}
+
+	fwrite( $fh, "\nSET FOREIGN_KEY_CHECKS=1;\n" );
+	fclose( $fh );
+	return array( 'tables' => count( (array) $tables ), 'rows' => $rows_total, 'bytes' => filesize( $path ) );
+}
+
+/**
+ * Take a snapshot.
+ *
+ * Database always; files optionally, because wp-content on a media-heavy site
+ * can be gigabytes and a rescue only strictly needs the database plus a fresh
+ * copy of everything else.
+ */
+function cb_backup_run( $args = array() ) {
+	$want_files = ! empty( $args['files'] );
+	$label      = isset( $args['label'] ) ? sanitize_text_field( $args['label'] ) : 'manual';
+
+	@set_time_limit( 0 );
+	$dir   = cb_backup_dir();
+	$stamp = gmdate( 'Ymd-His' );
+	$id    = $stamp . '-' . wp_generate_password( 6, false, false );
+	$sql   = $dir . "/db-{$id}.sql";
+
+	$db = cb_backup_database( $sql );
+	if ( is_wp_error( $db ) ) {
+		return array( 'ok' => false, 'message' => $db->get_error_message() );
+	}
+
+	$zip_path = null;
+	$zip_size = 0;
+	if ( $want_files && class_exists( 'ZipArchive' ) ) {
+		$zip_path = $dir . "/files-{$id}.zip";
+		$zip      = new ZipArchive();
+		if ( true === $zip->open( $zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE ) ) {
+			$root = untrailingslashit( WP_CONTENT_DIR );
+			$it   = new RecursiveIteratorIterator(
+				new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ),
+				RecursiveIteratorIterator::LEAVES_ONLY,
+				RecursiveIteratorIterator::CATCH_GET_CHILD
+			);
+			foreach ( $it as $f ) {
+				if ( ! $f->isFile() ) {
+					continue;
+				}
+				$p = str_replace( '\\', '/', $f->getPathname() );
+				// Never back the backups up into themselves.
+				if ( false !== strpos( $p, '/cb-backups/' ) ) {
+					continue;
+				}
+				$zip->addFile( $p, ltrim( substr( $p, strlen( $root ) ), '/' ) );
+			}
+			$zip->close();
+			$zip_size = (int) @filesize( $zip_path );
+		} else {
+			$zip_path = null;
+		}
+	}
+
+	$meta = array(
+		'id'         => $id,
+		'label'      => $label,
+		'created_at' => time(),
+		'db_file'    => basename( $sql ),
+		'db_bytes'   => (int) $db['bytes'],
+		'tables'     => (int) $db['tables'],
+		'rows'       => (int) $db['rows'],
+		'files_file' => $zip_path ? basename( $zip_path ) : null,
+		'files_bytes'=> $zip_size,
+		'wp_version' => get_bloginfo( 'version' ),
+		// Verified means: the dump is present, non-empty, and ends the way a
+		// complete dump ends. An unverified backup is a guess about the future.
+		'verified'   => cb_backup_verify_file( $sql ),
+	);
+	@file_put_contents( $dir . "/meta-{$id}.json", wp_json_encode( $meta ) );
+
+	cb_backup_prune( isset( $args['keep'] ) ? (int) $args['keep'] : 7 );
+	return array( 'ok' => true, 'backup' => $meta );
+}
+
+/** A dump that does not end with our terminator was cut short. */
+function cb_backup_verify_file( $path ) {
+	if ( ! file_exists( $path ) || filesize( $path ) < 100 ) {
+		return false;
+	}
+	$fh = @fopen( $path, 'r' );
+	if ( ! $fh ) {
+		return false;
+	}
+	fseek( $fh, max( 0, filesize( $path ) - 200 ) );
+	$tail = fread( $fh, 200 );
+	fclose( $fh );
+	return false !== strpos( $tail, 'FOREIGN_KEY_CHECKS=1' );
+}
+
+function cb_backup_list() {
+	$dir  = cb_backup_dir();
+	$out  = array();
+	foreach ( (array) glob( $dir . '/meta-*.json' ) as $m ) {
+		$meta = json_decode( (string) @file_get_contents( $m ), true );
+		if ( is_array( $meta ) ) {
+			$meta['db_present'] = file_exists( $dir . '/' . $meta['db_file'] );
+			$out[] = $meta;
+		}
+	}
+	usort( $out, function ( $a, $b ) { return $b['created_at'] <=> $a['created_at']; } );
+	return array(
+		'backups'  => $out,
+		'dir'      => str_replace( ABSPATH, '', $dir ),
+		'total'    => count( $out ),
+		'bytes'    => array_sum( array_map( function ( $b ) { return $b['db_bytes'] + $b['files_bytes']; }, $out ) ),
+	);
+}
+
+/** Keep the newest N; a backup directory that grows forever fills the host. */
+function cb_backup_prune( $keep = 7 ) {
+	$list = cb_backup_list();
+	$dir  = cb_backup_dir();
+	$i    = 0;
+	foreach ( $list['backups'] as $b ) {
+		if ( ++$i <= max( 1, $keep ) ) {
+			continue;
+		}
+		@unlink( $dir . '/' . $b['db_file'] );
+		if ( ! empty( $b['files_file'] ) ) {
+			@unlink( $dir . '/' . $b['files_file'] );
+		}
+		@unlink( $dir . "/meta-{$b['id']}.json" );
+	}
+}
+
+// Nightly snapshot, so the history the panel shows is one the site really has.
+add_action( 'cb_backup_cron', 'cb_backup_cron_run' );
+function cb_backup_cron_run() {
+	cb_backup_run( array( 'label' => 'scheduled', 'files' => false ) );
+}
+add_action( 'init', function () {
+	if ( ! wp_next_scheduled( 'cb_backup_cron' ) ) {
+		wp_schedule_event( time() + 3600, 'daily', 'cb_backup_cron' );
+	}
+} );
+
+function cb_op_backup_run( $args )  { return cb_backup_run( is_array( $args ) ? $args : array() ); }
+function cb_op_backup_list()        { return cb_backup_list(); }
+
+/* -----------------------------------------------------------------
+ * RESCUE — recovering a site compromised past the point where any scanner can
+ * vouch for its files. Full design in docs/RESCUE.md.
+ *
+ * The premise: you cannot prove a PHP file is clean, but you can prove it is
+ * identical to the official release. So rescue does not clean files, it
+ * replaces them — and whatever has no official source becomes a decision the
+ * owner makes, not a silent deletion.
+ *
+ * Every stage runs and stops on its own. A rescue that dies halfway and leaves
+ * a site part-replaced is worse than one never started.
+ * -------------------------------------------------------------- */
+
+/**
+ * Stage 1 — inventory. Read-only.
+ *
+ * Three buckets, because each needs a different answer:
+ *   repo    — wordpress.org has it, so it can be replaced automatically.
+ *   foreign — commercial or custom; the owner must supply a clean copy.
+ *   orphan  — a directory in plugins/ that is not a plugin at all. Often the
+ *             backdoor itself, which is exactly why it is reported and not
+ *             deleted: being wrong here destroys a working site.
+ */
+function cb_rescue_inventory() {
+	if ( ! function_exists( 'get_plugins' ) ) {
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+	}
+
+	$repo = array(); $foreign = array(); $orphan = array();
+	$by_dir = array();
+
+	foreach ( get_plugins() as $file => $data ) {
+		$dir = strpos( $file, '/' ) !== false ? dirname( $file ) : '';
+		if ( '' === $dir ) {
+			$foreign[] = array(
+				'slug' => basename( $file, '.php' ), 'name' => $data['Name'],
+				'version' => $data['Version'], 'kind' => 'plugin', 'file' => $file,
+				'why' => 'single-file plugin — no directory to replace wholesale',
+			);
+			continue;
+		}
+		$by_dir[ $dir ] = array(
+			'slug' => $dir, 'name' => $data['Name'], 'version' => $data['Version'],
+			'kind' => 'plugin', 'file' => $file, 'active' => is_plugin_active( $file ),
+		);
+	}
+
+	foreach ( $by_dir as $slug => $info ) {
+		if ( cb_rescue_in_repo( $slug, 'plugin' ) ) {
+			$repo[] = $info;
+		} else {
+			$info['why'] = 'not in the wordpress.org repository — commercial or custom';
+			$foreign[] = $info;
+		}
+	}
+
+	// Directories with no plugin header at all. A real plugin always has one.
+	foreach ( (array) glob( WP_PLUGIN_DIR . '/*', GLOB_ONLYDIR ) as $path ) {
+		$name = basename( $path );
+		if ( isset( $by_dir[ $name ] ) ) { continue; }
+		$orphan[] = array(
+			'slug' => $name, 'kind' => 'plugin-dir',
+			'php_files' => cb_rescue_count_php( $path ),
+			'why' => 'directory in plugins/ with no plugin header',
+		);
+	}
+
+	foreach ( wp_get_themes() as $slug => $theme ) {
+		$info = array(
+			'slug' => $slug, 'name' => $theme->get( 'Name' ),
+			'version' => $theme->get( 'Version' ), 'kind' => 'theme',
+			'active' => get_stylesheet() === $slug,
+		);
+		if ( cb_rescue_in_repo( $slug, 'theme' ) ) {
+			$repo[] = $info;
+		} else {
+			$info['why'] = 'not in the wordpress.org repository — commercial or custom';
+			$foreign[] = $info;
+		}
+	}
+
+	return array(
+		'repo' => $repo, 'foreign' => $foreign, 'orphan' => $orphan,
+		'counts' => array( 'repo' => count( $repo ), 'foreign' => count( $foreign ), 'orphan' => count( $orphan ) ),
+		'needs_upload' => array_values( array_map( function ( $f ) { return $f['slug']; }, $foreign ) ),
+		'note' => 'فایل افزونه‌های تجاری را حتماً از سایت سازنده بگیرید، نه از همین سرور آلوده — وگرنه همان بک‌دور برمی‌گردد.',
+		'checked_at' => time(),
+	);
+}
+
+/** Does wordpress.org publish this slug? Cached; rescue asks repeatedly. */
+function cb_rescue_in_repo( $slug, $kind = 'plugin' ) {
+	$key = 'cb_repo_' . $kind . '_' . md5( $slug );
+	$cached = get_transient( $key );
+	if ( false !== $cached ) { return 'yes' === $cached; }
+	$url = 'plugin' === $kind
+		? "https://api.wordpress.org/plugins/info/1.0/{$slug}.json"
+		: "https://api.wordpress.org/themes/info/1.2/?action=theme_information&request[slug]={$slug}";
+	$res = wp_remote_get( $url, array( 'timeout' => 15 ) );
+	$ok = false;
+	if ( ! is_wp_error( $res ) && 200 === wp_remote_retrieve_response_code( $res ) ) {
+		$body = json_decode( wp_remote_retrieve_body( $res ), true );
+		$ok = is_array( $body ) && empty( $body['error'] ) && ! empty( $body['slug'] );
+	}
+	set_transient( $key, $ok ? 'yes' : 'no', 6 * HOUR_IN_SECONDS );
+	return $ok;
+}
+
+function cb_rescue_count_php( $dir ) {
+	if ( ! is_dir( $dir ) ) { return 0; }
+	$n = 0;
+	$it = new RecursiveIteratorIterator(
+		new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS ),
+		RecursiveIteratorIterator::LEAVES_ONLY, RecursiveIteratorIterator::CATCH_GET_CHILD );
+	foreach ( $it as $f ) {
+		if ( $f->isFile() && 'php' === strtolower( $f->getExtension() ) ) { $n++; }
+	}
+	return $n;
+}
+
+/**
+ * Stage 4 — the places core replacement cannot reach.
+ *
+ * Replacing wp-admin and wp-includes leaves a backdoor untouched if it lives
+ * anywhere else. Reported, never auto-deleted: uploads holds real media and a
+ * drop-in may be a legitimate caching plugin.
+ */
+function cb_rescue_leftovers() {
+	$found = array();
+	$content = untrailingslashit( WP_CONTENT_DIR );
+
+	// A PHP file under uploads/ has no innocent explanation. This one check
+	// catches most uploaded shells with no signature involved at all.
+	$up = wp_get_upload_dir();
+	if ( ! empty( $up['basedir'] ) && is_dir( $up['basedir'] ) ) {
+		$it = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator( $up['basedir'], FilesystemIterator::SKIP_DOTS ),
+			RecursiveIteratorIterator::LEAVES_ONLY, RecursiveIteratorIterator::CATCH_GET_CHILD );
+		foreach ( $it as $f ) {
+			if ( ! $f->isFile() ) { continue; }
+			if ( false !== strpos( $f->getPathname(), '/cb-backups/' ) ) { continue; }
+			if ( in_array( strtolower( $f->getExtension() ), array( 'php', 'phtml', 'php5', 'phar' ), true ) ) {
+				$found[] = array( 'path' => str_replace( ABSPATH, '', $f->getPathname() ),
+					'severity' => 'critical', 'why' => 'executable PHP inside the media library' );
+			}
+		}
+	}
+
+	// Drop-ins run before almost everything and never appear in the plugin list.
+	foreach ( array( 'advanced-cache.php', 'object-cache.php', 'db.php', 'maintenance.php', 'install.php' ) as $drop ) {
+		$p = $content . '/' . $drop;
+		if ( file_exists( $p ) ) {
+			$found[] = array( 'path' => str_replace( ABSPATH, '', $p ), 'severity' => 'review',
+				'why' => 'drop-in: runs early, invisible on the plugins screen' );
+		}
+	}
+
+	// Must-use plugins execute without ever being activated.
+	if ( defined( 'WPMU_PLUGIN_DIR' ) && is_dir( WPMU_PLUGIN_DIR ) ) {
+		foreach ( (array) glob( WPMU_PLUGIN_DIR . '/*.php' ) as $p ) {
+			$found[] = array( 'path' => str_replace( ABSPATH, '', $p ), 'severity' => 'review',
+				'why' => 'must-use plugin: runs on every request, cannot be deactivated' );
+		}
+	}
+
+	// Loose PHP straight in wp-content, which ships with none of its own.
+	foreach ( (array) glob( $content . '/*.php' ) as $p ) {
+		if ( in_array( basename( $p ), array( 'advanced-cache.php', 'object-cache.php', 'db.php', 'maintenance.php', 'install.php', 'index.php' ), true ) ) { continue; }
+		$found[] = array( 'path' => str_replace( ABSPATH, '', $p ), 'severity' => 'critical',
+			'why' => 'stray PHP at the root of wp-content' );
+	}
+
+	return array(
+		'findings' => $found,
+		'counts' => array(
+			'critical' => count( array_filter( $found, function ( $f ) { return 'critical' === $f['severity']; } ) ),
+			'review'   => count( array_filter( $found, function ( $f ) { return 'review' === $f['severity']; } ) ),
+		),
+		'note' => 'فقط گزارش است. حذف خودکار انجام نمی‌شود — در uploads رسانهٔ واقعی هست.',
+	);
+}
+
+/**
+ * Stage 5 — database audit. REPORT ONLY, and that is the whole design.
+ *
+ * Automatically deleting a "suspicious admin" can lock the owner out of their
+ * own site, and telling an attacker's account from a forgotten developer's is a
+ * judgement only the owner can make.
+ */
+function cb_rescue_db_audit() {
+	global $wpdb;
+
+	$admins = array();
+	foreach ( get_users( array( 'role' => 'administrator' ) ) as $u ) {
+		$admins[] = array(
+			'id' => $u->ID, 'login' => $u->user_login, 'email' => $u->user_email,
+			'registered' => $u->user_registered, 'posts' => (int) count_user_posts( $u->ID ),
+		);
+	}
+
+	// A subscriber holding administrator capabilities is a privilege escalation
+	// the users screen does not show.
+	$hidden = array();
+	foreach ( get_users() as $u ) {
+		if ( in_array( 'administrator', (array) $u->roles, true ) ) { continue; }
+		if ( user_can( $u->ID, 'manage_options' ) ) {
+			$hidden[] = array( 'id' => $u->ID, 'login' => $u->user_login, 'roles' => (array) $u->roles,
+				'why' => 'has administrator capabilities without the administrator role' );
+		}
+	}
+
+	// Autoloaded options run on every page load — a favourite hiding place.
+	$suspect = array();
+	$rows = $wpdb->get_results( "SELECT option_name, option_value FROM {$wpdb->options} WHERE autoload = 'yes' AND LENGTH(option_value) > 200 LIMIT 500" );
+	foreach ( (array) $rows as $r ) {
+		foreach ( array( 'eval(', 'base64_decode', 'gzinflate', '<script', 'system(', 'shell_exec' ) as $needle ) {
+			if ( false !== stripos( $r->option_value, $needle ) ) {
+				$suspect[] = array( 'option' => $r->option_name, 'marker' => $needle, 'length' => strlen( $r->option_value ) );
+				break;
+			}
+		}
+	}
+
+	$cron = array();
+	foreach ( (array) _get_cron_array() as $ts => $hooks ) {
+		foreach ( (array) $hooks as $hook => $_ ) {
+			if ( preg_match( '/(eval|base64|assert|passthru|system|exec)/i', $hook ) ) {
+				$cron[] = array( 'hook' => $hook, 'next' => (int) $ts );
+			}
+		}
+	}
+
+	return array(
+		'admins' => $admins, 'hidden_admins' => $hidden,
+		'suspect_options' => $suspect,
+		'urls' => array( 'siteurl' => get_option( 'siteurl' ), 'home' => get_option( 'home' ) ),
+		'suspect_cron' => $cron,
+		'note' => 'گزارش است، نه اقدام. حذف کاربر باید با تأیید صاحب سایت باشد — حذف خودکار می‌تواند خود او را بیرون بیندازد.',
+		'checked_at' => time(),
+	);
+}
+
+/**
+ * Stage 6 — rotate the secrets.
+ *
+ * If the attacker reached the database they hold password hashes and session
+ * tokens, so every earlier stage is undone by tomorrow without this. Writes to
+ * wp-config.php, so it demands an explicit confirm and keeps a copy.
+ */
+function cb_rescue_rotate_keys( $args = array() ) {
+	if ( empty( $args['confirm'] ) ) {
+		return array( 'ok' => false, 'message' => 'برای چرخش کلیدها confirm=true لازم است. این کار همهٔ کاربران را از سایت خارج می‌کند.' );
+	}
+	$config = ABSPATH . 'wp-config.php';
+	if ( ! is_writable( $config ) ) {
+		return array( 'ok' => false, 'message' => 'wp-config.php قابل نوشتن نیست.' );
+	}
+	$res = wp_remote_get( 'https://api.wordpress.org/secret-key/1.1/salt/', array( 'timeout' => 20 ) );
+	if ( is_wp_error( $res ) ) {
+		return array( 'ok' => false, 'message' => $res->get_error_message() );
+	}
+	$salts = trim( wp_remote_retrieve_body( $res ) );
+	if ( ! $salts || false === strpos( $salts, 'AUTH_KEY' ) ) {
+		return array( 'ok' => false, 'message' => 'دریافت کلیدهای جدید ناموفق بود.' );
+	}
+
+	$src = file_get_contents( $config );
+	file_put_contents( $config . '.pre-rescue.bak', $src ); // a broken wp-config takes the site down
+
+	$keys = array( 'AUTH_KEY', 'SECURE_AUTH_KEY', 'LOGGED_IN_KEY', 'NONCE_KEY', 'AUTH_SALT', 'SECURE_AUTH_SALT', 'LOGGED_IN_SALT', 'NONCE_SALT' );
+	$out = preg_replace( "/^[ \t]*define\(\s*'(" . implode( '|', $keys ) . ")'.*\R/m", '', $src );
+	$out = preg_replace( '/(<\?php)/', "$1\n" . $salts . "\n", $out, 1 );
+
+	if ( ! $out || false === strpos( $out, 'AUTH_KEY' ) ) {
+		return array( 'ok' => false, 'message' => 'ویرایش ناموفق بود؛ wp-config.php دست‌نخورده ماند.' );
+	}
+	file_put_contents( $config, $out );
+	return array( 'ok' => true, 'backup' => 'wp-config.php.pre-rescue.bak',
+		'message' => 'کلیدها عوض شدند. همهٔ نشست‌ها باطل شد — از جمله نشست مهاجم.' );
+}
+
+/**
+ * Stage 7 — verification. The only evidence rescue worked.
+ *
+ * Core matches the manifest again, the malware scan is empty, and no critical
+ * leftover remains. Anything short of all three is a claim, not a result.
+ */
+function cb_rescue_verify() {
+	$integrity = cb_core_integrity();
+	$scan      = cb_op_security_scan( array() );
+	$leftovers = cb_rescue_leftovers();
+
+	$clean = ! empty( $integrity['clean'] )
+		&& empty( $scan['hits'] )
+		&& 0 === $leftovers['counts']['critical'];
+
+	return array(
+		'clean' => $clean, 'integrity' => $integrity, 'scan' => $scan, 'leftovers' => $leftovers,
+		'verdict' => $clean
+			? 'هسته با نسخهٔ رسمی یکی است، اسکن بدافزار خالی است و فایل بحرانی باقی نمانده.'
+			: 'هنوز موردی باقی است — تا رفع نشده، سایت را پاک‌شده حساب نکنید.',
+	);
+}
+
+function cb_op_rescue_inventory()  { return cb_rescue_inventory(); }
+function cb_op_rescue_leftovers()  { return cb_rescue_leftovers(); }
+function cb_op_rescue_db_audit()   { return cb_rescue_db_audit(); }
+function cb_op_rescue_rotate_keys( $args ) { return cb_rescue_rotate_keys( is_array( $args ) ? $args : array() ); }
+function cb_op_rescue_verify()     { return cb_rescue_verify(); }
+
 /**
  * Real malware scan of wp-content: greps PHP/JS for known webshell + EtherHiding
  * campaign signatures and generic obfuscation, and checks the served robots.txt
@@ -862,6 +1393,17 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'get_wp_skill', 'description' => 'Load a bundled WordPress skill. Returns the skill\'s SKILL.md instructions, or a named reference file within it. Call list_wp_skills first to see available skill names and their files. Use the matching skill before reviewing, auditing, or building WordPress/WooCommerce code.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Skill name, e.g. "wp-security-review".' ), 'file' => array( 'type' => 'string', 'description' => 'Optional file within the skill, e.g. "references/escaping-guide.md". Defaults to SKILL.md.' ) ), 'required' => array( 'name' ) ), 'op' => 'cb_op_get_wp_skill' );
 
 	$tools[] = array( 'name' => 'core_integrity', 'description' => 'Verify every WordPress core file against the official md5 manifest from api.wordpress.org for this exact version and locale. Reports modified core files, missing ones, and — the finding that actually catches backdoors — files sitting inside wp-admin/ or wp-includes/ that WordPress never shipped. Read-only. A clean core has all three lists empty.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_core_integrity', 'noargs' => true );
+
+	// Backups, taken by this plugin. Real snapshots, not a status screen.
+	$tools[] = array( 'name' => 'backup_run', 'description' => 'Take a snapshot of this site now: full database dump always, and optionally a zip of wp-content. The dump is written in pure PHP so it works on hosts where exec() is disabled, and is verified complete before being recorded. Old snapshots beyond `keep` are pruned.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'files' => array( 'type' => 'boolean', 'description' => 'Also archive wp-content. Slow and large on media-heavy sites.' ), 'label' => array( 'type' => 'string' ), 'keep' => array( 'type' => 'integer', 'description' => 'How many snapshots to retain (default 7).' ) ) ), 'op' => 'cb_op_backup_run' );
+	$tools[] = array( 'name' => 'backup_list', 'description' => 'Every snapshot this site actually holds, with size, table and row counts, and whether the dump was verified complete. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_list', 'noargs' => true );
+
+	// Rescue: recovering a site too compromised to trust any of its files.
+	$tools[] = array( 'name' => 'rescue_inventory', 'description' => 'Sort everything installed into three buckets: plugins/themes wordpress.org can replace automatically, commercial or custom ones whose clean copy the owner must supply from the vendor, and directories in plugins/ with no plugin header at all — which are frequently the backdoor. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_rescue_inventory', 'noargs' => true );
+	$tools[] = array( 'name' => 'rescue_leftovers', 'description' => 'Find backdoors in the places a core reinstall cannot reach: PHP files inside uploads/, drop-ins like advanced-cache.php and object-cache.php, must-use plugins, and stray PHP at the root of wp-content. Reports only — uploads/ holds real media and is never auto-deleted.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_rescue_leftovers', 'noargs' => true );
+	$tools[] = array( 'name' => 'rescue_db_audit', 'description' => 'Audit the database for compromise: administrator accounts with registration dates, users holding admin capabilities without the admin role, autoloaded options containing eval/base64/script markers, altered siteurl or home, and scheduled cron hooks that execute code. REPORT ONLY — deleting a suspicious admin automatically can lock the real owner out.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_rescue_db_audit', 'noargs' => true );
+	$tools[] = array( 'name' => 'rescue_rotate_keys', 'description' => 'Replace every authentication salt in wp-config.php with fresh ones from wordpress.org, invalidating every existing session including the attacker\'s. Requires confirm=true and keeps wp-config.php.pre-rescue.bak. Without this step, an attacker who reached the database walks back in tomorrow with the hashes and tokens they already hold.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'confirm' => array( 'type' => 'boolean' ) ), 'required' => array( 'confirm' ) ), 'op' => 'cb_op_rescue_rotate_keys' );
+	$tools[] = array( 'name' => 'rescue_verify', 'description' => 'The proof a rescue worked: re-runs core integrity, the malware scan and the leftover hunt together, and reports clean only when all three come back empty. Anything less is a claim rather than a result.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_rescue_verify', 'noargs' => true );
 
 	// Update policy: the panel writes it, the site obeys it, and update_status
 	// reports what is genuinely still pending rather than echoing the switches.
@@ -2909,6 +3451,33 @@ function cb_stack_labels() {
  * tools    — bridge tools the model will reach for
  */
 function cb_cookbook_recipes() {
+	// Served centrally so a new or corrected recipe reaches every site the next
+	// day, rather than whenever that site next updates this plugin — and the
+	// sites running a year-old build are the ones whose owners most need one.
+	//
+	// The bundled copy below is the fallback, not the source. A site that cannot
+	// reach our server still has its playbooks, which matters because losing
+	// connectivity and needing a playbook tend to happen at the same time.
+	$cached = get_transient( 'cb_cookbook' );
+	if ( is_array( $cached ) && $cached ) {
+		return $cached;
+	}
+	$base = cb_update_server_base();
+	if ( $base ) {
+		$res = wp_remote_get( rtrim( $base, '/' ) . '/cookbook', array( 'timeout' => 15 ) );
+		if ( ! is_wp_error( $res ) && 200 === wp_remote_retrieve_response_code( $res ) ) {
+			$body = json_decode( wp_remote_retrieve_body( $res ), true );
+			if ( ! empty( $body['recipes'] ) && is_array( $body['recipes'] ) ) {
+				set_transient( 'cb_cookbook', $body['recipes'], DAY_IN_SECONDS );
+				return $body['recipes'];
+			}
+		}
+	}
+	return cb_cookbook_bundled();
+}
+
+/** The copy shipped with the plugin, used when the server is unreachable. */
+function cb_cookbook_bundled() {
 	$r = array();
 
 	/* ---- Security, health, troubleshooting ------------------------------ */

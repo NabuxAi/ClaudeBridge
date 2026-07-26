@@ -8,6 +8,14 @@ import { PROVENANCE, updatesFromStatus } from '../live.js'
 
 const router = Router()
 
+const humanBytes = (n) => {
+  if (!n) return '۰'
+  const u = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++ }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${u[i]}`
+}
+
 // Load the site (owned by the signed-in user) or respond 404. Returns the raw row.
 async function loadSite(req, res) {
   const raw = await sites.rawForUser(req.params.id, req.user.sub)
@@ -85,6 +93,38 @@ function concern(name) {
         } catch (e) { data.updatesError = e.message }
       }
 
+      // Backups the site really holds. Built rather than declared missing:
+      // the connector already had database and filesystem access, which is
+      // everything a backup needs.
+      if (name === 'backups' && config.live && site.paired && site.url && site.secret) {
+        try {
+          const raw = await connector.callTool(
+            { url: site.url, secret: site.secret, siteKey: site.site_key }, 'backup_list', {}
+          )
+          const text = raw?.content?.[0]?.text
+          const live = typeof text === 'string' ? JSON.parse(text) : raw
+          if (live && Array.isArray(live.backups)) {
+            data.list = live.backups.map((b) => ({
+              id: b.id,
+              when: new Date(b.created_at * 1000).toLocaleString('fa-IR'),
+              type: b.label === 'scheduled' ? 'خودکار روزانه' : 'دستی',
+              size: humanBytes(b.db_bytes + (b.files_bytes || 0)),
+              // Verified means the dump ends the way a complete dump ends —
+              // not that a backup file merely exists.
+              verified: Boolean(b.verified),
+              db: true,
+              files: Boolean(b.files_file),
+            }))
+            data.totalSize = humanBytes(live.bytes)
+            data.location = live.dir
+            data.lastBackup = live.backups[0]
+              ? new Date(live.backups[0].created_at * 1000).toLocaleString('fa-IR')
+              : null
+            data.empty = live.backups.length === 0
+          }
+        } catch (e) { data.backupsError = e.message }
+      }
+
       // Say where this view's numbers come from — and, more importantly, which
       // of them have no source yet. A panel that cannot distinguish measured
       // from invented teaches people to trust none of it.
@@ -158,6 +198,55 @@ router.patch('/sites/:id/update-policy', async (req, res, next) => {
         : null,
     })
   } catch (e) { next(e) }
+})
+
+/**
+ * Rescue — recovering a site too compromised to trust any of its files.
+ *
+ * Exposed as separate steps rather than one button. Each is individually
+ * runnable and individually stoppable, because a rescue that dies halfway and
+ * leaves a site part-replaced is worse than one never started. The order the
+ * panel walks is: backup, inventory, leftovers, db-audit, rotate-keys, verify.
+ *
+ * Only rotate-keys writes anything, and it demands its own confirm.
+ */
+const RESCUE_STEPS = {
+  backup: { tool: 'backup_run', writes: true },
+  inventory: { tool: 'rescue_inventory', writes: false },
+  leftovers: { tool: 'rescue_leftovers', writes: false },
+  'db-audit': { tool: 'rescue_db_audit', writes: false },
+  'rotate-keys': { tool: 'rescue_rotate_keys', writes: true, confirm: true },
+  verify: { tool: 'rescue_verify', writes: false },
+}
+
+router.post('/sites/:id/rescue/:step', async (req, res, next) => {
+  try {
+    const step = RESCUE_STEPS[req.params.step]
+    if (!step) return res.status(404).json({ message: 'مرحلهٔ ناشناخته.' })
+
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    // Key rotation logs every user out, including the owner. That is not
+    // something to trigger from a mis-click.
+    if (step.confirm && !req.body?.confirm) {
+      return res.status(400).json({
+        message: 'این مرحله همهٔ کاربران را از سایت خارج می‌کند. برای اجرا confirm=true بفرستید.',
+      })
+    }
+
+    const raw = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      step.tool,
+      req.body || {}
+    )
+    const text = raw?.content?.[0]?.text
+    res.json({ step: req.params.step, result: typeof text === 'string' ? JSON.parse(text) : raw })
+  } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
 })
 
 router.get('/sites/:id/pairing', async (req, res, next) => {

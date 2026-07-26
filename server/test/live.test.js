@@ -64,8 +64,27 @@ test('garbage in gives null, so the caller keeps its own error path', () => {
 })
 
 test('views without a data source declare it instead of being filled in', () => {
-  assert.ok(PROVENANCE.backups.unavailable, 'backups has no source and says so')
+  // Incidents is still the honest gap: nothing records them yet.
   assert.ok(PROVENANCE.incidents.unavailable, 'incidents has no source and says so')
-  assert.deepEqual(PROVENANCE.backups.live, [])
-  assert.deepEqual(PROVENANCE.updates.live, ['update_status'], 'updates is genuinely measured')
+  assert.deepEqual(PROVENANCE.incidents.live, [])
+})
+
+test('backups are measured now that the feature exists', () => {
+  // This assertion used to check that backups declared itself missing. The
+  // feature was built instead of the screen being removed, so the expectation
+  // moved with it — a view is only allowed to claim data it can actually fetch.
+  assert.equal(PROVENANCE.backups.unavailable, undefined)
+  assert.deepEqual(PROVENANCE.backups.live, ['backup_list', 'backup_run'])
+})
+
+test('updates are genuinely measured', () => {
+  assert.deepEqual(PROVENANCE.updates.live, ['update_status'])
+})
+
+test('every view either names its sources or says it has none', () => {
+  for (const [name, p] of Object.entries(PROVENANCE)) {
+    const measured = (p.live || []).length > 0
+    assert.ok(measured || p.unavailable,
+      `${name} must either fetch something real or admit it cannot`)
+  }
 })

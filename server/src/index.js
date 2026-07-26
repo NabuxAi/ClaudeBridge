@@ -11,6 +11,7 @@ import { requireAuth } from './auth.js'
 import { init as initDb } from './db.js'
 import authRouter from './routes/auth.js'
 import accountRouter from './routes/account.js'
+import cookbookRouter from './routes/cookbook.js'
 import sitesRouter from './routes/sites.js'
 import connectorRouter from './routes/connector.js'
 import { runDailyDigest, scheduleDailyDigest } from './digest.js'
@@ -26,6 +27,10 @@ app.get('/health', (_req, res) => res.json({ ok: true, service: 'digiwp-server',
 // Public: hub auth + the plugin's signed register receiver.
 app.use('/v1', authRouter)
 app.use('/v1', connectorRouter)
+// Public: recipes are prompts, not secrets, and a site that has lost its
+// pairing still needs its playbooks — that is precisely when someone is
+// trying to fix it.
+app.use('/v1', cookbookRouter)
 // Protected: everything the hub reads after login.
 app.use('/v1', requireAuth, accountRouter)
 app.use('/v1', requireAuth, sitesRouter)
