@@ -36,6 +36,17 @@ export default function Settings() {
   const { siteId } = useOutletContext()
   const [data, setData] = useState(null)
   const [authority, setAuthority] = useState('auto')
+  const [saving, setSaving] = useState(false)
+
+  async function saveAuthority() {
+    setSaving(true)
+    try {
+      await siteApi(siteId).setAuthority(authority)
+      setData((d) => ({ ...d, authority }))
+    } finally {
+      setSaving(false)
+    }
+  }
 
   useEffect(() => {
     let alive = true
@@ -184,8 +195,20 @@ export default function Settings() {
 
       {/* Save bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid var(--gd-border-subtle)', paddingTop: 18 }}>
-        <Button variant="ghost" size="md">بازنشانی</Button>
-        <Button variant="primary" size="md" leftIcon="check">ذخیرهٔ تغییرات</Button>
+        {/* The authority selector is the only thing this bar still governs;
+            the auto-update switches save themselves on click, because a
+            security setting that waits for a button somewhere else is a
+            setting that gets left half-applied. */}
+        <Button variant="ghost" size="md" onClick={() => setAuthority(data.authority)}>
+          بازنشانی
+        </Button>
+        <Button
+          variant="primary" size="md" leftIcon="check"
+          disabled={saving || authority === data.authority}
+          onClick={saveAuthority}
+        >
+          {saving ? 'در حال ذخیره…' : 'ذخیرهٔ تغییرات'}
+        </Button>
       </div>
     </>
   )

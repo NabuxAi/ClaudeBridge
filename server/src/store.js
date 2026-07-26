@@ -15,9 +15,16 @@ const publicSite = (s) => s && ({
   connector: s.connector || null, // JSONB → already an object
   policy: readPolicy(s.policy),
   updateState: s.update_state || null,
-  // display metrics (real ones come from the connector once paired)
-  uptime: s.paired ? 99.98 : 100, checks: s.paired ? 9 : 0, lastCheck: 2,
-  incidents: 0, pendingUpdates: s.paired ? 5 : 0,
+  // No invented metrics here. This object feeds the sites list, where an
+  // uptime of "99.98%" for a site nobody has ever monitored is the most
+  // convincing lie in the product: it is on the first screen, it is precise,
+  // and it is pure decoration. Null means "we do not know", which the list
+  // renders as a dash and the customer can ask us about.
+  uptime: null,
+  checks: null,
+  lastCheck: null,
+  incidents: null,
+  pendingUpdates: null,
 })
 
 export const users = {
@@ -114,6 +121,15 @@ export const sites = {
       [id, JSON.stringify(policy)]
     )
     return { site: publicSite(saved), policy, refused }
+  },
+
+  async setAuthority(id, userId, authority) {
+    const row = await one(
+      'UPDATE sites SET authority = $3 WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, userId, authority]
+    )
+    if (!row) throw httpError(404, 'سایت پیدا نشد.')
+    return publicSite(row)
   },
 
   /** What the connector reported after it last ran updates. */

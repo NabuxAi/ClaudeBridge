@@ -92,6 +92,12 @@ export function site(siteId) {
       (patch) => mock.setUpdatePolicy(siteId, patch),
       (patch) => http(p('/update-policy'), { method: 'PATCH', body: patch })
     ),
+    // How much the assistant may do without asking. Stored server-side, so it
+    // governs what the relay will actually run — not just what the panel shows.
+    setAuthority: call(
+      (level) => mock.setAuthority(siteId, level),
+      (level) => http(p('/authority'), { method: 'PATCH', body: { authority: level } })
+    ),
     // Rescue runs one step at a time. Deliberately not a single "rescue this
     // site" call: each step is separately runnable and separately stoppable,
     // because a rescue that dies halfway and leaves a site part-replaced is

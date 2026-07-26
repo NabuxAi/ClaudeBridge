@@ -118,18 +118,11 @@ export const siteData = (id) => ({
   },
   security: {
     id, score: 92, ssl: { valid: true, days: 68, issuer: "Let's Encrypt" },
-    metrics: [
-      { label: 'امتیاز امنیت', value: '۹۲', unit: '/۱۰۰', icon: 'shield-check', tone: 'success' },
-      { label: 'تلاش ورود مسدودشده', value: '۲۴', unit: 'امروز', icon: 'lock', tone: 'primary' },
-      { label: 'فایل‌های تغییریافته', value: '۰', unit: '', icon: 'file-check-2', tone: 'success' },
-      { label: 'افزونهٔ آسیب‌پذیر', value: '۱', unit: '', icon: 'alert-triangle', tone: 'warning' },
-    ],
-    events: [
-      { icon: 'user-x', tone: 'warning', label: '۵ تلاش ناموفق ورود از ۱۹۸٫۵۱٫۱۰۰٫۲۲ مسدود شد', time: '۱۱:۰۴' },
-      { icon: 'shield-check', tone: 'done', label: 'اسکن بدافزار روزانه — پاک', time: '۰۶:۰۰' },
-      { icon: 'alert-triangle', tone: 'warning', label: 'افزونهٔ «Slider X» دارای آسیب‌پذیری شناخته‌شده است', time: 'دیروز' },
-      { icon: 'lock', tone: 'info', label: 'گواهی SSL تا ۶۸ روز دیگر معتبر است', time: 'دیروز' },
-    ],
+    // Filled in by the route from what the site reported. Values stay null
+    // until something measures them: the panel renders a dash, which is a
+    // question the customer can ask, rather than a number they will believe.
+    metrics: [],
+    events: [],
   },
   backups: {
     id, lastBackup: '۲ ساعت پیش', nextBackup: 'امشب ۰۳:۰۰', location: 'فضای خارجی (رمزنگاری‌شده)', totalSize: '۱٫۸ گیگابایت',

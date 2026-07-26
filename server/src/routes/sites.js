@@ -66,6 +66,35 @@ function concern(name) {
         } else {
           data.integrityError = integrity.reason?.message || String(integrity.reason)
         }
+
+        // Cards built only from figures the site actually returned. There is
+        // deliberately no composite "security score": one confident number
+        // hides whether any of its inputs were measured, which is the failure
+        // mode this whole pass exists to remove.
+        data.metrics = []
+        if (data.integrity?.ok) {
+          data.metrics.push({
+            label: 'فایل ناشناخته در هسته', value: String(data.integrity.unexpected.length),
+            unit: '', icon: 'file-check-2',
+            tone: data.integrity.unexpected.length ? 'danger' : 'success',
+          })
+          data.metrics.push({
+            label: 'فایل تغییریافتهٔ هسته', value: String(data.integrity.modified.length),
+            unit: '', icon: 'file-check-2',
+            tone: data.integrity.modified.length ? 'warning' : 'success',
+          })
+        }
+        if (data.scan) {
+          data.metrics.push({
+            label: 'یافتهٔ بدافزار', value: String(data.scan.hits?.length ?? 0),
+            unit: '', icon: 'shield-check',
+            tone: (data.scan.hits?.length ?? 0) ? 'danger' : 'success',
+          })
+          data.metrics.push({
+            label: 'فایل اسکن‌شده', value: String(data.scan.scanned ?? 0),
+            unit: '', icon: 'search', tone: 'neutral',
+          })
+        }
       }
       // Pending updates, straight from the site. This replaces the seed queue
       // entirely rather than decorating it — the seed listed plugins the site
@@ -247,6 +276,26 @@ router.post('/sites/:id/rescue/:step', async (req, res, next) => {
   } catch (e) {
     res.status(e.status || 502).json({ message: e.message })
   }
+})
+
+/**
+ * How much the assistant may do unattended.
+ *
+ * Enforced where it matters — the actions relay already refuses sensitive
+ * commands regardless of level — but stored here so the panel's selector is
+ * more than a decoration.
+ */
+router.patch('/sites/:id/authority', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const level = String(req.body?.authority || '')
+    if (!['report', 'confirm', 'auto'].includes(level)) {
+      return res.status(400).json({ message: 'سطح اختیار نامعتبر است.' })
+    }
+    const saved = await sites.setAuthority(site.id, req.user.sub, level)
+    res.json({ authority: saved.authority })
+  } catch (e) { next(e) }
 })
 
 router.get('/sites/:id/pairing', async (req, res, next) => {

@@ -6,15 +6,91 @@ import { Button, MetricCard, Badge, ActivityRow } from '../../components/index.j
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
 
+/**
+ * The headline: what the site actually reported.
+ *
+ * Verdict comes from core integrity plus the malware scan, both of which are
+ * real. Anything without a source is shown as a dash rather than a number —
+ * "—" is a question the customer can ask us; an invented figure is one they
+ * never think to.
+ */
+function SecurityBanner({ data }) {
+  const integrity = data.integrity
+  const scan = data.scan
+  const measured = Boolean(integrity?.ok || scan)
+
+  const hits = scan?.hits?.length ?? null
+  const strays = integrity?.unexpected?.length ?? null
+  const coreClean = integrity?.ok ? integrity.clean : null
+
+  // Only claim clean when both checks ran AND both came back empty. Unknown is
+  // its own state, distinct from good.
+  const verdict = !measured
+    ? { text: 'هنوز اسکن نشده', tone: 'neutral', icon: 'shield-alert' }
+    : coreClean && hits === 0
+      ? { text: 'وضعیت امنیتی: سالم', tone: 'success', icon: 'shield-check' }
+      : { text: 'موارد نیازمند بررسی پیدا شد', tone: 'danger', icon: 'shield-alert' }
+
+  const bg = verdict.tone === 'success' ? 'var(--gd-success-bg)'
+    : verdict.tone === 'danger' ? 'var(--gd-danger-bg)' : 'var(--gd-bg-inset)'
+  const fg = verdict.tone === 'success' ? 'var(--gd-success)'
+    : verdict.tone === 'danger' ? 'var(--gd-danger)' : 'var(--gd-text-muted)'
+
+  const stat = (value, label, tone) => (
+    <div>
+      <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: tone }}>
+        {value === null || value === undefined ? '—' : faNum(value)}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2 }}>{label}</div>
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 24, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-sm)', padding: '22px 26px', marginBottom: 18, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: '0 0 auto' }}>
+        <span style={{ width: 64, height: 64, borderRadius: '50%', background: bg, color: fg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={verdict.icon} size={34} />
+        </span>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>{verdict.text}</div>
+          <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 9 }}>
+            {measured
+              ? `آخرین بررسی: ${integrity?.checked_at ? new Date(integrity.checked_at * 1000).toLocaleString('fa-IR') : 'هم‌اکنون'}`
+              : 'برای دیدن وضعیت واقعی، سایت باید متصل باشد.'}
+          </div>
+        </div>
+      </div>
+      <div style={{ flex: 1, minWidth: 280, display: 'flex', gap: 34, paddingInlineStart: 26, borderInlineStart: '1px solid var(--gd-border-subtle)' }}>
+        {stat(strays, 'فایل ناشناخته در هسته', strays ? 'var(--gd-danger-text)' : 'var(--gd-success)')}
+        {stat(hits, 'یافتهٔ بدافزار', hits ? 'var(--gd-danger-text)' : 'var(--gd-success)')}
+        {stat(data.ssl?.days, 'روز تا انقضای SSL')}
+      </div>
+    </div>
+  )
+}
+
 export default function Security() {
   const { siteId } = useOutletContext()
   const [data, setData] = useState(null)
+  const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
     let alive = true
     siteApi(siteId).security().then((d) => alive && setData(d))
     return () => { alive = false }
   }, [siteId])
+
+  // The button used to do nothing at all. Re-fetching IS a real rescan: the
+  // server calls core_integrity and security_scan on the site for every
+  // request, so this walks the filesystem again rather than reading a cache.
+  async function rescan() {
+    setScanning(true)
+    try {
+      setData(await siteApi(siteId).security())
+    } finally {
+      setScanning(false)
+    }
+  }
 
   if (!data) return <PageHead title="امنیت" subtitle="نگهبانی امنیتی روزانه و کنترل دسترسی" />
 
@@ -23,7 +99,11 @@ export default function Security() {
       <PageHead
         title="امنیت"
         subtitle="نگهبانی امنیتی روزانه و کنترل دسترسی"
-        action={<Button variant="primary" size="sm" leftIcon="scan-search">اسکن کامل</Button>}
+        action={
+          <Button variant="primary" size="sm" leftIcon="scan-search" disabled={scanning} onClick={rescan}>
+            {scanning ? 'در حال اسکن…' : 'اسکن کامل'}
+          </Button>
+        }
       />
 
       {/* Core integrity — measured against WordPress's own manifest. This card
@@ -34,44 +114,22 @@ export default function Security() {
         <CoreIntegrityCard result={data.integrity} error={data.integrityError} />
       )}
 
-      {/* Security status banner */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-sm)', padding: '22px 26px', marginBottom: 18, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: '0 0 auto' }}>
-          <span style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--gd-success-bg)', color: 'var(--gd-success)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="shield-check" size={34} />
-          </span>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 800 }}>وضعیت امنیتی: مطلوب</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 9 }}>
-              <Badge variant="success" appearance="soft" icon="shield-check">هیچ تهدید فعال</Badge>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--gd-text-muted)' }}>
-                <Icon name="scan-search" size={13} /> آخرین اسکن بدافزار: ۶ ساعت پیش
-              </span>
-            </div>
-          </div>
-        </div>
-        <div style={{ flex: 1, minWidth: 280, display: 'flex', gap: 34, paddingInlineStart: 26, borderInlineStart: '1px solid var(--gd-border-subtle)' }}>
-          <div>
-            <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: 'var(--gd-danger-text)' }}>۱۲</div>
-            <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2 }}>حملهٔ مسدودشده امروز</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)' }}>{faNum(data.ssl.days)}</div>
-            <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2 }}>روز تا انقضای SSL</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: 'var(--gd-success-text)' }}>۰</div>
-            <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2 }}>افزونهٔ آسیب‌پذیر</div>
-          </div>
-        </div>
-      </div>
+      {/* Security status banner.
+          Every figure here is measured or absent. The version this replaced
+          asserted "security status: good", "12 blocked attacks today" and
+          "0 vulnerable plugins" on a site nobody had scanned — a green shield
+          nobody verified is the most damaging thing this screen can show,
+          because it is exactly what a compromised site looks like to its owner
+          right up until it does not. */}
+      <SecurityBanner data={data} />
 
-      {/* Security score + KPI metrics */}
+      {/* Cards, one per figure the site actually returned. Empty when nothing
+          has been measured — which is a truthful screen, not a broken one. */}
       <div className="dwp-grid dwp-grid-4">
-        {data.metrics.map((m) => (
+        {(data.metrics || []).map((m) => (
           <MetricCard
             key={m.label} icon={m.icon} iconTone={m.tone}
-            label={m.label} value={m.value} unit={m.unit}
+            label={m.label} value={faNum(m.value)} unit={m.unit}
           />
         ))}
       </div>
@@ -81,10 +139,14 @@ export default function Security() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 15, fontWeight: 700, marginBottom: 12 }}>
             <span>رویدادهای امنیتی</span>
-            <Badge variant="info" appearance="soft" icon="history">{faNum(data.events.length)} رویداد</Badge>
+            <Badge variant="info" appearance="soft" icon="history">{faNum((data.events || []).length)} رویداد</Badge>
           </div>
           <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '6px 20px' }}>
-            {data.events.map((e, i) => (
+            {(data.events || []).length === 0 ? (
+              <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', padding: '14px 0', margin: 0, lineHeight: 1.8 }}>
+                ثبت رویدادهای امنیتی هنوز ساخته نشده. اینجا رویداد ساختگی نشان نمی‌دهیم.
+              </p>
+            ) : data.events.map((e, i) => (
               <ActivityRow key={i} icon={e.icon} tone={e.tone} label={e.label} time={e.time} divided={i < data.events.length - 1} />
             ))}
           </div>

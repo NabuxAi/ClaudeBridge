@@ -76,9 +76,13 @@ export default function Sites() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border-subtle)', borderRadius: 'var(--gd-radius-md)', padding: '11px 14px' }}>
-                <Stat label="آپ‌تایم" value={`${faNum(String(s.uptime).replace('.', '٫'))}٪`} />
-                <Stat label="آپدیت" value={faNum(s.pendingUpdates)} color={s.pendingUpdates > 0 ? 'var(--gd-warning-text)' : undefined} />
-                <Stat label="هشدار" value={faNum(s.incidents)} color={s.incidents > 0 ? 'var(--gd-danger-text)' : undefined} />
+                {/* A dash where we have no measurement. This card used to show
+                    "99.98%" uptime for sites nobody had ever monitored — the
+                    most convincing lie in the product, because it is precise,
+                    on the first screen, and pure decoration. */}
+                <Stat label="آپ‌تایم" value={s.uptime == null ? '—' : `${faNum(String(s.uptime).replace('.', '٫'))}٪`} />
+                <Stat label="آپدیت" value={s.pendingUpdates == null ? '—' : faNum(s.pendingUpdates)} color={s.pendingUpdates > 0 ? 'var(--gd-warning-text)' : undefined} />
+                <Stat label="هشدار" value={s.incidents == null ? '—' : faNum(s.incidents)} color={s.incidents > 0 ? 'var(--gd-danger-text)' : undefined} />
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

@@ -25,15 +25,15 @@ export const me = () => delay(currentUser)
 export const sites = [
   {
     id: 'mystore', name: 'mystore.ir', title: 'فروشگاه من', status: 'healthy',
-    authority: 'auto', uptime: 99.98, checks: 9, lastCheck: 2, incidents: 0, pendingUpdates: 5,
+    authority: 'auto', uptime: null, checks: null, lastCheck: null, incidents: null, pendingUpdates: null,
   },
   {
     id: 'blog', name: 'blog.myco.ir', title: 'وبلاگ شرکت', status: 'warning',
-    authority: 'confirm', uptime: 99.7, checks: 9, lastCheck: 4, incidents: 1, pendingUpdates: 2,
+    authority: 'confirm', uptime: null, checks: null, lastCheck: null, incidents: null, pendingUpdates: null,
   },
   {
     id: 'landing', name: 'promo.myco.ir', title: 'لندینگ کمپین', status: 'checking',
-    authority: 'report', uptime: 100, checks: 9, lastCheck: 0, incidents: 0, pendingUpdates: 0,
+    authority: 'report', uptime: null, checks: null, lastCheck: null, incidents: null, pendingUpdates: null,
   },
 ]
 export const listSites = () => delay(sites)
@@ -192,17 +192,14 @@ export const siteSecurity = (id) => delay({
   },
   id, score: 92, ssl: { valid: true, days: 68, issuer: "Let's Encrypt" },
   metrics: [
-    { label: 'امتیاز امنیت', value: '۹۲', unit: '/۱۰۰', icon: 'shield-check', tone: 'success' },
-    { label: 'تلاش ورود مسدودشده', value: '۲۴', unit: 'امروز', icon: 'lock', tone: 'primary' },
-    { label: 'فایل‌های تغییریافته', value: '۰', unit: '', icon: 'file-check-2', tone: 'success' },
-    { label: 'افزونهٔ آسیب‌پذیر', value: '۱', unit: '', icon: 'alert-triangle', tone: 'warning' },
+    { label: 'فایل ناشناخته در هسته', value: '0', unit: '', icon: 'file-check-2', tone: 'success' },
+    { label: 'فایل تغییریافتهٔ هسته', value: '0', unit: '', icon: 'file-check-2', tone: 'success' },
+    { label: 'یافتهٔ بدافزار', value: '0', unit: '', icon: 'shield-check', tone: 'success' },
+    { label: 'فایل اسکن‌شده', value: '4171', unit: '', icon: 'search', tone: 'neutral' },
   ],
-  events: [
-    { icon: 'user-x', tone: 'warning', label: '۵ تلاش ناموفق ورود از ۱۹۸٫۵۱٫۱۰۰٫۲۲ مسدود شد', time: '۱۱:۰۴' },
-    { icon: 'shield-check', tone: 'done', label: 'اسکن بدافزار روزانه — پاک', time: '۰۶:۰۰' },
-    { icon: 'alert-triangle', tone: 'warning', label: 'افزونهٔ «Slider X» دارای آسیب‌پذیری شناخته‌شده است', time: 'دیروز' },
-    { icon: 'lock', tone: 'info', label: 'گواهی SSL تا ۶۸ روز دیگر معتبر است', time: 'دیروز' },
-  ],
+  // No invented event feed: the real one does not exist yet, and a demo that
+  // shows blocked logins from a fictional IP teaches customers to expect it.
+  events: [],
 })
 
 export const siteBackups = (id) => delay({
@@ -325,3 +322,5 @@ export const rescueStep = (id, step, body = {}) => {
   }
   return delay({ step, result: results[step] || {} }, 900)
 }
+
+export const setAuthority = (id, authority) => delay({ authority })
