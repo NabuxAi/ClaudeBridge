@@ -5,6 +5,10 @@ import { siteData } from '../seed.js'
 import * as connector from '../connector.js'
 import { describePolicy, policyForConnector } from '../policy.js'
 import { PROVENANCE, updatesFromStatus } from '../live.js'
+import * as events from '../events.js'
+import * as assistant from '../assistant.js'
+import { probeSite } from '../probe.js'
+import { measureUrl } from '../speedtest.js'
 
 const router = Router()
 
@@ -29,9 +33,73 @@ function concern(name) {
       const site = await loadSite(req, res)
       if (!site) return
       const data = siteData(req.params.id)[name]
-      if (name === 'overview' && config.live && site.paired && site.url && site.secret) {
-        try { data.live = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'site_info', {}) }
-        catch (e) { data.liveError = e.message }
+      // Overview, measured rather than seeded. Three sources, each of which
+      // can fail without blanking the others: the connector for versions, an
+      // HTTP+TLS probe from here for reachability and certificate life, and
+      // the event log for what has actually happened.
+      if (name === 'overview' && site.url) {
+        const [info, checked, recent] = await Promise.allSettled([
+          config.live && site.paired && site.secret
+            ? connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'site_info', {})
+            : Promise.resolve(null),
+          probeSite(site.url),
+          events.list(site.id, 12),
+        ])
+
+        if (info.status === 'fulfilled' && info.value) {
+          data.live = info.value
+          const text = info.value?.content?.[0]?.text
+          try { data.info = typeof text === 'string' ? JSON.parse(text) : info.value } catch { /* ignore */ }
+        } else if (info.status === 'rejected') {
+          data.liveError = info.reason?.message || String(info.reason)
+        }
+
+        if (checked.status === 'fulfilled' && checked.value) {
+          const p = checked.value
+          data.probe = p
+          data.services = p.services
+          data.status = p.reachable ? 'healthy' : 'down'
+          data.metrics = []
+          if (data.info?.wp_version) {
+            data.metrics.push({ label: 'وردپرس', value: data.info.wp_version, unit: '', icon: 'boxes', tone: 'neutral' })
+          }
+          if (data.info?.php_version) {
+            data.metrics.push({ label: 'PHP', value: data.info.php_version, unit: '', icon: 'code', tone: 'neutral' })
+          }
+          if (p.responseMs != null) {
+            data.metrics.push({
+              label: 'پاسخ همین حالا', value: String(p.responseMs), unit: 'ms', icon: 'gauge',
+              tone: p.responseMs > 2000 ? 'warning' : 'primary',
+            })
+          }
+          if (p.cert?.ok) {
+            data.metrics.push({
+              label: 'اعتبار SSL', value: String(p.cert.daysLeft), unit: 'روز', icon: 'lock',
+              tone: p.cert.daysLeft < 14 ? 'danger' : p.cert.daysLeft < 30 ? 'warning' : 'success',
+            })
+          }
+        } else {
+          data.probeError = checked.reason?.message || 'بررسی انجام نشد'
+        }
+
+        // The activity feed, from the event log. What used to be here was a
+        // fixed five-line story — "18 images compressed to WebP" and the like —
+        // identical on every site and describing work nothing performs.
+        if (recent.status === 'fulfilled') {
+          data.report = recent.value.map((e) => ({
+            icon: e.severity === 'critical' ? 'alert-octagon' : e.severity === 'warning' ? 'alert-triangle' : 'info',
+            tone: e.resolved_at ? 'done' : e.severity === 'critical' ? 'danger' : e.severity === 'warning' ? 'warning' : 'info',
+            label: e.title,
+            time: new Date(Number(e.created_at)).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+          }))
+          data.reportEmpty = recent.value.length === 0
+        }
+
+        // Deliberately cleared: these were seeded numbers with no source.
+        // `hostSpace` is not measurable from here at all, and one sample is
+        // not an uptime.
+        data.uptime = null
+        data.hostSpace = null
       }
       // Real scans for the security view (replace the seed when paired + live).
       //
@@ -154,6 +222,22 @@ function concern(name) {
         } catch (e) { data.backupsError = e.message }
       }
 
+      // Alerts, straight from the event log — the only view that used to have
+      // no source at all. Everything below is something this system observed
+      // or did; nothing is generated to make the page look inhabited.
+      if (name === 'incidents') {
+        const rows = await events.list(site.id, 60)
+        data.list = rows.map(toIncident)
+        data.featured = await featuredIncident(site.id, rows)
+        data.empty = rows.length === 0
+        // An empty log is not a clean bill of health, and the view has to be
+        // able to say which it is. Sites are only observed when scanned, so
+        // "nothing recorded" is the honest phrase.
+        data.emptyNote = rows.length === 0
+          ? 'هنوز رخدادی ثبت نشده. این یعنی چیزی مشاهده نشده، نه اینکه سایت قطعاً سالم بوده — سایت فقط هنگام اسکن دیده می‌شود.'
+          : null
+      }
+
       // Say where this view's numbers come from — and, more importantly, which
       // of them have no source yet. A panel that cannot distinguish measured
       // from invented teaches people to trust none of it.
@@ -173,6 +257,84 @@ function concern(name) {
       res.json(data)
     } catch (e) { next(e) }
   }
+}
+
+/** Relative Persian time. The log stores epoch ms; people read "۲ روز پیش". */
+function faWhen(ms) {
+  const diff = Date.now() - Number(ms)
+  const min = Math.round(diff / 60000)
+  if (min < 1) return 'همین حالا'
+  if (min < 60) return `${faDigits(min)} دقیقه پیش`
+  const hr = Math.round(min / 60)
+  if (hr < 24) return `${faDigits(hr)} ساعت پیش`
+  const day = Math.round(hr / 24)
+  if (day === 1) return 'دیروز'
+  if (day < 31) return `${faDigits(day)} روز پیش`
+  return new Date(Number(ms)).toLocaleDateString('fa-IR')
+}
+
+const faDigits = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
+
+/** One event as the alerts list renders it. */
+function toIncident(ev) {
+  return {
+    id: ev.id,
+    severity: ev.severity,
+    title: ev.title,
+    time: faWhen(ev.created_at),
+    resolved: Boolean(ev.resolved_at),
+    kind: ev.kind,
+  }
+}
+
+/**
+ * The one alert worth putting at the top, with its real history.
+ *
+ * Chosen as the oldest still-open critical: a problem that has been ignored
+ * longest outranks one that appeared five minutes ago. If nothing is open,
+ * there is no featured alert — an empty hero beats a manufactured one.
+ */
+async function featuredIncident(siteId, rows) {
+  const open = rows.filter((r) => !r.resolved_at && r.severity === 'critical')
+  if (!open.length) return null
+  const ev = open[open.length - 1]
+
+  const past = ev.fingerprint ? await events.history(siteId, ev.fingerprint) : [ev]
+  const timeline = past.map((p) => ({
+    t: new Date(Number(p.created_at)).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+    label: p.resolved_at ? `${p.title} — برطرف شد` : p.title,
+    tone: p.resolved_at ? 'done' : p.severity === 'critical' ? 'danger' : 'warning',
+  }))
+
+  const d = ev.detail || {}
+  const fields = [
+    { label: 'نوع', value: KIND_LABEL[ev.kind] || ev.kind },
+    { label: 'اولین مشاهده', value: faWhen(ev.created_at) },
+  ]
+  if (d.file) fields.push({ label: 'فایل', value: d.file, mono: true })
+  if (d.rule) fields.push({ label: 'قاعدهٔ منطبق', value: d.rule, mono: true })
+  fields.push({ label: 'وضعیت', value: 'هنوز باز است', tone: 'danger' })
+
+  return {
+    id: ev.id,
+    severity: ev.severity,
+    title: ev.title,
+    time: faWhen(ev.created_at),
+    // Deliberately not "we fixed it": nothing here acts on its own. This
+    // states what was seen and leaves the decision where it belongs.
+    desc: 'این مورد در اسکن دیده شد و هنوز باز است. تا وقتی اسکن بعدی نبودنش را تأیید نکند، حل‌شده علامت نمی‌خورد.',
+    fields,
+    timeline,
+  }
+}
+
+const KIND_LABEL = {
+  malware: 'بدافزار',
+  scan_failed: 'اسکن ناموفق',
+  policy: 'تغییر سیاست',
+  rescue: 'عملیات نجات',
+  conflict: 'بررسی تداخل',
+  action: 'اقدام حساس',
 }
 
 router.get('/sites/:id/overview', concern('overview'))
@@ -225,6 +387,15 @@ router.patch('/sites/:id/update-policy', async (req, res, next) => {
       message: refused.length
         ? 'حالت ایمنی روشن است؛ به‌روزرسانی خودکار خاموش نشد.'
         : null,
+    })
+
+    // Worth a permanent record: this is the setting that decides whether the
+    // site keeps itself patched, and "who turned it off, and when" is the first
+    // question after a break-in.
+    await events.record({
+      siteId: site.id, kind: 'policy', severity: 'info',
+      title: 'سیاست به‌روزرسانی تغییر کرد',
+      detail: { policy, refused, pushed },
     })
   } catch (e) { next(e) }
 })
@@ -280,6 +451,16 @@ router.post('/sites/:id/rescue/:step', async (req, res, next) => {
     // A queued step returns a job id, not an outcome. Say which it is so the
     // panel knows whether to poll or to render.
     res.json({ step: req.params.step, queued: Boolean(step.job), result })
+
+    // Recorded after responding: the operator should not wait on our bookkeeping,
+    // and a failed write here must not turn a completed rescue step into an error.
+    if (step.writes) {
+      events.record({
+        siteId: site.id, kind: 'rescue', severity: 'info',
+        title: `عملیات نجات — مرحلهٔ «${req.params.step}» اجرا شد`,
+        detail: { step: req.params.step, queued: Boolean(step.job) },
+      }).catch(() => {})
+    }
   } catch (e) {
     res.status(e.status || 502).json({ message: e.message })
   }
@@ -329,7 +510,168 @@ router.post('/sites/:id/conflict', async (req, res, next) => {
     )
     const text = raw?.content?.[0]?.text
     res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
+
+    events.record({
+      siteId: site.id, kind: 'conflict', severity: 'info',
+      title: 'بررسی تداخل شروع شد',
+      detail: { url: req.body.url },
+    }).catch(() => {})
   } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
+/**
+ * Run pending updates now.
+ *
+ * Queued: WordPress updates download, unpack and copy files, which is minutes
+ * of work, not milliseconds. The site takes its own snapshot before the first
+ * item and applies one item per pass so a single failure cannot strand the rest.
+ */
+router.post('/sites/:id/updates/run', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    const items = Array.isArray(req.body?.items) ? req.body.items : undefined
+    const raw = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      'job_start',
+      { type: 'update_apply', ...(items ? { items } : {}) }
+    )
+    const text = raw?.content?.[0]?.text
+    res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
+
+    events.record({
+      siteId: site.id, kind: 'update', severity: 'info',
+      title: items?.length
+        ? `به‌روزرسانی دستی ${items.length} مورد شروع شد`
+        : 'به‌روزرسانی همهٔ موارد در صف شروع شد',
+      detail: { items: items || 'all', by: req.user?.sub || null },
+    }).catch(() => {})
+  } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
+/**
+ * Take a snapshot now.
+ *
+ * Queued, not awaited: dumping a database inside a request holds a PHP worker
+ * for minutes, which on shared hosting means the customer's own site is slow
+ * because we are backing it up.
+ */
+router.post('/sites/:id/backups', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    const raw = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      'job_start',
+      { type: 'backup', files: Boolean(req.body?.files), label: 'manual' }
+    )
+    const text = raw?.content?.[0]?.text
+    res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
+
+    events.record({
+      siteId: site.id, kind: 'backup', severity: 'info',
+      title: 'بکاپ دستی شروع شد',
+      detail: { files: Boolean(req.body?.files) },
+    }).catch(() => {})
+  } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
+/**
+ * Restore a snapshot's database.
+ *
+ * The most destructive button in the product: it overwrites every table with
+ * an older copy, so orders, comments and posts created since that snapshot are
+ * gone. It demands its own confirm for the same reason key rotation does, and
+ * the site takes its own pre-restore snapshot before replaying anything.
+ */
+router.post('/sites/:id/backups/:backupId/restore', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    if (!req.body?.confirm) {
+      return res.status(400).json({
+        message: 'بازگردانی، دیتابیس فعلی را با نسخهٔ قدیمی جایگزین می‌کند و هر تغییری پس از آن بکاپ از بین می‌رود. برای اجرا confirm=true بفرستید.',
+      })
+    }
+    const raw = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      'job_start',
+      { type: 'backup_restore', id: req.params.backupId }
+    )
+    const text = raw?.content?.[0]?.text
+    res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
+
+    events.record({
+      siteId: site.id, kind: 'backup', severity: 'warning',
+      title: `بازگردانی دیتابیس از بکاپ ${req.params.backupId} شروع شد`,
+      detail: { backupId: req.params.backupId, by: req.user?.sub || null },
+    }).catch(() => {})
+  } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
+/**
+ * Stream a snapshot down to the browser.
+ *
+ * Pulled slice by slice from the site over the signed relay and written
+ * straight to the response, so neither this server nor the site ever holds a
+ * whole dump in memory — the file can be larger than either process's limit.
+ * Nothing is cached on disk here either: a database dump at rest on the hub is
+ * a liability that outlives the download.
+ */
+router.get('/sites/:id/backups/:backupId/download', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    const target = { url: site.url, secret: site.secret, siteKey: site.site_key }
+    const what = req.query.what === 'files' ? 'files' : 'db'
+
+    let offset = 0
+    let headersSent = false
+    for (let guard = 0; guard < 20000; guard++) {
+      const raw = await connector.callTool(target, 'backup_read', {
+        id: req.params.backupId, what, offset,
+      })
+      const text = raw?.content?.[0]?.text
+      const part = typeof text === 'string' ? JSON.parse(text) : raw
+      if (part?.error) throw new Error(part.error)
+
+      if (!headersSent) {
+        // Set once we know the file exists, so a missing backup is still a
+        // clean JSON error rather than a truncated download.
+        res.setHeader('Content-Type', what === 'files' ? 'application/zip' : 'application/sql')
+        res.setHeader('Content-Disposition', `attachment; filename="${part.filename || 'backup'}"`)
+        if (part.size) res.setHeader('Content-Length', String(part.size))
+        headersSent = true
+      }
+      if (part.chunk) res.write(Buffer.from(part.chunk, 'base64'))
+      if (part.eof) break
+      // A slice that read nothing but is not eof would loop forever.
+      if (!part.read) throw new Error('خواندن فایل متوقف شد')
+      offset = part.offset + part.read
+    }
+    res.end()
+  } catch (e) {
+    if (res.headersSent) return res.destroy()
     res.status(e.status || 502).json({ message: e.message })
   }
 })
@@ -354,11 +696,46 @@ router.get('/sites/:id/jobs/:jobId?', async (req, res, next) => {
   }
 })
 
+/**
+ * Dismiss an alert.
+ *
+ * Closes the event without touching the site. Named honestly in the panel as
+ * "ignore" rather than "resolve": the condition may well still be there, and a
+ * button that silently claims otherwise is how a compromised site ends up
+ * looking clean. A later scan that still sees the problem reopens it, because
+ * the fingerprint's open row is gone and record() will insert a fresh one.
+ */
+router.post('/sites/:id/incidents/:eventId/dismiss', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const ok = await events.resolveOne(site.id, req.params.eventId)
+    if (!ok) return res.status(404).json({ message: 'رخداد باز با این شناسه پیدا نشد.' })
+    await events.record({
+      siteId: site.id, kind: 'action', severity: 'info',
+      title: 'یک هشدار دستی نادیده گرفته شد',
+      detail: { eventId: req.params.eventId, by: req.user?.sub || null },
+    })
+    res.json({ ok: true })
+  } catch (e) { next(e) }
+})
+
 router.get('/sites/:id/pairing', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)
     if (!site) return
     res.json({ siteKey: site.site_key, paired: !!site.paired, url: site.url, serverUrl: publicApiBase(req) })
+  } catch (e) { next(e) }
+})
+
+// Speed test: the server fetches the site and measures TTFB/total/size.
+router.post('/sites/:id/speedtest', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.url) return res.status(400).json({ message: 'سایت آدرسی ندارد.' })
+    const samples = Math.min(5, Math.max(1, Number(req.body?.samples) || 3))
+    res.json(await measureUrl(site.url, samples))
   } catch (e) { next(e) }
 })
 
@@ -393,6 +770,17 @@ router.post('/sites/:id/actions', async (req, res, next) => {
     if (config.live && site.paired && site.url && site.secret) {
       try {
         const result = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, op, args)
+        // Sensitive ops are the ones that changed the site. They belong in the
+        // log whether a human approved them or the assistant ran them under
+        // standing authority — "nobody remembers doing that" is exactly what
+        // an audit trail is for.
+        if (SENSITIVE.has(op)) {
+          events.record({
+            siteId: site.id, kind: 'action', severity: 'warning',
+            title: `اقدام حساس اجرا شد: ${op}`,
+            detail: { op, args, approved: Boolean(approved) },
+          }).catch(() => {})
+        }
         return res.json({ ok: true, relayed: true, result })
       } catch (e) {
         return res.status(e.status || 502).json({ ok: false, message: e.message })
@@ -404,12 +792,10 @@ router.post('/sites/:id/actions', async (req, res, next) => {
 
 router.post('/sites/:id/assistant', async (req, res, next) => {
   try {
-    if (!(await loadSite(req, res))) return
+    const site = await loadSite(req, res)
+    if (!site) return
     const { message } = req.body || {}
-    res.json({
-      reply: 'در ۲۴ ساعت گذشته سایت سالم بوده است. یک آپدیت پرریسک (Elementor) در صف تأیید شماست و فضای هاست به ۸۲٪ رسیده که پیشنهاد پاک‌سازی داده‌ام.',
-      refs: ['گزارش امروز', 'صف آپدیت‌ها'], echo: message,
-    })
+    res.json(await assistant.answer(site, message))
   } catch (e) { next(e) }
 })
 
