@@ -203,6 +203,36 @@ export const siteUpdates = (id) => delay({
 })
 
 export const siteSecurity = (id) => delay({
+  // One real vulnerability, because this is the case the card exists for and
+  // an all-clear demo never shows how it reads. Also one entry in the
+  // can't-compare bucket, which is the category people most need to see
+  // distinguished from "safe".
+  vulns: {
+    checked: 34,
+    vulnerable: [
+      {
+        cve: 'CVE-2024-32713', slug: 'slider-x', name: 'Slider X', kind: 'plugin',
+        installed: '2.4.1', fixedIn: '2.5.0', severity: 'high', cvss: 8.8, active: true,
+        summary: 'آپلود فایل بدون بررسی نوع، که اجرای کد از راه دور را ممکن می‌کند.',
+        advice: 'به نسخهٔ 2.5.0 یا بالاتر به‌روزرسانی کنید.',
+      },
+      {
+        cve: 'CVE-2023-51488', slug: 'old-gallery', name: 'Old Gallery', kind: 'plugin',
+        installed: '1.2.0', fixedIn: '1.4.2', severity: 'medium', cvss: 6.1, active: false,
+        summary: 'XSS ذخیره‌شده در پنل مدیریت.',
+        advice: 'به نسخهٔ 1.4.2 یا بالاتر به‌روزرسانی کنید.',
+      },
+    ],
+    unknownVersion: [
+      {
+        cve: 'CVE-2022-45820', slug: 'contact-thing', name: 'Contact Thing',
+        installed: '3.1.0', fixedIn: null, severity: 'medium', cvss: 5.4, active: true,
+        why: 'نسخهٔ اصلاح‌شده در گزارش اصلی ذکر نشده',
+        advice: 'نسخهٔ اصلاح‌شده مشخص نیست؛ سایت سازنده را بررسی کنید.',
+      },
+    ],
+    note: 'این بررسی روی پایگاه CVE خودمان انجام می‌شود که از NVD ساخته شده. خالی بودن نتیجه یعنی در این پایگاه چیزی نبود، نه اینکه افزونه‌ها قطعاً امن‌اند.',
+  },
   // Same shape the server sends for a real, verified-clean core. The demo shows
   // a passing check rather than inventing findings — a mock that cries wolf
   // teaches people to ignore the real one.

@@ -34,7 +34,7 @@ export const PROVENANCE = {
     partial: {},
   },
   security: {
-    live: ['core_integrity', 'security_scan'],
+    live: ['core_integrity', 'security_scan', 'list_plugins + پایگاه CVE خودمان'],
     partial: {
       score: 'امتیاز ترکیبی — تا وقتی همهٔ ورودی‌هایش واقعی نشده، محاسبه نمی‌شود',
       blockedLogins: 'نیازمند ثبت رویداد ورود روی سایت — هنوز ساخته نشده',

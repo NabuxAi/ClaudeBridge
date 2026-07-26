@@ -179,3 +179,16 @@ export function compareVersions(a, b) {
   }
   return 0
 }
+
+/**
+ * wp-content/plugins/foo/foo.php → foo
+ *
+ * Lives here rather than beside the database query that uses it, for the same
+ * reason everything else in this file does: it is pure, it is the join key the
+ * whole vulnerability feature turns on, and a test for it must not need a
+ * Postgres driver on the machine running it.
+ */
+export function slugOf(pluginFile) {
+  const s = String(pluginFile || '')
+  return s.includes('/') ? s.split('/')[0] : s.replace(/\.php$/, '')
+}

@@ -114,6 +114,13 @@ export default function Security() {
         <CoreIntegrityCard result={data.integrity} error={data.integrityError} />
       )}
 
+      {/* Known vulnerabilities in what is installed here, matched against our
+          own CVE database. Same rule as the card above: it appears only when
+          the site answered. */}
+      {(data.vulns || data.vulnsError) && (
+        <VulnCard result={data.vulns} error={data.vulnsError} />
+      )}
+
       {/* Security status banner.
           Every figure here is measured or absent. The version this replaced
           asserted "security status: good", "12 blocked attacks today" and
@@ -144,7 +151,7 @@ export default function Security() {
           <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '6px 20px' }}>
             {(data.events || []).length === 0 ? (
               <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', padding: '14px 0', margin: 0, lineHeight: 1.8 }}>
-                ثبت رویدادهای امنیتی هنوز ساخته نشده. اینجا رویداد ساختگی نشان نمی‌دهیم.
+هنوز رویداد امنیتی‌ای ثبت نشده. سایت هنگام اسکن یا اقدام دیده می‌شود، نه به‌صورت پیوسته.
               </p>
             ) : data.events.map((e, i) => (
               <ActivityRow key={i} icon={e.icon} tone={e.tone} label={e.label} time={e.time} divided={i < data.events.length - 1} />
@@ -165,7 +172,10 @@ export default function Security() {
             </div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>گواهی SSL</div>
             <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 3, lineHeight: 1.6 }}>
-              {data.ssl.issuer} · تمدید خودکار · انقضا {faNum(data.ssl.days)} روز دیگر
+              {/* "تمدید خودکار" was asserted here. Whether a certificate
+                  auto-renews is a property of the host's ACME setup, which we
+                  cannot see — we only read the expiry from the handshake. */}
+              {data.ssl.issuer} · انقضا {faNum(data.ssl.days)} روز دیگر
             </div>
           </div>
         </div>
@@ -201,6 +211,80 @@ export default function Security() {
  * usually a bad update or a host's patch, but a file that WordPress never
  * shipped, sitting inside wp-includes, has no innocent explanation.
  */
+function VulnCard({ result, error }) {
+  if (error) {
+    return (
+      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: '16px 20px', marginBottom: 18 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>آسیب‌پذیری‌های شناخته‌شده</div>
+        <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>
+          فهرست افزونه‌ها و قالب‌ها خوانده نشد: {error}
+        </p>
+      </div>
+    )
+  }
+  if (!result) return null
+
+  const hits = result.vulnerable || []
+  const unsure = result.unknownVersion || []
+
+  return (
+    <div style={{ background: 'var(--gd-bg-surface)', border: `1px solid ${hits.length ? 'var(--gd-danger)' : 'var(--gd-border)'}`, borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '18px 20px', marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
+        <Icon name={hits.length ? 'shield-alert' : 'shield-check'} size={18} style={{ color: hits.length ? 'var(--gd-danger)' : 'var(--gd-success)' }} />
+        <span style={{ fontSize: 14.5, fontWeight: 800 }}>
+          {hits.length
+            ? `${faNum(hits.length)} آسیب‌پذیری شناخته‌شده`
+            : 'آسیب‌پذیری شناخته‌شده‌ای پیدا نشد'}
+        </span>
+        <span style={{ fontSize: 11.5, color: 'var(--gd-text-muted)' }}>
+          از {faNum(result.checked)} افزونه و قالب
+        </span>
+      </div>
+
+      {hits.map((v) => (
+        <div key={`${v.cve}-${v.slug}`} style={{ padding: '11px 0', borderTop: '1px solid var(--gd-border-subtle)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 4 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700 }}>{v.name}</span>
+            <Badge variant={v.severity === 'critical' ? 'danger' : v.severity === 'high' ? 'danger' : 'warning'} appearance="soft">
+              {v.severity || 'نامشخص'}{v.cvss ? ` · ${faNum(v.cvss)}` : ''}
+            </Badge>
+            {/* Stated, because it is the most common misunderstanding: an
+                inactive plugin with a known hole is still a file on disk that
+                can be requested directly. */}
+            {!v.active && <Badge variant="neutral" appearance="soft">غیرفعال، ولی روی دیسک</Badge>}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', lineHeight: 1.9 }}>
+            <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{v.cve}</span>
+            {' · '}نصب‌شده <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{v.installed}</span>
+            {v.fixedIn && <> · اصلاح در <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{v.fixedIn}</span></>}
+          </div>
+          {v.summary && (
+            <p style={{ fontSize: 12, color: 'var(--gd-text-secondary)', margin: '5px 0 0', lineHeight: 1.8 }}>{v.summary}</p>
+          )}
+          <p style={{ fontSize: 12, color: 'var(--gd-text)', margin: '5px 0 0', fontWeight: 600 }}>{v.advice}</p>
+        </div>
+      ))}
+
+      {/* The third category. Neither a hit nor a clean bill — the advisory
+          never named a fixed version, so no comparison is possible. */}
+      {unsure.length > 0 && (
+        <details style={{ marginTop: 10, borderTop: '1px solid var(--gd-border-subtle)', paddingTop: 10 }}>
+          <summary style={{ fontSize: 12.5, cursor: 'pointer', color: 'var(--gd-text-secondary)' }}>
+            {faNum(unsure.length)} مورد که قابل مقایسه نبود
+          </summary>
+          <ul style={{ margin: '8px 0 0', paddingInlineStart: 18, fontSize: 12, color: 'var(--gd-text-muted)', lineHeight: 1.9 }}>
+            {unsure.slice(0, 12).map((v, i) => (
+              <li key={i}><span style={{ fontFamily: 'var(--gd-font-mono)' }}>{v.cve}</span> — {v.name}: {v.why}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <p style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', margin: '12px 0 0', lineHeight: 1.9 }}>{result.note}</p>
+    </div>
+  )
+}
+
 function CoreIntegrityCard({ result, error }) {
   const shell = (children) => (
     <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-sm)', padding: '20px 24px', marginBottom: 18 }}>

@@ -9,6 +9,7 @@ import * as events from '../events.js'
 import * as assistant from '../assistant.js'
 import { probeSite } from '../probe.js'
 import { analyse as analysePerf } from '../perf/recipes.js'
+import { checkInventory, slugOf } from '../intel/vulns.js'
 import { measureUrl } from '../speedtest.js'
 
 const router = Router()
@@ -136,6 +137,47 @@ function concern(name) {
           data.integrityError = integrity.reason?.message || String(integrity.reason)
         }
 
+        // Known vulnerabilities in what is actually installed. This is what
+        // the 7,998-row CVE table was built for — until now nothing read it.
+        try {
+          const [plugins, themes] = await Promise.all([
+            connector.callTool(target, 'list_plugins', {}),
+            connector.callTool(target, 'list_themes', {}),
+          ])
+          const inventory = []
+          for (const p of unwrap(plugins)?.plugins || []) {
+            inventory.push({ slug: slugOf(p.plugin), version: p.version, kind: 'plugin', name: p.name, active: p.active })
+          }
+          for (const t of unwrap(themes)?.themes || []) {
+            inventory.push({ slug: t.stylesheet || t.slug, version: t.version, kind: 'theme', name: t.name, active: t.active })
+          }
+          data.vulns = await checkInventory(inventory)
+        } catch (e) { data.vulnsError = e.message }
+
+        // Security-relevant entries from the event log. This view used to say
+        // event recording was not built; it is now, so it shows the real ones.
+        try {
+          const rows = await events.list(site.id, 12)
+          data.events = rows
+            .filter((e) => ['malware', 'action', 'rescue', 'scan_failed', 'policy'].includes(e.kind))
+            .map((e) => ({
+              icon: e.severity === 'critical' ? 'alert-octagon' : e.severity === 'warning' ? 'alert-triangle' : 'info',
+              tone: e.resolved_at ? 'done' : e.severity === 'critical' ? 'danger' : e.severity === 'warning' ? 'warning' : 'info',
+              label: e.title,
+              time: new Date(Number(e.created_at)).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+            }))
+        } catch { /* the rest of the view still stands */ }
+
+        // The certificate, from a real handshake rather than a claim.
+        try {
+          const probe = await probeSite(site.url)
+          if (probe?.cert?.ok) {
+            data.ssl = { days: probe.cert.daysLeft, issuer: probe.cert.issuer, expiresAt: probe.cert.expiresAt }
+          } else {
+            data.sslError = probe?.cert?.error || 'گواهی خوانده نشد'
+          }
+        } catch (e) { data.sslError = e.message }
+
         // Cards built only from figures the site actually returned. There is
         // deliberately no composite "security score": one confident number
         // hides whether any of its inputs were measured, which is the failure
@@ -151,6 +193,13 @@ function concern(name) {
             label: 'فایل تغییریافتهٔ هسته', value: String(data.integrity.modified.length),
             unit: '', icon: 'file-check-2',
             tone: data.integrity.modified.length ? 'warning' : 'success',
+          })
+        }
+        if (data.vulns) {
+          data.metrics.push({
+            label: 'آسیب‌پذیری شناخته‌شده', value: String(data.vulns.vulnerable.length),
+            unit: '', icon: 'shield-alert',
+            tone: data.vulns.vulnerable.length ? 'danger' : 'success',
           })
         }
         if (data.scan) {
