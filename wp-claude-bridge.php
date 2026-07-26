@@ -1147,9 +1147,78 @@ function cb_match_signature( $c, $sig ) {
 }
 
 /** Match file contents against the server-provided shell bank; first hit wins. */
+/**
+ * Rule-based signatures from the server, honouring each rule's threshold.
+ *
+ * Preferred over the flat list because the threshold is what keeps a rule
+ * precise: many webshell rules match on short base64 fragments — "ZXhlY" is
+ * just base64 for "exec" — which mean nothing alone and appear constantly in
+ * ordinary encoded data. Matching them independently turns a good rule into a
+ * false-positive generator.
+ */
+function cb_fetch_signature_rules() {
+	static $cache = null;
+	if ( is_array( $cache ) ) {
+		return $cache;
+	}
+	$t = get_transient( 'cb_shell_rules' );
+	if ( is_array( $t ) ) {
+		return $cache = $t;
+	}
+	$base = function_exists( 'cb_update_server_base' ) ? cb_update_server_base() : '';
+	$rules = array();
+	if ( '' !== $base ) {
+		$resp = wp_remote_get( rtrim( $base, '/' ) . '/signatures', array( 'timeout' => 15 ) );
+		if ( ! is_wp_error( $resp ) && 200 === (int) wp_remote_retrieve_response_code( $resp ) ) {
+			$data = json_decode( (string) wp_remote_retrieve_body( $resp ), true );
+			if ( ! empty( $data['rules'] ) && is_array( $data['rules'] ) ) {
+				$rules = $data['rules'];
+			}
+		}
+	}
+	set_transient( 'cb_shell_rules', $rules, 6 * HOUR_IN_SECONDS );
+	return $cache = $rules;
+}
+
+/** Does a rule fire on this file? Counts hits until the threshold is reached. */
+function cb_rule_matches( $rule, $c, $lower ) {
+	$need = isset( $rule['min_hits'] ) ? max( 1, (int) $rule['min_hits'] ) : 1;
+	$hits = 0;
+	foreach ( (array) $rule['strings'] as $s ) {
+		$needle = isset( $s['v'] ) ? $s['v'] : '';
+		if ( '' === $needle ) {
+			continue;
+		}
+		$found = ! empty( $s['i'] )
+			? ( false !== strpos( $lower, strtolower( $needle ) ) )
+			: ( false !== strpos( $c, $needle ) );
+		if ( $found && ++$hits >= $need ) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function cb_scan_signature( $c ) {
-	if ( strpos( $c, 'cb_scan_signature' ) !== false || strpos( $c, 'cb_match_signature' ) !== false || strpos( $c, 'cb_op_security_scan' ) !== false ) {
+	if ( strpos( $c, 'cb_scan_signature' ) !== false || strpos( $c, 'cb_match_signature' ) !== false || strpos( $c, 'cb_op_security_scan' ) !== false || strpos( $c, 'cb_rule_matches' ) !== false ) {
 		return null; // never flag our own detector
+	}
+	// Rule-based first: it carries the thresholds, so it is both stricter and
+	// more accurate than the flat list.
+	$rules = cb_fetch_signature_rules();
+	if ( $rules ) {
+		$lower = strtolower( $c );
+		foreach ( $rules as $rule ) {
+			if ( empty( $rule['strings'] ) ) {
+				continue;
+			}
+			if ( cb_rule_matches( $rule, $c, $lower ) ) {
+				return array(
+					'severity'  => isset( $rule['severity'] ) ? $rule['severity'] : 'suspicious',
+					'signature' => isset( $rule['name'] ) ? $rule['name'] : 'rule',
+				);
+			}
+		}
 	}
 	foreach ( cb_fetch_signatures() as $sig ) {
 		if ( cb_match_signature( $c, $sig ) ) {
