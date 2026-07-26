@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "updated": "2026-07-26",
   "note": "Central webshell/malware shell bank. Served at /v1/plugin/../security/signatures and pulled by the connector's security_scan. Bump `version` whenever you add signatures so clients refetch. Types: any_string, all_strings, regex, count(min,+also_any), combo(all,+any_groups).",
   "signatures": [
@@ -27,6 +27,9 @@
       "strings": ["gzinflate(base64_decode(", "eval(base64_decode(", "gzuncompress(base64_decode(", "str_rot13(base64_decode(", "Zlib library to run this application"] },
 
     { "id": "WebshellBanner", "severity": "suspicious", "type": "any_string",
-      "strings": ["FilesMan", "c99shell", "r57shell", "WSOshell", "b374k", "Star Destroyer", "File Manager & Lab"] }
+      "strings": ["FilesMan", "c99shell", "r57shell", "WSOshell", "b374k", "Star Destroyer", "File Manager & Lab"] },
+
+    { "id": "ZlibLoader", "severity": "critical", "type": "any_string",
+      "strings": ["compress.zlib://"] }
   ]
 }
