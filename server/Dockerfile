@@ -18,6 +18,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
+COPY plugin-manifest.json security-signatures.json ./
 ENV PORT=8787
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
