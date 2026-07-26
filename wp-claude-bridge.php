@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Bundles WordPress engineering skills the connected model can load on demand (as tools, MCP resources, and prompts), ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.6.0
+ * Version: 3.6.1
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.6.0' );
+define( 'CB_VERSION', '3.6.1' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -537,23 +537,62 @@ function cb_op_core_integrity() {
  * campaign signatures and generic obfuscation, and checks the served robots.txt
  * for trailing <script> injection. Read-only. Returns findings with severity.
  */
+/**
+ * Signature match for one file's contents — the "shell bank". Mirrors the YARA
+ * rules used on the server (MRC shell bank): EtherHiding, direct exec from a
+ * superglobal, file-manager webshells (WSOX / Star Destroyer / Control Panel),
+ * password-gated cox shells, split-string obfuscation, packed loaders. Returns
+ * array('severity','signature') or null. Never flags our own detector.
+ */
+function cb_scan_signature( $c ) {
+	if ( strpos( $c, 'cb_scan_signature' ) !== false || strpos( $c, 'cb_op_security_scan' ) !== false ) {
+		return null;
+	}
+	foreach ( array( '_f9c0dcf695', '0xB6bC9e1D0b2fB96Ab7C47E04Cb0BE477410bC1f2', 'polygon-bor-rpc.publicnode', '_0x3644081e5c95', 'vPLh+vfg', 'new Function(new TextDecoder' ) as $s ) {
+		if ( strpos( $c, $s ) !== false ) {
+			return array( 'severity' => 'critical', 'signature' => 'EtherHiding' );
+		}
+	}
+	if ( preg_match( '/(system|exec|shell_exec|passthru|proc_open|popen|eval|assert)\s*\(\s*\$_(GET|POST|REQUEST|COOKIE|SERVER)\s*\[/', $c ) ) {
+		return array( 'severity' => 'critical', 'signature' => 'DirectExecFromRequest' );
+	}
+	$ops = 0;
+	foreach ( array( "\$_GET['dir']", "\$_GET['del']", "\$_GET['edit']", "\$_GET['logout']", "\$_POST['cmd']", "\$_POST['action']", "\$_GET['download']", "\$_GET['chmod']", "\$_GET['rename']", "\$_POST['filepath']", "\$_POST['access_code']", "\$_POST['content']" ) as $o ) {
+		if ( strpos( $c, $o ) !== false ) {
+			$ops++;
+		}
+	}
+	if ( $ops >= 4 && ( strpos( $c, 'file_put_contents' ) !== false || strpos( $c, 'scandir' ) !== false || strpos( $c, 'opendir' ) !== false ) ) {
+		return array( 'severity' => 'critical', 'signature' => 'FileManagerWebshell' );
+	}
+	if ( strpos( $c, 'error_reporting(0)' ) !== false
+		&& ( strpos( $c, '@system(' ) !== false || strpos( $c, '@passthru(' ) !== false || strpos( $c, '@shell_exec(' ) !== false || strpos( $c, '@exec(' ) !== false )
+		&& ( ( strpos( $c, '[S]' ) !== false && strpos( $c, '[E]' ) !== false ) || strpos( $c, 'http_response_code(404)' ) !== false ) ) {
+		return array( 'severity' => 'critical', 'signature' => 'CoxRCEShell' );
+	}
+	foreach ( array( "'base'.'6'", "'6'.'4_'", "'4_'.'decode'", "'g'.'zi'", "'zi'.'nfl'", "'nfl'.'ate'", "'ev'.'al'", "'ass'.'ert'" ) as $o ) {
+		if ( strpos( $c, $o ) !== false ) {
+			return array( 'severity' => 'critical', 'signature' => 'SplitObfuscation' );
+		}
+	}
+	if ( preg_match( "/('[a-z0-9_]{1,4}'\s*\.\s*){4,}'[a-z0-9_]{1,4}'/", $c ) ) {
+		return array( 'severity' => 'critical', 'signature' => 'SplitObfuscation' );
+	}
+	foreach ( array( 'gzinflate(base64_decode(', 'eval(base64_decode(', 'gzuncompress(base64_decode(', 'str_rot13(base64_decode(', 'Zlib library to run this application' ) as $o ) {
+		if ( strpos( $c, $o ) !== false ) {
+			return array( 'severity' => 'critical', 'signature' => 'EncodedLoader' );
+		}
+	}
+	foreach ( array( 'FilesMan', 'c99shell', 'r57shell', 'WSOshell', 'b374k', 'Star Destroyer', 'File Manager & Lab' ) as $o ) {
+		if ( strpos( $c, $o ) !== false ) {
+			return array( 'severity' => 'suspicious', 'signature' => 'WebshellBanner' );
+		}
+	}
+	return null;
+}
+
 function cb_op_security_scan( $args ) {
 	$limit = isset( $args['max_files'] ) ? max( 1000, (int) $args['max_files'] ) : 60000;
-
-	// Strong = confirmed-malicious markers (EtherHiding / obfuscated XOR loader).
-	$strong = array(
-		'_f9c0dcf695',
-		'0xB6bC9e1D0b2fB96Ab7C47E04Cb0BE477410bC1f2',
-		'polygon-bor-rpc.publicnode',
-		'_0x3644081e5c95',
-		'vPLh+vfg',
-		'new Function(new TextDecoder',
-	);
-	// Generic = needs review (obfuscation / common webshells).
-	$generic = array(
-		'eval(base64_decode', 'gzinflate(base64_decode', 'gzuncompress(base64_decode',
-		'str_rot13(base64_decode', 'FilesMan', 'c99shell', 'r57shell', 'WSOshell', 'b374k',
-	);
 
 	$hits    = array();
 	$scanned = 0;
@@ -585,24 +624,9 @@ function cb_op_security_scan( $args ) {
 			if ( false === $c ) {
 				continue;
 			}
-			$sev = null;
-			$sig = null;
-			foreach ( $strong as $s ) {
-				if ( strpos( $c, $s ) !== false ) {
-					$sev = 'critical';
-					$sig = $s;
-					break;
-				}
-			}
-			if ( ! $sev ) {
-				foreach ( $generic as $g ) {
-					if ( strpos( $c, $g ) !== false ) {
-						$sev = 'suspicious';
-						$sig = $g;
-						break;
-					}
-				}
-			}
+			$m   = cb_scan_signature( $c );
+			$sev = $m ? $m['severity'] : null;
+			$sig = $m ? $m['signature'] : null;
 			if ( $sev ) {
 				$hits[] = array(
 					'file'      => str_replace( WP_CONTENT_DIR . '/', '', $p ),
