@@ -38,6 +38,31 @@ async function lastGoodRun(feed) {
 }
 
 /**
+ * Is a run already in flight?
+ *
+ * Found the hard way on the first real ingest: the manual trigger and the
+ * scheduled tick both started a full NVD walk, because the scheduled one asked
+ * "when did a run last *finish*" while the first was still running — so it saw
+ * none and started its own. Two full walks against a rate-limited API at once
+ * is precisely what the pacing exists to prevent.
+ *
+ * The staleness window doubles as the stuck-run window: a run that started
+ * more than two hours ago and never finished is treated as dead rather than
+ * blocking the feed forever, because a process killed mid-ingest leaves its
+ * row open with no way to close it.
+ */
+async function runInFlight(feed) {
+  const row = await one(
+    `SELECT started_at FROM intel_runs
+      WHERE feed = $1 AND finished_at IS NULL
+      ORDER BY started_at DESC LIMIT 1`,
+    [feed]
+  )
+  if (!row) return false
+  return Date.now() - Number(row.started_at) < 2 * 60 * 60 * 1000
+}
+
+/**
  * Refresh one feed if it is stale.
  *
  * NVD is asked only for what changed since the last good run, so the daily
@@ -49,7 +74,9 @@ export async function refresh({ force = false, log = console.log } = {}) {
   const out = {}
 
   const sigAge = await lastGoodRun('signatures')
-  if (force || !sigAge || Date.now() - sigAge > 7 * 86400000) {
+  if (await runInFlight('signatures')) {
+    out.signatures = { skipped: true, reason: 'already running' }
+  } else if (force || !sigAge || Date.now() - sigAge > 7 * 86400000) {
     log('intel: refreshing signature bank…')
     out.signatures = await signatures.ingest({ log })
   } else {
@@ -57,7 +84,11 @@ export async function refresh({ force = false, log = console.log } = {}) {
   }
 
   const nvdAge = await lastGoodRun('nvd')
-  if (force || !nvdAge || Date.now() - nvdAge > 86400000) {
+  if (await runInFlight('nvd')) {
+    // Skipped even when forced. A second concurrent walk is never what the
+    // caller wanted, whatever button they pressed.
+    out.nvd = { skipped: true, reason: 'already running' }
+  } else if (force || !nvdAge || Date.now() - nvdAge > 86400000) {
     const first = !nvdAge
     log(first ? 'intel: first NVD ingest (this takes a while)…' : 'intel: NVD delta…')
     out.nvd = await nvd.ingest({
