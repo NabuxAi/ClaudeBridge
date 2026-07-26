@@ -68,3 +68,31 @@ CREATE TABLE IF NOT EXISTS intel_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_intel_feed ON intel_runs(feed, started_at DESC);
+
+-- YARA rules keep their grouping and threshold instead of being flattened into
+-- independent signatures.
+--
+-- This is not tidiness, it is correctness. Many webshell rules match on short
+-- base64 fragments — "ZXhlY" is just base64 for "exec" — which are meaningless
+-- alone and appear in perfectly ordinary encoded data. YARA only fires when
+-- several hit at once ("2 of them"). Flattening them into standalone signatures
+-- would turn a precise rule into a false-positive generator.
+CREATE TABLE IF NOT EXISTS signature_rules (
+  id          BIGSERIAL PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  family      TEXT NOT NULL DEFAULT '',
+  severity    TEXT NOT NULL DEFAULT 'suspicious',
+  -- How many of this rule's strings must appear in one file before it counts.
+  min_hits    INTEGER NOT NULL DEFAULT 1,
+  description TEXT NOT NULL DEFAULT '',
+  author      TEXT NOT NULL DEFAULT '',
+  license     TEXT NOT NULL DEFAULT '',
+  source      TEXT NOT NULL DEFAULT 'signature-base',
+  enabled     BOOLEAN NOT NULL DEFAULT true,
+  created_at  BIGINT NOT NULL
+);
+
+ALTER TABLE signatures ADD COLUMN IF NOT EXISTS rule_id BIGINT REFERENCES signature_rules(id) ON DELETE CASCADE;
+ALTER TABLE signatures ADD COLUMN IF NOT EXISTS nocase BOOLEAN NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_sig_rule ON signatures(rule_id);
