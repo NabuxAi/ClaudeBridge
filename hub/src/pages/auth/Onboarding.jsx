@@ -94,7 +94,12 @@ export default function Onboarding() {
           <div style={{ display: 'flex', gap: 11, background: 'var(--gd-info-bg)', border: '1px solid var(--gd-info-border)', borderRadius: 'var(--gd-radius-lg)', padding: '14px 16px', margin: '20px 0' }}>
             <Icon name="shield-check" size={18} style={{ color: 'var(--gd-info)', flex: '0 0 auto', marginTop: 1 }} />
             <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--gd-info-text)' }}>
-              افزونهٔ <b>WP Claude Bridge</b> را نصب و «حالت کانکتور» را روشن کنید. افزونه فقط فرمان‌های امضاشدهٔ سرور شما را می‌پذیرد و مستقیم روی سایت کاری نمی‌کند.
+              افزونهٔ <b>DigiWp Ai Bridge</b> را نصب و «حالت کانکتور» را روشن کنید. افزونه فقط فرمان‌های امضاشدهٔ سرور شما را می‌پذیرد و مستقیم روی سایت کاری نمی‌کند.
+              <div style={{ marginTop: 10 }}>
+                <a href="/digiwp-ai-bridge.zip" download style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, color: 'var(--gd-info)', textDecoration: 'none' }}>
+                  <Icon name="download" size={15} /> دانلود افزونهٔ DigiWp Ai Bridge
+                </a>
+              </div>
             </div>
           </div>
           {err && <div className="gd-field__msg gd-field__msg--error" style={{ marginBottom: 12 }}>{err}</div>}
@@ -112,7 +117,7 @@ export default function Onboarding() {
     <Shell activeStep={1}>
       <h2 style={{ fontSize: 23, fontWeight: 800, letterSpacing: '-.01em', margin: 0 }}>جفت‌سازی کانکتور</h2>
       <p style={{ fontSize: 14, lineHeight: 1.75, color: 'var(--gd-text-secondary)', margin: '8px 0 20px' }}>
-        در سایت <b>{site?.name}</b>: به <span className="dwp-mono">ابزارها → Claude Bridge → Hub Connector Mode</span> بروید و این دو مقدار را وارد کنید. این رمز فقط همین یک‌بار نمایش داده می‌شود.
+        در سایت <b>{site?.name}</b>: به <span className="dwp-mono">ابزارها → DigiWp Ai Bridge → Hub Connector Mode</span> بروید و این دو مقدار را وارد کنید. این رمز فقط همین یک‌بار نمایش داده می‌شود.
       </p>
       <Row label="آدرس سرور (Hub server URL)" value={p.serverUrl} mono />
       <Row label="رمز مشترک (Shared secret)" value={p.secret} mono />
