@@ -178,6 +178,14 @@ export const siteUpdates = (id) => delay({
 })
 
 export const siteSecurity = (id) => delay({
+  // Same shape the server sends for a real, verified-clean core. The demo shows
+  // a passing check rather than inventing findings — a mock that cries wolf
+  // teaches people to ignore the real one.
+  integrity: {
+    ok: true, clean: true, version: '7.0.2', locale: 'fa_IR',
+    files_known: 4171, modified: [], missing: [], unexpected: [],
+    checked_at: Math.floor(Date.now() / 1000),
+  },
   id, score: 92, ssl: { valid: true, days: 68, issuer: "Let's Encrypt" },
   metrics: [
     { label: 'امتیاز امنیت', value: '۹۲', unit: '/۱۰۰', icon: 'shield-check', tone: 'success' },

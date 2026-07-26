@@ -377,6 +377,161 @@ add_filter( 'template', function ( $tpl ) {
  * 4. TOOL REGISTRY  (one definition reused by REST + MCP)
  * ========================================================================== */
 
+/* -----------------------------------------------------------------
+ * Core integrity — the strongest signal we have.
+ *
+ * You cannot prove a PHP file is clean; a good backdoor is indistinguishable
+ * from legitimate code. But WordPress publishes an md5 for every file it ships,
+ * so you CAN prove a file is byte-identical to the official release — and core
+ * files have no legitimate reason to differ. One modified file in wp-includes
+ * is worth more than any number of heuristic signature matches.
+ *
+ * The check that actually catches backdoors is the third one: a file present in
+ * wp-admin/ or wp-includes/ that the manifest does not list at all. Malware
+ * rarely edits core, because that breaks on the next update; it drops a new
+ * file somewhere nobody looks.
+ *
+ * Key-free and unmetered — api.wordpress.org serves this to every WordPress
+ * install in the world.
+ * -------------------------------------------------------------- */
+
+/** Official md5 for every file of this exact version+locale. Cached 12h. */
+function cb_core_checksums( $version = '', $locale = '' ) {
+	$version = $version ?: get_bloginfo( 'version' );
+	$locale  = $locale ?: get_locale();
+	$key     = 'cb_checksums_' . md5( $version . '|' . $locale );
+
+	$cached = get_transient( $key );
+	if ( is_array( $cached ) ) {
+		return $cached;
+	}
+
+	$res = wp_remote_get(
+		add_query_arg(
+			array( 'version' => $version, 'locale' => $locale ),
+			'https://api.wordpress.org/core/checksums/1.0/'
+		),
+		array( 'timeout' => 20 )
+	);
+	if ( is_wp_error( $res ) ) {
+		return new WP_Error( 'cb_checksums', $res->get_error_message() );
+	}
+	$body = json_decode( wp_remote_retrieve_body( $res ), true );
+	$sums = isset( $body['checksums'] ) ? $body['checksums'] : null;
+	// The API nests one level under the version for some locales and not others.
+	if ( is_array( $sums ) && isset( $sums[ $version ] ) && is_array( $sums[ $version ] ) ) {
+		$sums = $sums[ $version ];
+	}
+	if ( ! is_array( $sums ) || ! $sums ) {
+		return new WP_Error( 'cb_checksums', 'wordpress.org returned no checksums for ' . $version . ' / ' . $locale );
+	}
+
+	set_transient( $key, $sums, 12 * HOUR_IN_SECONDS );
+	return $sums;
+}
+
+/**
+ * Compare every core file against the official manifest.
+ *
+ * Returns modified, missing and — the one that matters — unexpected files
+ * sitting inside core directories.
+ */
+function cb_core_integrity() {
+	$version = get_bloginfo( 'version' );
+	$locale  = get_locale();
+	$sums    = cb_core_checksums( $version, $locale );
+
+	// en_US always exists; a locale build occasionally does not.
+	if ( is_wp_error( $sums ) && 'en_US' !== $locale ) {
+		$sums   = cb_core_checksums( $version, 'en_US' );
+		$locale = 'en_US';
+	}
+	if ( is_wp_error( $sums ) ) {
+		return array( 'ok' => false, 'error' => $sums->get_error_message() );
+	}
+
+	$root     = untrailingslashit( ABSPATH );
+	$modified = array();
+	$missing  = array();
+
+	foreach ( $sums as $rel => $md5 ) {
+		// wp-content is the site's own; the manifest only ships defaults for it.
+		if ( 0 === strpos( $rel, 'wp-content/' ) ) {
+			continue;
+		}
+		$path = $root . '/' . $rel;
+		if ( ! file_exists( $path ) ) {
+			$missing[] = $rel;
+			continue;
+		}
+		if ( md5_file( $path ) !== $md5 ) {
+			$modified[] = $rel;
+		}
+	}
+
+	// Anything in a core directory that the manifest never mentions.
+	$unexpected = array_merge(
+		cb_core_strays( $root . '/wp-admin', $root, $sums ),
+		cb_core_strays( $root . '/wp-includes', $root, $sums )
+	);
+
+	// The document root itself: only *.php, because a site legitimately keeps
+	// robots.txt, favicons and host control files next to index.php.
+	foreach ( (array) glob( $root . '/*.php' ) as $path ) {
+		$rel = basename( $path );
+		if ( ! isset( $sums[ $rel ] ) && 'wp-config.php' !== $rel ) {
+			$unexpected[] = $rel;
+		}
+	}
+
+	sort( $modified );
+	sort( $missing );
+	sort( $unexpected );
+
+	return array(
+		'ok'          => true,
+		'version'     => $version,
+		'locale'      => $locale,
+		'files_known' => count( $sums ),
+		'modified'    => $modified,
+		'missing'     => $missing,
+		'unexpected'  => $unexpected,
+		// A clean core is all three empty. Anything else needs a human.
+		'clean'       => ! $modified && ! $missing && ! $unexpected,
+		'checked_at'  => time(),
+	);
+}
+
+/** Files under $dir that the official manifest does not list. */
+function cb_core_strays( $dir, $root, $sums ) {
+	if ( ! is_dir( $dir ) ) {
+		return array();
+	}
+	$out = array();
+	$it  = new RecursiveIteratorIterator(
+		new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS ),
+		RecursiveIteratorIterator::LEAVES_ONLY,
+		RecursiveIteratorIterator::CATCH_GET_CHILD
+	);
+	foreach ( $it as $file ) {
+		if ( ! $file->isFile() ) {
+			continue;
+		}
+		$rel = ltrim( str_replace( '\\', '/', substr( $file->getPathname(), strlen( $root ) ) ), '/' );
+		if ( ! isset( $sums[ $rel ] ) ) {
+			$out[] = $rel;
+			if ( count( $out ) >= 500 ) {
+				break; // a core dir full of strays is already answered
+			}
+		}
+	}
+	return $out;
+}
+
+function cb_op_core_integrity() {
+	return cb_core_integrity();
+}
+
 /**
  * Real malware scan of wp-content: greps PHP/JS for known webshell + EtherHiding
  * campaign signatures and generic obfuscation, and checks the served robots.txt
@@ -641,6 +796,8 @@ function cb_tools() {
 	// Bundled WordPress skills (shipped inside this plugin).
 	$tools[] = array( 'name' => 'list_wp_skills', 'description' => 'List the WordPress engineering skills bundled in this plugin (security review, performance, blocks, themes, WooCommerce, REST API, ACF/content modeling, headless/WPGraphQL, migrations, accessibility, testing, CI/CD, WP-CLI/ops, PHPStan, Playground, admin UI, plugin development, site audit/onboarding). Each is a focused review or build playbook. Call this first, then get_wp_skill to load the matching one before doing WordPress work.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_list_wp_skills', 'noargs' => true );
 	$tools[] = array( 'name' => 'get_wp_skill', 'description' => 'Load a bundled WordPress skill. Returns the skill\'s SKILL.md instructions, or a named reference file within it. Call list_wp_skills first to see available skill names and their files. Use the matching skill before reviewing, auditing, or building WordPress/WooCommerce code.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Skill name, e.g. "wp-security-review".' ), 'file' => array( 'type' => 'string', 'description' => 'Optional file within the skill, e.g. "references/escaping-guide.md". Defaults to SKILL.md.' ) ), 'required' => array( 'name' ) ), 'op' => 'cb_op_get_wp_skill' );
+
+	$tools[] = array( 'name' => 'core_integrity', 'description' => 'Verify every WordPress core file against the official md5 manifest from api.wordpress.org for this exact version and locale. Reports modified core files, missing ones, and — the finding that actually catches backdoors — files sitting inside wp-admin/ or wp-includes/ that WordPress never shipped. Read-only. A clean core has all three lists empty.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_core_integrity', 'noargs' => true );
 
 	// Update policy: the panel writes it, the site obeys it, and update_status
 	// reports what is genuinely still pending rather than echoing the switches.

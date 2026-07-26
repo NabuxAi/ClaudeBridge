@@ -24,13 +24,39 @@ function concern(name) {
         try { data.live = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'site_info', {}) }
         catch (e) { data.liveError = e.message }
       }
-      // Real malware scan for the security view (replaces mock when paired + live).
+      // Real scans for the security view (replace the seed when paired + live).
+      //
+      // Two independent layers, reported separately because they answer
+      // different questions and fail differently:
+      //
+      //   integrity — is core byte-identical to what WordPress shipped?
+      //               Cheap, decisive, and the only one that can prove a
+      //               negative. An unexpected file in wp-includes is a finding
+      //               on its own, no heuristics involved.
+      //   scan      — does anything in wp-content look like a known shell?
+      //               Heuristic, so it informs rather than proves.
+      //
+      // One failing must not hide the other, so each carries its own error.
       if (name === 'security' && config.live && site.paired && site.url && site.secret) {
-        try {
-          const raw = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'security_scan', {})
+        const target = { url: site.url, secret: site.secret, siteKey: site.site_key }
+        const unwrap = (raw) => {
           const text = raw?.content?.[0]?.text
-          data.scan = typeof text === 'string' ? JSON.parse(text) : raw
-        } catch (e) { data.scanError = e.message }
+          return typeof text === 'string' ? JSON.parse(text) : raw
+        }
+        const [scan, integrity] = await Promise.allSettled([
+          connector.callTool(target, 'security_scan', {}),
+          connector.callTool(target, 'core_integrity', {}),
+        ])
+        if (scan.status === 'fulfilled') {
+          try { data.scan = unwrap(scan.value) } catch (e) { data.scanError = e.message }
+        } else {
+          data.scanError = scan.reason?.message || String(scan.reason)
+        }
+        if (integrity.status === 'fulfilled') {
+          try { data.integrity = unwrap(integrity.value) } catch (e) { data.integrityError = e.message }
+        } else {
+          data.integrityError = integrity.reason?.message || String(integrity.reason)
+        }
       }
       if (name === 'settings') {
         const c = site.connector || null
