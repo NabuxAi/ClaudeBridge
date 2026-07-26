@@ -4,6 +4,7 @@ import { sites } from '../store.js'
 import { siteData } from '../seed.js'
 import * as connector from '../connector.js'
 import { describePolicy, policyForConnector } from '../policy.js'
+import { PROVENANCE, updatesFromStatus } from '../live.js'
 
 const router = Router()
 
@@ -58,6 +59,37 @@ function concern(name) {
           data.integrityError = integrity.reason?.message || String(integrity.reason)
         }
       }
+      // Pending updates, straight from the site. This replaces the seed queue
+      // entirely rather than decorating it — the seed listed plugins the site
+      // may not even have installed.
+      if (name === 'updates' && config.live && site.paired && site.url && site.secret) {
+        try {
+          const raw = await connector.callTool(
+            { url: site.url, secret: site.secret, siteKey: site.site_key },
+            'update_status',
+            {}
+          )
+          const text = raw?.content?.[0]?.text
+          const status = typeof text === 'string' ? JSON.parse(text) : raw
+          const live = updatesFromStatus(status)
+          if (live) {
+            data.queue = live.queue
+            data.done = live.done
+            data.doneNote = live.doneNote
+            data.wpVersion = live.wpVersion
+            data.wpLatest = live.wpLatest
+            data.phpVersion = live.phpVersion
+            data.policy = live.policy
+            data.checkedAt = live.checkedAt
+          }
+        } catch (e) { data.updatesError = e.message }
+      }
+
+      // Say where this view's numbers come from — and, more importantly, which
+      // of them have no source yet. A panel that cannot distinguish measured
+      // from invented teaches people to trust none of it.
+      if (PROVENANCE[name]) data.provenance = PROVENANCE[name]
+
       if (name === 'settings') {
         const c = site.connector || null
         data.connector = site.paired

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, IconButton, MetricCard, Badge, Switch } from '../../components/index.js'
+import { Button, IconButton, MetricCard, Badge, Switch, NotMeasured } from '../../components/index.js'
 import { site as siteApi } from '../../lib/api.js'
 
 const COLS = '1.6fr 1fr 0.8fr 1fr 1.4fr'
@@ -26,6 +26,18 @@ export default function Backups() {
   )
 
   if (!data) return head
+
+  // The server tells us when a view has no real source yet. Showing the
+  // seed numbers here would be inventing a reading the customer cannot
+  // distinguish from a measured one.
+  if (data.provenance?.unavailable) {
+    return (
+      <>
+        {head}
+        <NotMeasured title="بکاپ‌ها و بازیابی" reason={data.provenance.unavailable} />
+      </>
+    )
+  }
 
   return (
     <>

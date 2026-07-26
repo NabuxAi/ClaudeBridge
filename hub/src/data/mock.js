@@ -132,6 +132,8 @@ export const siteOverview = (id) => delay({
 })
 
 export const siteIncidents = (id) => delay({
+  provenance: { live: [], unavailable: 'ثبت رخداد هنوز ساخته نشده. برای این بخش هیچ دادهٔ واقعی وجود ندارد.' },
+
   id,
   featured: {
     severity: 'critical', title: 'خطای ۵۰۰ در صفحهٔ پرداخت', time: '۱۴:۳۲',
@@ -159,6 +161,8 @@ export const siteIncidents = (id) => delay({
 })
 
 export const siteUpdates = (id) => delay({
+  provenance: { live: ['update_status'], partial: {} },
+
   id,
   queue: [
     { id: 'u1', name: 'Elementor', from: '3.21.4', to: '3.23.0', type: 'افزونه', risk: 'high', riskLabel: 'ریسک بالا',
@@ -202,6 +206,8 @@ export const siteSecurity = (id) => delay({
 })
 
 export const siteBackups = (id) => delay({
+  provenance: { live: [], unavailable: 'سیستم پشتیبان‌گیری هنوز ساخته نشده. هیچ بکاپی گرفته نمی‌شود.' },
+
   id, lastBackup: '۲ ساعت پیش', nextBackup: 'امشب ۰۳:۰۰', location: 'فضای خارجی (رمزنگاری‌شده)', totalSize: '۱٫۸ گیگابایت',
   list: [
     { id: 'b1', when: 'امروز ۰۳:۰۰', type: 'خودکار روزانه', size: '۱٫۸ GB', verified: true, db: true, files: true },
