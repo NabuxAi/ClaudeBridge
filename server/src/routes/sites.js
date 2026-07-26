@@ -298,6 +298,35 @@ router.patch('/sites/:id/authority', async (req, res, next) => {
   } catch (e) { next(e) }
 })
 
+/**
+ * Conflict hunt — find what breaks a page.
+ *
+ * This flips plugins and the theme on a LIVE site, so it is a POST with an
+ * explicit URL rather than something that can happen by navigation. The
+ * connector restores everything unconditionally, including on error.
+ */
+router.post('/sites/:id/conflict', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    if (!req.body?.url) {
+      return res.status(400).json({ message: 'آدرس صفحهٔ خراب لازم است.' })
+    }
+    const raw = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      'conflict_hunt',
+      { url: req.body.url, expect: req.body.expect || '', forbid: req.body.forbid || '' }
+    )
+    const text = raw?.content?.[0]?.text
+    res.json(typeof text === 'string' ? JSON.parse(text) : raw)
+  } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
 router.get('/sites/:id/pairing', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)

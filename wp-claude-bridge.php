@@ -1483,6 +1483,8 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'list_recipes', 'description' => 'List the cookbook recipes bundled with this plugin — ready-made playbooks for the jobs people hand to an AI on a WordPress site (security audit, speed audit, plugin conflict hunt, child theme, alt text sweep, content calendar, WooCommerce restock/sale/checkout review, Elementor header & footer, theme.json rebrand, and more). Each returns an id; call get_recipe for the full prompt. Set for_this_site=true to see only the recipes whose stack this site actually has.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'tag' => array( 'type' => 'string', 'description' => 'Filter by tag, e.g. "WooCommerce", "Security", "Performance".' ), 'search' => array( 'type' => 'string' ), 'for_this_site' => array( 'type' => 'boolean', 'description' => 'Only recipes matching this site (WooCommerce, Elementor, block theme, …).' ) ) ), 'op' => 'cb_op_list_recipes' );
 	$tools[] = array( 'name' => 'get_recipe', 'description' => 'Load one cookbook recipe in full: what it does, which bridge tools it uses, and the complete prompt with its [bracketed] placeholders. Call list_recipes first for valid ids. Use a recipe as the plan when the user asks for something it covers.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string', 'description' => 'Recipe id, e.g. "security-audit".' ) ), 'required' => array( 'id' ) ), 'op' => 'cb_op_get_recipe' );
 
+	$tools[] = array( 'name' => 'conflict_hunt', 'description' => 'Find what breaks a page — theme first, then plugins by binary search. Tests the theme against a bundled default in one round, because a theme fault otherwise makes every plugin look innocent. Then disables half the plugins at a time rather than one at a time: about six rounds on a forty-plugin site instead of forty, which matters because every round is a window where a real visitor hits the site mid-flip. Restores the original plugin set and theme unconditionally, including if a step throws.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'url' => array( 'type' => 'string', 'description' => 'Same-site page URL that is broken.' ), 'expect' => array( 'type' => 'string', 'description' => 'Substring that must appear when the page is healthy.' ), 'forbid' => array( 'type' => 'string', 'description' => 'Substring that marks the page as broken.' ) ), 'required' => array( 'url' ) ), 'op' => 'cb_op_conflict_hunt' );
+
 	$tools[] = array(
 		'name'        => 'conflict_scan',
 		'description' => 'Find which active plugin breaks a page (white screen / fatal error / "critical error"). It deactivates each active plugin ONE AT A TIME, reloads the URL server-side, checks health, then IMMEDIATELY reactivates it — stopping at the first plugin whose removal fixes the page. It never deactivates this bridge plugin, and fully restores every plugin before returning. Params: url (required, same-site page to test), expect (optional string that must appear when the page is healthy), forbid (optional extra error signature to treat as broken), only (optional array of plugin files to limit the scan to), skip (optional array of plugin files to never touch, e.g. ["woocommerce/woocommerce.php"]). NOTE: it tests page-LOAD health as an anonymous request; interaction/AJAX bugs (like a fatal only when removing a cart item) will not reproduce unless the URL itself fatals on load. Run during low traffic — each plugin is briefly off while its test request runs.',
@@ -1629,6 +1631,164 @@ function cb_conflict_health( $url, $expect, $forbid ) {
 		$reason  = 'missing_expected_content';
 	}
 	return array( 'healthy' => $healthy, 'code' => $code, 'reason' => $reason, 'len' => $len );
+}
+
+/* -----------------------------------------------------------------
+ * Conflict hunt: bisection, and the theme.
+ *
+ * The one-at-a-time scan below works, but costs one deactivate/reactivate cycle
+ * per plugin. On a forty-plugin site that is forty rounds of flipping things on
+ * a LIVE site — forty windows in which a visitor hits it mid-flip.
+ *
+ * Binary search finds the same culprit in about six. Disable half, test, keep
+ * whichever half still breaks. That is a difference in exposure, not just speed.
+ *
+ * Themes are checked too, and first, because a broken page is at least as often
+ * the theme — and the existing scan never looked, so a theme fault would
+ * exhaust every plugin and confidently report "no culprit found".
+ * -------------------------------------------------------------- */
+
+/** Narrow a set of plugins to the one that breaks the page. */
+function cb_conflict_bisect( $url, $expect, $forbid, $candidates, $original, $self ) {
+	$rounds     = array();
+	$suspect    = array_values( array_diff( $candidates, array( $self ) ) );
+	$known_good = array();
+
+	while ( count( $suspect ) > 1 ) {
+		$half  = (int) ceil( count( $suspect ) / 2 );
+		$testA = array_slice( $suspect, 0, $half );
+		$testB = array_slice( $suspect, $half );
+
+		// Everything except group A stays ON, so a conflict BETWEEN two plugins
+		// still reproduces instead of being masked by switching the site off.
+		$keep = array_values( array_unique( array_merge( $known_good, $testB, array( $self ) ) ) );
+		update_option( 'active_plugins', $keep );
+		$health = cb_conflict_health( $url, $expect, $forbid );
+
+		$rounds[] = array(
+			'disabled' => array_values( $testA ),
+			'healthy'  => ! empty( $health['healthy'] ),
+			'status'   => isset( $health['status'] ) ? $health['status'] : null,
+		);
+
+		if ( ! empty( $health['healthy'] ) ) {
+			$suspect = $testA;                                    // culprit is inside A
+		} else {
+			$known_good = array_merge( $known_good, $testA );      // A is innocent
+			$suspect    = $testB;
+		}
+	}
+
+	update_option( 'active_plugins', $original );
+	return array(
+		'culprit' => $suspect ? reset( $suspect ) : null,
+		'rounds'  => $rounds,
+		'tested'  => count( $rounds ),
+	);
+}
+
+/** Is the theme responsible? One round, so it goes before the plugin hunt. */
+function cb_conflict_check_theme( $url, $expect, $forbid ) {
+	$current  = get_stylesheet();
+	$fallback = '';
+	foreach ( array( 'twentytwentyfive', 'twentytwentyfour', 'twentytwentythree', 'twentytwentytwo' ) as $slug ) {
+		if ( wp_get_theme( $slug )->exists() ) {
+			$fallback = $slug;
+			break;
+		}
+	}
+	if ( '' === $fallback || $fallback === $current ) {
+		return array( 'tested' => false, 'current' => $current,
+			'reason' => 'no bundled default theme available to compare against' );
+	}
+
+	switch_theme( $fallback );
+	$health = cb_conflict_health( $url, $expect, $forbid );
+	switch_theme( $current ); // back, whatever the outcome
+
+	return array(
+		'tested'   => true,
+		'current'  => $current,
+		'compared' => $fallback,
+		'is_cause' => ! empty( $health['healthy'] ), // healthy on default = the theme
+		'status'   => isset( $health['status'] ) ? $health['status'] : null,
+	);
+}
+
+/**
+ * The whole hunt: baseline, theme, then plugins by bisection.
+ *
+ * Restores every original setting on the way out, including when a step throws.
+ * Leaving a live site with half its plugins off is a worse outcome than never
+ * having diagnosed it at all.
+ */
+function cb_op_conflict_hunt( $args ) {
+	cb_become_admin();
+	cb_load_plugin_fns();
+	@set_time_limit( 0 );
+
+	$url = isset( $args['url'] ) ? esc_url_raw( (string) $args['url'] ) : '';
+	if ( '' === $url ) {
+		return new WP_Error( 'cb_no_url', 'url is required (a same-site page to test).' );
+	}
+	if ( 0 !== strpos( $url, home_url() ) && 0 !== strpos( $url, site_url() ) ) {
+		return new WP_Error( 'cb_scope', 'Only same-site URLs are allowed.' );
+	}
+
+	$expect         = isset( $args['expect'] ) ? (string) $args['expect'] : '';
+	$forbid         = isset( $args['forbid'] ) ? (string) $args['forbid'] : '';
+	$self           = plugin_basename( __FILE__ );
+	$original       = (array) get_option( 'active_plugins', array() );
+	$original_theme = get_stylesheet();
+
+	$baseline = cb_conflict_health( $url, $expect, $forbid );
+	if ( ! empty( $baseline['healthy'] ) ) {
+		return array(
+			'url' => $url, 'baseline' => $baseline, 'restored' => true,
+			'verdict' => 'صفحه همین حالا سالم است — چیزی برای پیدا کردن نیست.',
+		);
+	}
+
+	$result = array( 'url' => $url, 'baseline' => $baseline );
+
+	try {
+		$theme           = cb_conflict_check_theme( $url, $expect, $forbid );
+		$result['theme'] = $theme;
+
+		if ( ! empty( $theme['is_cause'] ) ) {
+			$result['culprit'] = array( 'kind' => 'theme', 'name' => $theme['current'] );
+			$result['verdict'] = sprintf( 'قالب «%s» عامل خرابی است — با قالب پیش‌فرض صفحه سالم شد.', $theme['current'] );
+		} else {
+			$candidates = array_values( array_diff( $original, array( $self ) ) );
+			if ( ! $candidates ) {
+				$result['verdict'] = 'هیچ افزونهٔ فعالی برای بررسی نبود و قالب هم عامل نیست.';
+			} else {
+				$bisect           = cb_conflict_bisect( $url, $expect, $forbid, $candidates, $original, $self );
+				$result['bisect'] = $bisect;
+				if ( $bisect['culprit'] ) {
+					$result['culprit'] = array( 'kind' => 'plugin', 'name' => $bisect['culprit'] );
+					$result['verdict'] = sprintf(
+						'افزونهٔ «%s» عامل خرابی است. با %d مرحله پیدا شد، به‌جای %d بار خاموش و روشن کردن.',
+						$bisect['culprit'], $bisect['tested'], count( $candidates )
+					);
+				} else {
+					$result['verdict'] = 'با خاموش کردن افزونه‌ها صفحه درست نشد — احتمالاً مشکل از هسته، هاست یا دیتابیس است.';
+				}
+			}
+		}
+	} catch ( Throwable $e ) {
+		$result['error'] = $e->getMessage();
+	}
+
+	// Unconditional restore. Whatever happened above, the site goes back.
+	update_option( 'active_plugins', $original );
+	if ( get_stylesheet() !== $original_theme ) {
+		switch_theme( $original_theme );
+	}
+	$result['restored']     = true;
+	$result['final_health'] = cb_conflict_health( $url, $expect, $forbid );
+
+	return $result;
 }
 
 /** Bisect active plugins to find which one breaks a page. Always restores state. */

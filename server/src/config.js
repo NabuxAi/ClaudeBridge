@@ -1,5 +1,9 @@
 // Server configuration from the environment.
 export const config = {
+  // Optional threat-intel keys. Everything works without them; they add depth
+  // when present. Absent is a supported state, not a broken one.
+  abuseChKey: process.env.ABUSECH_API_KEY || '',
+  virusTotalKey: process.env.VIRUSTOTAL_API_KEY || '',
   port: Number(process.env.PORT || 8787),
   // Secret used to sign hub session tokens (change in production).
   authSecret: process.env.AUTH_SECRET || 'dev-only-change-me',
