@@ -377,6 +377,120 @@ add_filter( 'template', function ( $tpl ) {
  * 4. TOOL REGISTRY  (one definition reused by REST + MCP)
  * ========================================================================== */
 
+/**
+ * Real malware scan of wp-content: greps PHP/JS for known webshell + EtherHiding
+ * campaign signatures and generic obfuscation, and checks the served robots.txt
+ * for trailing <script> injection. Read-only. Returns findings with severity.
+ */
+function cb_op_security_scan( $args ) {
+	$limit = isset( $args['max_files'] ) ? max( 1000, (int) $args['max_files'] ) : 60000;
+
+	// Strong = confirmed-malicious markers (EtherHiding / obfuscated XOR loader).
+	$strong = array(
+		'_f9c0dcf695',
+		'0xB6bC9e1D0b2fB96Ab7C47E04Cb0BE477410bC1f2',
+		'polygon-bor-rpc.publicnode',
+		'_0x3644081e5c95',
+		'vPLh+vfg',
+		'new Function(new TextDecoder',
+	);
+	// Generic = needs review (obfuscation / common webshells).
+	$generic = array(
+		'eval(base64_decode', 'gzinflate(base64_decode', 'gzuncompress(base64_decode',
+		'str_rot13(base64_decode', 'FilesMan', 'c99shell', 'r57shell', 'WSOshell', 'b374k',
+	);
+
+	$hits    = array();
+	$scanned = 0;
+	if ( is_dir( WP_CONTENT_DIR ) ) {
+		$it = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator( WP_CONTENT_DIR, FilesystemIterator::SKIP_DOTS ),
+			RecursiveIteratorIterator::LEAVES_ONLY,
+			RecursiveIteratorIterator::CATCH_GET_CHILD
+		);
+		foreach ( $it as $file ) {
+			if ( ! $file->isFile() ) {
+				continue;
+			}
+			$p = str_replace( '\\', '/', $file->getPathname() );
+			if ( strpos( $p, '/node_modules/' ) !== false || strpos( $p, '/.git/' ) !== false || strpos( $p, '/vendor/' ) !== false ) {
+				continue;
+			}
+			$ext = strtolower( $file->getExtension() );
+			if ( ! in_array( $ext, array( 'php', 'phtml', 'inc', 'js', 'txt', 'html' ), true ) ) {
+				continue;
+			}
+			if ( $file->getSize() > 3000000 ) {
+				continue;
+			}
+			if ( ++$scanned > $limit ) {
+				break;
+			}
+			$c = @file_get_contents( $p );
+			if ( false === $c ) {
+				continue;
+			}
+			$sev = null;
+			$sig = null;
+			foreach ( $strong as $s ) {
+				if ( strpos( $c, $s ) !== false ) {
+					$sev = 'critical';
+					$sig = $s;
+					break;
+				}
+			}
+			if ( ! $sev ) {
+				foreach ( $generic as $g ) {
+					if ( strpos( $c, $g ) !== false ) {
+						$sev = 'suspicious';
+						$sig = $g;
+						break;
+					}
+				}
+			}
+			if ( $sev ) {
+				$hits[] = array(
+					'file'      => str_replace( WP_CONTENT_DIR . '/', '', $p ),
+					'severity'  => $sev,
+					'signature' => $sig,
+					'bytes'     => $file->getSize(),
+					'modified'  => gmdate( 'c', $file->getMTime() ),
+				);
+			}
+		}
+	}
+
+	// Check the live robots.txt for the trailing-<script> injection this campaign uses.
+	$robots_injection = null;
+	$resp             = wp_remote_get( home_url( '/robots.txt' ), array( 'timeout' => 10 ) );
+	if ( ! is_wp_error( $resp ) ) {
+		$body = (string) wp_remote_retrieve_body( $resp );
+		if ( stripos( $body, '<script' ) !== false ) {
+			$robots_injection = 'robots.txt contains an injected <script> tag';
+		}
+	}
+
+	$critical   = 0;
+	$suspicious = 0;
+	foreach ( $hits as $h ) {
+		if ( 'critical' === $h['severity'] ) {
+			$critical++;
+		} else {
+			$suspicious++;
+		}
+	}
+
+	return array(
+		'scanned_files'    => $scanned,
+		'critical'         => $critical,
+		'suspicious'       => $suspicious,
+		'clean'            => ( 0 === $critical && 0 === $suspicious && ! $robots_injection ),
+		'robots_injection' => $robots_injection,
+		'findings'         => array_slice( $hits, 0, 100 ),
+		'scanned_at'       => gmdate( 'c' ),
+	);
+}
+
 function cb_tools() {
 	$theme = array( 'type' => 'string', 'description' => 'Theme slug. Optional — if set, "path" is relative to that theme.' );
 	$path  = array( 'type' => 'string', 'description' => 'Path relative to wp-content, e.g. "themes/my-theme/style.css" or "plugins/my-plugin/my-plugin.php". (Or relative to the theme when "theme" is given.)' );
@@ -505,6 +619,7 @@ function cb_tools() {
 
 	// ---- Site / system ----
 	$tools[] = array( 'name' => 'site_info', 'description' => 'WordPress version, PHP version, active theme, active plugins, WooCommerce status, language.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_site_info', 'noargs' => true );
+	$tools[] = array( 'name' => 'security_scan', 'description' => 'Scan wp-content for malware/webshell signatures (EtherHiding campaign, obfuscated PHP/JS, known shells) and check robots.txt for injected <script>. Read-only; returns critical/suspicious counts and findings.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'max_files' => array( 'type' => 'integer', 'description' => 'Cap on files scanned (default 60000).' ) ) ), 'op' => 'cb_op_security_scan', 'noargs' => true );
 	$tools[] = array( 'name' => 'db_query', 'description' => 'Run a read-only SELECT query. Use {prefix} for the table prefix, e.g. "SELECT * FROM {prefix}posts LIMIT 5".', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'sql' => array( 'type' => 'string' ) ), 'required' => array( 'sql' ) ), 'op' => 'cb_op_db_query' );
 
 	// ---- Install / delete plugins & themes ----

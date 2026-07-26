@@ -46,6 +46,10 @@ services:
       - CORS_ORIGIN=*
       # Turn on live relay so paired sites are driven for real:
       - LIVE=1
+      # Daily security digest to Telegram (set these in Coolify env; blank = disabled).
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - DIGEST_HOUR=${DIGEST_HOUR:-8}
       # Public URL a connector uses to reach us = the server's own domain + /v1.
       - PUBLIC_BASE_URL=${SERVICE_URL_SERVER:-http://localhost:8787}/v1
     depends_on:

@@ -13,6 +13,7 @@ import authRouter from './routes/auth.js'
 import accountRouter from './routes/account.js'
 import sitesRouter from './routes/sites.js'
 import connectorRouter from './routes/connector.js'
+import { runDailyDigest, scheduleDailyDigest } from './digest.js'
 
 const app = express()
 app.set('trust proxy', true) // behind Coolify/Traefik/nginx — honor X-Forwarded-Proto/Host
@@ -29,6 +30,11 @@ app.use('/v1', connectorRouter)
 app.use('/v1', requireAuth, accountRouter)
 app.use('/v1', requireAuth, sitesRouter)
 
+// Run the daily security digest on demand (scan all paired sites + send to Telegram).
+app.post('/v1/digest/run', requireAuth, async (_req, res, next) => {
+  try { res.json(await runDailyDigest()) } catch (e) { next(e) }
+})
+
 app.use((err, _req, res, _next) => {
   if (!err.status || err.status >= 500) console.error(err)
   res.status(err.status || 500).json({ message: err.message || 'server error' })
@@ -39,6 +45,7 @@ initDb()
   .then(() => {
     app.listen(config.port, () => {
       console.log(`DigiWP server on :${config.port}  (Postgres, live relay: ${config.live ? 'on' : 'off'})`)
+      scheduleDailyDigest()
     })
   })
   .catch((e) => {

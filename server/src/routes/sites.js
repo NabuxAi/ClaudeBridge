@@ -23,6 +23,14 @@ function concern(name) {
         try { data.live = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'site_info', {}) }
         catch (e) { data.liveError = e.message }
       }
+      // Real malware scan for the security view (replaces mock when paired + live).
+      if (name === 'security' && config.live && site.paired && site.url && site.secret) {
+        try {
+          const raw = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'security_scan', {})
+          const text = raw?.content?.[0]?.text
+          data.scan = typeof text === 'string' ? JSON.parse(text) : raw
+        } catch (e) { data.scanError = e.message }
+      }
       if (name === 'settings') {
         const c = site.connector || null
         data.connector = site.paired

@@ -14,6 +14,13 @@ export const config = {
   // the connector on a managed site knows where to reach us. Falls back to
   // the request's own host when unset (fine for local dev).
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, ''),
+  // Telegram daily security digest (optional). No-ops when unset.
+  telegram: {
+    token: process.env.TELEGRAM_BOT_TOKEN || '',
+    chatId: process.env.TELEGRAM_CHAT_ID || '',
+  },
+  // Hour (UTC, 0–23) to send the daily digest.
+  digestHour: Number.isFinite(Number(process.env.DIGEST_HOUR)) ? Number(process.env.DIGEST_HOUR) : 8,
 }
 
 /** The API base to hand to a connector for pairing. */
