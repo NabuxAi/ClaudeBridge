@@ -1483,6 +1483,13 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'list_recipes', 'description' => 'List the cookbook recipes bundled with this plugin — ready-made playbooks for the jobs people hand to an AI on a WordPress site (security audit, speed audit, plugin conflict hunt, child theme, alt text sweep, content calendar, WooCommerce restock/sale/checkout review, Elementor header & footer, theme.json rebrand, and more). Each returns an id; call get_recipe for the full prompt. Set for_this_site=true to see only the recipes whose stack this site actually has.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'tag' => array( 'type' => 'string', 'description' => 'Filter by tag, e.g. "WooCommerce", "Security", "Performance".' ), 'search' => array( 'type' => 'string' ), 'for_this_site' => array( 'type' => 'boolean', 'description' => 'Only recipes matching this site (WooCommerce, Elementor, block theme, …).' ) ) ), 'op' => 'cb_op_list_recipes' );
 	$tools[] = array( 'name' => 'get_recipe', 'description' => 'Load one cookbook recipe in full: what it does, which bridge tools it uses, and the complete prompt with its [bracketed] placeholders. Call list_recipes first for valid ids. Use a recipe as the plan when the user asks for something it covers.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string', 'description' => 'Recipe id, e.g. "security-audit".' ) ), 'required' => array( 'id' ) ), 'op' => 'cb_op_get_recipe' );
 
+	// Jobs. Anything that walks the filesystem, dumps the database, or flips
+	// plugins goes through here — running those inside a request ties up a PHP
+	// worker for minutes, which on a shared host IS the customer's site
+	// getting slow because we are looking at it.
+	$tools[] = array( 'name' => 'job_start', 'description' => 'Queue heavy work and return immediately with a job id. Types: backup, core_integrity, security_scan, conflict_hunt. The work runs in a background loopback request, in chunks against a time budget, saving progress between chunks so a 30-second max_execution_time is survivable rather than fatal. Poll job_status for progress and the result.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'type' => array( 'type' => 'string', 'enum' => array( 'backup', 'core_integrity', 'security_scan', 'conflict_hunt' ) ), 'url' => array( 'type' => 'string', 'description' => 'For conflict_hunt: the broken page.' ), 'expect' => array( 'type' => 'string' ), 'forbid' => array( 'type' => 'string' ), 'files' => array( 'type' => 'boolean', 'description' => 'For backup: also archive wp-content.' ) ), 'required' => array( 'type' ) ), 'op' => 'cb_op_job_start' );
+	$tools[] = array( 'name' => 'job_status', 'description' => 'Progress and result of a queued job. Omit id to list recent jobs. State is queued, running, done or failed; progress is a percentage and message describes the current chunk.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string' ) ) ), 'op' => 'cb_op_job_status' );
+
 	$tools[] = array( 'name' => 'conflict_hunt', 'description' => 'Find what breaks a page — theme first, then plugins by binary search. Tests the theme against a bundled default in one round, because a theme fault otherwise makes every plugin look innocent. Then disables half the plugins at a time rather than one at a time: about six rounds on a forty-plugin site instead of forty, which matters because every round is a window where a real visitor hits the site mid-flip. Restores the original plugin set and theme unconditionally, including if a step throws.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'url' => array( 'type' => 'string', 'description' => 'Same-site page URL that is broken.' ), 'expect' => array( 'type' => 'string', 'description' => 'Substring that must appear when the page is healthy.' ), 'forbid' => array( 'type' => 'string', 'description' => 'Substring that marks the page as broken.' ) ), 'required' => array( 'url' ) ), 'op' => 'cb_op_conflict_hunt' );
 
 	$tools[] = array(
@@ -1789,6 +1796,351 @@ function cb_op_conflict_hunt( $args ) {
 	$result['final_health'] = cb_conflict_health( $url, $expect, $forbid );
 
 	return $result;
+}
+
+/* -----------------------------------------------------------------
+ * JOBS — nothing heavy runs inside a request.
+ *
+ * Every expensive operation here used to run synchronously: a database dump, an
+ * md5 of four thousand core files, a walk of sixty thousand files in
+ * wp-content, a conflict hunt that flips plugins and makes HTTP calls. On a
+ * shared host with two or four PHP workers, one of those ties up a worker for
+ * minutes — which is the customer's site getting slow because we are looking at
+ * it. A monitoring tool that degrades the thing it monitors is not acceptable.
+ *
+ * So work is queued and run in the background:
+ *
+ *   start  → record the job, spawn a non-blocking loopback request, return an id
+ *   run    → process in chunks against a time budget, save progress, reschedule
+ *   status → poll; the panel shows progress instead of hanging on a request
+ *
+ * The chunking matters as much as the backgrounding. A background task that
+ * still tries to do everything in one PHP execution just moves the timeout
+ * somewhere less visible; these save state and pick up where they left off, so
+ * a 30-second max_execution_time is survivable rather than fatal.
+ *
+ * wp-cron alone is not enough: it only fires when someone visits, so on a quiet
+ * site a job would sit for hours. The loopback starts it immediately and cron
+ * is the safety net that resumes anything interrupted.
+ * -------------------------------------------------------------- */
+
+if ( ! defined( 'CB_JOBS_OPTION' ) ) {
+	define( 'CB_JOBS_OPTION', 'cb_jobs' );
+	// Leave headroom under max_execution_time so a chunk always gets to save
+	// its progress rather than being killed mid-write.
+	define( 'CB_JOB_BUDGET', 15 );
+	define( 'CB_JOB_KEEP', 20 );
+}
+
+function cb_jobs_all() {
+	$j = get_option( CB_JOBS_OPTION );
+	return is_array( $j ) ? $j : array();
+}
+
+function cb_jobs_save( $jobs ) {
+	// Newest first, trimmed — an unbounded option row is loaded on every
+	// request once it autoloads, which is its own performance problem.
+	uasort( $jobs, function ( $a, $b ) { return $b['created_at'] <=> $a['created_at']; } );
+	update_option( CB_JOBS_OPTION, array_slice( $jobs, 0, CB_JOB_KEEP, true ), false );
+}
+
+function cb_job_get( $id ) {
+	$jobs = cb_jobs_all();
+	return isset( $jobs[ $id ] ) ? $jobs[ $id ] : null;
+}
+
+function cb_job_put( $id, $patch ) {
+	$jobs = cb_jobs_all();
+	$job  = isset( $jobs[ $id ] ) ? $jobs[ $id ] : array();
+	$jobs[ $id ] = array_merge( $job, $patch, array( 'updated_at' => time() ) );
+	cb_jobs_save( $jobs );
+	return $jobs[ $id ];
+}
+
+/** Queue a job and kick it off without making the caller wait. */
+function cb_job_start( $type, $args = array() ) {
+	if ( ! in_array( $type, array_keys( cb_job_types() ), true ) ) {
+		return new WP_Error( 'cb_job_type', 'unknown job type: ' . $type );
+	}
+	$id = 'job_' . wp_generate_password( 12, false, false );
+	cb_job_put( $id, array(
+		'id'         => $id,
+		'type'       => $type,
+		'args'       => $args,
+		'state'      => 'queued',
+		'progress'   => 0,
+		'message'    => 'در صف',
+		'cursor'     => null,
+		'result'     => null,
+		'created_at' => time(),
+	) );
+	cb_job_spawn( $id );
+	return cb_job_get( $id );
+}
+
+/**
+ * Start the runner without blocking.
+ *
+ * A loopback POST with blocking=false returns as soon as the request is
+ * written, so the caller is not waiting on the work. Cron is scheduled too, as
+ * the safety net for hosts that refuse loopback connections — which is common
+ * enough that relying on loopback alone would leave those sites silently stuck.
+ */
+function cb_job_spawn( $id ) {
+	$url = add_query_arg(
+		array( 'action' => 'cb_run_job', 'job' => $id, 'key' => cb_job_key( $id ) ),
+		admin_url( 'admin-ajax.php' )
+	);
+	wp_remote_post( $url, array(
+		'timeout'   => 0.01,
+		'blocking'  => false,
+		'sslverify' => false,
+	) );
+	if ( ! wp_next_scheduled( 'cb_job_cron', array( $id ) ) ) {
+		wp_schedule_single_event( time() + 60, 'cb_job_cron', array( $id ) );
+	}
+}
+
+/** A per-job token, so the public runner endpoint cannot be driven by anyone. */
+function cb_job_key( $id ) {
+	return substr( hash_hmac( 'sha256', $id, wp_salt( 'auth' ) ), 0, 24 );
+}
+
+add_action( 'cb_job_cron', 'cb_job_run' );
+add_action( 'wp_ajax_nopriv_cb_run_job', 'cb_job_ajax' );
+add_action( 'wp_ajax_cb_run_job', 'cb_job_ajax' );
+function cb_job_ajax() {
+	$id  = isset( $_GET['job'] ) ? sanitize_text_field( wp_unslash( $_GET['job'] ) ) : '';
+	$key = isset( $_GET['key'] ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) ) : '';
+	if ( ! $id || ! hash_equals( cb_job_key( $id ), $key ) ) {
+		wp_die( '', '', array( 'response' => 403 ) );
+	}
+	// Close the connection first: the caller of a loopback should never wait,
+	// and some hosts keep the socket open until the handler returns.
+	if ( function_exists( 'fastcgi_finish_request' ) ) {
+		echo 'ok';
+		fastcgi_finish_request();
+	}
+	cb_job_run( $id );
+	wp_die( '', '', array( 'response' => 200 ) );
+}
+
+/**
+ * Run one chunk of a job, then reschedule if there is more.
+ *
+ * Deliberately does NOT loop until done. Each pass gets a time budget and saves
+ * its cursor; anything left resumes in a fresh request with a fresh execution
+ * limit. That is what makes this survive a 30-second cap instead of dying at
+ * 29 seconds with nothing written.
+ */
+function cb_job_run( $id ) {
+	$job = cb_job_get( $id );
+	if ( ! $job || in_array( $job['state'], array( 'done', 'failed' ), true ) ) {
+		return;
+	}
+	// One runner at a time. Two loopbacks arriving together would otherwise
+	// both process the same chunk and double the load we are trying to avoid.
+	$lock = 'cb_job_lock_' . $id;
+	if ( get_transient( $lock ) ) {
+		return;
+	}
+	set_transient( $lock, 1, 120 );
+
+	cb_job_put( $id, array( 'state' => 'running' ) );
+	$types = cb_job_types();
+	$fn    = $types[ $job['type'] ];
+
+	try {
+		$out = call_user_func( $fn, $job );
+		if ( ! empty( $out['done'] ) ) {
+			cb_job_put( $id, array(
+				'state'    => 'done',
+				'progress' => 100,
+				'message'  => isset( $out['message'] ) ? $out['message'] : 'انجام شد',
+				'result'   => isset( $out['result'] ) ? $out['result'] : null,
+			) );
+		} else {
+			cb_job_put( $id, array(
+				'progress' => isset( $out['progress'] ) ? (int) $out['progress'] : $job['progress'],
+				'message'  => isset( $out['message'] ) ? $out['message'] : $job['message'],
+				'cursor'   => isset( $out['cursor'] ) ? $out['cursor'] : $job['cursor'],
+				'result'   => isset( $out['result'] ) ? $out['result'] : $job['result'],
+			) );
+			delete_transient( $lock );
+			cb_job_spawn( $id ); // pick up the next chunk in a fresh request
+			return;
+		}
+	} catch ( Throwable $e ) {
+		cb_job_put( $id, array( 'state' => 'failed', 'message' => $e->getMessage() ) );
+	}
+	delete_transient( $lock );
+}
+
+/** Has this chunk used its share of the request? */
+function cb_job_over_budget( $started ) {
+	return ( microtime( true ) - $started ) > CB_JOB_BUDGET;
+}
+
+/** Job type → handler. Each returns done/progress/cursor and never loops forever. */
+function cb_job_types() {
+	return array(
+		'backup'          => 'cb_job_backup',
+		'core_integrity'  => 'cb_job_integrity',
+		'security_scan'   => 'cb_job_scan',
+		'conflict_hunt'   => 'cb_job_conflict',
+	);
+}
+
+/** Backup: one pass, but off the request path so nobody waits on the dump. */
+function cb_job_backup( $job ) {
+	$out = cb_backup_run( is_array( $job['args'] ) ? $job['args'] : array() );
+	return array( 'done' => true, 'result' => $out,
+		'message' => ! empty( $out['ok'] ) ? 'بکاپ گرفته شد' : 'بکاپ ناموفق' );
+}
+
+/**
+ * Core integrity, in chunks.
+ *
+ * Four thousand md5s is the part that hurts; the cursor is simply how far
+ * through the manifest we are, so a slow host takes more passes instead of
+ * timing out and reporting nothing.
+ */
+function cb_job_integrity( $job ) {
+	$started = microtime( true );
+	$state   = is_array( $job['cursor'] ) ? $job['cursor'] : array( 'i' => 0, 'modified' => array(), 'missing' => array() );
+
+	$version = get_bloginfo( 'version' );
+	$locale  = get_locale();
+	$sums    = cb_core_checksums( $version, $locale );
+	if ( is_wp_error( $sums ) && 'en_US' !== $locale ) {
+		$sums   = cb_core_checksums( $version, 'en_US' );
+		$locale = 'en_US';
+	}
+	if ( is_wp_error( $sums ) ) {
+		return array( 'done' => true, 'result' => array( 'ok' => false, 'error' => $sums->get_error_message() ) );
+	}
+
+	$files = array_keys( $sums );
+	$root  = untrailingslashit( ABSPATH );
+	$n     = count( $files );
+
+	for ( $i = $state['i']; $i < $n; $i++ ) {
+		$rel = $files[ $i ];
+		if ( 0 !== strpos( $rel, 'wp-content/' ) ) {
+			$path = $root . '/' . $rel;
+			if ( ! file_exists( $path ) ) {
+				$state['missing'][] = $rel;
+			} elseif ( md5_file( $path ) !== $sums[ $rel ] ) {
+				$state['modified'][] = $rel;
+			}
+		}
+		if ( cb_job_over_budget( $started ) ) {
+			$state['i'] = $i + 1;
+			return array(
+				'done'     => false,
+				'cursor'   => $state,
+				'progress' => (int) ( 90 * ( $i + 1 ) / max( 1, $n ) ),
+				'message'  => sprintf( 'بررسی فایل %d از %d', $i + 1, $n ),
+			);
+		}
+	}
+
+	// Stray hunt is the cheap part; done in the final pass.
+	$unexpected = array_merge(
+		cb_core_strays( $root . '/wp-admin', $root, $sums ),
+		cb_core_strays( $root . '/wp-includes', $root, $sums )
+	);
+	foreach ( (array) glob( $root . '/*.php' ) as $path ) {
+		$rel = basename( $path );
+		if ( ! isset( $sums[ $rel ] ) && 'wp-config.php' !== $rel ) {
+			$unexpected[] = $rel;
+		}
+	}
+	sort( $state['modified'] ); sort( $state['missing'] ); sort( $unexpected );
+
+	return array( 'done' => true, 'message' => 'بررسی یکپارچگی کامل شد', 'result' => array(
+		'ok' => true, 'version' => $version, 'locale' => $locale,
+		'files_known' => count( $sums ),
+		'modified' => $state['modified'], 'missing' => $state['missing'], 'unexpected' => $unexpected,
+		'clean' => ! $state['modified'] && ! $state['missing'] && ! $unexpected,
+		'checked_at' => time(),
+	) );
+}
+
+/** Malware scan: same idea, cursor is the file index within wp-content. */
+function cb_job_scan( $job ) {
+	$started = microtime( true );
+	$state   = is_array( $job['cursor'] ) ? $job['cursor'] : array( 'i' => 0, 'hits' => array(), 'list' => null );
+
+	if ( null === $state['list'] ) {
+		$list = array();
+		if ( is_dir( WP_CONTENT_DIR ) ) {
+			$it = new RecursiveIteratorIterator(
+				new RecursiveDirectoryIterator( WP_CONTENT_DIR, FilesystemIterator::SKIP_DOTS ),
+				RecursiveIteratorIterator::LEAVES_ONLY, RecursiveIteratorIterator::CATCH_GET_CHILD );
+			foreach ( $it as $f ) {
+				if ( ! $f->isFile() ) { continue; }
+				$p = str_replace( '\\', '/', $f->getPathname() );
+				if ( strpos( $p, '/node_modules/' ) !== false || strpos( $p, '/.git/' ) !== false
+					|| strpos( $p, '/vendor/' ) !== false || strpos( $p, '/cb-backups/' ) !== false ) { continue; }
+				if ( ! in_array( strtolower( $f->getExtension() ), array( 'php','phtml','inc','js','txt','html' ), true ) ) { continue; }
+				if ( $f->getSize() > 3000000 ) { continue; }
+				$list[] = $p;
+			}
+		}
+		$state['list'] = $list;
+	}
+
+	$n = count( $state['list'] );
+	for ( $i = $state['i']; $i < $n; $i++ ) {
+		$p = $state['list'][ $i ];
+		$c = @file_get_contents( $p );
+		if ( false !== $c ) {
+			$m = cb_scan_signature( $c );
+			if ( $m && ! empty( $m['severity'] ) ) {
+				$state['hits'][] = array(
+					'file' => str_replace( WP_CONTENT_DIR . '/', '', $p ),
+					'severity' => $m['severity'], 'signature' => $m['signature'],
+				);
+			}
+		}
+		if ( cb_job_over_budget( $started ) ) {
+			$state['i'] = $i + 1;
+			return array( 'done' => false, 'cursor' => $state,
+				'progress' => (int) ( 100 * ( $i + 1 ) / max( 1, $n ) ),
+				'message' => sprintf( 'اسکن فایل %d از %d', $i + 1, $n ) );
+		}
+	}
+
+	return array( 'done' => true, 'message' => 'اسکن کامل شد',
+		'result' => array( 'hits' => $state['hits'], 'scanned' => $n ) );
+}
+
+/** Conflict hunt: long by nature, and must never hold a visitor's request. */
+function cb_job_conflict( $job ) {
+	$out = cb_op_conflict_hunt( is_array( $job['args'] ) ? $job['args'] : array() );
+	if ( is_wp_error( $out ) ) {
+		return array( 'done' => true, 'message' => $out->get_error_message(),
+			'result' => array( 'error' => $out->get_error_message() ) );
+	}
+	return array( 'done' => true, 'result' => $out,
+		'message' => isset( $out['verdict'] ) ? $out['verdict'] : 'بررسی تمام شد' );
+}
+
+function cb_op_job_start( $args ) {
+	$type = isset( $args['type'] ) ? (string) $args['type'] : '';
+	$rest = $args; unset( $rest['type'] );
+	$job  = cb_job_start( $type, $rest );
+	return is_wp_error( $job ) ? array( 'ok' => false, 'message' => $job->get_error_message() ) : $job;
+}
+
+function cb_op_job_status( $args ) {
+	$id = isset( $args['id'] ) ? (string) $args['id'] : '';
+	if ( '' === $id ) {
+		return array( 'jobs' => array_values( cb_jobs_all() ) );
+	}
+	$job = cb_job_get( $id );
+	return $job ? $job : array( 'ok' => false, 'message' => 'job not found' );
 }
 
 /** Bisect active plugins to find which one breaks a page. Always restores state. */

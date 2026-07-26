@@ -240,7 +240,10 @@ router.patch('/sites/:id/update-policy', async (req, res, next) => {
  * Only rotate-keys writes anything, and it demands its own confirm.
  */
 const RESCUE_STEPS = {
-  backup: { tool: 'backup_run', writes: true },
+  // Queued: a database dump inside a request ties up a PHP worker for minutes,
+  // which on a shared host means the customer's site is slow because we are
+  // backing it up. job_status carries progress.
+  backup: { tool: 'job_start', writes: true, job: 'backup' },
   inventory: { tool: 'rescue_inventory', writes: false },
   leftovers: { tool: 'rescue_leftovers', writes: false },
   'db-audit': { tool: 'rescue_db_audit', writes: false },
@@ -266,13 +269,17 @@ router.post('/sites/:id/rescue/:step', async (req, res, next) => {
       })
     }
 
+    const payload = step.job ? { ...(req.body || {}), type: step.job } : (req.body || {})
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },
       step.tool,
-      req.body || {}
+      payload
     )
     const text = raw?.content?.[0]?.text
-    res.json({ step: req.params.step, result: typeof text === 'string' ? JSON.parse(text) : raw })
+    const result = typeof text === 'string' ? JSON.parse(text) : raw
+    // A queued step returns a job id, not an outcome. Say which it is so the
+    // panel knows whether to poll or to render.
+    res.json({ step: req.params.step, queued: Boolean(step.job), result })
   } catch (e) {
     res.status(e.status || 502).json({ message: e.message })
   }
@@ -317,8 +324,28 @@ router.post('/sites/:id/conflict', async (req, res, next) => {
     }
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },
-      'conflict_hunt',
-      { url: req.body.url, expect: req.body.expect || '', forbid: req.body.forbid || '' }
+      'job_start',
+      { type: 'conflict_hunt', url: req.body.url, expect: req.body.expect || '', forbid: req.body.forbid || '' }
+    )
+    const text = raw?.content?.[0]?.text
+    res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
+  } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
+/** Progress of a queued job on the site. Cheap: reads an option, no scanning. */
+router.get('/sites/:id/jobs/:jobId?', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    const raw = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      'job_status',
+      req.params.jobId ? { id: req.params.jobId } : {}
     )
     const text = raw?.content?.[0]?.text
     res.json(typeof text === 'string' ? JSON.parse(text) : raw)
