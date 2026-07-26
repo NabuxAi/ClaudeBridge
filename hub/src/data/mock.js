@@ -477,9 +477,12 @@ export const measureSpeed = (id, body = {}) =>
   delay({ queued: true, job: { id: 'job_perf_demo', state: 'queued', progress: 0, message: 'در صف' } })
 
 export const analyseSpeed = async (id, profile) => {
-  // Same matcher as the server. A demo with its own hardcoded advice would be
-  // exactly the kind of fake this pass exists to remove.
-  const { analyse } = await import('../../../server/src/perf/recipes.js')
+  // The same matcher the server runs, from a copy inside hub/ — the hub image
+  // contains only this directory, so importing across into server/ builds
+  // locally and fails in Docker. A demo with its own hardcoded advice would be
+  // exactly the kind of fake this pass exists to remove, so it is a copy of the
+  // rules rather than a second set of them.
+  const { analyse } = await import('../lib/perf-recipes.js')
   return delay(analyse(profile || demoProfile))
 }
 
