@@ -4,6 +4,7 @@ import Brand from './Brand.jsx'
 import Icon from '../lib/icons.jsx'
 import { Button, IconButton, SidebarItem, StatusPill, AuthorityBadge } from '../components/index.js'
 import { account } from '../lib/api.js'
+import { faNum } from '../lib/format.js'
 
 export default function SiteShell() {
   const { siteId } = useParams()
@@ -11,12 +12,22 @@ export default function SiteShell() {
   const [site, setSite] = useState(null)
 
   const base = `/site/${siteId}`
+  // Real open-alert count from the event log; null means unknown, and unknown
+  // shows nothing rather than a zero we cannot stand behind.
+  const openAlerts = site?.incidents ? faNum(site.incidents) : undefined
   const NAV = [
     { to: base, end: true, icon: 'layout-dashboard', label: 'نمای کلی' },
-    { to: `${base}/incidents`, icon: 'bell', label: 'هشدارها', badge: '۲' },
-    { to: `${base}/updates`, icon: 'refresh-cw', label: 'آپدیت‌ها', badge: '۵' },
+    // Badges only where there is a real count behind them. `undefined` hides
+    // the pill entirely, which is the honest state for a number nobody has
+    // measured — a hardcoded "۵" next to آپدیت‌ها is a number the customer will
+    // act on, and it was decoration.
+    { to: `${base}/incidents`, icon: 'bell', label: 'هشدارها', badge: openAlerts },
+    { to: `${base}/updates`, icon: 'refresh-cw', label: 'آپدیت‌ها' },
     { to: `${base}/security`, icon: 'shield-check', label: 'امنیت' },
     { to: `${base}/backups`, icon: 'database', label: 'بکاپ‌ها' },
+    // Diagnostic, not destructive-by-intent — but it does flip plugins on a
+    // live site, so it sits below the read-only screens.
+    { to: `${base}/conflict`, icon: 'git-branch', label: 'بررسی تداخل' },
     // Deliberately not near the top: this is the destructive one.
     { to: `${base}/rescue`, icon: 'shield-alert', label: 'عملیات نجات' },
     { to: `${base}/assistant`, icon: 'sparkles', label: 'دستیار هوشمند' },

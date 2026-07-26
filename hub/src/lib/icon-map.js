@@ -13,11 +13,13 @@ import Bell from 'lucide-react/dist/esm/icons/bell.js'
 import BellRing from 'lucide-react/dist/esm/icons/bell-ring.js'
 import Bot from 'lucide-react/dist/esm/icons/bot.js'
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js'
+import Boxes from 'lucide-react/dist/esm/icons/boxes.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
 import CheckCircle2 from 'lucide-react/dist/esm/icons/check-circle-2.js'
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js'
 import Clock from 'lucide-react/dist/esm/icons/clock.js'
 import Cloud from 'lucide-react/dist/esm/icons/cloud.js'
+import Code from 'lucide-react/dist/esm/icons/code.js'
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js'
 import Crown from 'lucide-react/dist/esm/icons/crown.js'
 import Database from 'lucide-react/dist/esm/icons/database.js'
@@ -34,6 +36,7 @@ import GitCompare from 'lucide-react/dist/esm/icons/git-compare.js'
 import Globe from 'lucide-react/dist/esm/icons/globe.js'
 import HardDrive from 'lucide-react/dist/esm/icons/hard-drive.js'
 import History from 'lucide-react/dist/esm/icons/history.js'
+import GitBranch from 'lucide-react/dist/esm/icons/git-branch.js'
 import Info from 'lucide-react/dist/esm/icons/info.js'
 import KeyRound from 'lucide-react/dist/esm/icons/key-round.js'
 import Landmark from 'lucide-react/dist/esm/icons/landmark.js'
@@ -53,6 +56,7 @@ import Monitor from 'lucide-react/dist/esm/icons/monitor.js'
 import MonitorSmartphone from 'lucide-react/dist/esm/icons/monitor-smartphone.js'
 import Moon from 'lucide-react/dist/esm/icons/moon.js'
 import MoreVertical from 'lucide-react/dist/esm/icons/more-vertical.js'
+import Palette from 'lucide-react/dist/esm/icons/palette.js'
 import Phone from 'lucide-react/dist/esm/icons/phone.js'
 import Play from 'lucide-react/dist/esm/icons/play.js'
 import Plug from 'lucide-react/dist/esm/icons/plug.js'
@@ -100,6 +104,7 @@ export const ICONS = {
   'bell-ring': BellRing,
   'bot': Bot,
   'calendar-clock': CalendarClock,
+  'boxes': Boxes,
   'check': Check,
   'check-circle-2': CheckCircle2,
   'chevron-down': ChevronDown,
@@ -109,6 +114,7 @@ export const ICONS = {
   'credit-card': CreditCard,
   'crown': Crown,
   'database': Database,
+  'code': Code,
   'database-backup': DatabaseBackup,
   'download': Download,
   'eye': Eye,
@@ -122,6 +128,7 @@ export const ICONS = {
   'globe': Globe,
   'hard-drive': HardDrive,
   'history': History,
+  'git-branch': GitBranch,
   'info': Info,
   'key-round': KeyRound,
   'landmark': Landmark,
@@ -151,6 +158,7 @@ export const ICONS = {
   'repeat': Repeat,
   'rotate-ccw': RotateCcw,
   'scan-search': ScanSearch,
+  'palette': Palette,
   'search': Search,
   'send': Send,
   'settings': Settings,

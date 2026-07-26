@@ -753,6 +753,75 @@ add_action( 'init', function () {
 function cb_op_backup_run( $args )  { return cb_backup_run( is_array( $args ) ? $args : array() ); }
 function cb_op_backup_list()        { return cb_backup_list(); }
 
+/**
+ * Read a slice of a snapshot file, base64-encoded.
+ *
+ * Downloads go through here rather than a public URL because the alternative is
+ * a guessable link to a full database dump sitting in uploads/ — the single
+ * worst file to leak on a WordPress site. This path is signed like every other
+ * tool call, so the file never becomes web-reachable at all.
+ *
+ * Sliced because a dump is routinely larger than a PHP response: the caller
+ * walks `offset` forward until `eof`, and memory use stays flat regardless of
+ * how big the backup is.
+ */
+function cb_op_backup_read( $args ) {
+	$dir  = cb_backup_dir();
+	$id   = isset( $args['id'] ) ? preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $args['id'] ) : '';
+	$what = isset( $args['what'] ) && 'files' === $args['what'] ? 'files' : 'db';
+	if ( '' === $id ) {
+		return new WP_Error( 'cb_backup_read', 'شناسهٔ بکاپ لازم است.' );
+	}
+	$meta = json_decode( (string) @file_get_contents( $dir . "/meta-{$id}.json" ), true );
+	if ( ! is_array( $meta ) ) {
+		return new WP_Error( 'cb_backup_read', 'این بکاپ پیدا نشد.' );
+	}
+	$name = 'files' === $what ? ( isset( $meta['files_file'] ) ? $meta['files_file'] : null ) : $meta['db_file'];
+	if ( ! $name ) {
+		return new WP_Error( 'cb_backup_read', 'این بکاپ چنین فایلی ندارد.' );
+	}
+
+	// basename() on the stored name, then a realpath check: the id is already
+	// sanitised, but the filename comes from a JSON file on disk and a path
+	// escape here would turn a download button into arbitrary file read.
+	$path = $dir . '/' . basename( $name );
+	$real = realpath( $path );
+	if ( ! $real || 0 !== strpos( $real, realpath( $dir ) ) || ! is_readable( $real ) ) {
+		return new WP_Error( 'cb_backup_read', 'فایل بکاپ خوانده نشد.' );
+	}
+
+	$size   = (int) filesize( $real );
+	$offset = isset( $args['offset'] ) ? max( 0, (int) $args['offset'] ) : 0;
+	// 1MB raw ≈ 1.37MB base64. Small enough to survive any sane memory limit
+	// and any proxy body cap, large enough that a 200MB dump is not 200k calls.
+	$length = isset( $args['length'] ) ? (int) $args['length'] : 1048576;
+	$length = max( 65536, min( 4194304, $length ) );
+
+	if ( $offset >= $size ) {
+		return array( 'id' => $id, 'what' => $what, 'offset' => $offset, 'size' => $size,
+			'eof' => true, 'chunk' => '' );
+	}
+
+	$fh = fopen( $real, 'rb' );
+	if ( ! $fh ) {
+		return new WP_Error( 'cb_backup_read', 'فایل بکاپ باز نشد.' );
+	}
+	fseek( $fh, $offset );
+	$raw = (string) fread( $fh, $length );
+	fclose( $fh );
+
+	return array(
+		'id'       => $id,
+		'what'     => $what,
+		'filename' => basename( $real ),
+		'offset'   => $offset,
+		'read'     => strlen( $raw ),
+		'size'     => $size,
+		'eof'      => ( $offset + strlen( $raw ) ) >= $size,
+		'chunk'    => base64_encode( $raw ),
+	);
+}
+
 /* -----------------------------------------------------------------
  * RESCUE — recovering a site compromised past the point where any scanner can
  * vouch for its files. Full design in docs/RESCUE.md.
@@ -1466,6 +1535,7 @@ function cb_tools() {
 	// Backups, taken by this plugin. Real snapshots, not a status screen.
 	$tools[] = array( 'name' => 'backup_run', 'description' => 'Take a snapshot of this site now: full database dump always, and optionally a zip of wp-content. The dump is written in pure PHP so it works on hosts where exec() is disabled, and is verified complete before being recorded. Old snapshots beyond `keep` are pruned.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'files' => array( 'type' => 'boolean', 'description' => 'Also archive wp-content. Slow and large on media-heavy sites.' ), 'label' => array( 'type' => 'string' ), 'keep' => array( 'type' => 'integer', 'description' => 'How many snapshots to retain (default 7).' ) ) ), 'op' => 'cb_op_backup_run' );
 	$tools[] = array( 'name' => 'backup_list', 'description' => 'Every snapshot this site actually holds, with size, table and row counts, and whether the dump was verified complete. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_list', 'noargs' => true );
+	$tools[] = array( 'name' => 'backup_read', 'description' => 'Read one slice of a snapshot file (base64). Walk `offset` forward until `eof` is true. Downloads go through this signed path so a database dump is never a web-reachable URL. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string' ), 'what' => array( 'type' => 'string', 'enum' => array( 'db', 'files' ) ), 'offset' => array( 'type' => 'integer' ), 'length' => array( 'type' => 'integer' ) ), 'required' => array( 'id' ) ), 'op' => 'cb_op_backup_read' );
 
 	// Rescue: recovering a site too compromised to trust any of its files.
 	$tools[] = array( 'name' => 'rescue_inventory', 'description' => 'Sort everything installed into three buckets: plugins/themes wordpress.org can replace automatically, commercial or custom ones whose clean copy the owner must supply from the vendor, and directories in plugins/ with no plugin header at all — which are frequently the backdoor. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_rescue_inventory', 'noargs' => true );
@@ -1792,7 +1862,25 @@ function cb_op_conflict_hunt( $args ) {
 	if ( get_stylesheet() !== $original_theme ) {
 		switch_theme( $original_theme );
 	}
-	$result['restored']     = true;
+
+	// Read it back rather than assume. This ran on someone's live site and
+	// switched their plugins off; "we put it back" is the one claim here that
+	// must not be a guess. A failed write — a filter pinning active_plugins, a
+	// theme that refuses to activate — has to reach the operator as a warning,
+	// not be papered over by a hardcoded true.
+	$now_plugins = (array) get_option( 'active_plugins', array() );
+	sort( $now_plugins );
+	$want_plugins = $original;
+	sort( $want_plugins );
+	$plugins_back = ( $now_plugins === $want_plugins );
+	$theme_back   = ( get_stylesheet() === $original_theme );
+
+	$result['restored'] = ( $plugins_back && $theme_back );
+	if ( ! $result['restored'] ) {
+		$result['restore_error'] = ! $plugins_back
+			? 'افزونه‌های فعال با حالت اولیه یکی نیست: ' . implode( ', ', array_values( array_diff( $want_plugins, $now_plugins ) ) )
+			: sprintf( 'قالب روی «%s» ماند، نه «%s».', get_stylesheet(), $original_theme );
+	}
 	$result['final_health'] = cb_conflict_health( $url, $expect, $forbid );
 
 	return $result;
@@ -1988,6 +2076,8 @@ function cb_job_types() {
 		'core_integrity'  => 'cb_job_integrity',
 		'security_scan'   => 'cb_job_scan',
 		'conflict_hunt'   => 'cb_job_conflict',
+		'backup_restore'  => 'cb_job_backup_restore',
+		'update_apply'    => 'cb_job_update_apply',
 	);
 }
 
@@ -1996,6 +2086,242 @@ function cb_job_backup( $job ) {
 	$out = cb_backup_run( is_array( $job['args'] ) ? $job['args'] : array() );
 	return array( 'done' => true, 'result' => $out,
 		'message' => ! empty( $out['ok'] ) ? 'بکاپ گرفته شد' : 'بکاپ ناموفق' );
+}
+
+/**
+ * Apply pending updates, one item per pass.
+ *
+ * One at a time on purpose. Updating six plugins in a single request is how a
+ * site ends up half-updated when the third one fatals: WordPress leaves the
+ * upgrade folder behind and the remaining five never run. One per pass means
+ * a failure stops exactly one item and the rest still get their turn.
+ *
+ * A snapshot is taken first, once, before anything is touched — because the
+ * honest answer to "what if this update breaks the site" is a database you can
+ * put back, not a promise that it will not.
+ */
+function cb_job_update_apply( $job ) {
+	require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+	require_once ABSPATH . 'wp-admin/includes/plugin.php';
+	require_once ABSPATH . 'wp-admin/includes/theme.php';
+	require_once ABSPATH . 'wp-admin/includes/update.php';
+
+	$args  = is_array( $job['args'] ) ? $job['args'] : array();
+	$state = is_array( $job['cursor'] ) ? $job['cursor'] : array();
+
+	if ( ! isset( $state['queue'] ) ) {
+		// An explicit list, or everything pending. Explicit wins so the panel's
+		// "update this one" button does not quietly update eleven things.
+		$queue = array();
+		if ( ! empty( $args['items'] ) && is_array( $args['items'] ) ) {
+			foreach ( $args['items'] as $it ) {
+				if ( ! empty( $it['type'] ) && ! empty( $it['name'] ) ) {
+					$queue[] = array( 'type' => (string) $it['type'], 'name' => (string) $it['name'] );
+				}
+			}
+		} else {
+			wp_update_plugins();
+			wp_update_themes();
+			$pl = get_site_transient( 'update_plugins' );
+			if ( $pl && ! empty( $pl->response ) ) {
+				foreach ( array_keys( $pl->response ) as $file ) {
+					$queue[] = array( 'type' => 'plugin', 'name' => $file );
+				}
+			}
+			$th = get_site_transient( 'update_themes' );
+			if ( $th && ! empty( $th->response ) ) {
+				foreach ( array_keys( $th->response ) as $stylesheet ) {
+					$queue[] = array( 'type' => 'theme', 'name' => $stylesheet );
+				}
+			}
+		}
+
+		if ( ! $queue ) {
+			return array( 'done' => true, 'message' => 'چیزی برای به‌روزرسانی نبود.',
+				'result' => array( 'ok' => true, 'applied' => array(), 'failed' => array() ) );
+		}
+
+		$safety = cb_backup_run( array( 'label' => 'pre-update', 'files' => false ) );
+		$state = array(
+			'queue'   => $queue,
+			'i'       => 0,
+			'applied' => array(),
+			'failed'  => array(),
+			'safety'  => ! empty( $safety['ok'] ) ? $safety['backup']['id'] : null,
+		);
+	}
+
+	$n = count( $state['queue'] );
+	if ( $state['i'] >= $n ) {
+		return array(
+			'done'    => true,
+			'message' => $state['failed']
+				? sprintf( '%d مورد به‌روز شد، %d ناموفق', count( $state['applied'] ), count( $state['failed'] ) )
+				: sprintf( '%d مورد به‌روز شد', count( $state['applied'] ) ),
+			'result'  => array(
+				'ok'      => empty( $state['failed'] ),
+				'applied' => $state['applied'],
+				'failed'  => $state['failed'],
+				'safety_backup' => $state['safety'],
+			),
+		);
+	}
+
+	$item = $state['queue'][ $state['i'] ];
+	$skin = cb_upgrader_skin();
+	try {
+		if ( 'theme' === $item['type'] ) {
+			$up  = new Theme_Upgrader( $skin );
+			$res = $up->upgrade( $item['name'] );
+		} else {
+			$up  = new Plugin_Upgrader( $skin );
+			$res = $up->upgrade( $item['name'] );
+		}
+		if ( is_wp_error( $res ) ) {
+			$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => $res->get_error_message() );
+		} elseif ( false === $res ) {
+			$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => 'به‌روزرسانی انجام نشد' );
+		} else {
+			$state['applied'][] = array( 'name' => $item['name'], 'type' => $item['type'] );
+		}
+	} catch ( Throwable $e ) {
+		$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => $e->getMessage() );
+	}
+
+	$state['i']++;
+	return array(
+		'cursor'   => $state,
+		'progress' => (int) ( 100 * $state['i'] / max( 1, $n ) ),
+		'message'  => sprintf( 'به‌روزرسانی %d از %d: %s', $state['i'], $n, $item['name'] ),
+	);
+}
+
+/**
+ * Restore a snapshot's database, in chunks.
+ *
+ * Chunked for the same reason the dump is: a 200MB SQL file cannot be replayed
+ * inside one PHP request on shared hosting, and a restore that dies at 60%
+ * leaves a database that is neither the old one nor the new one. The cursor is
+ * a byte offset into the dump, so a slow host takes more passes rather than
+ * timing out — and each pass commits whole statements only.
+ *
+ * Before touching anything it takes its own snapshot. Restoring the wrong
+ * backup is a mistake people make under pressure, and the way back has to
+ * already exist by the time they notice.
+ */
+function cb_job_backup_restore( $job ) {
+	$args  = is_array( $job['args'] ) ? $job['args'] : array();
+	$state = is_array( $job['cursor'] ) ? $job['cursor'] : array();
+	$dir   = cb_backup_dir();
+	$id    = isset( $args['id'] ) ? preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $args['id'] ) : '';
+
+	if ( '' === $id ) {
+		return array( 'done' => true, 'message' => 'شناسهٔ بکاپ لازم است.',
+			'result' => array( 'ok' => false, 'error' => 'missing id' ) );
+	}
+
+	$meta = json_decode( (string) @file_get_contents( $dir . "/meta-{$id}.json" ), true );
+	if ( ! is_array( $meta ) || empty( $meta['db_file'] ) ) {
+		return array( 'done' => true, 'message' => 'این بکاپ پیدا نشد.',
+			'result' => array( 'ok' => false, 'error' => 'backup not found' ) );
+	}
+	$sql = $dir . '/' . $meta['db_file'];
+	if ( ! is_readable( $sql ) ) {
+		return array( 'done' => true, 'message' => 'فایل دیتابیس این بکاپ خوانده نشد.',
+			'result' => array( 'ok' => false, 'error' => 'dump unreadable' ) );
+	}
+
+	// First pass: safety net, then start reading.
+	if ( ! isset( $state['offset'] ) ) {
+		$safety = cb_backup_run( array( 'label' => 'pre-restore', 'files' => false ) );
+		$state = array(
+			'offset'     => 0,
+			'statements' => 0,
+			'errors'     => array(),
+			'safety'     => ! empty( $safety['ok'] ) ? $safety['backup']['id'] : null,
+			'total'      => (int) @filesize( $sql ),
+		);
+		if ( empty( $safety['ok'] ) ) {
+			// No way back means no restore. Refusing here is the whole point of
+			// taking the safety snapshot first.
+			return array( 'done' => true, 'message' => 'بکاپ ایمنی پیش از بازگردانی گرفته نشد — بازگردانی انجام نشد.',
+				'result' => array( 'ok' => false, 'error' => 'pre-restore backup failed' ) );
+		}
+	}
+
+	global $wpdb;
+	$fh = fopen( $sql, 'rb' );
+	if ( ! $fh ) {
+		return array( 'done' => true, 'message' => 'فایل بکاپ باز نشد.',
+			'result' => array( 'ok' => false, 'error' => 'open failed' ) );
+	}
+	fseek( $fh, (int) $state['offset'] );
+
+	$started = time();
+	$buffer  = '';
+	$done    = false;
+
+	// Statement-at-a-time. A dump is split on ";\n" rather than every ";" so
+	// semicolons inside post content do not tear a statement in half.
+	while ( true ) {
+		if ( time() - $started >= CB_JOB_BUDGET ) {
+			break;
+		}
+		$line = fgets( $fh, 1048576 );
+		if ( false === $line ) {
+			$done = true;
+			break;
+		}
+		$buffer .= $line;
+		if ( substr( rtrim( $line ), -1 ) !== ';' ) {
+			continue;
+		}
+		$stmt = trim( $buffer );
+		$buffer = '';
+		if ( '' === $stmt || 0 === strpos( $stmt, '--' ) || 0 === strpos( $stmt, '/*' ) ) {
+			continue;
+		}
+		// suppress_errors so one bad statement does not print SQL into the
+		// response; it is collected and reported instead.
+		$prev = $wpdb->suppress_errors( true );
+		$ok   = $wpdb->query( $stmt );
+		$wpdb->suppress_errors( $prev );
+		$state['statements']++;
+		if ( false === $ok && $wpdb->last_error && count( $state['errors'] ) < 20 ) {
+			$state['errors'][] = substr( $wpdb->last_error, 0, 200 );
+		}
+	}
+
+	$state['offset'] = ftell( $fh );
+	fclose( $fh );
+
+	if ( ! $done ) {
+		$total = max( 1, (int) $state['total'] );
+		return array(
+			'cursor'   => $state,
+			'progress' => (int) ( 95 * $state['offset'] / $total ),
+			'message'  => sprintf( 'بازگردانی: %d دستور اجرا شد', $state['statements'] ),
+		);
+	}
+
+	// The caches now describe a database that no longer exists.
+	wp_cache_flush();
+
+	return array(
+		'done'    => true,
+		'message' => $state['errors']
+			? sprintf( 'بازگردانی تمام شد با %d خطا', count( $state['errors'] ) )
+			: 'بازگردانی کامل شد',
+		'result'  => array(
+			'ok'         => empty( $state['errors'] ),
+			'backup_id'  => $id,
+			'statements' => $state['statements'],
+			'errors'     => $state['errors'],
+			// The snapshot taken before this ran. Named so the operator can
+			// undo the undo without hunting for it.
+			'safety_backup' => $state['safety'],
+		),
+	);
 }
 
 /**
@@ -3344,6 +3670,73 @@ function cb_connector_register() {
 	) );
 	return is_wp_error( $res ) ? $res : array( 'status' => wp_remote_retrieve_response_code( $res ) );
 }
+
+/**
+ * Tell the hub what an automatic update run actually did.
+ *
+ * Without this the panel can only report intent — "auto-updates are on" — and
+ * never outcome. A plugin that silently fails to update for three weeks looks
+ * identical to one that updates nightly, which is the failure this whole
+ * feature exists to prevent.
+ *
+ * Best-effort and non-fatal by design: a hub that is down must never turn a
+ * successful update into a PHP error on someone's site.
+ */
+function cb_report_update_run( $results ) {
+	$c = cb_connector();
+	if ( empty( $c['enabled'] ) || empty( $c['server_url'] ) || empty( $c['secret'] ) ) {
+		return;
+	}
+
+	$summary = array( 'core' => array(), 'plugin' => array(), 'theme' => array() );
+	foreach ( array( 'core', 'plugin', 'theme' ) as $type ) {
+		if ( empty( $results[ $type ] ) || ! is_array( $results[ $type ] ) ) {
+			continue;
+		}
+		foreach ( $results[ $type ] as $item ) {
+			// WP_Upgrader hands back the item plus a `result` that is true, a
+			// WP_Error, or null. All three are reported: a null result means the
+			// update was attempted and we genuinely do not know how it ended,
+			// and flattening that into "failed" or "ok" would be a guess.
+			$name = '';
+			if ( isset( $item->item->slug ) ) {
+				$name = $item->item->slug;
+			} elseif ( isset( $item->item->theme ) ) {
+				$name = $item->item->theme;
+			} elseif ( 'core' === $type ) {
+				$name = 'wordpress';
+			}
+			$ok = ( true === $item->result || ( ! is_wp_error( $item->result ) && $item->result ) );
+			$summary[ $type ][] = array(
+				'name'    => $name,
+				'from'    => isset( $item->item->current_version ) ? $item->item->current_version : null,
+				'to'      => isset( $item->item->new_version ) ? $item->item->new_version : null,
+				'ok'      => $ok,
+				'error'   => is_wp_error( $item->result ) ? $item->result->get_error_message() : null,
+				'unknown' => ( null === $item->result ),
+			);
+		}
+	}
+
+	if ( ! $summary['core'] && ! $summary['plugin'] && ! $summary['theme'] ) {
+		return;
+	}
+
+	$payload = wp_json_encode( array(
+		'site_id' => $c['site_id'],
+		'kind'    => 'update_run',
+		'at'      => time(),
+		'summary' => $summary,
+	) );
+
+	wp_remote_post( untrailingslashit( $c['server_url'] ) . '/connector/report', array(
+		'timeout'  => 10,
+		'blocking' => false,
+		'headers'  => array_merge( array( 'Content-Type' => 'application/json' ), cb_connector_sign( $payload ) ),
+		'body'     => $payload,
+	) );
+}
+add_action( 'automatic_updates_complete', 'cb_report_update_run' );
 
 /**
  * Shared entry point for the fallback transports (admin-ajax action and the
