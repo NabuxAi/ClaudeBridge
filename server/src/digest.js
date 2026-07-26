@@ -4,6 +4,7 @@
 // Triggered by the scheduler in index.js, or on-demand via the route.
 // ============================================================
 import { all } from './db.js'
+import * as events from './events.js'
 import * as connector from './connector.js'
 import { sendTelegram } from './telegram.js'
 import { config } from './config.js'
@@ -31,11 +32,70 @@ export async function scanAllSites() {
         clean: !!scan.clean, robots: scan.robots_injection || null,
         findings: Array.isArray(scan.findings) ? scan.findings.slice(0, 5) : [],
       })
+      // The scan reached the site, so whatever we recorded about not being
+      // able to reach it is over.
+      await events.resolveByPrefix(s.id, 'scan:unreachable')
+      await recordScanEvents(s.id, scan)
     } catch (e) {
       results.push({ id: s.id, name: s.title || s.name, url: s.url, ok: false, error: e.message })
+      await events.record({
+        siteId: s.id, kind: 'scan_failed', severity: 'warning',
+        title: 'اسکن امنیتی به سایت نرسید',
+        detail: { error: e.message },
+        fingerprint: 'scan:unreachable',
+      })
     }
   }
   return results
+}
+
+/**
+ * Turn one scan into events.
+ *
+ * Findings are fingerprinted per file, so a shell that survives four nightly
+ * scans stays one open alert with its original discovery time — and disappears
+ * from the open list the night it is actually gone, because the next clean
+ * scan resolves it. That resolution is the measurement disagreeing with the
+ * previous one, never someone marking it done.
+ */
+async function recordScanEvents(siteId, scan) {
+  const findings = Array.isArray(scan.findings) ? scan.findings : []
+  const seen = new Set()
+
+  for (const f of findings) {
+    const fp = `scan:file:${f.file}`
+    seen.add(fp)
+    await events.record({
+      siteId,
+      kind: 'malware',
+      severity: f.severity === 'critical' ? 'critical' : 'warning',
+      title: f.severity === 'critical'
+        ? `فایل آلوده پیدا شد: ${f.file}`
+        : `فایل مشکوک: ${f.file}`,
+      detail: { file: f.file, rule: f.rule || null, severity: f.severity, why: f.why || null },
+      fingerprint: fp,
+    })
+  }
+
+  if (scan.robots_injection) {
+    seen.add('scan:robots')
+    await events.record({
+      siteId, kind: 'malware', severity: 'critical',
+      title: 'فایل robots.txt دستکاری شده',
+      detail: scan.robots_injection,
+      fingerprint: 'scan:robots',
+    })
+  }
+
+  // Close what this scan no longer sees. Done per fingerprint rather than by
+  // wiping everything, so a scan that only covered part of the site cannot
+  // silently declare the rest clean.
+  const open = await events.list(siteId, 200)
+  for (const ev of open) {
+    if (ev.resolved_at || !ev.fingerprint) continue
+    if (!ev.fingerprint.startsWith('scan:file:') && ev.fingerprint !== 'scan:robots') continue
+    if (!seen.has(ev.fingerprint)) await events.resolveOne(siteId, ev.id)
+  }
 }
 
 /** Build the Telegram digest text from scan results. */

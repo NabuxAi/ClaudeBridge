@@ -9,6 +9,7 @@ import crypto from 'node:crypto'
 import { config } from './config.js'
 import { hashPassword } from './auth.js'
 import { demoSites } from './seed.js'
+import { SCHEMA as EVENTS_SCHEMA } from './events.js'
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 })
 
@@ -66,7 +67,7 @@ const SCHEMA = `
   -- What the last update run actually did, written back by the connector, so
   -- the panel reports observed reality instead of the intent it sent.
   ALTER TABLE sites ADD COLUMN IF NOT EXISTS update_state JSONB;
-`
+` + EVENTS_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */
 async function waitForDb(retries = 30) {

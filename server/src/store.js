@@ -23,7 +23,10 @@ const publicSite = (s) => s && ({
   uptime: null,
   checks: null,
   lastCheck: null,
-  incidents: null,
+  // Filled by list() from the event log where we have one. Left null — which
+  // the list renders as a dash — wherever we genuinely do not know, because a
+  // confident zero and an unmeasured zero look identical to a customer.
+  incidents: s.open_incidents === undefined ? null : Number(s.open_incidents),
   pendingUpdates: null,
 })
 
@@ -53,11 +56,28 @@ export const users = {
 }
 
 export const sites = {
+  // One query, not one per site: the alert count comes from a LEFT JOIN so a
+  // customer with forty sites still costs a single round trip.
   listByUser: async (userId) =>
-    (await all('SELECT * FROM sites WHERE user_id = $1 ORDER BY created_at', [userId])).map(publicSite),
+    (await all(
+      `SELECT s.*, COUNT(e.id) FILTER (WHERE e.resolved_at IS NULL) AS open_incidents
+         FROM sites s
+         LEFT JOIN events e ON e.site_id = s.id
+        WHERE s.user_id = $1
+        GROUP BY s.id
+        ORDER BY s.created_at`,
+      [userId]
+    )).map(publicSite),
 
   getForUser: async (id, userId) =>
-    publicSite(await one('SELECT * FROM sites WHERE id = $1 AND user_id = $2', [id, userId])),
+    publicSite(await one(
+      `SELECT s.*, COUNT(e.id) FILTER (WHERE e.resolved_at IS NULL) AS open_incidents
+         FROM sites s
+         LEFT JOIN events e ON e.site_id = s.id
+        WHERE s.id = $1 AND s.user_id = $2
+        GROUP BY s.id`,
+      [id, userId]
+    )),
 
   /** Internal row incl. secret — for the relay. Caller must have checked ownership. */
   rawForUser: (id, userId) => one('SELECT * FROM sites WHERE id = $1 AND user_id = $2', [id, userId]),
