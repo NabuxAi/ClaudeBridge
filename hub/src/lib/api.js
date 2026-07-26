@@ -80,6 +80,13 @@ export const account = {
     (body) => http('/profile', { method: 'PATCH', body })
   ),
   plans: call(mock.plans, () => http('/billing/plans')),
+  hostingOptions: call(mock.hostingOptions, () => http('/hosting/options')),
+  contact: call(mock.contact, () => http('/profile').then((p) => p.contact || {})),
+  setContact: call(
+    (body) => mock.setContact(body),
+    (body) => http('/contact', { method: 'PATCH', body })
+  ),
+  alertReadiness: call(mock.alertReadiness, () => http('/alerts/readiness')),
 }
 
 // ---- Per-site management (all proxied through YOUR server) ------
@@ -112,6 +119,10 @@ export function site(siteId) {
     setAuthority: call(
       (level) => mock.setAuthority(siteId, level),
       (level) => http(p('/authority'), { method: 'PATCH', body: { authority: level } })
+    ),
+    setHosting: call(
+      (body) => mock.setHosting(siteId, body),
+      (body) => http(p('/hosting'), { method: 'PATCH', body })
     ),
     // Speed. Measuring costs the request it measures, so it queues like
     // everything else; the recipe matching runs on our server so improvements

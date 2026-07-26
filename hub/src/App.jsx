@@ -29,6 +29,8 @@ import Assistant from './pages/site/Assistant.jsx'
 import Rescue from './pages/site/Rescue.jsx'
 import Conflict from './pages/site/Conflict.jsx'
 import Speed from './pages/site/Speed.jsx'
+import Hosting from './pages/site/Hosting.jsx'
+import Alerts from './pages/account/Alerts.jsx'
 import Settings from './pages/site/Settings.jsx'
 // E · payment
 import Pricing from './pages/billing/Pricing.jsx'
@@ -59,6 +61,7 @@ export default function App() {
         <Route path="billing" element={<Billing />} />
         <Route path="team" element={<Team />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="alerts" element={<Alerts />} />
         <Route path="profile" element={<Profile />} />
       </Route>
 
@@ -73,6 +76,7 @@ export default function App() {
         <Route path="rescue" element={<Rescue />} />
         <Route path="conflict" element={<Conflict />} />
         <Route path="speed" element={<Speed />} />
+        <Route path="hosting" element={<Hosting />} />
         <Route path="settings" element={<Settings />} />
       </Route>
 

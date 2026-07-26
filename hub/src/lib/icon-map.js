@@ -68,6 +68,7 @@ import Repeat from 'lucide-react/dist/esm/icons/repeat.js'
 import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js'
 import ScanSearch from 'lucide-react/dist/esm/icons/scan-search.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
+import Server from 'lucide-react/dist/esm/icons/server.js'
 import Send from 'lucide-react/dist/esm/icons/send.js'
 import Settings from 'lucide-react/dist/esm/icons/settings.js'
 import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js'
@@ -160,6 +161,7 @@ export const ICONS = {
   'scan-search': ScanSearch,
   'palette': Palette,
   'search': Search,
+  'server': Server,
   'send': Send,
   'settings': Settings,
   'shield-alert': ShieldAlert,

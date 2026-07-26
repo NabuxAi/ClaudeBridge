@@ -32,6 +32,7 @@ export default function SiteShell() {
     // Deliberately not near the top: this is the destructive one.
     { to: `${base}/rescue`, icon: 'shield-alert', label: 'عملیات نجات' },
     { to: `${base}/assistant`, icon: 'sparkles', label: 'دستیار هوشمند' },
+    { to: `${base}/hosting`, icon: 'server', label: 'میزبانی' },
     { to: `${base}/settings`, icon: 'settings', label: 'تنظیمات' },
   ]
 

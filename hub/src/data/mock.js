@@ -529,3 +529,42 @@ export const captcha = () => {
 export const challengeState = () => delay({ captchaRequired: mockCaptchaFails >= 3, failures: mockCaptchaFails })
 
 const faDigits = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
+
+// Hosting and emergency-contact demo data. The readiness verdict is the one
+// screen where a reassuring mock would be actively harmful, so the demo shows
+// a realistically incomplete setup: email works, nothing else does.
+export const hostingOptions = () => delay({
+  regions: [
+    { id: 'ir', label: 'ایران', note: 'درخواست‌ها از سرور داخلی ما فرستاده می‌شود و آدرس بازگشتی هم داخلی است.' },
+    { id: 'intl', label: 'خارج از ایران', note: 'درخواست‌ها از سرور بین‌المللی ما فرستاده می‌شود.' },
+    { id: 'unknown', label: 'نمی‌دانم', note: 'با تنظیمات پیش‌فرض کار می‌کنیم. اگر بررسی‌ها کند بود یا به سایت نرسید، این را مشخص کنید.' },
+  ],
+  providers: [
+    { id: 'iranserver', label: 'ایران سرور', region: 'ir', traits: [] },
+    { id: 'parspack', label: 'پارس‌پک', region: 'ir', traits: [] },
+    { id: 'abrarvan', label: 'ابر آروان', region: 'ir', traits: ['cdn'] },
+    { id: 'hetzner', label: 'Hetzner', region: 'intl', traits: [] },
+    { id: 'siteground', label: 'SiteGround', region: 'intl', traits: ['page-cache', 'no-exec'] },
+    { id: 'other', label: 'موردی غیر از این‌ها', region: null, traits: [] },
+  ],
+  traits: {},
+})
+
+export const setHosting = (id, body) => delay({
+  hosting: { ...body, traits: [], traitsNote: 'در حالت نمایشی محدودیتی محاسبه نمی‌شود.' },
+  serverUrl: 'https://api.digiwp.com/v1',
+})
+
+export const contact = () => delay({ phone: null, fcmToken: null, najvaToken: null })
+export const setContact = (body) => delay({ phone: null, fcmToken: null, najvaToken: null, ...body })
+
+export const alertReadiness = () => delay({
+  channels: [
+    { id: 'firebase', label: 'اعلان مرورگر (Firebase)', server: false, user: false, ready: false, why: 'این سرویس روی سرور ما تنظیم نشده' },
+    { id: 'najva', label: 'اعلان نجوا', server: false, user: false, ready: false, why: 'این سرویس روی سرور ما تنظیم نشده' },
+    { id: 'sms', label: 'پیامک', server: false, user: false, ready: false, why: 'اطلاعات تماس شما برای این راه ثبت نشده' },
+    { id: 'email', label: 'ایمیل', server: true, user: true, ready: true, why: null },
+  ],
+  readyCount: 1,
+  verdict: 'فقط یک راه فعال است (ایمیل). اگر همان یکی کار نکند، هشداری به شما نمی‌رسد.',
+})

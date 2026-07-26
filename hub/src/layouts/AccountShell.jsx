@@ -5,9 +5,14 @@ import Icon from '../lib/icons.jsx'
 import { Button, IconButton, SidebarItem, ProgressBar } from '../components/index.js'
 import { useAuth } from '../lib/auth.jsx'
 
+// The site count used to be a hardcoded "۳" next to سایت‌های من, for every
+// account including a brand-new one with none. Removed rather than wired: a
+// count that is right is worth a query, and a count that is wrong is worse
+// than no badge at all.
 const NAV = [
   { to: '/app', end: true, icon: 'layout-grid', label: 'داشبورد حساب' },
-  { to: '/app/sites', icon: 'globe', label: 'سایت‌های من', badge: '۳' },
+  { to: '/app/sites', icon: 'globe', label: 'سایت‌های من' },
+  { to: '/app/alerts', icon: 'bell-ring', label: 'هشدار اضطراری' },
   { to: '/app/billing', icon: 'credit-card', label: 'اشتراک و صورت‌حساب' },
   { to: '/app/team', icon: 'users', label: 'اعضای تیم' },
   { to: '/app/notifications', icon: 'bell', label: 'اعلان‌ها' },
