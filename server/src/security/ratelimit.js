@@ -113,6 +113,24 @@ export const note =
   'Rate limits are held in this process. With more than one server process they ' +
   'become per-process and the effective limit multiplies — move to a shared store first.'
 
+/**
+ * Two things observed testing this against the deployed server, both worth
+ * knowing before anyone tunes the numbers:
+ *
+ * A source address is not a person. Consumer ISPs using CGNAT put thousands of
+ * subscribers behind a handful of addresses and rotate which one a connection
+ * leaves by — so during one test run the per-IP counter appeared to reset
+ * partway through. That cuts both ways: one customer can look like several,
+ * and several can share one bucket. It is exactly why the per-account limit
+ * exists and why the per-IP numbers are deliberately not tight.
+ *
+ * A request refused for a missing captcha is not counted as a password
+ * attempt, so the failure counter stops climbing once the captcha is demanded.
+ * That is intended — those requests never reached a password check — and the
+ * per-IP request limiter is what stops someone hammering the endpoint without
+ * ever solving one.
+ */
+
 /** Test seam. */
 export function _reset() {
   buckets.clear()
