@@ -92,6 +92,14 @@ export function site(siteId) {
       (patch) => mock.setUpdatePolicy(siteId, patch),
       (patch) => http(p('/update-policy'), { method: 'PATCH', body: patch })
     ),
+    // Rescue runs one step at a time. Deliberately not a single "rescue this
+    // site" call: each step is separately runnable and separately stoppable,
+    // because a rescue that dies halfway and leaves a site part-replaced is
+    // worse than one never started.
+    rescue: call(
+      (step, body) => mock.rescueStep(siteId, step, body),
+      (step, body) => http(p(`/rescue/${step}`), { method: 'POST', body: body || {} })
+    ),
     // A guarded action = a command your server relays to the connector.
     // Sensitive actions ALWAYS require approval regardless of authority level.
     runAction: call(

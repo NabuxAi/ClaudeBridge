@@ -17,6 +17,8 @@ export default function SiteShell() {
     { to: `${base}/updates`, icon: 'refresh-cw', label: 'آپدیت‌ها', badge: '۵' },
     { to: `${base}/security`, icon: 'shield-check', label: 'امنیت' },
     { to: `${base}/backups`, icon: 'database', label: 'بکاپ‌ها' },
+    // Deliberately not near the top: this is the destructive one.
+    { to: `${base}/rescue`, icon: 'shield-alert', label: 'عملیات نجات' },
     { to: `${base}/assistant`, icon: 'sparkles', label: 'دستیار هوشمند' },
     { to: `${base}/settings`, icon: 'settings', label: 'تنظیمات' },
   ]

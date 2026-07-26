@@ -279,3 +279,49 @@ export const askGuardian = (id, message) => delay({
   refs: ['گزارش امروز', 'صف آپدیت‌ها'],
   echo: message,
 })
+
+// Rescue in the demo returns the same shapes the real steps do, including the
+// refusal when key rotation is attempted without confirmation. A mock that
+// skips the confirmation teaches the wrong thing about the most destructive
+// step in the product.
+export const rescueStep = (id, step, body = {}) => {
+  if (step === 'rotate-keys' && !body.confirm) {
+    return delay({ step, result: { ok: false, message: 'برای چرخش کلیدها confirm=true لازم است.' } })
+  }
+  const results = {
+    backup: { ok: true, backup: { id: 'demo', db_bytes: 4210000, tables: 42, rows: 18300, verified: true } },
+    inventory: {
+      counts: { repo: 9, foreign: 2, orphan: 1 },
+      repo: [{ slug: 'contact-form-7', name: 'Contact Form 7', version: '6.1.6', kind: 'plugin' }],
+      foreign: [{ slug: 'acf-pro', name: 'ACF Pro', version: '6.2', kind: 'plugin', why: 'not in the wordpress.org repository — commercial or custom' }],
+      orphan: [{ slug: 'wp-cache-x', kind: 'plugin-dir', php_files: 3, why: 'directory in plugins/ with no plugin header' }],
+      needs_upload: ['acf-pro'],
+      note: 'فایل افزونه‌های تجاری را حتماً از سایت سازنده بگیرید، نه از همین سرور آلوده.',
+    },
+    leftovers: {
+      counts: { critical: 1, review: 2 },
+      findings: [
+        { path: 'wp-content/uploads/2024/03/x.php', severity: 'critical', why: 'executable PHP inside the media library' },
+        { path: 'wp-content/object-cache.php', severity: 'review', why: 'drop-in: runs early, invisible on the plugins screen' },
+      ],
+      note: 'فقط گزارش است. حذف خودکار انجام نمی‌شود — در uploads رسانهٔ واقعی هست.',
+    },
+    'db-audit': {
+      admins: [{ id: 1, login: 'owner', email: 'owner@example.com', registered: '2021-04-02', posts: 118 }],
+      hidden_admins: [{ id: 44, login: 'svc_backup', roles: ['subscriber'], why: 'has administrator capabilities without the administrator role' }],
+      suspect_options: [{ option: 'wp_cache_x', marker: 'base64_decode', length: 4210 }],
+      suspect_cron: [],
+      urls: { siteurl: 'https://example.com', home: 'https://example.com' },
+      note: 'گزارش است، نه اقدام.',
+    },
+    'rotate-keys': { ok: true, backup: 'wp-config.php.pre-rescue.bak', message: 'کلیدها عوض شدند. همهٔ نشست‌ها باطل شد.' },
+    verify: {
+      clean: false,
+      integrity: { ok: true, clean: true, files_known: 4171, modified: [], missing: [], unexpected: [] },
+      scan: { hits: [] },
+      leftovers: { counts: { critical: 1, review: 2 } },
+      verdict: 'هنوز موردی باقی است — تا رفع نشده، سایت را پاک‌شده حساب نکنید.',
+    },
+  }
+  return delay({ step, result: results[step] || {} }, 900)
+}
