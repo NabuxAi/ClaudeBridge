@@ -10,6 +10,7 @@ import * as assistant from '../assistant.js'
 import { probeSite } from '../probe.js'
 import { analyse as analysePerf } from '../perf/recipes.js'
 import { checkInventory, slugOf } from '../intel/vulns.js'
+import { REGIONS, PROVIDERS, TRAITS, needsCacheBust } from '../hosting.js'
 import { measureUrl } from '../speedtest.js'
 
 const router = Router()
@@ -44,7 +45,7 @@ function concern(name) {
           config.live && site.paired && site.secret
             ? connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'site_info', {})
             : Promise.resolve(null),
-          probeSite(site.url),
+          probeSite(site.url, { cacheBust: needsCacheBust(site.hosting) }),
           events.list(site.id, 12),
         ])
 
@@ -170,7 +171,7 @@ function concern(name) {
 
         // The certificate, from a real handshake rather than a claim.
         try {
-          const probe = await probeSite(site.url)
+          const probe = await probeSite(site.url, { cacheBust: needsCacheBust(site.hosting) })
           if (probe?.cert?.ok) {
             data.ssl = { days: probe.cert.daysLeft, issuer: probe.cert.issuer, expiresAt: probe.cert.expiresAt }
           } else {
@@ -836,11 +837,48 @@ router.post('/sites/:id/incidents/:eventId/dismiss', async (req, res, next) => {
   } catch (e) { next(e) }
 })
 
+/**
+ * Where this site is hosted.
+ *
+ * Merged, not replaced — a panel that sends only `callbackUrl` must not blank
+ * the region someone chose last week. Changing the callback address does not
+ * require re-pairing: the connector is handed the new one the next time it
+ * reads /pairing.
+ */
+router.patch('/sites/:id/hosting', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const updated = await sites.setHosting(site.id, req.user.sub, req.body || {})
+
+    events.record({
+      siteId: site.id, kind: 'policy', severity: 'info',
+      title: 'تنظیمات میزبانی سایت تغییر کرد',
+      detail: { hosting: updated.hosting, by: req.user?.sub || null },
+    }).catch(() => {})
+
+    res.json({ hosting: updated.hosting, serverUrl: publicApiBase(req, updated) })
+  } catch (e) { next(e) }
+})
+
+/** The choices the panel offers, with what each one actually changes. */
+router.get('/hosting/options', (_req, res) => {
+  res.json({ regions: REGIONS, providers: PROVIDERS, traits: TRAITS })
+})
+
 router.get('/sites/:id/pairing', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)
     if (!site) return
-    res.json({ siteKey: site.site_key, paired: !!site.paired, url: site.url, serverUrl: publicApiBase(req) })
+    res.json({
+      siteKey: site.site_key,
+      paired: !!site.paired,
+      url: site.url,
+      // Resolved per site: its own callback URL, then its region's, then the
+      // server default. Re-reading this endpoint is how an already-paired site
+      // is moved to a different address.
+      serverUrl: publicApiBase(req, { hosting: site.hosting }),
+    })
   } catch (e) { next(e) }
 })
 

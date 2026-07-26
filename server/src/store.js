@@ -2,6 +2,7 @@
 import crypto from 'node:crypto'
 import { one, all, newId } from './db.js'
 import { hashPassword } from './auth.js'
+import { describe as describeHosting, normalise as normaliseHosting } from './hosting.js'
 import { applyPolicyChange, readPolicy } from './policy.js'
 
 const publicUser = (u) => u && ({
@@ -15,6 +16,7 @@ const publicSite = (s) => s && ({
   connector: s.connector || null, // JSONB → already an object
   policy: readPolicy(s.policy),
   updateState: s.update_state || null,
+  hosting: describeHosting(s.hosting),
   // No invented metrics here. This object feeds the sites list, where an
   // uptime of "99.98%" for a site nobody has ever monitored is the most
   // convincing lie in the product: it is on the first screen, it is precise,
@@ -39,12 +41,26 @@ export const users = {
     const id = newId('u_')
     const row = await one(
       `INSERT INTO users (id, email, name, pass_hash, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [id, email, name || email.split('@')[0], hashPassword(password), Date.now()]
+      [id, email, name || email.split('@')[0], await hashPassword(password), Date.now()]
     )
     return publicUser(row)
   },
   byEmailRaw: (email) => one('SELECT * FROM users WHERE email = $1', [String(email || '').trim().toLowerCase()]),
   byId: async (id) => publicUser(await one('SELECT * FROM users WHERE id = $1', [id])),
+  /** Emergency contact details. Merged, so writing a push token keeps the phone. */
+  async setContact(id, patch) {
+    const row = await one('SELECT contact FROM users WHERE id = $1', [id])
+    if (!row) throw httpError(404, 'کاربر پیدا نشد.')
+    const merged = { ...(row.contact || {}), ...patch }
+    const updated = await one('UPDATE users SET contact = $2 WHERE id = $1 RETURNING contact', [id, JSON.stringify(merged)])
+    return updated.contact
+  },
+
+  async contact(id) {
+    const row = await one('SELECT contact FROM users WHERE id = $1', [id])
+    return row?.contact || { phone: null, fcmToken: null, najvaToken: null }
+  },
+
   async update(id, fields) {
     const allowed = ['name', 'two_factor', 'lang', 'timezone']
     const keys = Object.keys(fields).filter((k) => allowed.includes(k))
@@ -150,6 +166,23 @@ export const sites = {
     )
     if (!row) throw httpError(404, 'سایت پیدا نشد.')
     return publicSite(row)
+  },
+
+  /**
+   * Where this site is hosted.
+   *
+   * Merged rather than replaced, so a panel that only sends `callbackUrl` does
+   * not silently blank the region someone set last week.
+   */
+  async setHosting(id, userId, patch) {
+    const row = await one('SELECT hosting FROM sites WHERE id = $1 AND user_id = $2', [id, userId])
+    if (!row) throw httpError(404, 'سایت پیدا نشد.')
+    const merged = normaliseHosting({ ...(row.hosting || {}), ...(patch || {}) })
+    const updated = await one(
+      'UPDATE sites SET hosting = $3 WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, userId, JSON.stringify(merged)]
+    )
+    return publicSite(updated)
   },
 
   /** What the connector reported after it last ran updates. */

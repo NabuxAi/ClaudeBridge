@@ -19,6 +19,7 @@
 //     otherwise would be the exact kind of fake data this replaces.
 // ============================================================
 import { query, all, one, newId } from './db.js'
+import { dispatch, compose, isEmergency } from './alerts/index.js'
 
 export const SCHEMA = `
   CREATE TABLE IF NOT EXISTS events (
@@ -37,8 +38,31 @@ export const SCHEMA = `
   );
 
   CREATE INDEX IF NOT EXISTS idx_events_site ON events(site_id, created_at DESC);
+
+  -- What we tried to send, to whom, and what each provider said.
+  --
+  -- Kept because "we notified you" is a claim, and a claim about an emergency
+  -- needs evidence behind it. It is also the only way to notice that a channel
+  -- has been quietly failing for a fortnight.
+  CREATE TABLE IF NOT EXISTS alert_deliveries (
+    id         TEXT PRIMARY KEY,
+    event_id   TEXT REFERENCES events(id) ON DELETE CASCADE,
+    site_id    TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    user_id    TEXT,
+    delivered  TEXT,
+    attempts   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at BIGINT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_alert_site ON alert_deliveries(site_id, created_at DESC);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_events_open
     ON events(site_id, fingerprint) WHERE resolved_at IS NULL AND fingerprint IS NOT NULL;
+
+  -- Where to reach this person in an emergency. On users, not sites: a phone
+  -- belongs to a human, and someone with four sites should not have to enter
+  -- it four times.
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS contact JSONB
+    NOT NULL DEFAULT '{"phone":null,"fcmToken":null,"najvaToken":null}'::jsonb;
 `
 
 /**
@@ -74,6 +98,18 @@ export async function record({ siteId, kind, severity = 'info', title, detail = 
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
     [row.id, siteId, kind, severity, title, detail, fingerprint, null, now]
   )
+
+  // Fired here rather than by whoever happened to call record(), so a new code
+  // path that logs a compromise cannot forget to raise the alarm. Only genuinely
+  // new events reach this line: an existing open row returns above, which is
+  // what stops four nightly scans of the same shell waking someone four times.
+  //
+  // Deliberately not awaited. Recording the event must not depend on an SMS
+  // gateway answering, and it must not be undone if one times out.
+  if (isEmergency(row)) {
+    raiseEmergency(row).catch((e) => console.error('Emergency dispatch failed:', e.message))
+  }
+
   return row
 }
 
@@ -115,5 +151,51 @@ export async function history(siteId, fingerprint) {
   return all(
     'SELECT * FROM events WHERE site_id = $1 AND fingerprint = $2 ORDER BY created_at ASC',
     [siteId, fingerprint]
+  )
+}
+
+/**
+ * Wake someone up.
+ *
+ * The recipient is the site's owner; the operator channel is notified in
+ * parallel by the dispatcher, because the standing requirement is that we find
+ * out before the customer does.
+ *
+ * Every attempt is written down — including the ones that were skipped for
+ * want of configuration. A deployment missing an API key and a night where
+ * every provider was down look identical from the outside, and only the record
+ * tells them apart.
+ */
+export async function raiseEmergency(event) {
+  const site = await one(
+    'SELECT s.*, u.id AS owner_id, u.email, u.contact FROM sites s JOIN users u ON u.id = s.user_id WHERE s.id = $1',
+    [event.site_id]
+  )
+  if (!site) return null
+
+  const to = {
+    email: site.email,
+    phone: site.contact?.phone || null,
+    fcmToken: site.contact?.fcmToken || null,
+    najvaToken: site.contact?.najvaToken || null,
+  }
+
+  const result = await dispatch(compose(event, site), to)
+
+  await query(
+    `INSERT INTO alert_deliveries (id, event_id, site_id, user_id, delivered, attempts, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [newId('al_'), event.id, event.site_id, site.owner_id, result.delivered,
+      JSON.stringify(result.attempts), Date.now()]
+  )
+
+  return result
+}
+
+/** What was attempted for a site, newest first. Evidence, not reassurance. */
+export function deliveries(siteId, limit = 20) {
+  return all(
+    'SELECT * FROM alert_deliveries WHERE site_id = $1 ORDER BY created_at DESC LIMIT $2',
+    [siteId, limit]
   )
 }

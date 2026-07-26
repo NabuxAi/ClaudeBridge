@@ -67,6 +67,16 @@ const SCHEMA = `
   -- What the last update run actually did, written back by the connector, so
   -- the panel reports observed reality instead of the intent it sent.
   ALTER TABLE sites ADD COLUMN IF NOT EXISTS update_state JSONB;
+
+  -- Where this site is hosted, and the routing that follows from it.
+  --
+  -- A column rather than something inferred at request time: which of our
+  -- servers reaches a site, and which address we told its connector to call
+  -- back on, both have to survive a restart and be changeable without
+  -- re-pairing. Defaults are the honest unknown rather than a guess, because
+  -- acting on a wrong guess here means requests that silently never arrive.
+  ALTER TABLE sites ADD COLUMN IF NOT EXISTS hosting JSONB
+    NOT NULL DEFAULT '{"region":"unknown","provider":"other","providerName":null,"egress":"auto","callbackUrl":null}'::jsonb;
 ` + EVENTS_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */
@@ -96,7 +106,7 @@ async function seedDemo() {
   await pool.query(
     `INSERT INTO users (id, email, name, pass_hash, role, plan, two_factor, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
-    [uid, 'maryam@example.com', 'مریم رضایی', hashPassword('demo1234'), 'مدیر حساب', 'حرفه‌ای', Date.now()]
+    [uid, 'maryam@example.com', 'مریم رضایی', await hashPassword('demo1234'), 'مدیر حساب', 'حرفه‌ای', Date.now()]
   )
   for (const s of demoSites) {
     await pool.query(

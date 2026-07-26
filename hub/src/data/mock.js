@@ -517,3 +517,15 @@ export const analyseSpeed = async (id, profile) => {
 }
 
 export { demoProfile }
+
+// The demo captcha is solvable the same way the real one is, so the login form
+// can be exercised end to end without a server.
+let mockCaptchaFails = 0
+export const captcha = () => {
+  const a = 3 + (mockCaptchaFails % 5)
+  const b = 4
+  return delay({ id: `demo.${a + b}`, question: `${faDigits(a)} + ${faDigits(b)} = ?`, expiresIn: 600 })
+}
+export const challengeState = () => delay({ captchaRequired: mockCaptchaFails >= 3, failures: mockCaptchaFails })
+
+const faDigits = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])

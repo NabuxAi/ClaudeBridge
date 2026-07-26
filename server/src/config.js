@@ -18,6 +18,14 @@ export const config = {
   // the connector on a managed site knows where to reach us. Falls back to
   // the request's own host when unset (fine for local dev).
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, ''),
+  // Per-region callback addresses. A site inside Iran may not be able to reach
+  // the international domain at all, so it has to be told a different one —
+  // and that has to be configuration, not a hardcoded guess about which
+  // domains are reachable from where.
+  regionBaseUrl: {
+    ir: (process.env.PUBLIC_BASE_URL_IR || '').replace(/\/$/, ''),
+    intl: (process.env.PUBLIC_BASE_URL_INTL || '').replace(/\/$/, ''),
+  },
   // Telegram daily security digest (optional). No-ops when unset.
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN || '',
@@ -31,11 +39,59 @@ export const config = {
     key: process.env.ASSISTANT_API_KEY || '',
     model: process.env.ASSISTANT_MODEL || 'claude-sonnet-5',
   },
+  // Whether an X-Forwarded-For header may be believed. On by default because
+  // this runs behind Traefik; it must be OFF anywhere the server is reachable
+  // directly, since the header is trivially forged and a forged one bypasses
+  // every per-IP rate limit.
+  trustProxy: process.env.TRUST_PROXY !== '0',
+  security: {
+    // Failed logins from one address before a captcha is demanded. Low enough
+    // to price out a script, high enough that a person mistyping a password
+    // twice never sees one.
+    captchaAfterFailures: Number(process.env.CAPTCHA_AFTER_FAILURES || 3),
+  },
+  // Where the panel lives, for links inside alerts. An alert without a link is
+  // an alert someone has to go hunting after.
+  publicPanelUrl: (process.env.PUBLIC_PANEL_URL || '').replace(/\/$/, ''),
+  // Emergency channels. Every one of them is optional and the dispatcher walks
+  // whatever exists — but a deployment with none configured can reach nobody,
+  // which /alerts/readiness reports rather than leaving to be discovered on
+  // the night it matters.
+  alerts: {
+    fcmServerKey: process.env.FCM_SERVER_KEY || '',
+    najvaApiKey: process.env.NAJVA_API_KEY || '',
+    // Iranian SMS gateways all differ, so the field names are configuration.
+    // Hardcoding one vendor is how you end up unable to switch in a hurry.
+    smsUrl: process.env.SMS_URL || '',
+    smsApiKey: process.env.SMS_API_KEY || '',
+    smsAuthHeader: process.env.SMS_AUTH_HEADER || '',
+    smsToField: process.env.SMS_TO_FIELD || 'to',
+    smsTextField: process.env.SMS_TEXT_FIELD || 'text',
+    smsFromField: process.env.SMS_FROM_FIELD || 'from',
+    smsFrom: process.env.SMS_FROM || '',
+    emailUrl: process.env.EMAIL_URL || '',
+    emailApiKey: process.env.EMAIL_API_KEY || '',
+    emailFrom: process.env.EMAIL_FROM || 'alerts@digiwp.com',
+  },
   // Hour (UTC, 0–23) to send the daily digest.
   digestHour: Number.isFinite(Number(process.env.DIGEST_HOUR)) ? Number(process.env.DIGEST_HOUR) : 8,
 }
 
-/** The API base to hand to a connector for pairing. */
-export function publicApiBase(req) {
+/**
+ * The API base to hand to a connector for pairing.
+ *
+ * A site's own `hosting.callbackUrl` wins when it is set. That is the whole
+ * point of the field: a site behind a filter that cannot reach our default
+ * domain can be pointed at one it can, and changing it later must not require
+ * re-pairing — the connector simply gets a different address next time it is
+ * told one.
+ */
+export function publicApiBase(req, site = null) {
+  const perSite = site?.hosting?.callbackUrl
+  if (perSite) return perSite
+  // Then the region's own address, if one is configured.
+  const region = site?.hosting?.region
+  const regional = region && config.regionBaseUrl[region]
+  if (regional) return regional
   return config.publicBaseUrl || `${req.protocol}://${req.get('host')}/v1`
 }

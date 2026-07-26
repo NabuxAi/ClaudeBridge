@@ -56,6 +56,11 @@ export const auth = {
   login: call(mock.login, (creds) => http('/auth/login', { method: 'POST', body: creds })),
   register: call(mock.register, (b) => http('/auth/register', { method: 'POST', body: b })),
   me: call(mock.me, () => http('/auth/me')),
+  captcha: call(mock.captcha, () => http('/auth/captcha')),
+  // Asked before the form renders, so a first-time visitor is not made to do
+  // arithmetic to sign in. The challenge only appears once this address has
+  // failed a few times.
+  challengeState: call(mock.challengeState, () => http('/auth/challenge-state')),
   logout: () => { setToken(''); return Promise.resolve({ ok: true }) },
 }
 

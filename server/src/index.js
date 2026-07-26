@@ -7,7 +7,7 @@
 import express from 'express'
 import cors from 'cors'
 import { config } from './config.js'
-import { requireAuth } from './auth.js'
+import { requireAuth, assertSecretIsReal } from './auth.js'
 import { init as initDb } from './db.js'
 import authRouter from './routes/auth.js'
 import accountRouter from './routes/account.js'
@@ -17,11 +17,48 @@ import connectorRouter from './routes/connector.js'
 import { runDailyDigest, scheduleDailyDigest } from './digest.js'
 import { initIntel, scheduleIntel, refresh as refreshIntel } from './intel/index.js'
 
+// Before anything binds a port: a server running on the development signing
+// secret will happily accept a session token anyone reading this repository
+// can mint.
+assertSecretIsReal()
+
 const app = express()
-app.set('trust proxy', true) // behind Coolify/Traefik/nginx — honor X-Forwarded-Proto/Host
+app.disable('x-powered-by')
+app.set('trust proxy', config.trustProxy) // behind Coolify/Traefik/nginx — honor X-Forwarded-Proto/Host
 app.use(cors({ origin: config.corsOrigin }))
+
+/**
+ * Response headers.
+ *
+ * This is an API, not a page, so the set is short and every entry earns its
+ * place. nosniff stops a browser from deciding a JSON error is HTML and
+ * running it; DENY stops the panel being framed by a lookalike that captures
+ * clicks; no-referrer keeps site URLs and pairing paths out of the Referer
+ * header when a response links anywhere. HSTS is set only when the request
+ * actually arrived over TLS — sending it on plain HTTP is meaningless and
+ * would break local development.
+ */
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('Referrer-Policy', 'no-referrer')
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-site')
+  // An API returns data, never markup — so nothing here should ever be able to
+  // load a script, and saying so costs nothing.
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
+  if (req.secure || req.get('x-forwarded-proto') === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
+  next()
+})
+
 // Capture the raw body so we can HMAC-verify inbound connector requests.
-app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8') } }))
+// Bounded: without a limit, one request with a huge body is a memory exhaustion
+// attack, and no legitimate call here is anywhere near this size.
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8') },
+}))
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'digiwp-server', live: config.live }))
 

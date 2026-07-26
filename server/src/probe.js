@@ -77,14 +77,20 @@ export function certificate(hostname, port = 443, timeoutMs = 10000) {
  * 403 usually means someone has locked it down deliberately, which is reported
  * rather than called a failure.
  */
-export async function probeSite(siteUrl) {
+export async function probeSite(siteUrl, { cacheBust = false } = {}) {
   if (!siteUrl) return null
   let base
   try { base = new URL(siteUrl) } catch { return null }
 
+  // Behind a CDN or a server-level page cache, a health check can be answered
+  // from cache — so a site that is down returns a cheerful 200 from last hour.
+  // The unique parameter is the difference between checking the site and
+  // checking the cache.
+  const bust = cacheBust ? `?cb=${Date.now().toString(36)}` : ''
+
   const [home, login, cert] = await Promise.all([
-    timedGet(base.origin + '/'),
-    timedGet(new URL('/wp-login.php', base.origin).href),
+    timedGet(base.origin + '/' + bust),
+    timedGet(new URL('/wp-login.php' + bust, base.origin).href),
     base.protocol === 'https:' ? certificate(base.hostname) : Promise.resolve({ ok: false, error: 'سایت روی https نیست' }),
   ])
 
