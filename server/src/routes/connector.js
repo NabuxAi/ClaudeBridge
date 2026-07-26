@@ -20,6 +20,18 @@ router.get('/plugin/manifest', (_req, res) => {
   }
 })
 
+// Central shell bank (public). The connector's security_scan pulls this and
+// applies it locally, so adding a signature here instantly upgrades detection
+// on every managed site — no plugin update needed.
+const SIGNATURES_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'security-signatures.json')
+router.get('/security/signatures', (_req, res) => {
+  try {
+    res.json(JSON.parse(readFileSync(SIGNATURES_PATH, 'utf8')))
+  } catch {
+    res.status(404).json({ message: 'signatures not available' })
+  }
+})
+
 // Receiver for the plugin's opt-in "announce this site to the hub" (signed).
 // The plugin POSTs here with X-DigiWP-{Timestamp,Signature,Site}. We don't know
 // which site until we find whose shared secret validates the signature.

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "updated": "2026-07-26",
+  "note": "Central webshell/malware shell bank. Served at /v1/plugin/../security/signatures and pulled by the connector's security_scan. Bump `version` whenever you add signatures so clients refetch. Types: any_string, all_strings, regex, count(min,+also_any), combo(all,+any_groups).",
+  "signatures": [
+    { "id": "EtherHiding", "severity": "critical", "type": "any_string",
+      "strings": ["_f9c0dcf695", "0xB6bC9e1D0b2fB96Ab7C47E04Cb0BE477410bC1f2", "polygon-bor-rpc.publicnode", "_0x3644081e5c95", "vPLh+vfg", "new Function(new TextDecoder"] },
+
+    { "id": "DirectExecFromRequest", "severity": "critical", "type": "regex",
+      "pattern": "(system|exec|shell_exec|passthru|proc_open|popen|eval|assert)\\s*\\(\\s*\\$_(GET|POST|REQUEST|COOKIE|SERVER)\\s*\\[" },
+
+    { "id": "FileManagerWebshell", "severity": "critical", "type": "count", "min": 4,
+      "strings": ["$_GET['dir']", "$_GET['del']", "$_GET['edit']", "$_GET['logout']", "$_POST['cmd']", "$_POST['action']", "$_GET['download']", "$_GET['chmod']", "$_GET['rename']", "$_POST['filepath']", "$_POST['access_code']", "$_POST['content']"],
+      "also_any": ["file_put_contents", "scandir", "opendir"] },
+
+    { "id": "CoxRCEShell", "severity": "critical", "type": "combo",
+      "all": ["error_reporting(0)"],
+      "any_groups": [["@system(", "@passthru(", "@shell_exec(", "@exec("], ["http_response_code(404)", "[S]"]] },
+
+    { "id": "SplitObfuscation", "severity": "critical", "type": "any_string",
+      "strings": ["'base'.'6'", "'6'.'4_'", "'4_'.'decode'", "'g'.'zi'", "'zi'.'nfl'", "'nfl'.'ate'", "'ev'.'al'", "'ass'.'ert'"] },
+
+    { "id": "SplitObfuscationRegex", "severity": "critical", "type": "regex",
+      "pattern": "('[a-z0-9_]{1,4}'\\s*\\.\\s*){4,}'[a-z0-9_]{1,4}'" },
+
+    { "id": "EncodedLoader", "severity": "critical", "type": "any_string",
+      "strings": ["gzinflate(base64_decode(", "eval(base64_decode(", "gzuncompress(base64_decode(", "str_rot13(base64_decode(", "Zlib library to run this application"] },
+
+    { "id": "WebshellBanner", "severity": "suspicious", "type": "any_string",
+      "strings": ["FilesMan", "c99shell", "r57shell", "WSOshell", "b374k", "Star Destroyer", "File Manager & Lab"] }
+  ]
+}
