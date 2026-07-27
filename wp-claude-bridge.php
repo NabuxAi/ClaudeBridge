@@ -22,6 +22,81 @@ define( 'CB_ACTIVITY_MAX', 40 );                        // Entries kept.
 define( 'CB_LASTSEEN_OPTION', 'cb_last_seen' );         // Unix time of the last authorized call.
 
 /* ============================================================================
+ * 0. FILESYSTEM
+ * ----------------------------------------------------------------------------
+ * WordPress wants file access to go through WP_Filesystem rather than PHP's
+ * own functions, so that a host using FTP or SSH credentials still works and
+ * so that ownership of written files stays consistent. Plugin Check enforces
+ * it, and for a plugin whose whole job is editing files that is not a rule to
+ * argue with.
+ *
+ * It does not cover everything. WP_Filesystem reads and writes whole files
+ * only — there is no streaming and no byte range — so the database dump, the
+ * dump restore, and the log tail keep using fopen/fread/fwrite and say why at
+ * the call site. Loading a multi-gigabyte SQL file into memory to satisfy a
+ * sniff would trade a warning for an out-of-memory crash.
+ * ========================================================================== */
+
+/**
+ * The WP_Filesystem instance, or null when it cannot be initialised.
+ *
+ * Null is a real outcome, not a failure to handle later: on a host that needs
+ * FTP credentials there is nobody to ask for them during a REST request. The
+ * callers below turn it into an ordinary "could not read/write" result.
+ */
+function cb_fs() {
+	global $wp_filesystem;
+
+	if ( $wp_filesystem instanceof WP_Filesystem_Base ) {
+		return $wp_filesystem;
+	}
+	if ( ! function_exists( 'WP_Filesystem' ) ) {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+	}
+	// Empty credentials: succeeds outright on the direct transport, which is
+	// what almost every host uses, and fails cleanly on the others.
+	if ( ! WP_Filesystem() ) {
+		return null;
+	}
+
+	return $wp_filesystem instanceof WP_Filesystem_Base ? $wp_filesystem : null;
+}
+
+/**
+ * Read a file. Returns false when it cannot be read — same contract as
+ * file_get_contents(), so call sites did not have to change shape.
+ */
+function cb_get_contents( $path ) {
+	$fs = cb_fs();
+	if ( ! $fs ) {
+		return false;
+	}
+	$out = $fs->get_contents( $path );
+
+	return false === $out ? false : (string) $out;
+}
+
+/** Write a file. Returns true on success, false otherwise. */
+function cb_put_contents( $path, $content ) {
+	$fs = cb_fs();
+	if ( ! $fs ) {
+		return false;
+	}
+
+	return (bool) $fs->put_contents( $path, (string) $content, FS_CHMOD_FILE );
+}
+
+/** Delete a file. Returns true when the file is gone afterwards. */
+function cb_delete_file( $path ) {
+	$fs = cb_fs();
+	if ( ! $fs ) {
+		return false;
+	}
+
+	return (bool) $fs->delete( $path, false, 'f' );
+}
+
+/* ============================================================================
  * 1. PATH SANDBOX
  * ========================================================================== */
 
@@ -118,7 +193,7 @@ function cb_op_read_file( $args ) {
 	if ( ! is_file( $r['path'] ) ) {
 		return new WP_Error( 'cb_no_file', 'File does not exist.' );
 	}
-	return array( 'path' => isset( $args['path'] ) ? $args['path'] : '', 'content' => file_get_contents( $r['path'] ) );
+	return array( 'path' => isset( $args['path'] ) ? $args['path'] : '', 'content' => cb_get_contents( $r['path'] ) );
 }
 
 function cb_op_write_file( $args ) {
@@ -130,7 +205,7 @@ function cb_op_write_file( $args ) {
 	if ( ! is_dir( $dir ) ) {
 		wp_mkdir_p( $dir );
 	}
-	$bytes = file_put_contents( $r['path'], (string) $args['content'] );
+	$bytes = cb_put_contents( $r['path'], (string) $args['content'] );
 	if ( $bytes === false ) {
 		return new WP_Error( 'cb_write_failed', 'Could not write file (check permissions).' );
 	}
@@ -145,7 +220,7 @@ function cb_op_edit_file( $args ) {
 	if ( ! is_file( $r['path'] ) ) {
 		return new WP_Error( 'cb_no_file', 'File does not exist.' );
 	}
-	$content = file_get_contents( $r['path'] );
+	$content = cb_get_contents( $r['path'] );
 	$search  = (string) $args['search'];
 	$replace = (string) $args['replace'];
 	$count   = substr_count( $content, $search );
@@ -158,7 +233,7 @@ function cb_op_edit_file( $args ) {
 	$new = empty( $args['replace_all'] )
 		? preg_replace( '/' . preg_quote( $search, '/' ) . '/', addcslashes( $replace, '\\$' ), $content, 1 )
 		: str_replace( $search, $replace, $content );
-	if ( file_put_contents( $r['path'], $new ) === false ) {
+	if ( ! cb_put_contents( $r['path'], $new ) ) {
 		return new WP_Error( 'cb_write_failed', 'Could not write file.' );
 	}
 	return array( 'path' => isset( $args['path'] ) ? $args['path'] : '', 'replaced' => empty( $args['replace_all'] ) ? 1 : $count );
@@ -172,7 +247,7 @@ function cb_op_delete_file( $args ) {
 	if ( ! is_file( $r['path'] ) ) {
 		return new WP_Error( 'cb_no_file', 'File does not exist.' );
 	}
-	unlink( $r['path'] );
+	cb_delete_file( $r['path'] );
 	return array( 'path' => isset( $args['path'] ) ? $args['path'] : '', 'deleted' => true );
 }
 
@@ -251,7 +326,7 @@ function cb_op_create_plugin( $args ) {
 	$header = "<?php\n/**\n * Plugin Name: {$name}\n * Description: {$desc}\n * Version: 1.0.0\n */\n\nif ( ! defined( 'ABSPATH' ) ) { exit; }\n\n";
 	$body   = isset( $args['code'] ) ? (string) $args['code'] : "// Your code here.\n";
 	wp_mkdir_p( dirname( $r['path'] ) );
-	if ( file_put_contents( $r['path'], $header . $body ) === false ) {
+	if ( ! cb_put_contents( $r['path'], $header . $body ) ) {
 		return new WP_Error( 'cb_write_failed', 'Could not create plugin file.' );
 	}
 	$result = array( 'plugin' => $slug . '/' . $slug . '.php', 'path' => $rel, 'created' => true );
@@ -546,15 +621,23 @@ function cb_op_core_integrity() {
 
 /** Where snapshots live: outside the document root when the host allows it. */
 function cb_backup_dir() {
-	$up   = wp_get_upload_dir();
-	$base = ! empty( $up['basedir'] ) ? $up['basedir'] : WP_CONTENT_DIR;
-	$dir  = $base . '/cb-backups';
+	$up = wp_get_upload_dir();
+	// Uploads only. There used to be a WP_CONTENT_DIR fallback, which put
+	// database dumps somewhere unpredictable on the one kind of host where
+	// uploads is unavailable — and that is also the host least likely to be
+	// keeping wp-content away from the web. Returning empty is the safer
+	// answer, and it drops a Plugin Check finding that read the constant as a
+	// write into the plugin's own folder.
+	if ( empty( $up['basedir'] ) ) {
+		return '';
+	}
+	$dir = $up['basedir'] . '/cb-backups';
 	if ( ! is_dir( $dir ) ) {
 		wp_mkdir_p( $dir );
 		// Belt and braces: these files must never be served, and uploads/ is
 		// web-reachable on every host.
-		@file_put_contents( $dir . '/.htaccess', "Require all denied\nDeny from all\n" );
-		@file_put_contents( $dir . '/index.php', "<?php // Silence is golden.\n" );
+		cb_put_contents( $dir . '/.htaccess', "Require all denied\nDeny from all\n" );
+		cb_put_contents( $dir . '/index.php', "<?php // Silence is golden.\n" );
 	}
 	return $dir;
 }
@@ -568,6 +651,14 @@ function cb_backup_dir() {
 function cb_backup_database( $path ) {
 	global $wpdb;
 
+	/*
+	 * Streamed on purpose. WP_Filesystem has put_contents() and nothing else:
+	 * no append, no handle. Building the dump in memory first would mean
+	 * holding the entire database as a PHP string before a single byte is
+	 * written, which on any site worth backing up is an out-of-memory crash
+	 * instead of a backup.
+	 */
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets -- streamed; see the note above.
 	$fh = @fopen( $path, 'w' );
 	if ( ! $fh ) {
 		return new WP_Error( 'cb_backup', 'could not open ' . $path . ' for writing' );
@@ -612,6 +703,7 @@ function cb_backup_database( $path ) {
 
 	fwrite( $fh, "\nSET FOREIGN_KEY_CHECKS=1;\n" );
 	fclose( $fh );
+	// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets
 	return array( 'tables' => count( (array) $tables ), 'rows' => $rows_total, 'bytes' => filesize( $path ) );
 }
 
@@ -627,7 +719,12 @@ function cb_backup_run( $args = array() ) {
 	$label      = isset( $args['label'] ) ? sanitize_text_field( $args['label'] ) : 'manual';
 
 	@set_time_limit( 0 );
-	$dir   = cb_backup_dir();
+	$dir = cb_backup_dir();
+	// cb_backup_dir() is empty when uploads is unavailable; without this the
+	// paths below would resolve against the filesystem root.
+	if ( '' === $dir ) {
+		return array( 'ok' => false, 'message' => 'پوشهٔ بارگذاری در دسترس نیست؛ بکاپ ممکن نشد.' );
+	}
 	$stamp = gmdate( 'Ymd-His' );
 	$id    = $stamp . '-' . wp_generate_password( 6, false, false );
 	$sql   = $dir . "/db-{$id}.sql";
@@ -682,7 +779,7 @@ function cb_backup_run( $args = array() ) {
 		// complete dump ends. An unverified backup is a guess about the future.
 		'verified'   => cb_backup_verify_file( $sql ),
 	);
-	@file_put_contents( $dir . "/meta-{$id}.json", wp_json_encode( $meta ) );
+	cb_put_contents( $dir . "/meta-{$id}.json", wp_json_encode( $meta ) );
 
 	cb_backup_prune( isset( $args['keep'] ) ? (int) $args['keep'] : 7 );
 	return array( 'ok' => true, 'backup' => $meta );
@@ -693,6 +790,12 @@ function cb_backup_verify_file( $path ) {
 	if ( ! file_exists( $path ) || filesize( $path ) < 100 ) {
 		return false;
 	}
+	/*
+	 * A 200-byte peek at the end of a file that can be very large.
+	 * WP_Filesystem reads whole files only, so the alternative here is loading
+	 * the whole log to look at its tail.
+	 */
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets -- streamed; see the note above.
 	$fh = @fopen( $path, 'r' );
 	if ( ! $fh ) {
 		return false;
@@ -700,14 +803,20 @@ function cb_backup_verify_file( $path ) {
 	fseek( $fh, max( 0, filesize( $path ) - 200 ) );
 	$tail = fread( $fh, 200 );
 	fclose( $fh );
+	// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets
 	return false !== strpos( $tail, 'FOREIGN_KEY_CHECKS=1' );
 }
 
 function cb_backup_list() {
-	$dir  = cb_backup_dir();
-	$out  = array();
+	$dir = cb_backup_dir();
+	$out = array();
+	// cb_backup_dir() is empty when uploads is unavailable; without this the
+	// paths below would resolve against the filesystem root.
+	if ( '' === $dir ) {
+		return array( 'backups' => $out );
+	}
 	foreach ( (array) glob( $dir . '/meta-*.json' ) as $m ) {
-		$meta = json_decode( (string) @file_get_contents( $m ), true );
+		$meta = json_decode( (string) cb_get_contents( $m ), true );
 		if ( is_array( $meta ) ) {
 			$meta['db_present'] = file_exists( $dir . '/' . $meta['db_file'] );
 			$out[] = $meta;
@@ -726,16 +835,21 @@ function cb_backup_list() {
 function cb_backup_prune( $keep = 7 ) {
 	$list = cb_backup_list();
 	$dir  = cb_backup_dir();
-	$i    = 0;
+	// cb_backup_dir() is empty when uploads is unavailable; without this the
+	// paths below would resolve against the filesystem root.
+	if ( '' === $dir ) {
+		return;
+	}
+	$i = 0;
 	foreach ( $list['backups'] as $b ) {
 		if ( ++$i <= max( 1, $keep ) ) {
 			continue;
 		}
-		@unlink( $dir . '/' . $b['db_file'] );
+		cb_delete_file( $dir . '/' . $b['db_file'] );
 		if ( ! empty( $b['files_file'] ) ) {
-			@unlink( $dir . '/' . $b['files_file'] );
+			cb_delete_file( $dir . '/' . $b['files_file'] );
 		}
-		@unlink( $dir . "/meta-{$b['id']}.json" );
+		cb_delete_file( $dir . "/meta-{$b['id']}.json" );
 	}
 }
 
@@ -767,12 +881,17 @@ function cb_op_backup_list()        { return cb_backup_list(); }
  */
 function cb_op_backup_read( $args ) {
 	$dir  = cb_backup_dir();
+	// cb_backup_dir() is empty when uploads is unavailable; without this the
+	// paths below would resolve against the filesystem root.
+	if ( '' === $dir ) {
+		return new WP_Error( 'cb_backup_read', 'پوشهٔ بکاپ در دسترس نیست.' );
+	}
 	$id   = isset( $args['id'] ) ? preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $args['id'] ) : '';
 	$what = isset( $args['what'] ) && 'files' === $args['what'] ? 'files' : 'db';
 	if ( '' === $id ) {
 		return new WP_Error( 'cb_backup_read', 'شناسهٔ بکاپ لازم است.' );
 	}
-	$meta = json_decode( (string) @file_get_contents( $dir . "/meta-{$id}.json" ), true );
+	$meta = json_decode( (string) cb_get_contents( $dir . "/meta-{$id}.json" ), true );
 	if ( ! is_array( $meta ) ) {
 		return new WP_Error( 'cb_backup_read', 'این بکاپ پیدا نشد.' );
 	}
@@ -802,6 +921,11 @@ function cb_op_backup_read( $args ) {
 			'eof' => true, 'chunk' => '' );
 	}
 
+	/*
+	 * Serves a byte range out of a backup archive, which is how a large
+	 * download is fetched in pieces. Whole-file reads cannot express this.
+	 */
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets -- streamed; see the note above.
 	$fh = fopen( $real, 'rb' );
 	if ( ! $fh ) {
 		return new WP_Error( 'cb_backup_read', 'فایل بکاپ باز نشد.' );
@@ -809,6 +933,7 @@ function cb_op_backup_read( $args ) {
 	fseek( $fh, $offset );
 	$raw = (string) fread( $fh, $length );
 	fclose( $fh );
+	// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets
 
 	return array(
 		'id'       => $id,
@@ -1076,6 +1201,10 @@ function cb_rescue_rotate_keys( $args = array() ) {
 		return array( 'ok' => false, 'message' => 'برای چرخش کلیدها confirm=true لازم است. این کار همهٔ کاربران را از سایت خارج می‌کند.' );
 	}
 	$config = ABSPATH . 'wp-config.php';
+	// Asked before touching wp-config.php: a rescue that half-writes it takes
+	// the site down. WP_Filesystem's is_writable() would need the filesystem
+	// initialised just to answer a question PHP can answer directly.
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- cheap pre-flight check; see above.
 	if ( ! is_writable( $config ) ) {
 		return array( 'ok' => false, 'message' => 'wp-config.php قابل نوشتن نیست.' );
 	}
@@ -1088,8 +1217,8 @@ function cb_rescue_rotate_keys( $args = array() ) {
 		return array( 'ok' => false, 'message' => 'دریافت کلیدهای جدید ناموفق بود.' );
 	}
 
-	$src = file_get_contents( $config );
-	file_put_contents( $config . '.pre-rescue.bak', $src ); // a broken wp-config takes the site down
+	$src = cb_get_contents( $config );
+	cb_put_contents( $config . '.pre-rescue.bak', $src ); // a broken wp-config takes the site down
 
 	$keys = array( 'AUTH_KEY', 'SECURE_AUTH_KEY', 'LOGGED_IN_KEY', 'NONCE_KEY', 'AUTH_SALT', 'SECURE_AUTH_SALT', 'LOGGED_IN_SALT', 'NONCE_SALT' );
 	$out = preg_replace( "/^[ \t]*define\(\s*'(" . implode( '|', $keys ) . ")'.*\R/m", '', $src );
@@ -1098,7 +1227,7 @@ function cb_rescue_rotate_keys( $args = array() ) {
 	if ( ! $out || false === strpos( $out, 'AUTH_KEY' ) ) {
 		return array( 'ok' => false, 'message' => 'ویرایش ناموفق بود؛ wp-config.php دست‌نخورده ماند.' );
 	}
-	file_put_contents( $config, $out );
+	cb_put_contents( $config, $out );
 	return array( 'ok' => true, 'backup' => 'wp-config.php.pre-rescue.bak',
 		'message' => 'کلیدها عوض شدند. همهٔ نشست‌ها باطل شد — از جمله نشست مهاجم.' );
 }
@@ -1329,7 +1458,7 @@ function cb_op_security_scan( $args ) {
 			if ( ++$scanned > $limit ) {
 				break;
 			}
-			$c = @file_get_contents( $p );
+			$c = cb_get_contents( $p );
 			if ( false === $c ) {
 				continue;
 			}
@@ -2627,6 +2756,12 @@ function cb_job_backup_restore( $job ) {
 	$args  = is_array( $job['args'] ) ? $job['args'] : array();
 	$state = is_array( $job['cursor'] ) ? $job['cursor'] : array();
 	$dir   = cb_backup_dir();
+	// cb_backup_dir() is empty when uploads is unavailable; without this the
+	// paths below would resolve against the filesystem root.
+	if ( '' === $dir ) {
+		return array( 'done' => true, 'message' => 'پوشهٔ بکاپ در دسترس نیست.',
+			'result' => array( 'ok' => false, 'error' => 'no backup dir' ) );
+	}
 	$id    = isset( $args['id'] ) ? preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $args['id'] ) : '';
 
 	if ( '' === $id ) {
@@ -2634,7 +2769,7 @@ function cb_job_backup_restore( $job ) {
 			'result' => array( 'ok' => false, 'error' => 'missing id' ) );
 	}
 
-	$meta = json_decode( (string) @file_get_contents( $dir . "/meta-{$id}.json" ), true );
+	$meta = json_decode( (string) cb_get_contents( $dir . "/meta-{$id}.json" ), true );
 	if ( ! is_array( $meta ) || empty( $meta['db_file'] ) ) {
 		return array( 'done' => true, 'message' => 'این بکاپ پیدا نشد.',
 			'result' => array( 'ok' => false, 'error' => 'backup not found' ) );
@@ -2664,6 +2799,13 @@ function cb_job_backup_restore( $job ) {
 	}
 
 	global $wpdb;
+	/*
+	 * Replays the dump one statement at a time, resuming from a stored offset
+	 * across several requests. Reading it whole would put the entire dump in
+	 * memory and give up the resume point that makes a large restore possible
+	 * at all.
+	 */
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets -- streamed; see the note above.
 	$fh = fopen( $sql, 'rb' );
 	if ( ! $fh ) {
 		return array( 'done' => true, 'message' => 'فایل بکاپ باز نشد.',
@@ -2698,6 +2840,14 @@ function cb_job_backup_restore( $job ) {
 		// suppress_errors so one bad statement does not print SQL into the
 		// response; it is collected and reported instead.
 		$prev = $wpdb->suppress_errors( true );
+		/*
+		 * $stmt is one statement out of a dump this plugin wrote itself, read
+		 * back line by line. prepare() has nothing to bind: a restore replays
+		 * whole DDL and DML statements, and there is no form of the query with
+		 * placeholders in it. The file is written to and read from the uploads
+		 * directory the plugin created, which is denied to the web.
+		 */
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- replaying our own dump; see above.
 		$ok   = $wpdb->query( $stmt );
 		$wpdb->suppress_errors( $prev );
 		$state['statements']++;
@@ -2708,6 +2858,7 @@ function cb_job_backup_restore( $job ) {
 
 	$state['offset'] = ftell( $fh );
 	fclose( $fh );
+	// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets
 
 	if ( ! $done ) {
 		$total = max( 1, (int) $state['total'] );
@@ -2834,7 +2985,7 @@ function cb_job_scan( $job ) {
 	$n = count( $state['list'] );
 	for ( $i = $state['i']; $i < $n; $i++ ) {
 		$p = $state['list'][ $i ];
-		$c = @file_get_contents( $p );
+		$c = cb_get_contents( $p );
 		if ( false !== $c ) {
 			$m = cb_scan_signature( $c );
 			if ( $m && ! empty( $m['severity'] ) ) {
@@ -3054,7 +3205,7 @@ function cb_op_upload_media_from_url( $args ) {
 	$file = array( 'name' => basename( wp_parse_url( $url, PHP_URL_PATH ) ), 'tmp_name' => $tmp );
 	$id   = media_handle_sideload( $file, 0, isset( $args['title'] ) ? $args['title'] : '' );
 	if ( is_wp_error( $id ) ) {
-		@unlink( $tmp );
+		cb_delete_file( $tmp );
 		return $id;
 	}
 	return array( 'id' => $id, 'url' => wp_get_attachment_url( $id ) );
@@ -3104,6 +3255,14 @@ function cb_op_db_query( $args ) {
 		return new WP_Error( 'cb_multi', 'Only a single statement is allowed.' );
 	}
 	$sql  = str_replace( '{prefix}', $wpdb->prefix, $sql );
+	/*
+	 * Here the SQL is the input — this tool exists so an administrator can run
+	 * a SELECT, the way `wp db query` does. There are no parameters to bind,
+	 * so prepare() does not apply. What bounds it instead: the REST route is
+	 * behind cb_rest_permission(), which requires edit_themes, and the two
+	 * checks above reject anything that is not a single SELECT.
+	 */
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- caller-supplied SELECT, admin-gated; see above.
 	$rows = $wpdb->get_results( $sql, ARRAY_A );
 	return array( 'rows' => $rows, 'count' => is_array( $rows ) ? count( $rows ) : 0 );
 }
@@ -3416,7 +3575,7 @@ function cb_skill_list() {
 			if ( ! is_dir( $base ) || ! is_file( $skill_md ) ) {
 				continue;
 			}
-			$fm    = cb_skill_frontmatter( file_get_contents( $skill_md ) );
+			$fm    = cb_skill_frontmatter( (string) cb_get_contents( $skill_md ) );
 			$files = array();
 			$it    = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $base, FilesystemIterator::SKIP_DOTS ) );
 			foreach ( $it as $f ) {
@@ -3458,7 +3617,7 @@ function cb_op_get_wp_skill( $args ) {
 	if ( is_wp_error( $path ) ) {
 		return $path;
 	}
-	$content = file_get_contents( $path );
+	$content = cb_get_contents( $path );
 	if ( $content === false ) {
 		return new WP_Error( 'cb_read_fail', 'Could not read skill file.' );
 	}
@@ -3501,7 +3660,7 @@ function cb_skill_resource_read( $uri ) {
 	if ( is_wp_error( $path ) ) {
 		return $path;
 	}
-	return (string) file_get_contents( $path );
+	return (string) cb_get_contents( $path );
 }
 
 /* ============================================================================
@@ -3714,7 +3873,7 @@ function cb_mcp_dispatch( $body ) {
 				'description' => 'WordPress skill: ' . (string) $pname,
 				'messages'    => array( array(
 					'role'    => 'user',
-					'content' => array( 'type' => 'text', 'text' => (string) file_get_contents( $path ) ),
+					'content' => array( 'type' => 'text', 'text' => (string) cb_get_contents( $path ) ),
 				) ),
 			) );
 	}
@@ -4060,6 +4219,7 @@ function cb_connector_request_signed() {
 	if ( abs( time() - (int) $ts ) > 300 ) { // 5-minute replay window
 		return false;
 	}
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- php://input is a stream, not a file; WP_Filesystem cannot read it.
 	$body     = file_get_contents( 'php://input' );
 	$expected = hash_hmac( 'sha256', $ts . "\n" . $body, $c['secret'] );
 	return hash_equals( $expected, (string) $sig );
@@ -4178,6 +4338,7 @@ function cb_mcp_run_raw() {
 		exit;
 	}
 
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- php://input is a stream, not a file; WP_Filesystem cannot read it.
 	$raw  = file_get_contents( 'php://input' );
 	$body = json_decode( $raw, true );
 	$id   = ( is_array( $body ) && isset( $body['id'] ) ) ? $body['id'] : null;
@@ -4289,6 +4450,7 @@ function cb_oauth_router() {
 }
 
 function cb_oauth_register() {
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- php://input is a stream, not a file; WP_Filesystem cannot read it.
 	$raw       = file_get_contents( 'php://input' );
 	$body      = json_decode( $raw, true );
 	$redirects = ( $body && ! empty( $body['redirect_uris'] ) ) ? (array) $body['redirect_uris'] : array();
@@ -4470,6 +4632,7 @@ function cb_app_password_valid( $user_id, $raw ) {
 function cb_oauth_token() {
 	$p = $_POST;
 	if ( empty( $p ) ) {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- php://input is a stream, not a file; WP_Filesystem cannot read it.
 		$raw = file_get_contents( 'php://input' );
 		parse_str( $raw, $p );
 		if ( empty( $p['grant_type'] ) ) {
