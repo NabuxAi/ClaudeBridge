@@ -3051,7 +3051,7 @@ function cb_op_upload_media_from_url( $args ) {
 	if ( is_wp_error( $tmp ) ) {
 		return $tmp;
 	}
-	$file = array( 'name' => basename( parse_url( $url, PHP_URL_PATH ) ), 'tmp_name' => $tmp );
+	$file = array( 'name' => basename( wp_parse_url( $url, PHP_URL_PATH ) ), 'tmp_name' => $tmp );
 	$id   = media_handle_sideload( $file, 0, isset( $args['title'] ) ? $args['title'] : '' );
 	if ( is_wp_error( $id ) ) {
 		@unlink( $tmp );
@@ -3775,6 +3775,17 @@ function cb_mcp_authorized_any() {
  * ========================================================================== */
 
 /** Current connector config, with defaults. */
+/* wporg:strip-start — self-updater
+ *
+ * Everything between these markers is removed by
+ * scripts/build-wporg-bridge.sh. A plugin hosted in the WordPress.org
+ * directory must take its updates from the directory: shipping a second
+ * update channel is grounds for rejection, and a plugin that answered both
+ * would fight itself over which version is current.
+ *
+ * The self-hosted DigiWP build keeps this block — that build is distributed
+ * as a zip from ai.digiwp.com and has no directory to update from.
+ */
 /* -------------------------------------------------------------------------
  * Self-update from the DigiWP server. When a connector server URL is set
  * (the DigiWp Ai Bridge build bakes in https://api.digiwp.com/v1), the plugin
@@ -3867,6 +3878,7 @@ function cb_auto_update( $update, $item ) {
 	}
 	return $update;
 }
+/* wporg:strip-end */
 
 /* -----------------------------------------------------------------
  * Update policy — core, plugins and themes keeping themselves current.
@@ -4227,7 +4239,7 @@ function cb_request_url() {
 
 add_action( 'init', 'cb_oauth_router', 1 );
 function cb_oauth_router() {
-	$path = parse_url( isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '', PHP_URL_PATH );
+	$path = wp_parse_url( isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '', PHP_URL_PATH );
 	if ( ! $path ) {
 		return;
 	}
@@ -5792,7 +5804,7 @@ function cb_cookbook_page() {
 	<div class="wrap">
 		<h1>Claude Cookbook</h1>
 		<p style="max-width:820px">Prompts for the jobs people actually hand to an AI on a WordPress site. Copy one, fill in the [bracketed] parts, and paste it into Claude with this site connected — every recipe is written for the tools this bridge exposes.</p>
-		<p class="cb-ui-note">This site looks like: <?php echo implode( ' &middot; ', $stack_names ); // Each part escaped above. ?>. Recipes needing something you do not have are marked.</p>
+		<p class="cb-ui-note">This site looks like: <?php echo wp_kses_post( implode( ' &middot; ', $stack_names ) ); // Parts are esc_html'd above; wp_kses_post keeps the &middot; separators. ?>
 
 		<form method="get" action="<?php echo esc_url( admin_url( 'tools.php' ) ); ?>" style="margin:14px 0 0">
 			<input type="hidden" name="page" value="claude-bridge-cookbook">
