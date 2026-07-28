@@ -140,6 +140,15 @@ Connector Mode if you want every action to go through a server you control.
 
 Access stops immediately. Nothing is cached that would keep working.
 
+= Does this plugin update itself? =
+
+No. It takes its updates from WordPress.org like any other plugin here.
+
+It can, if you ask it to from the panel, turn on WordPress's own automatic
+updates for the site's *other* plugins and themes — that is a site-management
+feature, and it deliberately excludes itself from the policy so it can never
+end up on a different update track than the one the directory gives it.
+
 = Do I need a DigiWP account? =
 
 No. The plugin works standalone with an Application Password. Connector Mode

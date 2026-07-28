@@ -671,6 +671,13 @@ function cb_backup_database( $path ) {
 	$rows_total = 0;
 
 	foreach ( (array) $tables as $table ) {
+		/*
+		 * $table comes from the database's own table list, and $page/$offset
+		 * are integers this loop sets and increments itself — 500 and 0 to
+		 * start. Nothing here is caller input, and an identifier cannot be
+		 * bound with prepare() in any case.
+		 */
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- see above.
 		$create = $wpdb->get_row( "SHOW CREATE TABLE `{$table}`", ARRAY_N );
 		if ( ! $create ) {
 			continue;
@@ -701,6 +708,7 @@ function cb_backup_database( $path ) {
 		}
 	}
 
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter
 	fwrite( $fh, "\nSET FOREIGN_KEY_CHECKS=1;\n" );
 	fclose( $fh );
 	// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets
@@ -2417,7 +2425,10 @@ function cb_perf_maybe_start() {
 	if ( empty( $_GET['cb_perf'] ) ) {
 		return;
 	}
-	$token = preg_replace( '/[^A-Za-z0-9]/', '', (string) $_GET['cb_perf'] );
+	// Stripped to alphanumerics and used only as a transient key. No nonce:
+	// this is a one-shot link the plugin itself generated.
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- self-issued token, key lookup only.
+	$token = preg_replace( '/[^A-Za-z0-9]/', '', (string) wp_unslash( $_GET['cb_perf'] ) );
 	if ( ! $token || ! get_transient( 'cb_perf_arm_' . $token ) ) {
 		return;
 	}
@@ -3492,7 +3503,7 @@ function cb_mcp_altroute() {
 	if ( ! isset( $_GET['cb_mcp'] ) ) {
 		return;
 	}
-	$m = isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : 'GET';
+	$m = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : 'GET';
 	if ( $m === 'POST' || $m === 'OPTIONS' ) {
 		cb_mcp_run_raw(); // handles auth + dispatch, then exits
 	}
@@ -3767,7 +3778,7 @@ function cb_wants_sse( $request = null ) {
 	if ( $request instanceof WP_REST_Request ) {
 		$accept = (string) $request->get_header( 'accept' );
 	} elseif ( isset( $_SERVER['HTTP_ACCEPT'] ) ) {
-		$accept = (string) $_SERVER['HTTP_ACCEPT'];
+		$accept = (string) sanitize_text_field( wp_unslash( $_SERVER['HTTP_ACCEPT'] ) );
 	}
 	// Only for SSE-only clients (accept event-stream but not plain JSON), so the
 	// existing JSON contract used by current connectors is never altered.
@@ -3884,10 +3895,10 @@ function cb_mcp_dispatch( $body ) {
 /** Read the Authorization header across SAPIs (for the non-REST transports). */
 function cb_raw_auth_header() {
 	if ( ! empty( $_SERVER['HTTP_AUTHORIZATION'] ) ) {
-		return $_SERVER['HTTP_AUTHORIZATION'];
+		return sanitize_text_field( wp_unslash( $_SERVER['HTTP_AUTHORIZATION'] ) );
 	}
 	if ( ! empty( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) ) {
-		return $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+		return sanitize_text_field( wp_unslash( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) );
 	}
 	if ( function_exists( 'getallheaders' ) ) {
 		foreach ( (array) getallheaders() as $k => $v ) {
@@ -4096,6 +4107,13 @@ function cb_policy_core( $update ) {
 }
 
 // Every plugin except this one, which has its own server-driven path above.
+/*
+ * Site auto-update policy, driven from the panel — not a self-updater. The two
+ * callbacks below decide whether the site's OTHER plugins and themes update
+ * themselves, and cb_policy_plugins() returns $update unchanged for this
+ * plugin, so it can never put itself on a different update track than the one
+ * the directory gives it.
+ */
 add_filter( 'auto_update_plugin', 'cb_policy_plugins', 20, 2 );
 function cb_policy_plugins( $update, $item ) {
 	if ( isset( $item->plugin ) && plugin_basename( __FILE__ ) === $item->plugin ) {
@@ -4193,7 +4211,7 @@ function cb_connector_enabled() {
 function cb_connector_header( $name ) {
 	$key = 'HTTP_' . strtoupper( str_replace( '-', '_', $name ) );
 	if ( ! empty( $_SERVER[ $key ] ) ) {
-		return trim( (string) wp_unslash( $_SERVER[ $key ] ) );
+		return trim( sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) ) );
 	}
 	if ( function_exists( 'getallheaders' ) ) {
 		foreach ( getallheaders() as $k => $v ) {
@@ -4330,7 +4348,7 @@ add_action( 'automatic_updates_complete', 'cb_report_update_run' );
  * and prints the response as JSON (or SSE on request), then exits.
  */
 function cb_mcp_run_raw() {
-	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : 'GET' ) === 'OPTIONS' ) {
+	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : 'GET' ) === 'OPTIONS' ) {
 		header( 'Access-Control-Allow-Origin: *' );
 		header( 'Access-Control-Allow-Methods: GET, POST, OPTIONS' );
 		header( 'Access-Control-Allow-Headers: Authorization, Content-Type, Accept' );
@@ -4395,7 +4413,7 @@ function cb_oauth_json( $data, $status = 200 ) {
 }
 function cb_request_url() {
 	$scheme = is_ssl() ? 'https' : 'http';
-	return $scheme . '://' . ( isset( $_SERVER['HTTP_HOST'] ) ? $_SERVER['HTTP_HOST'] : '' ) . ( isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '' );
+	return $scheme . '://' . ( isset( $_SERVER['HTTP_HOST'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) : '' ) . ( isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '' );
 }
 
 add_action( 'init', 'cb_oauth_router', 1 );
@@ -4429,7 +4447,7 @@ function cb_oauth_router() {
 	}
 
 	if ( strpos( $path, '/claude-bridge-oauth/' ) === 0 ) {
-		if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : 'GET' ) === 'OPTIONS' ) {
+		if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : 'GET' ) === 'OPTIONS' ) {
 			header( 'Access-Control-Allow-Origin: *' );
 			header( 'Access-Control-Allow-Methods: GET, POST, OPTIONS' );
 			header( 'Access-Control-Allow-Headers: Authorization, Content-Type' );
@@ -4476,11 +4494,11 @@ function cb_oauth_register() {
 }
 
 function cb_oauth_authorize() {
-	$client_id = isset( $_REQUEST['client_id'] ) ? sanitize_text_field( $_REQUEST['client_id'] ) : '';
-	$redirect  = isset( $_REQUEST['redirect_uri'] ) ? esc_url_raw( $_REQUEST['redirect_uri'] ) : '';
-	$state     = isset( $_REQUEST['state'] ) ? $_REQUEST['state'] : '';
-	$challenge = isset( $_REQUEST['code_challenge'] ) ? sanitize_text_field( $_REQUEST['code_challenge'] ) : '';
-	$cmethod   = isset( $_REQUEST['code_challenge_method'] ) ? sanitize_text_field( $_REQUEST['code_challenge_method'] ) : '';
+	$client_id = isset( $_REQUEST['client_id'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['client_id'] ) ) : '';
+	$redirect  = isset( $_REQUEST['redirect_uri'] ) ? esc_url_raw( wp_unslash( $_REQUEST['redirect_uri'] ) ) : '';
+	$state     = isset( $_REQUEST['state'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['state'] ) ) : '';
+	$challenge = isset( $_REQUEST['code_challenge'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['code_challenge'] ) ) : '';
+	$cmethod   = isset( $_REQUEST['code_challenge_method'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['code_challenge_method'] ) ) : '';
 
 	$clients = get_option( CB_CLIENTS_OPTION, array() );
 	if ( ! $client_id || ! isset( $clients[ $client_id ] ) ) {
@@ -4491,6 +4509,13 @@ function cb_oauth_authorize() {
 	}
 	$redir_err = function ( $code ) use ( $redirect, $state ) {
 		$sep = ( strpos( $redirect, '?' ) !== false ) ? '&' : '?';
+	/*
+	 * wp_redirect(), not wp_safe_redirect(): this is an OAuth callback, so the
+	 * destination is the client's host by definition and restricting it to
+	 * this site would break the flow entirely. The check that matters is a few
+	 * lines up — $redirect must appear verbatim in the redirect_uris the
+	 * client registered, or the request is refused with wp_die().
+	 */
 		wp_redirect( $redirect . $sep . 'error=' . rawurlencode( $code ) . '&state=' . rawurlencode( $state ) );
 		exit;
 	};
@@ -4527,7 +4552,7 @@ function cb_oauth_authorize() {
 		wp_die( 'You must be logged in as an administrator to authorize this connection.' );
 	}
 
-	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : '' ) === 'POST' && isset( $_POST['cb_consent'] ) ) {
+	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '' ) === 'POST' && isset( $_POST['cb_consent'] ) ) {
 		check_admin_referer( 'cb_oauth_consent' );
 		if ( $_POST['cb_consent'] === 'approve' ) {
 			$code = wp_generate_password( 40, false );
@@ -4581,6 +4606,12 @@ function cb_oauth_app_return() {
 
 	$redirect = $pending['redirect'];
 	$state    = $pending['state'];
+	/*
+	 * Same reasoning, one step later: $redirect here is read back out of the
+	 * server-side transient that cb_oauth_authorize() wrote after checking it
+	 * against the client's registered redirect_uris. It never came from this
+	 * request.
+	 */
 	$sep      = ( strpos( $redirect, '?' ) !== false ) ? '&' : '?';
 	$fail     = function ( $err ) use ( $redirect, $sep, $state ) {
 		wp_redirect( $redirect . $sep . 'error=' . rawurlencode( $err ) . '&state=' . rawurlencode( $state ) );
@@ -4597,6 +4628,12 @@ function cb_oauth_app_return() {
 	}
 
 	// Verify the application password really belongs to this user (prevents forgery).
+	// Deliberately not sanitize_text_field()'d: this is an application
+	// password being checked against the user's stored hashes, and altering
+	// the characters would break a valid one. It is verified, never stored
+	// or echoed. Nonce does not apply — the OAuth return is authenticated by
+	// the pending transient.
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- verified credential; see above.
 	$raw = str_replace( ' ', '', (string) wp_unslash( $_GET['password'] ) );
 	if ( ! cb_app_password_valid( $user->ID, $raw ) ) {
 		$fail( 'access_denied' );
@@ -4630,6 +4667,15 @@ function cb_app_password_valid( $user_id, $raw ) {
 }
 
 function cb_oauth_token() {
+	/*
+	 * OAuth token endpoint. A WordPress nonce has no place here — the caller
+	 * is a machine that has never seen one of our pages, and what authorises
+	 * the exchange is the authorization code plus PKCE, verified with
+	 * hash_equals() below. The whole array is taken because the body arrives
+	 * form-encoded or as JSON; every field is checked where it is used, and
+	 * none of them reaches SQL or output.
+	 */
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- OAuth token exchange; see above.
 	$p = $_POST;
 	if ( empty( $p ) ) {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- php://input is a stream, not a file; WP_Filesystem cannot read it.
