@@ -28,7 +28,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/wp-claude-bridge.php"
 
 # Change these two together. SLUG becomes the permanent wordpress.org URL.
-NAME="${WPORG_NAME:-Digi AI Bridge}"
+NAME="${WPORG_NAME:-Digi Ai Bridge}"
 SLUG="${WPORG_SLUG:-digi-ai-bridge}"
 
 OUT="$ROOT/dist/$SLUG"
