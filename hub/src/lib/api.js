@@ -124,6 +124,11 @@ export function site(siteId) {
       (body) => mock.setHosting(siteId, body),
       (body) => http(p('/hosting'), { method: 'PATCH', body })
     ),
+    // A full malware scan. Queued: it walks every file under wp-content.
+    startScan: call(
+      () => mock.startScan(siteId),
+      () => http(p('/scan'), { method: 'POST', body: {} })
+    ),
     // Speed. Measuring costs the request it measures, so it queues like
     // everything else; the recipe matching runs on our server so improvements
     // to the rules reach every site without a plugin update.

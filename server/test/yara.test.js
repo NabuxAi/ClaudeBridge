@@ -3,7 +3,7 @@
 // development, or the mechanism that stops one.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseRules, minHits, ruleMatches } from '../src/intel/yara.js'
+import { parseRules, minHits, ruleMatches, isSpecific} from '../src/intel/yara.js'
 
 const RULE = `
 rule WEBSHELL_PHP_Test : FILE {
@@ -117,4 +117,55 @@ rule WEBSHELL_PHP_Tiny : FILE {
   const [r] = parseRules(tiny)
   assert.deepEqual(r.strings.map((s) => s.value), ['verylongenoughstring'],
     'two and four character tokens match everything')
+})
+
+// ---------------------------------------------------------------
+// The specificity filter, added after a real scan on a real site.
+//
+// WEBSHELL_Generic_OS_Strings shipped with 28 strings — including `<?php`,
+// `public`, `throws` and `getValue` — and a threshold of 2. On a healthy
+// WordPress install it reported 17,066 suspicious files out of 28,568. Sixty
+// per cent of the site, WordPress core included.
+// ---------------------------------------------------------------
+
+test('a rule whose strings are language furniture is dropped', () => {
+  const rule = {
+    name: 'WEBSHELL_Generic_OS_Strings',
+    min_hits: 2,
+    strings: [
+      { value: '<?php' }, { value: 'public' }, { value: 'throws' },
+      { value: 'getValue' }, { value: 'java.lang.' }, { value: '="java.' },
+      { value: '<?xml version' }, { value: 'evil-marker-9000' },
+    ],
+  }
+  assert.equal(isSpecific(rule), false,
+    'every PHP file contains two of these — this rule says "is a file", not "is malware"')
+})
+
+test('a big rule needs a threshold that is a real share of its strings', () => {
+  const strings = Array.from({ length: 28 }, (_, i) => ({ value: `distinctive_marker_${i}` }))
+  assert.equal(isSpecific({ name: 'R', min_hits: 2, strings }), false, '2 of 28 is a coin toss')
+  assert.equal(isSpecific({ name: 'R', min_hits: 7, strings }), true, '7 of 28 is a signature')
+})
+
+test('a small precise rule is left alone', () => {
+  // This is what a good signature looks like, and the filter must not eat it.
+  assert.equal(isSpecific({
+    name: 'EncodedLoader', min_hits: 1,
+    strings: [{ value: 'gzinflate(base64_decode(' }, { value: 'eval(base64_decode(' }],
+  }), true)
+})
+
+test('a rule with some generic strings but real markers survives', () => {
+  // Dropping anything that merely mentions `public` would throw away good
+  // rules. The test is whether the generic tokens dominate.
+  const rule = {
+    name: 'RealShell', min_hits: 3,
+    strings: [
+      { value: 'public' },
+      { value: 'c99shell' }, { value: 'FilesMan' }, { value: 'b374k' },
+      { value: '$_POST[\'cmd\']' }, { value: 'passthru(' },
+    ],
+  }
+  assert.equal(isSpecific(rule), true)
 })

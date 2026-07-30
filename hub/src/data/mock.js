@@ -568,3 +568,6 @@ export const alertReadiness = () => delay({
   readyCount: 1,
   verdict: 'فقط یک راه فعال است (ایمیل). اگر همان یکی کار نکند، هشداری به شما نمی‌رسد.',
 })
+
+export const startScan = (id) =>
+  delay({ queued: true, job: { id: 'job_scan_demo', state: 'queued', progress: 0, message: 'در صف' } })

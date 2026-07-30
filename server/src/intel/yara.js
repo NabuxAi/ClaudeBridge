@@ -51,9 +51,59 @@ export function parseRules(text, { source = 'signature-base', phpOnly = true } =
     // common word, drop it and say so — a missing rule is recoverable, a rule
     // that accuses healthy sites is not.
     if (rule.strings.length > 8 && rule.min_hits === 1) continue
+    if (!isSpecific(rule)) continue
     rules.push(rule)
   }
   return rules
+}
+
+/**
+ * Tokens that say "this is a file", not "this file is malicious".
+ *
+ * Found the hard way. WEBSHELL_Generic_OS_Strings shipped with 28 strings —
+ * among them `<?php`, `public`, `throws` and `getValue` — and a threshold of
+ * two. Every PHP file on earth contains two of those, so a scan of a healthy
+ * WordPress site reported 17,066 suspicious files out of 28,568: sixty per
+ * cent of the site, including WordPress core and every plugin.
+ *
+ * That is not a noisy rule, it is an inverted one. A scanner that flags most
+ * of a site teaches its owner that findings mean nothing, which is worse than
+ * having no scanner: the day a real shell appears, it is line 9,000 of a list
+ * nobody reads.
+ */
+const UBIQUITOUS = new Set([
+  '<?php', '<?xml version', '<?xml-stylesheet', '<?xpacket', '<%@language',
+  'public', 'private', 'protected', 'static', 'function', 'return', 'throws',
+  'getvalue', 'setvalue', 'tostring', 'java.lang.', '="java.', '="javax.',
+  'string', 'object', 'default', 'extends', 'implements', 'import',
+  'true', 'false', 'null', 'class', 'void', 'this.',
+])
+
+/**
+ * Is this rule specific enough to accuse a file?
+ *
+ * Two independent ways a rule fails to be:
+ *
+ *   Its strings are mostly language furniture, so matching them means nothing.
+ *   Its threshold is a tiny fraction of its strings, so almost any file clears
+ *   it — 2 of 28 is not a signature, it is a coin toss weighted towards yes.
+ *
+ * Both checks only apply to large rules. A three-string rule with a threshold
+ * of one is how a precise signature legitimately looks.
+ */
+export function isSpecific(rule) {
+  const strings = rule.strings || []
+  if (strings.length <= 3) return true
+
+  const generic = strings.filter((s) => UBIQUITOUS.has(String(s.value).trim().toLowerCase()))
+  // Half or more furniture means the rule is describing a language, not malware.
+  if (generic.length * 2 >= strings.length) return false
+
+  // A big rule needs its threshold to be a real share of its strings. The
+  // quarter is not sacred; what matters is that "2 of 28" cannot pass.
+  if (strings.length > 8 && rule.min_hits < Math.ceil(strings.length / 4)) return false
+
+  return true
 }
 
 function parseRule(name, body, source) {

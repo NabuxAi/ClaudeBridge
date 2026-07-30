@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
@@ -73,23 +73,37 @@ export default function Security() {
   const { siteId } = useOutletContext()
   const [data, setData] = useState(null)
   const [scanning, setScanning] = useState(false)
+  const timer = useRef(null)
 
   useEffect(() => {
     let alive = true
     siteApi(siteId).security().then((d) => alive && setData(d))
-    return () => { alive = false }
+    return () => { alive = false; clearTimeout(timer.current) }
   }, [siteId])
 
-  // The button used to do nothing at all. Re-fetching IS a real rescan: the
-  // server calls core_integrity and security_scan on the site for every
-  // request, so this walks the filesystem again rather than reading a cache.
+  // Starts a real scan and polls it. It used to await the scan inline, which
+  // worked until a site with 28,568 files blew through the relay timeout and
+  // the panel showed "tool security_scan failed" — so now the site queues it
+  // and this watches. Integrity is still read inline: that one is bounded.
   async function rescan() {
     setScanning(true)
     try {
-      setData(await siteApi(siteId).security())
-    } finally {
+      await siteApi(siteId).startScan()
+      poll()
+    } catch {
       setScanning(false)
+      setData(await siteApi(siteId).security())
     }
+  }
+
+  function poll() {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(async () => {
+      const d = await siteApi(siteId).security()
+      setData(d)
+      if (d.scanJob) poll()
+      else setScanning(false)
+    }, 3000)
   }
 
   if (!data) return <PageHead title="امنیت" subtitle="نگهبانی امنیتی روزانه و کنترل دسترسی" />
@@ -119,6 +133,22 @@ export default function Security() {
           the site answered. */}
       {(data.vulns || data.vulnsError) && (
         <VulnCard result={data.vulns} error={data.vulnsError} />
+      )}
+
+      {/* The scan's own state. An empty result and a scan that has never run
+          look identical otherwise, and one of those reads as a clean bill of
+          health when it is nothing of the sort. */}
+      {(data.scanJob || data.scanPending) && (
+        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: '15px 20px', marginBottom: 18 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>
+            {data.scanJob ? 'اسکن بدافزار در حال اجراست' : 'هنوز اسکن بدافزاری اجرا نشده'}
+          </div>
+          <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>
+            {data.scanJob
+              ? `${data.scanJob.message || 'در حال بررسی فایل‌ها'} — ${faNum(data.scanJob.progress || 0)}٪`
+              : 'برای شروع، «اسکن کامل» را بزنید. تا وقتی اجرا نشده، نبود یافته به معنی سالم بودن نیست.'}
+          </p>
+        </div>
       )}
 
       {/* Security status banner.

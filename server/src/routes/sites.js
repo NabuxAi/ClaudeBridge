@@ -123,14 +123,33 @@ function concern(name) {
           const text = raw?.content?.[0]?.text
           return typeof text === 'string' ? JSON.parse(text) : raw
         }
-        const [scan, integrity] = await Promise.allSettled([
-          connector.callTool(target, 'security_scan', {}),
+        // Integrity is a bounded read — one manifest, a few thousand md5s — so
+        // it can be awaited. The malware scan cannot: on a real site it walked
+        // 28,568 files and blew straight through the relay timeout, which the
+        // panel then reported as "tool security_scan failed". The job system
+        // exists for exactly this, so the scan is queued and the last finished
+        // result is what the view shows.
+        const [scanState, integrity] = await Promise.allSettled([
+          connector.callTool(target, 'job_status', { type: 'security_scan' }),
           connector.callTool(target, 'core_integrity', {}),
         ])
-        if (scan.status === 'fulfilled') {
-          try { data.scan = unwrap(scan.value) } catch (e) { data.scanError = e.message }
+
+        if (scanState.status === 'fulfilled') {
+          try {
+            const job = unwrap(scanState.value)
+            if (job?.state === 'done' && job.result) {
+              data.scan = job.result
+              data.scanAt = job.finished_at || null
+            } else if (job?.state === 'running' || job?.state === 'queued') {
+              data.scanJob = { id: job.id, state: job.state, progress: job.progress, message: job.message }
+            } else {
+              // Never scanned, so say that rather than showing an empty result
+              // that reads like a clean bill of health.
+              data.scanPending = true
+            }
+          } catch (e) { data.scanError = e.message }
         } else {
-          data.scanError = scan.reason?.message || String(scan.reason)
+          data.scanError = scanState.reason?.message || String(scanState.reason)
         }
         if (integrity.status === 'fulfilled') {
           try { data.integrity = unwrap(integrity.value) } catch (e) { data.integrityError = e.message }
@@ -588,6 +607,32 @@ router.post('/sites/:id/conflict', async (req, res, next) => {
       title: 'بررسی تداخل شروع شد',
       detail: { url: req.body.url },
     }).catch(() => {})
+  } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
+/**
+ * Start a full malware scan.
+ *
+ * Queued, because on a real site it walks tens of thousands of files — the run
+ * that exposed this took 28,568 — and no HTTP request should be held open for
+ * that. The security view reads whatever the last finished run produced.
+ */
+router.post('/sites/:id/scan', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    const raw = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      'job_start',
+      { type: 'security_scan' }
+    )
+    const text = raw?.content?.[0]?.text
+    res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
   } catch (e) {
     res.status(e.status || 502).json({ message: e.message })
   }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Bundles WordPress engineering skills the connected model can load on demand (as tools, MCP resources, and prompts), ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.7.0
+ * Version: 3.7.1
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.7.0' );
+define( 'CB_VERSION', '3.7.1' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -1698,7 +1698,7 @@ function cb_tools() {
 	// worker for minutes, which on a shared host IS the customer's site
 	// getting slow because we are looking at it.
 	$tools[] = array( 'name' => 'job_start', 'description' => 'Queue heavy work and return immediately with a job id. Types: backup, core_integrity, security_scan, conflict_hunt. The work runs in a background loopback request, in chunks against a time budget, saving progress between chunks so a 30-second max_execution_time is survivable rather than fatal. Poll job_status for progress and the result.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'type' => array( 'type' => 'string', 'enum' => array( 'backup', 'core_integrity', 'security_scan', 'conflict_hunt' ) ), 'url' => array( 'type' => 'string', 'description' => 'For conflict_hunt: the broken page.' ), 'expect' => array( 'type' => 'string' ), 'forbid' => array( 'type' => 'string' ), 'files' => array( 'type' => 'boolean', 'description' => 'For backup: also archive wp-content.' ) ), 'required' => array( 'type' ) ), 'op' => 'cb_op_job_start' );
-	$tools[] = array( 'name' => 'job_status', 'description' => 'Progress and result of a queued job. Omit id to list recent jobs. State is queued, running, done or failed; progress is a percentage and message describes the current chunk.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string' ) ) ), 'op' => 'cb_op_job_status' );
+	$tools[] = array( 'name' => 'job_status', 'description' => 'Progress and result of a queued job. Give id for one job, type for the newest of a kind, or neither to list recent jobs. State is queued, running, done or failed; progress is a percentage and message describes the current chunk.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string' ), 'type' => array( 'type' => 'string', 'description' => 'Return the newest job of this type instead of one by id; running jobs win over finished ones.' ) ) ), 'op' => 'cb_op_job_status' );
 
 	$tools[] = array( 'name' => 'conflict_hunt', 'description' => 'Find what breaks a page — theme first, then plugins by binary search. Tests the theme against a bundled default in one round, because a theme fault otherwise makes every plugin look innocent. Then disables half the plugins at a time rather than one at a time: about six rounds on a forty-plugin site instead of forty, which matters because every round is a window where a real visitor hits the site mid-flip. Restores the original plugin set and theme unconditionally, including if a step throws.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'url' => array( 'type' => 'string', 'description' => 'Same-site page URL that is broken.' ), 'expect' => array( 'type' => 'string', 'description' => 'Substring that must appear when the page is healthy.' ), 'forbid' => array( 'type' => 'string', 'description' => 'Substring that marks the page as broken.' ) ), 'required' => array( 'url' ) ), 'op' => 'cb_op_conflict_hunt' );
 
@@ -3038,11 +3038,40 @@ function cb_op_job_start( $args ) {
 
 function cb_op_job_status( $args ) {
 	$id = isset( $args['id'] ) ? (string) $args['id'] : '';
-	if ( '' === $id ) {
-		return array( 'jobs' => array_values( cb_jobs_all() ) );
+	if ( '' !== $id ) {
+		$job = cb_job_get( $id );
+		return $job ? $job : array( 'ok' => false, 'message' => 'job not found' );
 	}
-	$job = cb_job_get( $id );
-	return $job ? $job : array( 'ok' => false, 'message' => 'job not found' );
+
+	// By type: the newest job of that kind, so a panel can ask "how did the last
+	// security scan go" without having remembered an id from days ago. Running
+	// jobs win over finished ones — a scan in progress is the more useful answer
+	// than the result it is about to replace.
+	$type = isset( $args['type'] ) ? (string) $args['type'] : '';
+	if ( '' !== $type ) {
+		$best = null;
+		foreach ( cb_jobs_all() as $job ) {
+			if ( ! isset( $job['type'] ) || $job['type'] !== $type ) {
+				continue;
+			}
+			$live = in_array( $job['state'], array( 'queued', 'running' ), true );
+			if ( ! $best ) {
+				$best = $job;
+				continue;
+			}
+			$best_live = in_array( $best['state'], array( 'queued', 'running' ), true );
+			if ( $live && ! $best_live ) {
+				$best = $job;
+			} elseif ( $live === $best_live && $job['created_at'] > $best['created_at'] ) {
+				$best = $job;
+			}
+		}
+		// No job of that type has ever run. Said plainly, because an empty
+		// result would read like a completed scan that found nothing.
+		return $best ? $best : array( 'state' => 'never', 'type' => $type );
+	}
+
+	return array( 'jobs' => array_values( cb_jobs_all() ) );
 }
 
 /** Bisect active plugins to find which one breaks a page. Always restores state. */
