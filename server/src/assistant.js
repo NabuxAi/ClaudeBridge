@@ -18,6 +18,22 @@ import { config } from './config.js'
 import { updatesFromStatus } from './live.js'
 import { classify, offeredTools, permits, readAuthority } from './authority.js'
 
+/**
+ * The chat-completions URL for an OpenAI-compatible gateway.
+ *
+ * ASSISTANT_URL is written by a person, and every OpenAI-compatible base URL
+ * in the wild ends in /v1 — the provider docs, the SDK defaults, our own
+ * gateway's published address. Appending /v1 unconditionally therefore turns
+ * the most natural value anyone could enter into /v1/v1/chat/completions and a
+ * 404, which surfaces as "the assistant is not answering" with nothing to say
+ * why. Accept the URL with or without it.
+ */
+export function completionsEndpoint(base) {
+  const trimmed = String(base || '').replace(/\/+$/, '')
+  const root = trimmed.replace(/\/v1$/, '')
+  return `${root}/v1/chat/completions`
+}
+
 const unwrap = (raw) => {
   const text = raw?.content?.[0]?.text
   if (typeof text === 'string') { try { return JSON.parse(text) } catch { return null } }
@@ -280,7 +296,7 @@ export async function answer(site, message) {
   const ran = []
 
   const post = async (payload) => {
-    const res = await fetch(`${config.assistant.url.replace(/\/$/, '')}/v1/chat/completions`, {
+    const res = await fetch(`${completionsEndpoint(config.assistant.url)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
