@@ -208,6 +208,17 @@ export function site(siteId) {
       (message) => mock.askGuardian(siteId, message),
       (message) => http(p('/assistant'), { method: 'POST', body: { message } })
     ),
+    // Proposals the assistant made and could not run, still waiting. Read on
+    // mount so an approval can arrive later, and from someone who was not in
+    // the conversation that produced it.
+    pendingProposals: call(
+      () => Promise.resolve({ proposals: [] }),
+      () => http(p('/proposals'))
+    ),
+    rejectProposal: call(
+      () => Promise.resolve({ ok: true }),
+      (proposalId) => http(p(`/proposals/${proposalId}/reject`), { method: 'POST' })
+    ),
   }
 }
 

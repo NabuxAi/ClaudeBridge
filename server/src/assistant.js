@@ -17,6 +17,7 @@ import * as events from './events.js'
 import { config } from './config.js'
 import { updatesFromStatus } from './live.js'
 import { classify, offeredTools, permits, readAuthority } from './authority.js'
+import * as proposalStore from './proposals.js'
 
 /**
  * The chat-completions URL for an OpenAI-compatible gateway.
@@ -239,6 +240,23 @@ async function runToolCall(site, level, call, proposals) {
   const verdict = permits(level, name)
   if (!verdict.allowed) {
     proposals.push({ tool: name, args, kind: verdict.kind, reason: verdict.reason })
+
+    // Also persisted, so the approval can arrive later and from someone else.
+    // Failing to record it must not turn a refusal into an error: the caller
+    // still sees the proposal in this answer, which is exactly how it behaved
+    // before there was a table at all.
+    proposalStore
+      .record({
+        siteId: site.id,
+        userId: site.user_id,
+        tool: name,
+        args,
+        kind: verdict.kind,
+        reason: verdict.reason,
+        authority: level,
+      })
+      .catch(() => {})
+
     return { ok: false, refused: true, reason: verdict.reason }
   }
 

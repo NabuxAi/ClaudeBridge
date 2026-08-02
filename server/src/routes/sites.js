@@ -6,6 +6,7 @@ import * as connector from '../connector.js'
 import { describePolicy, policyForConnector } from '../policy.js'
 import { PROVENANCE, updatesFromStatus } from '../live.js'
 import * as events from '../events.js'
+import * as proposals from '../proposals.js'
 import * as assistant from '../assistant.js'
 import { SENSITIVE_SET } from '../authority.js'
 import { probeSite } from '../probe.js'
@@ -960,15 +961,61 @@ router.post('/sites/:id/ping', async (req, res, next) => {
 // The set lives in authority.js so this route and the assistant enforce one
 // policy rather than two that must be kept in step by hand.
 const SENSITIVE = SENSITIVE_SET
+/**
+ * What is still waiting for a human on this site.
+ *
+ * Without this the approve button only existed for as long as the answer was on
+ * screen: proposals lived in the panel's React state, so a refresh lost them and
+ * nobody who was not in the conversation could ever act on one.
+ */
+router.get('/sites/:id/proposals', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    res.json({ proposals: await proposals.pending(site.id) })
+  } catch (e) { next(e) }
+})
+
+/** Decline a proposal. It keeps the row: who said no is worth knowing too. */
+router.post('/sites/:id/proposals/:proposalId/reject', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const rejected = await proposals.resolve(site.id, req.params.proposalId, 'rejected', {
+      by: req.user?.sub,
+    })
+    if (!rejected) {
+      return res.status(409).json({ ok: false, message: 'این پیشنهاد پیش‌تر تعیین تکلیف شده است.' })
+    }
+    res.json({ ok: true, proposal: rejected })
+  } catch (e) { next(e) }
+})
+
 router.post('/sites/:id/actions', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)
     if (!site) return
-    const { action, tool, args = {}, approved } = req.body || {}
+    const { action, tool, args = {}, approved, proposalId } = req.body || {}
     const op = tool || action
     if (!op) return res.status(400).json({ message: 'action/tool لازم است.' })
     if (SENSITIVE.has(op) && !approved) {
       return res.status(202).json({ ok: false, requiresApproval: true, message: 'این اقدام حساس است و به تأیید شما نیاز دارد.' })
+    }
+
+    // Approving a stored proposal claims it BEFORE the tool runs. The UPDATE
+    // matches only while the row is still pending, so two people clicking
+    // approve at the same moment produce one execution and one 409 — rather
+    // than two identical changes to the site, which is the failure an approval
+    // queue exists to prevent.
+    let claimed = null
+    if (proposalId) {
+      claimed = await proposals.resolve(site.id, proposalId, 'approved', { by: req.user?.sub })
+      if (!claimed) {
+        return res.status(409).json({
+          ok: false,
+          message: 'این پیشنهاد پیش‌تر تعیین تکلیف شده است.',
+        })
+      }
     }
     if (config.live && site.paired && site.url && site.secret) {
       try {

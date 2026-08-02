@@ -37,6 +37,43 @@ export default function Assistant() {
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, sending])
 
+  // Anything still waiting for a human, from before this conversation.
+  //
+  // Proposals used to exist only in this component's state, so they lasted
+  // exactly as long as the tab did. That made "confirm" authority weaker than
+  // it reads: the confirmation had to arrive in the same breath as the
+  // question, from whoever happened to ask it. Loading the open ones on mount
+  // is what turns the approve button into an inbox.
+  useEffect(() => {
+    let cancelled = false
+    siteApi(siteId)
+      .pendingProposals()
+      .then((res) => {
+        const open = res?.proposals || []
+        if (cancelled || open.length === 0) return
+        setMessages((m) => [
+          {
+            from: 'ai',
+            text: 'این تغییرها از قبل منتظر تأیید شما هستند:',
+            proposals: open.map((pr) => ({
+              id: pr.id,
+              tool: pr.tool,
+              args: pr.args,
+              kind: pr.kind,
+              reason: pr.reason,
+            })),
+          },
+          ...m,
+        ])
+      })
+      .catch(() => {
+        // A panel that cannot list old proposals is still a working panel for
+        // this conversation; failing loudly here would break the whole view
+        // over a feature that is additional to it.
+      })
+    return () => { cancelled = true }
+  }, [siteId])
+
   async function send(text) {
     const q = (text ?? '').trim()
     if (!q || sending) return
@@ -72,7 +109,14 @@ export default function Assistant() {
     ))
     let outcome
     try {
-      const res = await siteApi(siteId).runAction(proposal.tool, { args: proposal.args, approved: true })
+      // proposalId claims the stored row before the tool runs, so two people
+      // approving the same thing at once produce one execution rather than two
+      // identical changes to the site.
+      const res = await siteApi(siteId).runAction(proposal.tool, {
+        args: proposal.args,
+        approved: true,
+        ...(proposal.id ? { proposalId: proposal.id } : {}),
+      })
       outcome = res?.ok === false ? (res.message || 'اجرا نشد.') : 'انجام شد.'
     } catch (e) {
       outcome = e?.message || 'اجرا نشد.'
