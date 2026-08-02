@@ -123,9 +123,7 @@ response handling rather than a stand-in for them.
    and needs a real Postgres to observe; the tests run without one.
 2. **`MAX_TOOL_STEPS` is a constant.** Five is right for a maintenance question; a "fix my
    site" flow will want more, and that should be a per-request budget rather than an edit.
-3. **A proposal is not persisted.** Approving works while the answer is still on screen; a
-   refresh loses it. Fine for a conversational flow, wrong if approvals are ever meant to
-   wait for someone else.
+3. ~~A proposal is not persisted.~~ **Done** — see the 2026-08-02 entry at the end.
 
 ## Validation
 
@@ -266,5 +264,77 @@ through the real signed connector.
   this proof. The normal pairing flow through the panel was not exercised.
 - **MAX_TOOL_STEPS is still a constant.** Five suits a maintenance question; a
   "fix my site" flow will want a per-request budget.
-- **A proposal is not persisted.** Approving works while the answer is on
-  screen; a refresh loses it.
+- ~~A proposal is not persisted.~~ **Done** — see below.
+
+---
+
+## 2026-08-02 (later) — an approval can now wait, and come from someone else
+
+A proposal existed only in the panel's React state. It lasted exactly as long as
+the tab did: a refresh lost it, and the only person who could act on one was
+whoever asked the question that produced it.
+
+That made `confirm` authority weaker than it reads. The point of a three-way
+setting is that a change can wait for a human — but a confirmation that has to
+arrive in the same breath as the question is not a second pair of eyes, it is
+the same pair.
+
+Proposals are a table now. The panel loads what is still open on mount, so the
+approve button is an inbox rather than a transient.
+
+### Two properties the database enforces, not hopeful code
+
+**One open proposal per change.** A partial unique index on
+`(site_id, tool, md5(args))` where the status is pending. The assistant
+re-proposes the same thing every time it is asked the same question, and a list
+that grows a row per retry is a list nobody reads. Because the index covers only
+pending rows, the same change can legitimately be proposed again after an
+earlier one was resolved — flushing the cache twice in a week is two decisions.
+
+**One execution per approval.** Approving claims the row with an `UPDATE …
+WHERE status = 'pending'` *before* the tool runs. Two people clicking approve at
+the same instant both issue it and exactly one matches; the loser gets 409 and
+runs nothing. Without that, an approval queue is a way to make the same change
+to a live site twice.
+
+### Proven on the live deployment
+
+```
+POST /assistant  "clear the cache"   → ran: none, requiresApproval: true
+GET  /proposals  (a fresh page load) → prop_d70a…  flush_cache  {}  pending
+two simultaneous approvals           → 200 {"flushed":["object-cache","opcache"]}
+                                       409 "این پیشنهاد پیش‌تر تعیین تکلیف شده است."
+GET  /proposals                      → []
+```
+
+The 200 is the real WordPress: the cache was actually flushed. The 409 is the
+second click, which executed nothing.
+
+### Deliberately non-fatal
+
+Recording a proposal cannot fail the answer — if the write fails the caller
+still sees the proposal in that response, exactly as it behaved before the table
+existed. The panel treats an unreadable proposal list as empty rather than
+breaking the whole view over a feature that is additional to it.
+
+### Tests
+
+Eight against a real PostgreSQL, skipped when `CB_TEST_DATABASE_URL` is unset,
+because both properties above are database behaviour and a stand-in would test
+the stand-in. They cover the round trip with arguments intact, deduplication of
+a repeated proposal, different arguments staying distinct, resolution keeping
+the row with who decided, only the first of two simultaneous approvals winning,
+a resolved proposal refusing a second resolution, cross-site isolation, and a
+resolved change being proposable again.
+
+188 tests: 187 pass, 1 skipped without a database.
+
+## Remaining work
+
+1. **The audit-log write is not covered by a test.** It is `.catch()`-swallowed
+   by design and needs a real Postgres to observe.
+2. **`MAX_TOOL_STEPS` is a constant.** Five suits a maintenance question; a
+   "fix my site" flow wants a per-request budget.
+3. **Nothing notifies anyone that a proposal is waiting.** It is now durable and
+   visible on the site's page, but a person who never opens that page will not
+   learn of it. The alert-delivery machinery already exists for events.
