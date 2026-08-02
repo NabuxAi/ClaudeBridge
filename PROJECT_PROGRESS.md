@@ -339,9 +339,9 @@ resolved change being proposable again.
    per-request budget, clamped to a ceiling the deployment sets with
    `ASSISTANT_MAX_TOOL_STEPS` (default 12). A caller can ask a hard question for
    more room; it cannot turn a bound into no bound.
-3. ~~Nothing notifies anyone that a proposal is waiting.~~ **Done** — a new
-   proposal records an event, so it reaches the site's alert list through the
-   machinery that already existed. Deliberately an event and not
+3. ~~Nothing notifies anyone that a proposal is waiting.~~ **Done, in two
+   steps** — a new proposal records an event, so it reaches the site's alert
+   list through the machinery that already existed. Deliberately an event and not
    `raiseEmergency`: a pending decision is not a site being down, and sending
    both at the same weight is how people learn to ignore both. The event's
    fingerprint is tied to the proposal, so a re-proposal touches the one open
@@ -432,3 +432,54 @@ passing, 2 skipped** without one. The hub builds.
 
 `CB_TEST_DATABASE_URL` — a throwaway PostgreSQL for the database tests. Unset
 means they skip; the suite stays green either way.
+
+---
+
+## 2026-08-02 (last) — the notification only got half way
+
+Recording this because the previous entry claimed a gap was closed and it was
+not, and the difference is only visible from the deployment.
+
+A proposal was made durable, then given an event so it appears in its site's
+alert list. The event machinery **dispatches** to push, SMS and e-mail — so on
+paper the owner is told. Checking the live deployment showed none of those
+channels is configured. The dispatcher runs, finds nothing to send through, and
+records the skip.
+
+The only notification that actually leaves this server is the daily Telegram
+digest, and that reported security scans only. So a decision waiting for
+approval still reached whoever happened to open the panel — which for a change
+the assistant judged worth making is an arbitrary amount of time.
+
+The digest now ends with what is waiting, across every site: the site by name,
+the tool, and its arguments, because "flush_cache on site-7" is not a decision
+anyone can act on. Sensitive proposals are marked apart from merely mutating
+ones. Nothing waiting adds nothing to the message — a daily line reading
+"0 waiting" is one people stop reading.
+
+Arguments are HTML-escaped. Telegram parses the digest as HTML and the arguments
+originate from a model, so an argument containing markup would otherwise break
+the message or forge its formatting. The list caps at ten and states how many it
+withheld, because a list that silently stops at ten reads as ten.
+
+### Proven live
+
+A real question produced a real proposal, and the digest section was rendered
+from the deployed code against the live database:
+
+```
+POST /assistant "clear the cache"  → requiresApproval, proposal flush_cache
+renderPendingProposals(pending)    → ⏳ در انتظار تأیید شما: 1
+                                      🟠 demo.digiwp — flush_cache
+```
+
+The test proposal was rejected afterwards; the queue is empty.
+
+215 tests pass with a database, 201 with 2 skipped without one.
+
+### Still open
+
+**No per-event channel is configured.** The digest is once a day. If a waiting
+approval should reach someone sooner than that, set one of `ALERT_EMAIL_URL`,
+`ALERT_SMS_URL`, or the push credentials — the dispatcher already handles all
+three and skips cleanly when they are absent, which is what it is doing now.
