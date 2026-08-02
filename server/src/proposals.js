@@ -10,6 +10,12 @@
 // Persisting them is what turns the approve button into an inbox.
 // ============================================================
 import { all, newId, one, query } from './db.js'
+import * as events from './events.js'
+
+// The fingerprint ties the "a decision is waiting" event to the proposal that
+// raised it, so a repeated proposal touches one open event instead of adding
+// another, and resolving the proposal can close it.
+const fingerprintFor = (id) => `proposal:${id}`
 
 /**
  * Record a proposal, or return the one already open for the same change.
@@ -25,11 +31,36 @@ export async function record({ siteId, userId, tool, args = {}, kind, reason, au
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (site_id, tool, md5(args::text)) WHERE status = 'pending'
      DO UPDATE SET reason = EXCLUDED.reason
-     RETURNING *`,
+     -- xmax is 0 only on a real insert, so this distinguishes a new proposal
+     -- from the same one being made again. Without it every retry would raise
+     -- another alert about a decision the owner has already been told about.
+     RETURNING *, (xmax = 0) AS inserted`,
     [newId('prop_'), siteId, userId || null, tool, JSON.stringify(args), kind,
       reason || null, authority || null, Date.now()]
   )
-  return rows[0]
+  const row = rows[0]
+
+  // Durable and visible on the site's page was still not the same as anyone
+  // knowing. A proposal nobody is told about waits exactly as long as it takes
+  // for the person to happen to open that page — which for a change the
+  // assistant thought was worth making is the wrong amount of time.
+  //
+  // An event, not an emergency dispatch: a pending decision is not a site being
+  // down, and treating the two alike is how people learn to ignore both.
+  if (row?.inserted) {
+    events
+      .record({
+        siteId,
+        kind: 'proposal',
+        severity: 'warning',
+        title: `تأیید شما لازم است: ${tool}`,
+        detail: { proposalId: row.id, tool, args, kind, reason: reason || null, authority: authority || null },
+        fingerprint: fingerprintFor(row.id),
+      })
+      .catch(() => {})
+  }
+
+  return row
 }
 
 /** Everything still waiting on this site, newest first. */
@@ -61,5 +92,13 @@ export async function resolve(siteId, id, status, { by, result } = {}) {
      RETURNING *`,
     [id, siteId, status, by || null, Date.now(), result ? JSON.stringify(result) : null]
   )
-  return rows[0] || null
+  const row = rows[0] || null
+
+  // Close the alert with the decision. An inbox that keeps showing what has
+  // already been decided is one people stop reading.
+  if (row) {
+    events.resolveByPrefix(siteId, fingerprintFor(id)).catch(() => {})
+  }
+
+  return row
 }

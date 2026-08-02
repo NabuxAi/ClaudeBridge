@@ -16,18 +16,38 @@ if (!dsn) {
 
   const { pool, query } = await import('../src/db.js')
   const { SCHEMA: PROPOSALS_SCHEMA } = await import('../src/proposals.schema.js')
+  const { SCHEMA: EVENTS_SCHEMA } = await import('../src/events.schema.js')
   const proposals = await import('../src/proposals.js')
 
   test.before(async () => {
     await query(`
+      DROP TABLE IF EXISTS alert_deliveries;
+      DROP TABLE IF EXISTS events;
       DROP TABLE IF EXISTS proposals;
       CREATE TABLE IF NOT EXISTS sites (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY);
       INSERT INTO sites (id) VALUES ('site-a'), ('site-b') ON CONFLICT DO NOTHING;
     `)
     await query(PROPOSALS_SCHEMA)
+    await query(EVENTS_SCHEMA)
   })
 
-  test.beforeEach(() => query('DELETE FROM proposals'))
+  test.beforeEach(() => query('DELETE FROM proposals; DELETE FROM events'))
+
+  // events.record() is fire-and-forget on purpose — a failed alert must not
+  // fail the answer — so the assertion has to wait for it rather than assume
+  // it already landed.
+  const openProposalEvents = async (siteId) => {
+    for (let i = 0; i < 40; i++) {
+      const { rows } = await query(
+        `SELECT * FROM events WHERE site_id = $1 AND kind = 'proposal' AND resolved_at IS NULL`,
+        [siteId]
+      )
+      if (rows.length) return rows
+      await new Promise((r) => setTimeout(r, 25))
+    }
+    return []
+  }
 
   test.after(async () => {
     await query('DROP TABLE IF EXISTS proposals')
@@ -102,6 +122,43 @@ if (!dsn) {
     await proposals.resolve('site-a', p.id, 'approved', { by: 'u_1' })
 
     assert.equal(await proposals.resolve('site-a', p.id, 'rejected', { by: 'u_2' }), null)
+  })
+
+  test('a new proposal raises an alert naming the tool', async () => {
+    // Durable and on the page is not the same as anyone knowing. Without this
+    // a proposal waits until someone happens to open that site's page.
+    const p = await proposals.record(make())
+    const [ev] = await openProposalEvents('site-a')
+
+    assert.ok(ev, 'a new proposal should raise an event')
+    assert.match(ev.title, /flush_cache/)
+    assert.equal(ev.detail.proposalId, p.id)
+    assert.equal(ev.fingerprint, `proposal:${p.id}`)
+  })
+
+  test('the same proposal made again does not raise a second alert', async () => {
+    // The assistant re-proposes on every retry. One decision is one alert.
+    await proposals.record(make())
+    await openProposalEvents('site-a')
+    await proposals.record(make())
+    await new Promise((r) => setTimeout(r, 200))
+
+    assert.equal((await openProposalEvents('site-a')).length, 1)
+  })
+
+  test('deciding a proposal closes its alert', async () => {
+    // An inbox that keeps showing what was already decided is one people stop
+    // reading.
+    const p = await proposals.record(make())
+    await openProposalEvents('site-a')
+
+    await proposals.resolve('site-a', p.id, 'approved', { by: 'u_2' })
+
+    for (let i = 0; i < 40; i++) {
+      if ((await openProposalEvents('site-a')).length === 0) break
+      await new Promise((r) => setTimeout(r, 25))
+    }
+    assert.equal((await openProposalEvents('site-a')).length, 0)
   })
 
   test('a proposal cannot be read or resolved through another site', async () => {
