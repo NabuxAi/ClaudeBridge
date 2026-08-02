@@ -87,7 +87,9 @@ services:
       - demo-db:/var/lib/mysql
 
   demo:
-    image: wordpress:6.6-php8.2-apache
+    build:
+      context: .
+      dockerfile: deploy/demo.Dockerfile
     restart: unless-stopped
     environment:
       - SERVICE_FQDN_DEMO_80
@@ -103,9 +105,12 @@ services:
         define('WP_SITEURL', getenv('SERVICE_URL_DEMO') ?: 'http://localhost:8081');
     volumes:
       - demo-wp:/var/www/html
-      # Ship the WP Claude Bridge connector into the demo site.
-      - ./wp-claude-bridge.php:/var/www/html/wp-content/plugins/wp-claude-bridge/wp-claude-bridge.php:ro
-      - ./skills:/var/www/html/wp-content/plugins/wp-claude-bridge/skills:ro
+      # The plugin is baked into the image (deploy/demo.Dockerfile) rather than
+      # bind-mounted from here. A bind mount resolves relative to wherever
+      # compose is run, which is a checkout locally and Coolify's application
+      # directory in production — and a missing bind source is not an error to
+      # Docker, it is a directory to create. That is how the demo ended up with
+      # a FOLDER named wp-claude-bridge.php and no plugin, silently, for weeks.
     depends_on:
       - demo-db
     expose:
