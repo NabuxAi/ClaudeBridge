@@ -34,6 +34,39 @@ export function completionsEndpoint(base) {
   return `${root}/v1/chat/completions`
 }
 
+/**
+ * The prose inside whatever the model actually returned.
+ *
+ * The reply goes straight onto the owner's screen, so anything the model wraps
+ * around it is visible. Models asked for structure elsewhere in a conversation
+ * will sometimes answer with a JSON object or a fenced block even when the
+ * prompt asks for prose — and a reply rendered as {"reply": "در ..."}
+ * is not a degraded answer, it is an unreadable one.
+ *
+ * Only unwrapping when the payload is an object carrying a known text field
+ * keeps a legitimate answer that merely happens to discuss JSON intact.
+ */
+export function plainReply(content) {
+  const text = String(content ?? '').trim()
+  if (!text) return ''
+
+  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/)
+  const inner = fenced ? fenced[1].trim() : text
+  if (!inner.startsWith('{')) return fenced ? inner : text
+
+  try {
+    const parsed = JSON.parse(inner)
+    for (const key of ['reply', 'answer', 'content', 'text', 'message']) {
+      if (typeof parsed?.[key] === 'string' && parsed[key].trim()) {
+        return parsed[key].trim()
+      }
+    }
+  } catch {
+    // Not JSON after all — a reply that merely opens with a brace.
+  }
+  return fenced ? inner : text
+}
+
 const unwrap = (raw) => {
   const text = raw?.content?.[0]?.text
   if (typeof text === 'string') { try { return JSON.parse(text) } catch { return null } }
@@ -280,11 +313,25 @@ export async function answer(site, message) {
     // promise actions it cannot take or refuse ones it can.
     'TOOLS: you may call the site\'s tools to check something rather than guess.',
     `AUTHORITY: ${readAuthority(site.authority)}.`,
-    '- report:  you may read anything. You may NOT change the site. Propose the change in words instead.',
+    '- report:  you may read anything. Changes are never performed, only proposed.',
     '- confirm: you may read anything. A change is proposed for the owner to approve, not performed.',
     '- auto:    you may read and perform recoverable changes yourself.',
     'Destructive tools (deleting, editing files in place, raw SQL, switching theme) always need the owner, at every level.',
+    '',
+    // The server, not the model, decides what may run. So the model must CALL
+    // the tool it wants — a refusal comes back as the tool's result and is
+    // recorded as a proposal carrying the real arguments, which is what puts an
+    // approve button in front of the owner. A model that instead describes the
+    // change in prose produces no proposal at all: the owner reads a paragraph,
+    // has nothing to approve, and has to go and do it by hand. Asking for the
+    // tool is therefore always correct, whatever the authority level.
+    'ALWAYS call the tool for the change you intend, even when you expect it to',
+    'be refused. Do not describe a change instead of requesting it: the refusal',
+    'is what creates the approval the owner clicks. The server enforces the',
+    'authority above — you do not need to enforce it yourself.',
     'If a tool comes back refused, say what you would do and that it needs their approval. Do not pretend it ran.',
+    '',
+    'Reply with plain Persian prose. Do not wrap your answer in JSON or code fences.',
   ].join('\n')
 
   const level = readAuthority(site.authority)
@@ -324,7 +371,7 @@ export async function answer(site, message) {
       const calls = choice?.tool_calls || []
 
       if (!calls.length) {
-        const reply = choice?.content
+        const reply = plainReply(choice?.content)
         if (!reply) throw new Error('پاسخ خالی بود')
         return {
           reply,
@@ -348,7 +395,7 @@ export async function answer(site, message) {
           content: 'به اندازهٔ کافی ابزار اجرا شد. حالا فقط با همان چیزی که داری پاسخ بده.',
         })
         const last = await post({ model: config.assistant.model, messages, temperature: 0.2 })
-        const reply = last?.choices?.[0]?.message?.content || briefing
+        const reply = plainReply(last?.choices?.[0]?.message?.content) || briefing
         return {
           reply,
           refs: [...refs, ...ran.map((r) => `ابزار ${r}`)],
