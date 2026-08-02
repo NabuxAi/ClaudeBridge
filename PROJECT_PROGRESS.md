@@ -146,3 +146,125 @@ to an alias such as `nabu-smart`.
 
 Nothing has been faked: with no gateway configured the tool loop simply never starts, and
 the assistant says why.
+
+---
+
+## 2026-08-02 — the assistant now acts on a real site, and production had two databases
+
+Everything below was found by running the deployed system rather than the test
+suite. The suite was green throughout; none of these faults are visible from it.
+
+### Two databases were answering to the same name
+
+The most serious finding, and unrelated to the assistant.
+
+A manual deployment from 30 July left a Postgres container, `digiwp-pg`, on the
+application network with the network alias **`db`** — the same alias the
+Coolify-managed database uses. Docker DNS returns every container holding an
+alias, so `db` resolved to two addresses and connections round-robined between
+two different databases.
+
+The two were not copies. `digiwp-pg` held the real production data: three
+accounts, including two real users, and the genuinely paired site
+`account30t.com`. The Coolify-managed database held seed data only — 16 KB
+against 3.4 MB. So roughly half of every real request was served by a database
+that did not contain the requester, which presents as intermittent
+"password authentication failed" and, worse, as a login that works one moment
+and fails the next.
+
+Resolved by dumping both (kept at `/root/cb-backups/`), restoring the real data
+into the Coolify-managed database, and disconnecting `digiwp-pg` from the
+network. The container is intact and stopped, not removed, so the step is
+reversible. The stale `-manual` server and hub containers, which claimed the
+same Traefik router names as the live ones and were returning 503 on
+`api.digiwp.com` and `ai.digiwp.com`, were stopped for the same reason.
+
+**Worth your decision:** `digiwp-pg` and the two `-manual` containers are now
+idle. They can be removed once you are satisfied nothing was lost, but that is
+your call, not one to make on your behalf.
+
+### The demo WordPress had never had the plugin
+
+The demo site received the connector as a bind mount of
+`./wp-claude-bridge.php`. That path resolves relative to wherever compose runs
+— a checkout locally, and Coolify's application directory in production, which
+holds the rendered compose file and nothing else. Docker does not treat a
+missing bind source as an error; it creates it, as a **directory**. So the
+plugins folder contained a directory named `wp-claude-bridge.php`, WordPress
+loaded nothing, and neither side logged anything.
+
+"A real WordPress site to pair with the hub" is the entire purpose of that
+service, and it had been untrue since deployment. The plugin is now baked into
+the image and installed by an entrypoint on every start, so it no longer
+depends on where compose is run.
+
+### The approval path could not be reached
+
+The system prompt told the model, at `report` and `confirm`, to "propose the
+change in words instead". It did — a paragraph, no tool call, and therefore no
+proposal. But a proposal only exists when the model **calls** a tool and the
+server refuses it: that refusal is what captures the tool name and its real
+arguments and puts an approve button in front of the owner.
+
+Following the instruction produced exactly the outcome the approval feature
+exists to prevent. The model is now told to always call the tool it intends,
+even expecting refusal, and that the server enforces authority so it need not.
+
+### The owner was shown raw JSON
+
+The model's reply was passed to the screen exactly as produced. Against
+`nabu-smart` it arrived as a JSON document, so the panel rendered
+`{"reply": "در ..."}`. `plainReply()` unwraps a JSON object carrying
+a known text field and strips a code fence, leaving prose that merely opens
+with a brace alone.
+
+### ASSISTANT_URL rejected the way people write it
+
+`/v1/chat/completions` was appended unconditionally, so the natural value —
+which ends in `/v1`, as every OpenAI-compatible base URL does — produced
+`/v1/v1/chat/completions` and a 404 that reads as "the assistant is not
+answering". Both forms now work.
+
+### The gateway had no key for this project
+
+NabuGate had no `claudebridge` key, so `ASSISTANT_API_KEY` had nothing to hold.
+Added, scoped to `nabu-*` chat aliases only — it embeds nothing — at 300/min,
+because one question runs a bounded tool loop and becomes several completions.
+
+### A landmine in the deployment config
+
+Coolify stored `AUTH_SECRET=please-change-this-secret` while the running
+container had a real 48-character secret. `assertSecretIsReal()` calls
+`process.exit(1)` in production for a secret under 32 characters, so the next
+deploy would have replaced a working secret with one that refuses to boot.
+Coolify now holds the secret actually in use — no sessions were invalidated.
+
+### Proof, on the live deployment
+
+Against the demo site, paired with a real shared secret:
+
+1. **Read** — "which WordPress and PHP versions, and which theme?" The assistant
+   called `site_info` and `list_themes` on the live site and answered from what
+   they returned: WordPress 7.0.2, PHP 8.2.25, Twenty Twenty-Four 1.2.
+2. **Refuse and propose** — "clear the site cache" under `confirm` authority.
+   Nothing ran (`ran: []`), and the answer carried
+   `requiresApproval: true` with a proposal naming `flush_cache`, its
+   arguments, and `kind: mutating`.
+3. **Approve and execute** — posting that proposal back with `approved: true`
+   relayed it, and the site returned `{"flushed":["object-cache","opcache"]}`.
+4. **The sensitive gate holds** — `db_query` without approval is answered 202
+   and never reaches the site.
+
+That is the server-initiated path working end to end, against a real WordPress,
+through the real signed connector.
+
+### Still open
+
+- **`digiwp-pg` and the two `-manual` containers** are idle and awaiting your
+  decision to remove.
+- **The demo site is paired by a secret written directly into both sides** for
+  this proof. The normal pairing flow through the panel was not exercised.
+- **MAX_TOOL_STEPS is still a constant.** Five suits a maintenance question; a
+  "fix my site" flow will want a per-request budget.
+- **A proposal is not persisted.** Approving works while the answer is on
+  screen; a refresh loses it.
