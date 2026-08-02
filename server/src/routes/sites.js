@@ -7,6 +7,7 @@ import { describePolicy, policyForConnector } from '../policy.js'
 import { PROVENANCE, updatesFromStatus } from '../live.js'
 import * as events from '../events.js'
 import * as assistant from '../assistant.js'
+import { SENSITIVE_SET } from '../authority.js'
 import { probeSite } from '../probe.js'
 import { analyse as analysePerf } from '../perf/recipes.js'
 import { checkInventory, slugOf } from '../intel/vulns.js'
@@ -955,7 +956,10 @@ router.post('/sites/:id/ping', async (req, res, next) => {
 })
 
 // A guarded action = a signed command relayed to the connector.
-const SENSITIVE = new Set(['delete_plugin', 'activate_theme', 'edit_file', 'db_query', 'delete_file'])
+//
+// The set lives in authority.js so this route and the assistant enforce one
+// policy rather than two that must be kept in step by hand.
+const SENSITIVE = SENSITIVE_SET
 router.post('/sites/:id/actions', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)

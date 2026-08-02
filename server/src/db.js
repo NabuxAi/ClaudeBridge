@@ -9,7 +9,7 @@ import crypto from 'node:crypto'
 import { config } from './config.js'
 import { hashPassword } from './auth.js'
 import { demoSites } from './seed.js'
-import { SCHEMA as EVENTS_SCHEMA } from './events.js'
+import { SCHEMA as EVENTS_SCHEMA } from './events.schema.js'
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 })
 

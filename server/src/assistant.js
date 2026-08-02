@@ -16,6 +16,7 @@ import * as connector from './connector.js'
 import * as events from './events.js'
 import { config } from './config.js'
 import { updatesFromStatus } from './live.js'
+import { classify, offeredTools, permits, readAuthority } from './authority.js'
 
 const unwrap = (raw) => {
   const text = raw?.content?.[0]?.text
@@ -33,8 +34,17 @@ const unwrap = (raw) => {
 export async function gatherFacts(site) {
   const facts = { known: [], unknown: [] }
 
-  const openEvents = (await events.list(site.id, 40)).filter((e) => !e.resolved_at)
-  facts.openAlerts = openEvents.map((e) => ({ severity: e.severity, title: e.title, kind: e.kind }))
+  // Settled like every other probe below. This was the one unguarded call in a
+  // function whose whole premise is that a failing source must not blank the
+  // rest — a database hiccup turned the entire assistant into a 500 instead of
+  // an answer that says which part is missing.
+  try {
+    const openEvents = (await events.list(site.id, 40)).filter((e) => !e.resolved_at)
+    facts.openAlerts = openEvents.map((e) => ({ severity: e.severity, title: e.title, kind: e.kind }))
+  } catch (e) {
+    facts.openAlerts = []
+    facts.unknown.push(`لاگ هشدارها خوانده نشد: ${e?.message || 'خطا'}`)
+  }
 
   if (!site.paired || !site.url || !site.secret) {
     facts.unknown.push('سایت هنوز به سرور ما وصل نشده، پس هیچ اطلاعات زنده‌ای از آن نداریم.')
@@ -139,12 +149,86 @@ export function renderBriefing(facts) {
 
 const faNum = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
 
+// How many times the model may ask for a tool before we stop. A maintenance
+// question needs two or three calls; anything past that is a loop, and a loop
+// against a live site is worse than an incomplete answer.
+const MAX_TOOL_STEPS = 5
+
+/** The tool list handed to the model, as OpenAI-wire function definitions. */
+function toolSchemas(level) {
+  return offeredTools(level).map((name) => ({
+    type: 'function',
+    function: {
+      name,
+      description: `WP Claude Bridge tool \`${name}\` on the managed site.`,
+      // The plugin validates its own arguments and is the authority on their
+      // shape. Re-declaring 58 schemas here would be a second source of truth
+      // that drifts; an open object lets the model pass what the tool wants and
+      // lets the plugin reject what it does not.
+      parameters: { type: 'object', properties: {}, additionalProperties: true },
+    },
+  }))
+}
+
+/**
+ * Run one tool the model asked for, or refuse it.
+ *
+ * A refusal is returned to the model as the tool's result rather than thrown:
+ * "you may not do that without approval" is information it needs in order to
+ * say something useful, and hiding it produces an assistant that silently does
+ * nothing.
+ */
+async function runToolCall(site, level, call, proposals) {
+  const name = call?.function?.name || ''
+  let args = {}
+  try {
+    args = call?.function?.arguments ? JSON.parse(call.function.arguments) : {}
+  } catch {
+    return { ok: false, error: 'arguments were not valid JSON' }
+  }
+
+  const verdict = permits(level, name)
+  if (!verdict.allowed) {
+    proposals.push({ tool: name, args, kind: verdict.kind, reason: verdict.reason })
+    return { ok: false, refused: true, reason: verdict.reason }
+  }
+
+  if (!site.paired || !site.url || !site.secret) {
+    return { ok: false, error: 'site is not connected' }
+  }
+
+  try {
+    const result = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      name,
+      args,
+    )
+    // Anything that changed the site is logged, whether a human asked for it or
+    // the assistant did it under standing authority. "Nobody remembers doing
+    // that" is exactly what an audit trail is for.
+    if (verdict.kind === 'mutating') {
+      events.record({
+        siteId: site.id,
+        kind: 'action',
+        severity: 'info',
+        title: `دستیار اجرا کرد: ${name}`,
+        detail: { op: name, args, by: 'assistant', authority: level },
+      }).catch(() => {})
+    }
+    return { ok: true, result: unwrap(result) ?? result }
+  } catch (e) {
+    return { ok: false, error: e.message || 'tool failed' }
+  }
+}
+
 /**
  * Answer a question.
  *
  * With no model configured this returns the briefing plus an honest note that
  * it cannot hold a conversation — better than a fluent paragraph that happens
- * to be fiction. With a model, the facts go in as the only permitted source.
+ * to be fiction. With a model, the facts go in as the only permitted source,
+ * and the model may additionally reach for the site's own tools — bounded by
+ * the authority level the owner chose, which until now nothing consulted.
  */
 export async function answer(site, message) {
   const facts = await gatherFacts(site)
@@ -175,27 +259,103 @@ export async function answer(site, message) {
     '',
     'NOT MEASURED (say so if asked about these):',
     ...facts.unknown.map((u) => `- ${u}`),
+    '',
+    // The model has to know the shape of its own permission, or it will either
+    // promise actions it cannot take or refuse ones it can.
+    'TOOLS: you may call the site\'s tools to check something rather than guess.',
+    `AUTHORITY: ${readAuthority(site.authority)}.`,
+    '- report:  you may read anything. You may NOT change the site. Propose the change in words instead.',
+    '- confirm: you may read anything. A change is proposed for the owner to approve, not performed.',
+    '- auto:    you may read and perform recoverable changes yourself.',
+    'Destructive tools (deleting, editing files in place, raw SQL, switching theme) always need the owner, at every level.',
+    'If a tool comes back refused, say what you would do and that it needs their approval. Do not pretend it ran.',
   ].join('\n')
 
-  try {
+  const level = readAuthority(site.authority)
+  const messages = [
+    { role: 'system', content: system },
+    { role: 'user', content: String(message || '') },
+  ]
+  const proposals = []
+  const ran = []
+
+  const post = async (payload) => {
     const res = await fetch(`${config.assistant.url.replace(/\/$/, '')}/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.assistant.key}`,
       },
-      body: JSON.stringify({
-        model: config.assistant.model,
-        messages: [{ role: 'system', content: system }, { role: 'user', content: String(message || '') }],
-        temperature: 0.2,
-      }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const body = await res.json()
-    const reply = body?.choices?.[0]?.message?.content
-    if (!reply) throw new Error('پاسخ خالی بود')
-    return { reply, refs, grounded: true, unknown: facts.unknown }
+    return res.json()
+  }
+
+  try {
+    const tools = site.paired ? toolSchemas(level) : []
+
+    for (let step = 0; ; step++) {
+      const body = await post({
+        model: config.assistant.model,
+        messages,
+        temperature: 0.2,
+        ...(tools.length ? { tools, tool_choice: 'auto' } : {}),
+      })
+
+      const choice = body?.choices?.[0]?.message
+      const calls = choice?.tool_calls || []
+
+      if (!calls.length) {
+        const reply = choice?.content
+        if (!reply) throw new Error('پاسخ خالی بود')
+        return {
+          reply,
+          refs: [...refs, ...ran.map((r) => `ابزار ${r}`)],
+          grounded: true,
+          unknown: facts.unknown,
+          authority: level,
+          ...(ran.length ? { ran } : {}),
+          ...(proposals.length ? { proposals, requiresApproval: true } : {}),
+        }
+      }
+
+      // The model wants to act, but the step budget is gone. Asking it again
+      // with the tools still attached is not a stop — a model that requests a
+      // tool every turn would keep requesting one forever. Take the tools away
+      // and make one final call, so the turn ends with an answer built from
+      // what has already been gathered.
+      if (step >= MAX_TOOL_STEPS) {
+        messages.push({
+          role: 'user',
+          content: 'به اندازهٔ کافی ابزار اجرا شد. حالا فقط با همان چیزی که داری پاسخ بده.',
+        })
+        const last = await post({ model: config.assistant.model, messages, temperature: 0.2 })
+        const reply = last?.choices?.[0]?.message?.content || briefing
+        return {
+          reply,
+          refs: [...refs, ...ran.map((r) => `ابزار ${r}`)],
+          grounded: true,
+          unknown: facts.unknown,
+          authority: level,
+          truncated: true,
+          ...(ran.length ? { ran } : {}),
+          ...(proposals.length ? { proposals, requiresApproval: true } : {}),
+        }
+      }
+
+      messages.push(choice)
+      for (const call of calls) {
+        const outcome = await runToolCall(site, level, call, proposals)
+        if (outcome.ok) ran.push(call.function.name)
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify(outcome).slice(0, 8000),
+        })
+      }
+    }
   } catch (e) {
     // Falling back to the briefing beats an error screen: the facts are already
     // gathered, and they answer most questions people actually ask.
