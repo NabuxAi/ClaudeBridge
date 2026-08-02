@@ -12,7 +12,15 @@ const dsn = process.env.CB_TEST_DATABASE_URL
 if (!dsn) {
   test('proposals (skipped: set CB_TEST_DATABASE_URL)', { skip: true }, () => {})
 } else {
-  process.env.DATABASE_URL = dsn
+  // Its own PostgreSQL schema, because the test runner runs files in parallel
+  // and every database-touching file here creates and drops the SAME table
+  // names. Sharing one schema meant one file's teardown deleted another file's
+  // tables mid-test — 15 failures that moved around between runs. A search_path
+  // per file makes the isolation structural instead of a matter of timing.
+  const TEST_SCHEMA = 'test_proposals'
+  process.env.DATABASE_URL =
+    dsn + (dsn.includes('?') ? '&' : '?') +
+    'options=' + encodeURIComponent(`-c search_path=${TEST_SCHEMA}`)
 
   const { pool, query } = await import('../src/db.js')
   const { SCHEMA: PROPOSALS_SCHEMA } = await import('../src/proposals.schema.js')
@@ -21,6 +29,7 @@ if (!dsn) {
 
   test.before(async () => {
     await query(`
+      CREATE SCHEMA IF NOT EXISTS ${TEST_SCHEMA};
       DROP TABLE IF EXISTS alert_deliveries;
       DROP TABLE IF EXISTS events;
       DROP TABLE IF EXISTS proposals;
