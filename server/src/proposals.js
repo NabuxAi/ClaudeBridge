@@ -72,6 +72,23 @@ export function pending(siteId) {
   )
 }
 
+/**
+ * Everything waiting across every site, for the daily digest.
+ *
+ * Joined to sites for the name, because "flush_cache on site-7" tells the
+ * reader nothing they can act on.
+ */
+export function pendingAcrossSites(limit = 50) {
+  return all(
+    `SELECT p.*, s.name AS site_name
+     FROM proposals p JOIN sites s ON s.id = p.site_id
+     WHERE p.status = 'pending'
+     ORDER BY p.created_at DESC
+     LIMIT $1`,
+    [limit]
+  )
+}
+
 /** One proposal, scoped to its site so an id from elsewhere cannot be read. */
 export function get(siteId, id) {
   return one(`SELECT * FROM proposals WHERE id = $1 AND site_id = $2`, [id, siteId])

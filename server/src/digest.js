@@ -7,6 +7,7 @@ import { all } from './db.js'
 import * as events from './events.js'
 import * as connector from './connector.js'
 import { sendTelegram } from './telegram.js'
+import * as proposals from './proposals.js'
 import { config } from './config.js'
 
 /** MCP tools/call wraps the op result as result.content[0].text (JSON). Unwrap it. */
@@ -98,6 +99,40 @@ async function recordScanEvents(siteId, scan) {
   }
 }
 
+/**
+ * The proposals waiting for a human, as a digest section.
+ *
+ * A proposal became durable and visible on its site's page, and that was still
+ * not the same as anyone finding out: no push, SMS or e-mail channel is
+ * configured on this deployment, so the only notification that actually leaves
+ * the server is this digest — and it reported security scans only. A decision
+ * waiting for approval reached whoever happened to open the panel, which for a
+ * change the assistant judged worth making is an arbitrary amount of time.
+ *
+ * Rendered from the same rows the panel reads, so the two cannot disagree.
+ */
+export function renderPendingProposals(pending) {
+  if (!pending?.length) return ''
+
+  const lines = pending.slice(0, 10).map((p) => {
+    const args = p.args && Object.keys(p.args).length
+      ? ` <code>${escapeHtml(JSON.stringify(p.args)).slice(0, 60)}</code>`
+      : ''
+    const mark = p.kind === 'sensitive' ? '🔴' : '🟠'
+    return `${mark} <b>${escapeHtml(p.site_name || p.site_id)}</b> — ${escapeHtml(p.tool)}${args}`
+  })
+
+  // Saying how many were withheld beats a list that silently stops at ten.
+  const more = pending.length > 10 ? `\n   …و ${pending.length - 10} مورد دیگر` : ''
+
+  return `\n\n⏳ <b>در انتظار تأیید شما: ${pending.length}</b>\n` + lines.join('\n') + more
+}
+
+/** Telegram's HTML mode needs these escaped, and a tool's arguments are data. */
+function escapeHtml(v) {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 /** Build the Telegram digest text from scan results. */
 export function renderDigest(results) {
   const when = new Date().toISOString().slice(0, 16).replace('T', ' ')
@@ -121,7 +156,17 @@ export function renderDigest(results) {
 /** Full daily run: scan + render + send. Returns a summary object. */
 export async function runDailyDigest() {
   const results = await scanAllSites()
-  const text = renderDigest(results)
+
+  // Settled independently: a digest that fails entirely because the proposals
+  // query hiccuped is worse than one missing its last section.
+  let pending = []
+  try {
+    pending = await proposals.pendingAcrossSites()
+  } catch (e) {
+    console.error('digest: could not read pending proposals', e?.message || e)
+  }
+
+  const text = renderDigest(results) + renderPendingProposals(pending)
   const sent = await sendTelegram(text)
   return { sites: results.length, totalCritical: results.reduce((a, r) => a + (r.critical || 0), 0), sent, text }
 }
