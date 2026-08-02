@@ -335,6 +335,26 @@ resolved change being proposable again.
    by design and needs a real Postgres to observe.
 2. **`MAX_TOOL_STEPS` is a constant.** Five suits a maintenance question; a
    "fix my site" flow wants a per-request budget.
-3. **Nothing notifies anyone that a proposal is waiting.** It is now durable and
-   visible on the site's page, but a person who never opens that page will not
-   learn of it. The alert-delivery machinery already exists for events.
+3. ~~Nothing notifies anyone that a proposal is waiting.~~ **Done** — a new
+   proposal records an event, so it reaches the site's alert list through the
+   machinery that already existed. Deliberately an event and not
+   `raiseEmergency`: a pending decision is not a site being down, and sending
+   both at the same weight is how people learn to ignore both. The event's
+   fingerprint is tied to the proposal, so a re-proposal touches the one open
+   event rather than alerting again, and deciding it resolves the alert.
+
+   **Test counts, precisely:** `proposals.test.js` runs **11** tests when
+   `CB_TEST_DATABASE_URL` points at a PostgreSQL and contributes **1 skipped**
+   test when it does not. The suite is **188 / 187 passing / 1 skipped** without
+   a database and **198 / 198** with one, the latter confirmed over three
+   consecutive runs. The commit message for `1460bd5` says "191 tests, 190
+   pass"; that is wrong — it conflated the two modes.
+
+   **And the first version of those tests was flaky**, which the single-file run
+   hid. `events.record()` is unawaited by design, so a write from one test can
+   land *after* the next test's cleanup; an assertion that looked for "any open
+   proposal event on this site" then picked up the orphan and compared it
+   against the wrong proposal id. It failed only in the full-suite run, where
+   enough writes are in flight for the overlap to happen. The assertions are now
+   scoped to one proposal's fingerprint, which removes the coupling rather than
+   racing it.

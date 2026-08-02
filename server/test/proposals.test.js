@@ -35,19 +35,31 @@ if (!dsn) {
   test.beforeEach(() => query('DELETE FROM proposals; DELETE FROM events'))
 
   // events.record() is fire-and-forget on purpose — a failed alert must not
-  // fail the answer — so the assertion has to wait for it rather than assume
-  // it already landed.
-  const openProposalEvents = async (siteId) => {
+  // fail the answer — so an assertion has to wait for it rather than assume it
+  // already landed.
+  //
+  // Scoped to one proposal's fingerprint rather than "any open proposal event
+  // on this site". Because the write is unawaited it can land AFTER the next
+  // test's cleanup, and a query that matches any proposal event then picks up
+  // an orphan from the previous test. Asking only about this proposal removes
+  // the coupling instead of racing it.
+  const alertsFor = async (siteId, proposalId, { expect = 1 } = {}) => {
+    let rows = []
     for (let i = 0; i < 40; i++) {
-      const { rows } = await query(
-        `SELECT * FROM events WHERE site_id = $1 AND kind = 'proposal' AND resolved_at IS NULL`,
-        [siteId]
-      )
-      if (rows.length) return rows
+      ;({ rows } = await query(
+        `SELECT * FROM events
+         WHERE site_id = $1 AND fingerprint = $2 AND resolved_at IS NULL`,
+        [siteId, `proposal:${proposalId}`]
+      ))
+      if (rows.length >= expect) return rows
       await new Promise((r) => setTimeout(r, 25))
     }
-    return []
+    return rows
   }
+
+  // Settle anything still in flight so one test's unawaited write cannot land
+  // inside the next one.
+  const settle = () => new Promise((r) => setTimeout(r, 150))
 
   test.after(async () => {
     await query('DROP TABLE IF EXISTS proposals')
@@ -128,37 +140,42 @@ if (!dsn) {
     // Durable and on the page is not the same as anyone knowing. Without this
     // a proposal waits until someone happens to open that site's page.
     const p = await proposals.record(make())
-    const [ev] = await openProposalEvents('site-a')
+    const [ev] = await alertsFor('site-a', p.id)
 
     assert.ok(ev, 'a new proposal should raise an event')
     assert.match(ev.title, /flush_cache/)
     assert.equal(ev.detail.proposalId, p.id)
     assert.equal(ev.fingerprint, `proposal:${p.id}`)
+    await settle()
   })
 
   test('the same proposal made again does not raise a second alert', async () => {
     // The assistant re-proposes on every retry. One decision is one alert.
-    await proposals.record(make())
-    await openProposalEvents('site-a')
-    await proposals.record(make())
-    await new Promise((r) => setTimeout(r, 200))
+    const first = await proposals.record(make())
+    await alertsFor('site-a', first.id)
 
-    assert.equal((await openProposalEvents('site-a')).length, 1)
+    const again = await proposals.record(make())
+    assert.equal(again.id, first.id, 'the retry should be the same row')
+    await settle()
+
+    assert.equal((await alertsFor('site-a', first.id)).length, 1)
+    await settle()
   })
 
   test('deciding a proposal closes its alert', async () => {
     // An inbox that keeps showing what was already decided is one people stop
     // reading.
     const p = await proposals.record(make())
-    await openProposalEvents('site-a')
+    await alertsFor('site-a', p.id)
 
     await proposals.resolve('site-a', p.id, 'approved', { by: 'u_2' })
 
     for (let i = 0; i < 40; i++) {
-      if ((await openProposalEvents('site-a')).length === 0) break
+      if ((await alertsFor('site-a', p.id, { expect: 0 })).length === 0) break
       await new Promise((r) => setTimeout(r, 25))
     }
-    assert.equal((await openProposalEvents('site-a')).length, 0)
+    assert.equal((await alertsFor('site-a', p.id, { expect: 0 })).length, 0)
+    await settle()
   })
 
   test('a proposal cannot be read or resolved through another site', async () => {
