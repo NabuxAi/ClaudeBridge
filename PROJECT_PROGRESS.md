@@ -331,10 +331,14 @@ resolved change being proposable again.
 
 ## Remaining work
 
-1. **The audit-log write is not covered by a test.** It is `.catch()`-swallowed
-   by design and needs a real Postgres to observe.
-2. **`MAX_TOOL_STEPS` is a constant.** Five suits a maintenance question; a
-   "fix my site" flow wants a per-request budget.
+1. ~~The audit-log write is not covered by a test.~~ **Done** — five tests
+   against a real PostgreSQL. The write is `.catch()`-swallowed by design, so
+   if it stopped working every other test would still pass and the log would
+   just be empty; that is the one failure an audit trail cannot have.
+2. ~~`MAX_TOOL_STEPS` is a constant.~~ **Done** — `maxToolSteps` is a
+   per-request budget, clamped to a ceiling the deployment sets with
+   `ASSISTANT_MAX_TOOL_STEPS` (default 12). A caller can ask a hard question for
+   more room; it cannot turn a bound into no bound.
 3. ~~Nothing notifies anyone that a proposal is waiting.~~ **Done** — a new
    proposal records an event, so it reaches the site's alert list through the
    machinery that already existed. Deliberately an event and not
@@ -358,3 +362,73 @@ resolved change being proposable again.
    enough writes are in flight for the overlap to happen. The assertions are now
    scoped to one proposal's fingerprint, which removes the coupling rather than
    racing it.
+
+---
+
+## 2026-08-02 (last) — the audit trail is tested, and the budget is per question
+
+### The audit trail was an untested claim
+
+The code says anything that changed a site is written down, "whether a human
+asked for it or the assistant did it under standing authority". The write is
+`.catch()`-swallowed on purpose — a failed log must not fail the action — which
+means that if it ever stopped working, every test would still pass and the log
+would simply be empty. That is the one failure an audit trail cannot have.
+
+Five tests, against a real PostgreSQL because a swallowed write can only be
+observed in the table it was meant to reach:
+
+- a mutating tool run under `auto` is recorded with the tool, its arguments,
+  that the assistant did it, and the authority it acted under. `auto` is exactly
+  when nobody witnesses the change, so the record is the only evidence;
+- a read is **not** recorded — a log containing every read is one nobody can
+  find a real change in;
+- a refused change is **not** recorded as having happened. An audit trail that
+  logs attempts as actions manufactures history, which is worse than none;
+- arguments survive: "someone changed a plugin" is not a record, "akismet, to
+  inactive" is;
+- an unknown tool is refused rather than run, and returns as a proposal.
+
+That last one earned its place by failing first. The original version used a
+made-up tool name and passed for the wrong reason — nothing ran at all, because
+the policy classifies an unknown tool as destructive. Which is the default that
+makes the tool list safe to extend: something that reaches the plugin before it
+reaches the policy still needs a human, even under `auto`.
+
+### The step budget follows the question
+
+`MAX_TOOL_STEPS` was 5 for everything. Five suits "is my site up to date?"; it
+does not suit "work out why the checkout is broken", which legitimately reads
+several things first — and truncating that produces a confident, incomplete
+answer.
+
+`maxToolSteps` is now per request, clamped to `ASSISTANT_MAX_TOOL_STEPS`
+(default 12). A budget a caller can set to anything is not a budget, so the
+ceiling belongs to the deployment and the request only chooses within it.
+Anything unusable falls back to the default rather than being clamped: a request
+for 0 steps is an assistant that can only guess, which is more likely a caller
+bug than an intention. Booleans are rejected outright — `Number(true)` is 1, and
+`maxToolSteps: true` silently becoming a one-step budget is exactly the kind of
+coercion that is discovered much later.
+
+### The database tests were trampling each other
+
+Worth recording because it was invisible file-by-file. The runner executes test
+files in parallel, and every database-touching file created and dropped the
+**same** table names, so one file's teardown deleted another's tables mid-test:
+fifteen failures that moved between runs and none reproducible alone. Each such
+file now owns a PostgreSQL schema through `search_path`, which makes the
+isolation structural rather than a matter of timing.
+
+### Counts
+
+**208 / 208** with a database over two consecutive full runs; **194 tests, 192
+passing, 2 skipped** without one. The hub builds.
+
+### Configuration
+
+`ASSISTANT_MAX_TOOL_STEPS` — the ceiling on tool calls per question. Unset means
+12. Nothing else changes when it is absent.
+
+`CB_TEST_DATABASE_URL` — a throwaway PostgreSQL for the database tests. Unset
+means they skip; the suite stays green either way.

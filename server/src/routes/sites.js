@@ -1044,8 +1044,11 @@ router.post('/sites/:id/assistant', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)
     if (!site) return
-    const { message } = req.body || {}
-    res.json(await assistant.answer(site, message))
+    // maxToolSteps lets a "work out why this is broken" question read more
+    // than a "is it up to date?" one. The assistant clamps it to a ceiling the
+    // deployment sets, so a caller cannot turn a bound into no bound.
+    const { message, maxToolSteps } = req.body || {}
+    res.json(await assistant.answer(site, message, { maxToolSteps }))
   } catch (e) { next(e) }
 })
 

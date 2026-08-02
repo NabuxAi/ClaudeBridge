@@ -202,7 +202,43 @@ const faNum = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
 // How many times the model may ask for a tool before we stop. A maintenance
 // question needs two or three calls; anything past that is a loop, and a loop
 // against a live site is worse than an incomplete answer.
-const MAX_TOOL_STEPS = 5
+//
+// Five suits "is my site up to date?". It does not suit "work out why the
+// checkout is broken", which legitimately reads several things before it can
+// say anything — and silently truncating that produces a confident, incomplete
+// answer, which is the worst outcome available.
+const DEFAULT_TOOL_STEPS = 5
+
+// The ceiling a caller may ask for. A budget is a bound on how much a single
+// question may do to a live site; one the caller can set to anything is not a
+// bound at all. ASSISTANT_MAX_TOOL_STEPS moves it for a deployment that wants
+// longer investigations, without letting any individual request decide.
+const HARD_TOOL_STEP_LIMIT = (() => {
+  const raw = process.env.ASSISTANT_MAX_TOOL_STEPS?.trim()
+  if (!raw) return 12
+  const parsed = Number(raw)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 12
+})()
+
+/**
+ * The step budget for one question.
+ *
+ * Anything unusable — absent, not a number, zero, negative, fractional — falls
+ * back to the default rather than being clamped into something surprising. A
+ * caller asking for 0 steps means an assistant that can only guess, which is
+ * never what anyone wants and is more likely a bug in the caller.
+ */
+export function stepBudget(requested) {
+  // Only a number or a numeric string. Number(true) is 1, which would quietly
+  // turn `maxToolSteps: true` — a plausible thing for a caller to send — into a
+  // one-step budget rather than the default.
+  if (typeof requested !== 'number' && typeof requested !== 'string') {
+    return DEFAULT_TOOL_STEPS
+  }
+  const n = Number(requested)
+  if (!Number.isInteger(n) || n < 1) return DEFAULT_TOOL_STEPS
+  return Math.min(n, HARD_TOOL_STEP_LIMIT)
+}
 
 /** The tool list handed to the model, as OpenAI-wire function definitions. */
 function toolSchemas(level) {
@@ -297,7 +333,7 @@ async function runToolCall(site, level, call, proposals) {
  * and the model may additionally reach for the site's own tools — bounded by
  * the authority level the owner chose, which until now nothing consulted.
  */
-export async function answer(site, message) {
+export async function answer(site, message, { maxToolSteps } = {}) {
   const facts = await gatherFacts(site)
   const briefing = renderBriefing(facts)
   const refs = []
@@ -353,6 +389,7 @@ export async function answer(site, message) {
   ].join('\n')
 
   const level = readAuthority(site.authority)
+  const budget = stepBudget(maxToolSteps)
   const messages = [
     { role: 'system', content: system },
     { role: 'user', content: String(message || '') },
@@ -407,7 +444,7 @@ export async function answer(site, message) {
       // tool every turn would keep requesting one forever. Take the tools away
       // and make one final call, so the turn ends with an answer built from
       // what has already been gathered.
-      if (step >= MAX_TOOL_STEPS) {
+      if (step >= budget) {
         messages.push({
           role: 'user',
           content: 'به اندازهٔ کافی ابزار اجرا شد. حالا فقط با همان چیزی که داری پاسخ بده.',
