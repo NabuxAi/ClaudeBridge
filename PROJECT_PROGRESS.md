@@ -801,7 +801,58 @@ auto  job_start brand_new_thing  -> sensitive  allowed=false
 
 **251 tests pass with none skipped.**
 
+## No emergency alert can reach a site owner
+
+The alerts module was inspected expecting a fault and does not have one. It
+separates `nothingConfigured` from `allFailed`, refuses to count an
+unconfigured channel as a failure, and every channel gates cleanly on its own
+credential. That is recorded here so the empty `alert_deliveries` table is not
+"fixed" by someone later.
+
+The problem is one level up. Skipping an unconfigured channel is right, and it
+means a deployment with none configured **never tells an owner their site is
+compromised** — while looking healthy from every angle, because the operator
+still receives the ops message.
+
+This deployment is that deployment:
+
+```
+users:  3 accounts, all with an email address, none with a phone or push token
+config: FCM_SERVER_KEY, NAJVA_API_KEY, SMS_URL, EMAIL_URL — all unset
+```
+
+So a critical malware finding reaches us and never reaches them.
+
+Nothing needed fixing in the dispatcher. What was missing is that an operator
+had no way to learn any of this: `docker-compose.yaml` documented twelve
+environment variables and **not one of the four alert channels**. They are
+documented now, with the consequence of leaving them blank written where it
+will be read, and the server reports at startup which owner channels are live
+and names the variable that turns each missing one on.
+
+The operator channel is reported separately on purpose. *"We will find out"* is
+not *"the customer will find out"*, and conflating them is how an owner learns
+about their own site from a visitor.
+
+### Verified on the deployed server
+
+```
+Emergency alerts CANNOT reach site owners — no channel configured.
+Set one of: firebase (FCM_SERVER_KEY), najva (NAJVA_API_KEY),
+sms (SMS_URL + SMS_API_KEY), email (EMAIL_URL).
+The operator channel still receives them.
+```
+
+**255 tests pass with none skipped.**
+
 ## Needs you
+
+**`EMAIL_URL` is the one worth setting.** Every account here has an email
+address and none has a phone or a push token, so email is the only channel that
+could actually reach anyone today. It wants an HTTP endpoint that accepts a
+send request (plus `EMAIL_API_KEY` and `EMAIL_FROM`); the field names are
+configuration precisely so any provider fits. Until it is set, owner-facing
+emergency alerting is off — deliberately now, rather than by accident.
 
 **Pushing the update to account30t.com is now possible, and is your call.**
 Starting an `update_apply` job on it would install 3.7.4 and fix its scan
