@@ -758,6 +758,49 @@ installed plugin    -> contains array_keys( cb_job_types() )
 
 **244 tests pass with none skipped.**
 
+## Making the push reachable widened a hole, so it was closed
+
+Advertising `update_apply` and `backup_restore` last pass had a consequence
+worth catching before anything used them.
+
+`job_start` is one tool covering seven jobs, and it sits under **MUTATING** —
+correct for a scan, an integrity check or a backup, all recoverable. Two of the
+seven are not:
+
+- `update_apply` installs plugin, theme and core updates. *"The update broke the
+  site"* is the oldest failure in WordPress.
+- `backup_restore` writes a database over the live one. Whatever was there
+  between the snapshot and now is gone.
+
+Both match this module's own definition of sensitive. While they were absent
+from the tool schema the distinction was academic. Once advertised, a name-only
+check would have let an assistant on `auto` authority restore a backup over a
+live database with nobody asked.
+
+`classify()` and `isSensitive()` now take the arguments and look at the job
+type. An unfamiliar type is sensitive — a site on a newer plugin may offer a job
+this build has never heard of, and unknown is not safe, which is the rule
+already applied to unknown tools. Callers that cannot supply arguments still get
+the tool's own classification: mutating, which under `confirm` still needs a
+human.
+
+Neither decision point needed new information. The assistant had already parsed
+the arguments before deciding, and the route was consulting a name-only Set that
+could not see the job type.
+
+### Verified against the deployed server
+
+Its own verdicts, not a local copy:
+
+```
+auto  job_start security_scan    -> mutating   allowed=true
+auto  job_start update_apply     -> sensitive  allowed=false
+auto  job_start backup_restore   -> sensitive  allowed=false
+auto  job_start brand_new_thing  -> sensitive  allowed=false
+```
+
+**251 tests pass with none skipped.**
+
 ## Needs you
 
 **Pushing the update to account30t.com is now possible, and is your call.**
