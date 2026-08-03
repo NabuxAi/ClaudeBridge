@@ -483,3 +483,51 @@ The test proposal was rejected afterwards; the queue is empty.
 approval should reach someone sooner than that, set one of `ALERT_EMAIL_URL`,
 `ALERT_SMS_URL`, or the push credentials — the dispatcher already handles all
 three and skips cleanly when they are absent, which is what it is doing now.
+
+## An approval could be spent without anything happening
+
+The server-initiated path was checked end to end rather than assumed, and it
+holds up: the outbound credential is live (`getMe` → `CpNabux_bot`), the
+configured chat is reachable (`getChat` → supergroup CPNABUX), the scheduler is
+running (*"Telegram digest scheduled daily at 8:00 UTC"*), and the digest
+renderer is covered by tests. Only the `sendMessage` itself is unproven, and
+deliberately so — firing an unrequested digest into a real group is not a
+verification step to take unasked.
+
+What that inspection did turn up was on the inbound half.
+
+Approving a proposal claims the row **before** the tool runs. That ordering is
+right: it is what turns two people clicking approve at the same moment into one
+execution and one 409, instead of two identical changes to the site.
+
+Its cost was invisible. If the call to the site then failed, the proposal still
+read `approved` and the site was never changed. The panel showed a decision that
+had been carried out — because that is what approved has always meant here — and
+nothing anywhere disagreed. The `result` column existed for exactly this and was
+never written to.
+
+`recordOutcome` now writes what happened onto the row the approval already
+claimed, and a failed execution also raises an event fingerprinted to that
+proposal so it sits with the decision rather than floating loose. Success is
+recorded too: otherwise an empty result means both "it worked" and "nobody
+looked", and the failure stops being distinguishable again.
+
+The row is **not** returned to pending. Re-arming it would invite exactly the
+double execution the claim prevents — a request that failed on the way back may
+well have reached the site and run. The approval stands; what came of it is
+written down.
+
+Tested against a real PostgreSQL, like the rest of the proposal tests, because
+what is being checked is an UPDATE that must reach an already-resolved row, must
+not reopen it to a second claim, and must not be addressable from another site.
+
+**220 tests pass with none skipped** — running the suite against a throwaway
+PostgreSQL also exercises the database-backed files that skip by default.
+
+## Needs you
+
+**The digest has never been observed sending.** Everything upstream of the send
+is verified, and the job fires at 08:00 UTC. If you want certainty before then,
+the quickest proof is to watch the group at that hour, or say the word and a
+one-off send can be triggered — it was left alone because it puts a real message
+in a real group.
