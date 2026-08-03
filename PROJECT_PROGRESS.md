@@ -531,3 +531,60 @@ is verified, and the job fires at 08:00 UTC. If you want certainty before then,
 the quickest proof is to watch the group at that hour, or say the word and a
 one-off send can be triggered — it was left alone because it puts a real message
 in a real group.
+
+## A scheduled scan that failed for a year without saying why
+
+The alerts path was checked first and is **not** broken: zero rows in
+`alert_deliveries` is correct, because `isEmergency` requires `critical`
+severity *and* a kind in malware/core_integrity/down, and every live event is
+warning or info. Worth recording so the empty table is not "fixed" later.
+
+The real fault was next to it. One open `scan_failed` event against a paired,
+live site, and its entire contents were:
+
+```json
+{"error": "tool security_scan failed"}
+```
+
+The nightly scan runs on our schedule, so nobody is watching when it fails —
+that record *is* the diagnosis. It named neither a cause nor a status, and three
+very different failures all produced it: the plugin refusing the call, the host
+returning 500, and nothing answering at all. Each needs a different fix.
+
+The body was being discarded before anyone could look at it: `res.json()` with a
+swallowed `catch` turns a PHP fatal into `{}`. The connector now reads the body
+as text and reports the site's own error message when it sent one, otherwise the
+status plus a truncated snippet — truncated because the string is stored on an
+event and shown in a digest, where a whole HTML error page is worse than
+useless. `digest.js` also stores the status separately, so the three cases stay
+distinguishable without parsing prose.
+
+### What it said the moment it shipped
+
+Re-running the scan against the live sites, same code path, no changes to them:
+
+```
+FAIL Demo WordPress  ->  security_scan failed (HTTP 500):
+     {"code":"internal_server_error","message":"<p>There has been a critical
+      error on this website.</p>…
+FAIL تست زنده        ->  security_scan failed (HTTP 500):
+     {"code":"internal_server_error","message":"<p>یک خطای مهم در این وب‌سایت…
+```
+
+and the stored events now carry `status: 500` beside the text.
+
+The existing fetch doubles modelled a Response with only `json()`. A real
+Response always has `text()`, so they were completed rather than the connector
+being bent around them. **227 tests pass with none skipped.**
+
+## Needs you
+
+**`security_scan` is fatally erroring inside the WordPress plugin.** Both paired
+sites answer the tool call with HTTP 500 and WordPress's "critical error" page,
+which means an uncaught PHP error in the plugin's scan handler — not a
+connectivity or pairing problem, and not something this server can fix from its
+side. The reason is in each site's PHP error log (or `WP_DEBUG_LOG`); that is
+where the actual stack trace lives. Until it is fixed, every nightly scan fails
+and the security findings in the digest are absent rather than clean — which is
+the more dangerous of the two, because an empty findings list reads like a
+healthy site.
