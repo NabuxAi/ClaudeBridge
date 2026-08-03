@@ -60,15 +60,54 @@ export async function callTool(site, name, args = {}) {
     body: rawBody,
     signal: AbortSignal.timeout(30000),
   })
-  const data = await res.json().catch(() => ({}))
+  // Read as text first. A site that answers with a PHP fatal, an HTML error
+  // page or an empty body is exactly the case worth diagnosing, and parsing
+  // straight to JSON with a swallowed catch turned all of those into nothing:
+  // a nightly scan failed against a live site and the only record of it read
+  // "tool security_scan failed", which names neither cause nor status.
+  const raw = await res.text().catch(() => '')
+  let data = {}
+  try {
+    data = raw ? JSON.parse(raw) : {}
+  } catch {
+    data = {}
+  }
+
   if (res.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
-  if (!res.ok || data.error) throw new ConnectorError(data.error?.message || `tool ${name} failed`, res.status)
+
+  if (!res.ok || data.error) {
+    throw new ConnectorError(describeToolFailure(name, res.status, data, raw), res.status)
+  }
   // MCP wraps tool output in result.content[]; return the useful part.
   return data.result ?? data
 }
 
 function cryptoRandomId() {
   return crypto.randomBytes(6).toString('hex')
+}
+
+/**
+ * A failure message someone can act on.
+ *
+ * The site's own error text when it sent one, because that is the only thing
+ * that says WHY. Otherwise the HTTP status, which at least separates "the
+ * plugin refused" from "the host returned 500" from "nothing came back" — three
+ * situations with three different fixes that all used to read the same.
+ *
+ * A body is included only when there is no structured error to quote, and it is
+ * truncated: this string is stored on an event and shown in a digest, and an
+ * HTML error page pasted whole into either is worse than useless.
+ */
+function describeToolFailure(name, status, data, raw) {
+  const structured = data?.error?.message
+  if (structured) return `${name}: ${structured}`
+
+  const body = String(raw || '').replace(/\s+/g, ' ').trim()
+  if (!body) {
+    return `${name}: no response body (HTTP ${status})`
+  }
+  const snippet = body.length > 200 ? `${body.slice(0, 200)}…` : body
+  return `${name} failed (HTTP ${status}): ${snippet}`
 }
 
 export class ConnectorError extends Error {

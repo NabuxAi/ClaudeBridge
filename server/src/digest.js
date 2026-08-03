@@ -42,7 +42,10 @@ export async function scanAllSites() {
       await events.record({
         siteId: s.id, kind: 'scan_failed', severity: 'warning',
         title: 'اسکن امنیتی به سایت نرسید',
-        detail: { error: e.message },
+        // The status separates "the plugin refused us" from "the host is
+        // returning 500" from "nothing answered" — three failures with three
+        // different fixes, which the message alone did not distinguish.
+        detail: { error: e.message, status: e.status || null },
         fingerprint: 'scan:unreachable',
       })
     }

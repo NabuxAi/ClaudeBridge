@@ -11,6 +11,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
+// A fetch Response double. Both json() and text() are provided because that is
+// what a real Response offers, and the connector reads the body as text so a
+// non-JSON error page can be reported rather than silently discarded.
+const respond = (body, status = 200) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  json: async () => body,
+  text: async () => JSON.stringify(body),
+})
+
+
 const dsn = process.env.CB_TEST_DATABASE_URL
 
 if (!dsn) {
@@ -89,13 +100,13 @@ if (!dsn) {
       const target = String(url)
       if (target.startsWith('https://gateway.test')) {
         const message = turns[Math.min(turn++, turns.length - 1)]
-        return { ok: true, status: 200, json: async () => ({ choices: [{ message }] }) }
+        return respond({ choices: [{ message }] })
       }
       if (target.startsWith('https://example.test')) {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ result: { content: [{ text: '{"ok":true}' }] } }),
+          ...respond({ result: { content: [{ text: '{"ok":true}' }] } }),
         }
       }
       return realFetch(url, opts)

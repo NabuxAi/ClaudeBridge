@@ -18,6 +18,17 @@ import { SENSITIVE_TOOLS } from '../src/authority.js'
 const store = await import('../src/store.js')
 const { default: sitesRouter } = await import('../src/routes/sites.js')
 
+// A fetch Response double. Both json() and text() are provided because that is
+// what a real Response offers, and the connector reads the body as text so a
+// non-JSON error page can be reported rather than silently discarded.
+const respond = (body, status = 200) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  json: async () => body,
+  text: async () => JSON.stringify(body),
+})
+
+
 const SITE = {
   id: 'site-1',
   user_id: 'u_1',
@@ -53,7 +64,7 @@ function stub() {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ result: { content: [{ text: '{"ok":true}' }] } }),
+        ...respond({ result: { content: [{ text: '{"ok":true}' }] } }),
       }
     }
     return real.fetch(url, opts)

@@ -10,6 +10,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
+// A fetch Response double. Both json() and text() are provided because that is
+// what a real Response offers, and the connector reads the body as text so a
+// non-JSON error page can be reported rather than silently discarded.
+const respond = (body, status = 200) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  json: async () => body,
+  text: async () => JSON.stringify(body),
+})
+
+
 process.env.ASSISTANT_URL = 'https://gateway.test'
 process.env.ASSISTANT_API_KEY = 'test-key'
 process.env.ASSISTANT_MODEL = 'nabu-smart'
@@ -51,19 +62,19 @@ function harness(turns, { toolFails = false } = {}) {
     if (target.startsWith('https://gateway.test')) {
       sentToModel.push(JSON.parse(opts.body))
       const message = turns[Math.min(turn++, turns.length - 1)]
-      return { ok: true, status: 200, json: async () => ({ choices: [{ message }] }) }
+      return respond({ choices: [{ message }] })
     }
 
     // Everything else is the managed site's MCP endpoint.
     const body = JSON.parse(opts.body)
     calledTools.push({ name: body.params.name, args: body.params.arguments })
     if (toolFails) {
-      return { ok: false, status: 502, json: async () => ({ error: { message: 'connector timeout' } }) }
+      return respond({ error: { message: 'connector timeout' } }, 502)
     }
     return {
       ok: true,
       status: 200,
-      json: async () => ({ result: { content: [{ text: JSON.stringify({ ok: true }) }] } }),
+      ...respond({ result: { content: [{ text: JSON.stringify({ ok: true }) }] } }),
     }
   }
 
