@@ -669,6 +669,49 @@ GET ai.digiwp.com/digiwp-ai-bridge.zip  ->  CB_VERSION 3.7.2
 
 **242 tests pass with none skipped.**
 
+## The fleet's own update state was not knowable
+
+Chasing whether the release had landed exposed the next gap: the server could
+not answer *"which plugin version is this site running"* from the one place that
+had just been in contact with it.
+
+Registration is the only thing that ever recorded a version, and it fires when
+the plugin decides to announce itself. Live state before this change:
+
+```
+account30t.com   3.7.0   last seen 07-29   (five days stale)
+demo.digiwp      —       —                 (never recorded)
+```
+
+— while the nightly run was talking to both every night. And `site_info`
+reported the WordPress version, the PHP version and every active plugin, but
+**not the bridge's own**, so even asking directly did not help.
+
+It reports `bridge_version` now, and the nightly run records what it observed.
+Best-effort and deliberately quiet on failure: the scan that follows already
+reports unreachability, and saying it twice helps nobody.
+`recordObservedVersion` merges into the existing connector blob rather than
+replacing it, and sets `lastSeen` from this contact, because that is what
+lastSeen means.
+
+Released as **3.7.3**. The version tests from the previous pass cover the bump
+automatically; one more pins that every shipped build reports its own version,
+since a build that does not silently returns the fleet view to guessing.
+
+### Verified by running the nightly job
+
+```
+demo.digiwp      3.7.3   last contact 08-03 01:24   (observed, not volunteered)
+account30t.com   3.7.0   last contact 07-29 22:32   (unchanged — correctly)
+```
+
+The second line is the mechanism behaving properly rather than failing: a 3.7.0
+plugin has no `bridge_version` to report, so nothing is recorded and the stale
+registration value stands. What the server knows and what it is guessing are now
+distinguishable, which they were not before.
+
+**242 tests pass with none skipped.**
+
 ## Needs you
 
 **account30t.com will recover on its own, or can be pushed.** It now sees a
