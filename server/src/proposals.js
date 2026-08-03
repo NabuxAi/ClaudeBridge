@@ -119,3 +119,29 @@ export async function resolve(siteId, id, status, { by, result } = {}) {
 
   return row
 }
+
+/**
+ * Record what happened when an approved proposal was actually run.
+ *
+ * Approval claims the row BEFORE the tool executes, which is what stops two
+ * people approving the same change into two identical edits. The cost of that
+ * ordering is a gap: if the call to the site then fails, the proposal reads
+ * "approved" while nothing was done, and neither the panel nor the audit trail
+ * says otherwise. Someone reading the queue later sees a decision that was
+ * carried out, because that is what approved has always meant here.
+ *
+ * The row is not returned to pending. Re-arming it would invite exactly the
+ * double execution the claim exists to prevent — the request may well have
+ * reached the site and failed on the way back. Recording the outcome is the
+ * honest option: the approval stands, and what came of it is written down.
+ *
+ * Deliberately does not filter on status: the row is already resolved by the
+ * time this is called.
+ */
+export async function recordOutcome(siteId, id, result) {
+  const { rows } = await query(
+    `UPDATE proposals SET result = $3 WHERE id = $1 AND site_id = $2 RETURNING *`,
+    [id, siteId, JSON.stringify(result)]
+  )
+  return rows[0] || null
+}

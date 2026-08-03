@@ -1031,8 +1031,28 @@ router.post('/sites/:id/actions', async (req, res, next) => {
             detail: { op, args, approved: Boolean(approved) },
           }).catch(() => {})
         }
+        if (claimed) {
+          proposals.recordOutcome(site.id, claimed.id, { ok: true, at: Date.now() }).catch(() => {})
+        }
         return res.json({ ok: true, relayed: true, result })
       } catch (e) {
+        // The proposal was claimed before the tool ran, so at this point it
+        // reads "approved" while the site was never changed. Without this the
+        // queue shows a decision that was carried out — which is what approved
+        // has always meant here — and nothing anywhere says it failed.
+        if (claimed) {
+          proposals.recordOutcome(site.id, claimed.id, {
+            ok: false, at: Date.now(), error: e.message,
+          }).catch(() => {})
+          events.record({
+            siteId: site.id, kind: 'action', severity: 'warning',
+            title: `اقدام تأییدشده اجرا نشد: ${op}`,
+            detail: { op, args, proposalId: claimed.id, error: e.message },
+            // Tied to the proposal so this sits with the decision it belongs
+            // to rather than becoming a loose alert nobody can place.
+            fingerprint: `proposal-failed:${claimed.id}`,
+          }).catch(() => {})
+        }
         return res.status(e.status || 502).json({ ok: false, message: e.message })
       }
     }
