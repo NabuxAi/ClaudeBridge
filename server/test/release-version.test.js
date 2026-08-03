@@ -82,3 +82,24 @@ test('site_info reports the bridge version', () => {
     assert.match(info[0], /'bridge_version'\s*=>\s*CB_VERSION/, `${rel} does not report its own version`)
   }
 })
+
+test('job_start advertises every job type the plugin can actually run', () => {
+  // The schema listed four types while cb_job_types() handled seven, so
+  // update_apply, backup_restore and perf were unreachable to any client that
+  // respects the schema — including the one that would push a plugin update.
+  // Validation was always against the handler map, so the enum was pure
+  // advertisement, and advertisement drifts.
+  for (const rel of [
+    'wp-claude-bridge.php',
+    'dist/digiwp-ai-bridge/digiwp-ai-bridge.php',
+    'dist/digi-ai-bridge/digi-ai-bridge.php',
+  ]) {
+    const src = readFileSync(join(root, rel), 'utf8')
+    const reg = src.split('\n').find((l) => l.includes("'name' => 'job_start'"))
+    assert.ok(reg, `${rel}: job_start is not registered`)
+    assert.match(reg, /'enum'\s*=>\s*array_keys\(\s*cb_job_types\(\)\s*\)/,
+      `${rel}: job_start still hardcodes its type list`)
+    assert.doesNotMatch(reg, /Types: backup, core_integrity/,
+      `${rel}: the description still hardcodes the stale list`)
+  }
+})

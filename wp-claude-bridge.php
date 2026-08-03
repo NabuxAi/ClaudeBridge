@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Bundles WordPress engineering skills the connected model can load on demand (as tools, MCP resources, and prompts), ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.7.3
+ * Version: 3.7.4
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.7.3' );
+define( 'CB_VERSION', '3.7.4' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -1697,7 +1697,7 @@ function cb_tools() {
 	// plugins goes through here — running those inside a request ties up a PHP
 	// worker for minutes, which on a shared host IS the customer's site
 	// getting slow because we are looking at it.
-	$tools[] = array( 'name' => 'job_start', 'description' => 'Queue heavy work and return immediately with a job id. Types: backup, core_integrity, security_scan, conflict_hunt. The work runs in a background loopback request, in chunks against a time budget, saving progress between chunks so a 30-second max_execution_time is survivable rather than fatal. Poll job_status for progress and the result.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'type' => array( 'type' => 'string', 'enum' => array( 'backup', 'core_integrity', 'security_scan', 'conflict_hunt' ) ), 'url' => array( 'type' => 'string', 'description' => 'For conflict_hunt: the broken page.' ), 'expect' => array( 'type' => 'string' ), 'forbid' => array( 'type' => 'string' ), 'files' => array( 'type' => 'boolean', 'description' => 'For backup: also archive wp-content.' ) ), 'required' => array( 'type' ) ), 'op' => 'cb_op_job_start' );
+	$tools[] = array( 'name' => 'job_start', 'description' => 'Queue heavy work and return immediately with a job id. Types: ' . implode( ', ', array_keys( cb_job_types() ) ) . '. The work runs in a background loopback request, in chunks against a time budget, saving progress between chunks so a 30-second max_execution_time is survivable rather than fatal. Poll job_status for progress and the result.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'type' => array( 'type' => 'string', 'enum' => array_keys( cb_job_types() ) ), 'url' => array( 'type' => 'string', 'description' => 'For conflict_hunt: the broken page.' ), 'expect' => array( 'type' => 'string' ), 'forbid' => array( 'type' => 'string' ), 'files' => array( 'type' => 'boolean', 'description' => 'For backup: also archive wp-content.' ) ), 'required' => array( 'type' ) ), 'op' => 'cb_op_job_start' );
 	$tools[] = array( 'name' => 'job_status', 'description' => 'Progress and result of a queued job. Give id for one job, type for the newest of a kind, or neither to list recent jobs. State is queued, running, done or failed; progress is a percentage and message describes the current chunk.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'id' => array( 'type' => 'string' ), 'type' => array( 'type' => 'string', 'description' => 'Return the newest job of this type instead of one by id; running jobs win over finished ones.' ) ) ), 'op' => 'cb_op_job_status' );
 
 	$tools[] = array( 'name' => 'conflict_hunt', 'description' => 'Find what breaks a page — theme first, then plugins by binary search. Tests the theme against a bundled default in one round, because a theme fault otherwise makes every plugin look innocent. Then disables half the plugins at a time rather than one at a time: about six rounds on a forty-plugin site instead of forty, which matters because every round is a window where a real visitor hits the site mid-flip. Restores the original plugin set and theme unconditionally, including if a step throws.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'url' => array( 'type' => 'string', 'description' => 'Same-site page URL that is broken.' ), 'expect' => array( 'type' => 'string', 'description' => 'Substring that must appear when the page is healthy.' ), 'forbid' => array( 'type' => 'string', 'description' => 'Substring that marks the page as broken.' ) ), 'required' => array( 'url' ) ), 'op' => 'cb_op_conflict_hunt' );
