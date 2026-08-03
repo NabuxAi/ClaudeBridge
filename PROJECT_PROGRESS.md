@@ -845,6 +845,53 @@ The operator channel still receives them.
 
 **255 tests pass with none skipped.**
 
+## Nobody was told when a site fell behind
+
+The server has known both halves of this for a while and never put them
+together: each site's bridge version is recorded from the nightly contact, and
+the manifest says what is current. Nothing reported the divergence.
+
+That gap is the reason the last several passes were necessary at all. A site sat
+five days on a version whose security scan fatally errored, while the fix was
+published, reachable and installable — and the only symptom anyone could have
+seen was an opaque 500 in a digest section about something else.
+
+The daily digest now carries an outdated-plugin section. It **reports** rather
+than alerts: an outdated plugin is not an emergency, and treating it as one is
+how people learn to skim the digest.
+
+Three things it deliberately does not do:
+
+- A site that has never reported a version is counted as **unknown**, not named
+  as behind. Saying it is behind would be inventing a fact.
+- The current version is read from the same manifest the sites poll, so the
+  digest cannot promise a version the updater would not install. If it cannot be
+  read the section is omitted — a comparison against a guess is worse than none.
+- It is wrapped like the proposals section, so a digest that loses one section
+  beats a digest that fails because one query hiccuped.
+
+### Verified against live data, rendered without sending
+
+```
+published version: 3.7.4
+
+🔄 افزونه به‌روز نیست: 2
+📦 تست زنده        — 3.7.0 → 3.7.4
+📦 Demo WordPress  — 3.7.3 → 3.7.4
+```
+
+Demo showed 3.7.3 because that was the last *observed* value, not the installed
+one. Running the nightly job and re-rendering closes the loop:
+
+```
+🔄 افزونه به‌روز نیست: 1
+📦 تست زنده        — 3.7.0 → 3.7.4
+```
+
+Observation and report agree, and the one genuinely stale site is the one named.
+
+**263 tests pass with none skipped.**
+
 ## Needs you
 
 **`EMAIL_URL` is the one worth setting.** Every account here has an email
