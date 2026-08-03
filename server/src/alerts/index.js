@@ -142,6 +142,30 @@ export function compose(event, site) {
  * and a muted emergency channel is worse than none — it looks like coverage.
  * Only a confirmed-critical, currently-open finding qualifies.
  */
+/**
+ * Which owner-facing alert channels this deployment can actually use.
+ *
+ * Emergency dispatch is best-effort by design — an unconfigured channel is
+ * skipped rather than failed, which is right, and also means a deployment with
+ * none of them configured never tells a site owner anything and looks entirely
+ * healthy doing it. The operator still hears about it on the ops channel, so
+ * nothing appears wrong from the inside either.
+ *
+ * Said once at startup so that state is a choice rather than a discovery.
+ */
+export function alertChannelStatus() {
+  const live = []
+  const missing = []
+  const check = (id, ok, env) => (ok ? live : missing).push(ok ? id : `${id} (${env})`)
+
+  check('firebase', !!config.alerts.fcmServerKey, 'FCM_SERVER_KEY')
+  check('najva', !!config.alerts.najvaApiKey, 'NAJVA_API_KEY')
+  check('sms', !!(config.alerts.smsUrl && config.alerts.smsApiKey), 'SMS_URL + SMS_API_KEY')
+  check('email', !!config.alerts.emailUrl, 'EMAIL_URL')
+
+  return { live, missing, ops: !!(config.telegram.token && config.telegram.chatId) }
+}
+
 export function isEmergency(event) {
   if (!event || event.resolved_at) return false
   if (event.severity !== 'critical') return false

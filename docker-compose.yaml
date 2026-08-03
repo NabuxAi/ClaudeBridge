@@ -50,6 +50,30 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - DIGEST_HOUR=${DIGEST_HOUR:-8}
+      # --- Reaching the SITE OWNER when their site is compromised ---
+      #
+      # An emergency (malware, a modified core, a site that is down) is
+      # dispatched to the owner over these channels, in order, until one is
+      # accepted. Every one is optional and an unset channel is skipped rather
+      # than failed — which means leaving them all blank is a valid deployment
+      # in which the owner is never told anything. The operator still hears
+      # about it on TELEGRAM_CHAT_ID above, and the server says which channels
+      # are live at startup so this is a choice rather than a surprise.
+      - FCM_SERVER_KEY=${FCM_SERVER_KEY:-}
+      - NAJVA_API_KEY=${NAJVA_API_KEY:-}
+      # Iranian SMS gateways all differ, so the field names are configuration
+      # rather than code. SMS_URL and SMS_API_KEY are the minimum.
+      - SMS_URL=${SMS_URL:-}
+      - SMS_API_KEY=${SMS_API_KEY:-}
+      - SMS_AUTH_HEADER=${SMS_AUTH_HEADER:-}
+      - SMS_TO_FIELD=${SMS_TO_FIELD:-to}
+      - SMS_TEXT_FIELD=${SMS_TEXT_FIELD:-text}
+      - SMS_FROM_FIELD=${SMS_FROM_FIELD:-from}
+      # EMAIL_URL is the one that matters most here: every account has an email
+      # address, and none has a phone or a push token.
+      - EMAIL_URL=${EMAIL_URL:-}
+      - EMAIL_API_KEY=${EMAIL_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-alerts@digiwp.com}
       # Public URL a connector uses to reach us = the server's own domain + /v1.
       - PUBLIC_BASE_URL=${SERVICE_URL_SERVER:-http://localhost:8787}/v1
     depends_on:

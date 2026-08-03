@@ -10,6 +10,7 @@ import * as connector from './connector.js'
 import { sendTelegram } from './telegram.js'
 import * as proposals from './proposals.js'
 import { config } from './config.js'
+import { alertChannelStatus } from './alerts/index.js'
 
 /** MCP tools/call wraps the op result as result.content[0].text (JSON). Unwrap it. */
 function unwrap(result) {
@@ -208,4 +209,21 @@ export function scheduleDailyDigest() {
   }
   setInterval(tick, 4 * 60 * 1000)
   console.log(`Telegram digest scheduled daily at ${config.digestHour}:00 UTC.`)
+
+  // Which emergency channels can reach a SITE OWNER, said out loud once.
+  // Skipping an unconfigured channel is correct, and it also means a
+  // deployment with none configured never tells an owner their site is
+  // compromised — while looking healthy from every angle, because the operator
+  // still gets the ops message. This makes that a choice, not a discovery.
+  const ch = alertChannelStatus()
+  if (ch.live.length === 0) {
+    console.warn(
+      'Emergency alerts CANNOT reach site owners — no channel configured. ' +
+      `Set one of: ${ch.missing.join(', ')}. ` +
+      (ch.ops ? 'The operator channel still receives them.' : 'The operator channel is not configured either.')
+    )
+  } else {
+    console.log(`Emergency alert channels: ${ch.live.join(', ')}` +
+      (ch.missing.length ? ` (unset: ${ch.missing.join(', ')})` : ''))
+  }
 }
