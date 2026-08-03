@@ -1437,7 +1437,7 @@ function cb_scan_signature( $c ) {
 	return null;
 }
 
-function cb_op_security_scan( $args ) {
+function cb_op_security_scan( $args = array() ) {
 	$limit = isset( $args['max_files'] ) ? max( 1000, (int) $args['max_files'] ) : 60000;
 
 	$hits    = array();
@@ -1644,7 +1644,7 @@ function cb_tools() {
 
 	// ---- Site / system ----
 	$tools[] = array( 'name' => 'site_info', 'description' => 'WordPress version, PHP version, active theme, active plugins, WooCommerce status, language.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_site_info', 'noargs' => true );
-	$tools[] = array( 'name' => 'security_scan', 'description' => 'Scan wp-content for malware/webshell signatures (EtherHiding campaign, obfuscated PHP/JS, known shells) and check robots.txt for injected <script>. Read-only; returns critical/suspicious counts and findings.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'max_files' => array( 'type' => 'integer', 'description' => 'Cap on files scanned (default 60000).' ) ) ), 'op' => 'cb_op_security_scan', 'noargs' => true );
+	$tools[] = array( 'name' => 'security_scan', 'description' => 'Scan wp-content for malware/webshell signatures (EtherHiding campaign, obfuscated PHP/JS, known shells) and check robots.txt for injected <script>. Read-only; returns critical/suspicious counts and findings.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'max_files' => array( 'type' => 'integer', 'description' => 'Cap on files scanned (default 60000).' ) ) ), 'op' => 'cb_op_security_scan' );
 	$tools[] = array( 'name' => 'db_query', 'description' => 'Run a read-only SELECT query. Use {prefix} for the table prefix, e.g. "SELECT * FROM {prefix}posts LIMIT 5".', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'sql' => array( 'type' => 'string' ) ), 'required' => array( 'sql' ) ), 'op' => 'cb_op_db_query' );
 
 	// ---- Install / delete plugins & themes ----
@@ -3174,7 +3174,16 @@ function cb_run_tool_dispatch( $name, $args ) {
 			if ( isset( $t['rest'] ) ) {
 				return cb_run_rest_tool( $t['rest'], (array) $args );
 			}
-			return ! empty( $t['noargs'] ) ? call_user_func( $t['op'] ) : call_user_func( $t['op'], (array) $args );
+			// noargs means the caller's arguments are ignored, not that the op is
+			// called with nothing. Calling with nothing made an op that declares a
+			// parameter throw ArgumentCountError, which is uncatchable here and took
+			// the entire REST request down as a WordPress critical error — every
+			// nightly security_scan, for as long as it had been registered noargs.
+			// PHP ignores surplus arguments to a user function, so an empty array is
+			// safe for the ops that take none and removes the failure class.
+			return ! empty( $t['noargs'] )
+				? call_user_func( $t['op'], array() )
+				: call_user_func( $t['op'], (array) $args );
 		}
 	}
 	return new WP_Error( 'cb_unknown_tool', "Unknown tool: $name" );
