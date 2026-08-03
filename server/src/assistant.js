@@ -273,7 +273,9 @@ async function runToolCall(site, level, call, proposals) {
     return { ok: false, error: 'arguments were not valid JSON' }
   }
 
-  const verdict = permits(level, name)
+  // Args matter to the verdict: job_start covers seven jobs and two of them
+  // (update_apply, backup_restore) are sensitive whatever the tool is called.
+  const verdict = permits(level, name, args)
   if (!verdict.allowed) {
     proposals.push({ tool: name, args, kind: verdict.kind, reason: verdict.reason })
 

@@ -8,7 +8,7 @@ import { PROVENANCE, updatesFromStatus } from '../live.js'
 import * as events from '../events.js'
 import * as proposals from '../proposals.js'
 import * as assistant from '../assistant.js'
-import { SENSITIVE_SET } from '../authority.js'
+import { isSensitive, SENSITIVE_SET } from '../authority.js'
 import { probeSite } from '../probe.js'
 import { analyse as analysePerf } from '../perf/recipes.js'
 import { checkInventory, slugOf } from '../intel/vulns.js'
@@ -998,7 +998,11 @@ router.post('/sites/:id/actions', async (req, res, next) => {
     const { action, tool, args = {}, approved, proposalId } = req.body || {}
     const op = tool || action
     if (!op) return res.status(400).json({ message: 'action/tool لازم است.' })
-    if (SENSITIVE.has(op) && !approved) {
+    // isSensitive rather than the name-only Set: job_start is one tool covering
+    // seven jobs, and update_apply / backup_restore are sensitive while a scan
+    // is not. A name-only check let the dangerous two through as merely
+    // mutating the moment they became reachable from the tool schema.
+    if (isSensitive(op, args) && !approved) {
       return res.status(202).json({ ok: false, requiresApproval: true, message: 'این اقدام حساس است و به تأیید شما نیاز دارد.' })
     }
 

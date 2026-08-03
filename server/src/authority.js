@@ -112,17 +112,70 @@ export const SENSITIVE_SET = SENSITIVE
 
 export const AUTHORITY_LEVELS = Object.freeze(['report', 'confirm', 'auto'])
 
-/** Where a tool sits. Anything unrecognised is sensitive, deliberately. */
-export function classify(tool) {
+/**
+ * Job types that are sensitive whatever the tool that starts them is called.
+ *
+ * `job_start` is one tool covering seven different jobs. Most are read-only or
+ * recoverable — a scan, an integrity check, a backup — which is why the tool as
+ * a whole sits under MUTATING. Two are not:
+ *
+ *   update_apply     installs plugin, theme and core updates. "The update broke
+ *                    the site" is the oldest failure in WordPress.
+ *   backup_restore   writes a database over the live one. Whatever was there
+ *                    between the snapshot and now is gone.
+ *
+ * Both match this module's own definition of sensitive, so classification has
+ * to look at the job type and not stop at the tool name. It did stop there
+ * while those two were unreachable from the tool schema; they are reachable
+ * now, and under `auto` authority a name-only check would let the assistant
+ * restore a backup over a live database without anyone being asked.
+ */
+export const SENSITIVE_JOB_TYPES = Object.freeze(['update_apply', 'backup_restore'])
+
+/**
+ * Every job type this server knows about, mirroring cb_job_types() in the
+ * plugin. Kept so an unfamiliar type can be spotted rather than waved through:
+ * a site running a newer plugin may offer a job this build has never heard of,
+ * and "unknown" is not the same as "safe".
+ */
+export const JOB_TYPES_KNOWN = Object.freeze([
+  'backup',
+  'core_integrity',
+  'security_scan',
+  'conflict_hunt',
+  'perf',
+  ...SENSITIVE_JOB_TYPES,
+])
+
+const SENSITIVE_JOBS = new Set(SENSITIVE_JOB_TYPES)
+const JOB_TYPES = new Set(JOB_TYPES_KNOWN)
+
+/**
+ * Where a tool sits. Anything unrecognised is sensitive, deliberately.
+ *
+ * `args` is optional and only consulted for tools whose danger depends on it.
+ * Callers that do not pass it get the tool's own classification, which is the
+ * cautious answer for job_start: mutating still requires confirm authority.
+ */
+export function classify(tool, args = null) {
   const name = String(tool || '')
+
+  if (name === 'job_start') {
+    const type = String(args?.type || '')
+    // An unrecognised job type is sensitive for the same reason an unrecognised
+    // tool is: a type this build has not heard of may be anything.
+    if (type && !JOB_TYPES.has(type)) return 'sensitive'
+    if (SENSITIVE_JOBS.has(type)) return 'sensitive'
+  }
+
   if (READ.has(name)) return 'read'
   if (MUTATING.has(name)) return 'mutating'
   if (SENSITIVE.has(name)) return 'sensitive'
   return 'sensitive'
 }
 
-export function isSensitive(tool) {
-  return classify(tool) === 'sensitive'
+export function isSensitive(tool, args = null) {
+  return classify(tool, args) === 'sensitive'
 }
 
 /** Normalise whatever is stored; an unknown level is the most cautious one. */
@@ -139,9 +192,9 @@ export function readAuthority(raw) {
  * only allowed to look right now" are different sentences and lead to
  * different next steps.
  */
-export function permits(level, tool) {
+export function permits(level, tool, args = null) {
   const authority = readAuthority(level)
-  const kind = classify(tool)
+  const kind = classify(tool, args)
 
   if (kind === 'read') {
     return { allowed: true, kind, reason: null }
