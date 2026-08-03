@@ -588,3 +588,58 @@ where the actual stack trace lives. Until it is fixed, every nightly scan fails
 and the security findings in the digest are absent rather than clean — which is
 the more dangerous of the two, because an empty findings list reads like a
 healthy site.
+
+## The scan was fatally erroring, and now it is not
+
+Last entry made the failure legible; this one reads what it said and fixes it.
+From the demo site's PHP log:
+
+```
+Uncaught ArgumentCountError: Too few arguments to function
+cb_op_security_scan(), 0 passed ... and exactly 1 expected
+```
+
+`security_scan` was registered with `'noargs' => true`, which makes the
+dispatcher call the op with **nothing**, while the op declared a required
+parameter. `ArgumentCountError` cannot be caught at that layer, so WordPress
+answered the entire REST request with its generic critical-error page — which is
+exactly why the server only ever saw an opaque 500 and could say nothing more.
+
+Three things were wrong; all three are fixed rather than the one that was
+visible:
+
+- **The registration.** `security_scan` advertises `max_files` in its
+  inputSchema, so it is not a noargs tool. Marking it one meant the cap was
+  discarded even in the cases that did not fatal — an argument advertised and
+  thrown away.
+- **The op.** `$args` now defaults. A tool that only reads files should not be
+  able to take the whole REST endpoint down over a missing argument.
+- **The dispatcher.** `noargs` meant *"ignore the caller's arguments"*, not
+  *"call with nothing"*. PHP ignores surplus arguments to a user function, so
+  noargs ops are now handed an empty array. Eight other tools were one edit away
+  from the same fatal; this removes the class, not the instance.
+
+The `dist/` builds are generated from the canonical file and were rebuilt.
+
+### Verified on the live sites
+
+```
+before:  FAIL Demo WordPress  ->  HTTP 500, WordPress critical error
+after:   OK   Demo WordPress  critical=0 suspicious=0 clean=true
+```
+
+and the `scan_failed` event for that site is now resolved.
+
+Tested by reading the source of all three plugin files, because the mismatch is
+visible statically and the failure it causes is not — a fatal takes the endpoint
+down before anything can report on itself. Reverting the fix turns 10 passing
+assertions into 3 failures naming the tool. **237 tests pass, none skipped.**
+
+## Needs you
+
+**account30t.com is still failing, and it is the same bug.** That site runs its
+own installed copy of the plugin, so the fix reaches it only when the plugin is
+updated there — the server now ships **3.7.1**. Until then its nightly scan
+keeps returning HTTP 500, and the digest shows no findings for it, which reads
+like a clean site rather than an unscanned one. That distinction is the whole
+reason the failure was worth chasing.
