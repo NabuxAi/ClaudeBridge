@@ -914,3 +914,45 @@ not, the plugin there is either older than the auto-updater or pointed at a
 different server — updating it by hand from the link above settles both. Until
 it updates, its nightly scan still returns HTTP 500 and the digest shows no
 findings for it, which reads like a clean site rather than an unscanned one.
+
+
+## "263 tests pass" was a claim about one laptop
+
+There was no CI. The suite has been green all session, but only ever on this
+machine with a throwaway PostgreSQL started by hand — which says nothing about
+the branch, and nothing about anyone else's checkout.
+
+The job brings up `postgres:16` as a service so the database-backed files
+execute rather than skip. A dozen assertions here are database properties — a
+partial unique index, a conditional UPDATE that must match exactly one row — and
+a green run over skipped tests is the kind of CI that is believed rather than
+useful.
+
+### Writing it exposed four of my own tests as machine-dependent
+
+The release-version tests read `dist/`, which is **generated and gitignored**.
+On a fresh clone they failed with ENOENT rather than telling anyone anything —
+verified by actually cloning into a temp directory, which is how it should have
+been checked when they were written.
+
+Both halves fixed. The assertions skip with a message naming the build script
+when `dist` is absent, so a local run is not a wall of red about a missing
+directory. And CI builds the distributables **before** testing, so they never
+skip where it matters: a release gate that skips the release checks is not a
+gate.
+
+`php -l` also runs over the plugin and its builds. The server's tests read the
+plugin's source rather than executing it, so a syntax error there passes the
+suite and breaks every paired site.
+
+### Verified
+
+Every step against a fresh clone before pushing — build ok, 7 passed with
+nothing skipped after the build, hub build ok. Then on GitHub:
+
+```
+Server (node --test) -> success      # tests 263, pass 263, fail 0, skipped 0
+Hub (build)          -> success
+```
+
+Nothing skipped, on a runner, against a real database.
