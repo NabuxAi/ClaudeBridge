@@ -115,6 +115,40 @@ Alerting is complete as **machinery** and inert as **delivery**: the dispatcher,
 fallback order and the accounting all work, and no owner-facing channel is configured, so
 today an emergency reaches the operator and nobody else.
 
+### The assistant on a schedule
+
+All of the above could only be started by a person. Every tool, the authority level, the
+proposal inbox and the audit trail existed, and none of it did anything until somebody
+opened the panel and typed a question — so the only maintenance this server performed on
+its own was one fixed malware scan inside the digest. An expiring backup, a plugin that had
+been failing to update for a week, a queue of pending updates: all visible to the assistant,
+none of them looked at unless a human went looking first.
+
+The sweep runs the same assistant over every paired site daily. It adds no capability —
+everything it can do, a person asking a question could already have done. What changes is
+that nobody has to remember.
+
+It is **off unless asked for**. It spends gateway tokens on every paired site every day and,
+under `auto`, performs changes with nobody watching. Both are reasonable to want; neither
+should begin because someone deployed a new version.
+
+| variable | unset means |
+|---|---|
+| `ASSISTANT_SWEEP` | off. The scheduler says so at boot rather than staying silent |
+| `ASSISTANT_SWEEP_HOUR` | `6` UTC — two hours before the digest, so what it finds is in today's message rather than tomorrow's |
+| `ASSISTANT_SWEEP_MAX_SITES` | `25`. What it skips over the cap is reported, because a sweep that silently stops at N reads as having covered everything |
+| `ASSISTANT_SWEEP_TOOL_STEPS` | `6` per site — lower than a person's question, because nobody is waiting on it and nobody is watching it |
+
+Switched on without a model configured, it refuses to schedule and says why: it would
+re-read each site every morning and never propose anything, which looks like it is working.
+
+`POST /v1/sweep/run` runs it now, behind auth and deliberately not a GET — it costs tokens
+on every site and may make a change on one set to `auto`.
+
+The prompt is a constant in the module, not configuration. This runs unattended against
+live sites with tool access, and a prompt reachable from outside is an instruction channel
+into exactly that.
+
 ## Release requirements
 
 `DATABASE_URL` for the server. `ASSISTANT_URL` + `ASSISTANT_API_KEY` to enable the model;

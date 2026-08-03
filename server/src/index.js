@@ -16,6 +16,7 @@ import sitesRouter from './routes/sites.js'
 import connectorRouter from './routes/connector.js'
 import { runDailyDigest, scheduleDailyDigest } from './digest.js'
 import { initIntel, scheduleIntel, refresh as refreshIntel } from './intel/index.js'
+import { runSweep, scheduleSweep } from './sweep.js'
 
 // Before anything binds a port: a server running on the development signing
 // secret will happily accept a session token anyone reading this repository
@@ -89,6 +90,23 @@ app.post('/v1/intel/refresh', requireAuth, async (req, res, next) => {
   try { res.json(await refreshIntel({ force: true })) } catch (e) { next(e) }
 })
 
+// Run the assistant over every paired site now, instead of waiting for the
+// hour. This is how the sweep gets verified against real sites rather than
+// trusted because its tests pass — the same reason /v1/digest/run exists.
+//
+// Behind auth and deliberately not a GET: it spends gateway tokens on every
+// paired site and, on a site set to `auto`, may perform a change. A link that
+// does that when something crawls it is not a feature.
+//
+// It runs regardless of ASSISTANT_SWEEP, which only governs the schedule —
+// asking for one directly is already the decision that flag protects.
+app.post('/v1/sweep/run', requireAuth, async (req, res, next) => {
+  try {
+    const maxSites = Number(req.body?.maxSites)
+    res.json(await runSweep(Number.isFinite(maxSites) && maxSites > 0 ? { maxSites } : {}))
+  } catch (e) { next(e) }
+})
+
 app.use((err, _req, res, _next) => {
   if (!err.status || err.status >= 500) console.error(err)
   res.status(err.status || 500).json({ message: err.message || 'server error' })
@@ -102,6 +120,7 @@ initDb()
       console.log(`DigiWP server on :${config.port}  (Postgres, live relay: ${config.live ? 'on' : 'off'})`)
       scheduleDailyDigest()
       scheduleIntel()
+      scheduleSweep()
     })
   })
   .catch((e) => {

@@ -956,3 +956,118 @@ Hub (build)          -> success
 ```
 
 Nothing skipped, on a runner, against a real database.
+
+---
+
+## 2026-08-04 — the assistant now starts itself
+
+Everything needed for this server to look after a site had been built and wired
+to a single trigger: a person opening the panel and typing a question. 58 tools
+through the signed connector, an authority level per site, refusals captured as
+approvable proposals, an audit trail, a proposal inbox, a line in the digest —
+all of it inert until somebody remembered.
+
+`grep` for callers of `assistant.answer` returned exactly one: the HTTP route.
+
+So the only maintenance this server did on its own was one fixed probe —
+`security_scan` inside the digest — which finds malware and nothing else. A
+backup that has not run since April, a plugin failing to update for a week, a
+queue of pending updates: every one of them visible to the assistant, and none
+of them looked at unless a human went looking first.
+
+`src/sweep.js` runs the same assistant over every paired site daily. It adds no
+capability. Everything it can do, a question could already have done; what
+changes is that nobody has to remember to ask.
+
+### The decisions that make an unattended run safe
+
+- **Off unless asked for.** It spends gateway tokens on every paired site every
+  day and, under `auto`, changes things with nobody watching. Both are
+  reasonable to want and neither should start because someone deployed.
+- **The prompt is a constant, not configuration.** This runs unattended against
+  live sites with tool access; a prompt reachable from outside is an instruction
+  channel into exactly that. A test pins that what reaches the model is the
+  constant in the module.
+- **It asks for a check, not a change.** The authority level still bounds what
+  may happen, but the wording decides what gets attempted, and an unattended run
+  is the wrong moment to be enthusiastic.
+- **Sequential.** Each site is a bounded tool loop against a gateway shared with
+  everything else on this host. Firing the whole fleet at once is how a
+  maintenance sweep becomes an outage, and nothing is waiting for it to finish.
+- **A cap that says what it skipped.** A sweep that silently stops at 25 reads
+  as one that covered everything.
+- **Nothing is recorded twice.** `answer` already persists proposals, writes the
+  audit trail and raises the event that puts a waiting approval in the digest.
+  Re-recording here would double every alert and make the proposal
+  deduplication meaningless. The only event this raises is the one `answer`
+  cannot: every site failing.
+- **Switched on without a model, it refuses to schedule** and says why. It would
+  otherwise re-read each site every morning and propose nothing, which looks
+  like it is working.
+
+### Proven end to end, against a real database
+
+A real PostgreSQL, a real paired site row, the real signed connector, and stubs
+only for the two things that need credentials — the WordPress and the gateway:
+
+```
+authority=confirm    swept 1 site, proposed 1, performed 0
+                     site received: site_info, update_status, backup_list
+                     proposals table: flush_cache | pending | {}
+
+authority=auto       proposed 0, performed 1
+                     site received: site_info, update_status, backup_list, flush_cache
+
+destructive at auto  proposed 1, performed 0
+                     reached the site: no
+```
+
+The third is the one worth having. `auto` means recoverable changes may happen
+unattended; a raw `db_query` still stops and waits for a person, on a run nobody
+is watching. That is the authority model holding where it matters most.
+
+Boot was run in all three configurations rather than reasoned about:
+
+```
+ASSISTANT_SWEEP unset       Assistant sweep: off (set ASSISTANT_SWEEP=true …)
+ASSISTANT_SWEEP=true, no model
+                            on but no model is configured, so it would only re-read
+                            each site and never propose anything
+ASSISTANT_SWEEP=true + model
+                            scheduled daily at 6:00 UTC (max 25 sites, 6 tool steps each)
+```
+
+`POST /v1/sweep/run` answers 401 unauthenticated, and a GET does not trigger it.
+
+### One of my own tests proved nothing, and was replaced
+
+"A sweep continues past a site whose run throws outright" drove a failing
+gateway. `answer` catches that internally, so the handler under test never ran —
+deleting the entire error handling left the test green. Found by mutating the
+source rather than by reading it.
+
+The case that actually reaches the handler is a malformed site row, which throws
+before `answer`'s own try block. Rewriting it that way also exposed a real fault:
+the handler read `site.id` and `site.title` while reporting the failure, so a bad
+row would have thrown *inside the catch* and killed the sweep — the exact
+outcome the handler exists to prevent. Both are read once, before the try.
+
+Two mutations are now caught where one was: forcing the proposal count to zero,
+and rethrowing instead of reporting.
+
+### Tests
+
+**270 pass, none skipped**, against a throwaway PostgreSQL. Without a database:
+252 tests, 249 passing, 3 skipped.
+
+## Needs you
+
+**`ASSISTANT_SWEEP=true` to turn it on**, and nothing else — the model is already
+configured on this deployment. Before setting it, one thing is worth deciding
+deliberately: on any site set to `auto`, the sweep may perform a recoverable
+change at 06:00 with nobody watching. That is what `auto` has always meant and
+what the audit trail records; it has simply never happened unattended before.
+Destructive tools still wait for you at every level.
+
+If you would rather see it once before it runs on a schedule:
+`POST /v1/sweep/run` with an authenticated session does exactly one run now.

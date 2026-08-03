@@ -39,6 +39,29 @@ export const config = {
     key: process.env.ASSISTANT_API_KEY || '',
     model: process.env.ASSISTANT_MODEL || 'claude-sonnet-5',
   },
+  // The assistant looking at each site on its own schedule, rather than only
+  // when somebody opens the panel and types a question.
+  //
+  // OFF unless a deployment asks for it, and deliberately so. It spends gateway
+  // tokens on every paired site every day, and under `auto` authority it
+  // performs recoverable changes with nobody watching. Both are reasonable
+  // things to want and neither should start happening because someone deployed
+  // a new version.
+  sweep: {
+    enabled: /^(1|true|yes|on)$/i.test(String(process.env.ASSISTANT_SWEEP || '')),
+    // UTC. Defaults two hours before the digest, so what the sweep finds is in
+    // the message rather than in tomorrow's.
+    hour: Number.isFinite(Number(process.env.ASSISTANT_SWEEP_HOUR))
+      ? Number(process.env.ASSISTANT_SWEEP_HOUR)
+      : 6,
+    // A ceiling on sites per run. A sweep that quietly grows with the fleet is
+    // one that eventually times out or bills a surprise; what it skips is
+    // logged rather than silently dropped.
+    maxSites: Number(process.env.ASSISTANT_SWEEP_MAX_SITES || 25),
+    // Tool calls per site. Lower than a person's question on purpose: nobody is
+    // waiting on this, but nobody is watching it either.
+    maxToolSteps: Number(process.env.ASSISTANT_SWEEP_TOOL_STEPS || 6),
+  },
   // Whether an X-Forwarded-For header may be believed. On by default because
   // this runs behind Traefik; it must be OFF anywhere the server is reachable
   // directly, since the header is trivially forged and a forged one bypasses
