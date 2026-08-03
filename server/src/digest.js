@@ -4,6 +4,7 @@
 // Triggered by the scheduler in index.js, or on-demand via the route.
 // ============================================================
 import { all } from './db.js'
+import { sites as siteStore } from './store.js'
 import * as events from './events.js'
 import * as connector from './connector.js'
 import { sendTelegram } from './telegram.js'
@@ -25,6 +26,17 @@ export async function scanAllSites() {
   const results = []
   for (const s of rows) {
     const site = { url: s.url, secret: s.secret, siteKey: s.site_key }
+
+    // While we have the site on the line anyway, learn which plugin version it
+    // is actually running. Registration only fires when the plugin announces
+    // itself, which left the fleet view stale — and the version is what decides
+    // whether a published fix has landed. Best-effort: a site that will not
+    // answer this is still worth scanning.
+    try {
+      const info = unwrap(await connector.callTool(site, 'site_info', {}))
+      if (info?.bridge_version) await siteStore.recordObservedVersion(s.id, info.bridge_version)
+    } catch { /* the scan below reports unreachability; no need to say it twice */ }
+
     try {
       const scan = unwrap(await connector.callTool(site, 'security_scan', {}))
       results.push({

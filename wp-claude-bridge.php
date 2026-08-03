@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Bundles WordPress engineering skills the connected model can load on demand (as tools, MCP resources, and prompts), ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.7.2
+ * Version: 3.7.3
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.7.2' );
+define( 'CB_VERSION', '3.7.3' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -3278,6 +3278,12 @@ function cb_op_count_terms( $args ) {
 function cb_op_site_info() {
 	global $wp_version;
 	return array(
+		// The bridge's own version. Without it the server can learn every
+		// version on the site except the one that decides whether a fix has
+		// landed — it was reduced to whatever the plugin last volunteered at
+		// registration, which on a live site here was five days stale and on
+		// another was absent entirely.
+		'bridge_version' => CB_VERSION,
 		'wp_version'     => $wp_version,
 		'php_version'    => phpversion(),
 		'site_url'       => site_url(),

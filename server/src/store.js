@@ -125,6 +125,31 @@ export const sites = {
     return publicSite(row)
   },
 
+  /**
+   * Record the plugin version we OBSERVED, rather than the one a site last
+   * volunteered.
+   *
+   * Registration only happens when the plugin decides to announce itself. On
+   * this deployment that left one paired site reporting a version five days
+   * old and another reporting none at all — while the nightly run was talking
+   * to both every night. So the answer to "has the security fix reached this
+   * site" was unavailable from the one place that had just been in contact.
+   *
+   * Merged into the existing connector blob so nothing already there is lost,
+   * and lastSeen is set from this contact because that is what it means.
+   */
+  async recordObservedVersion(id, version) {
+    if (!version) return null
+    const row = await one(
+      `UPDATE sites
+         SET connector = COALESCE(connector, '{}'::jsonb)
+                         || jsonb_build_object('version', $2::text, 'lastSeen', $3::bigint)
+       WHERE id = $1 RETURNING *`,
+      [id, String(version), Date.now()]
+    )
+    return row || null
+  },
+
   async recordRegister(id, { url, pluginSiteId, name, version } = {}) {
     const row = await one(
       `UPDATE sites SET paired = true, status = 'healthy', connector = $2,

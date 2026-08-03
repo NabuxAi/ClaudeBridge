@@ -65,3 +65,20 @@ test('the security_scan fix is present in every shipped build', () => {
     assert.match(src, /function cb_op_security_scan\(\s*\$args\s*=/, `${rel} has the old signature`)
   }
 })
+
+test('site_info reports the bridge version', () => {
+  // The one number that says whether a published fix has landed. Without it the
+  // server can only repeat what a site volunteered at registration, which on
+  // this deployment was five days stale for one paired site and absent for
+  // another — while the nightly run was talking to both.
+  for (const rel of [
+    'wp-claude-bridge.php',
+    'dist/digiwp-ai-bridge/digiwp-ai-bridge.php',
+    'dist/digi-ai-bridge/digi-ai-bridge.php',
+  ]) {
+    const src = readFileSync(join(root, rel), 'utf8')
+    const info = /function cb_op_site_info[\s\S]*?\n}/.exec(src)
+    assert.ok(info, `${rel}: cb_op_site_info is missing`)
+    assert.match(info[0], /'bridge_version'\s*=>\s*CB_VERSION/, `${rel} does not report its own version`)
+  }
+})
