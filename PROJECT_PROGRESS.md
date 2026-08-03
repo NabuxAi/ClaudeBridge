@@ -1071,3 +1071,95 @@ Destructive tools still wait for you at every level.
 
 If you would rather see it once before it runs on a schedule:
 `POST /v1/sweep/run` with an authenticated session does exactly one run now.
+
+---
+
+## 2026-08-04 (later) — a sweep that nobody could tell had happened
+
+The sweep runs at 06:00 and the digest goes out at 08:00, and nothing connected
+them. Its proposals do reach the digest — but only when there are any. So a
+sweep that checked every site and found them healthy produced exactly the same
+message as a sweep that never started, or one that died on its first site.
+
+Silence meant two opposite things. That is the same fault this repository has
+now had four times in different clothes: an empty findings list reading as a
+clean site, an unset alert channel reading as nothing to alert about, a stale
+plugin version reading as up to date. Work nobody can see is work that may as
+well not run.
+
+### One row per run, and one line in the message
+
+`sweep_runs` records what each sweep did: sites, skipped, failed, degraded,
+proposed, performed, and whether it was scheduled or triggered by hand. The
+write is non-fatal, like every other record written beside real work here —
+failing a completed sweep because the bookkeeping failed would turn a reporting
+problem into an operational one.
+
+The digest renders one line from the most recent row, and **renders it even when
+there is nothing to say**, which is the opposite of every other section in that
+message and the entire point:
+
+```
+🤖 بررسی خودکار: 4 سایت — چیزی برای انجام نبود.
+🤖 بررسی خودکار: 1 سایت، 1 پیشنهاد
+🤖 بررسی خودکار: روشن است ولی تا حالا اجرا نشده.
+🤖 بررسی خودکار: آخرین اجرا 40 ساعت پیش — یعنی حداقل یک نوبت اجرا نشده.
+```
+
+Four distinctions it makes that nothing made before:
+
+- **Ran and quiet** against **never ran**. The reason the section exists.
+- **On but never run.** The setting is a promise the deployment has not kept,
+  and nothing else would reveal it.
+- **Degraded** against **healthy**. A run where the assistant read every site
+  but had no model to think with proposes nothing — which says nothing about the
+  sites. The first version folded that into "nothing to do", so a broken gateway
+  rendered as a clean fleet. The test written for that pair caught it.
+- **Scheduled** against **manual**. A run somebody triggered while checking on
+  the feature is not evidence that the schedule is alive, and would otherwise
+  have reset the staleness warning by the act of looking.
+
+The staleness threshold is 36 hours rather than 24. Digest at 08:00 against a
+sweep at 06:00 the previous day is 26 hours, so a day boundary would fire the
+warning every single morning — which is how a warning stops being read. A test
+pins that specific 26-hour case.
+
+### A backtick in a SQL comment took the module out
+
+`sweep.schema.js` is one large template literal, and a comment in it quoted a
+column name with backticks. That ended the literal early. `node --check` passed
+the file; it failed only when the ES module loader compiled it, and the error
+pointed at an identifier in the middle of the comment rather than the cause.
+
+All three schema modules have the same shape, so the class recurs.
+`schema-literals.test.js` pins it both ways: no schema module may contain more
+than the two backticks that open and close its literal, and every one of them
+must actually import and export DDL. Reintroducing the backtick turns both red.
+
+### Proven end to end
+
+A real PostgreSQL, a real sweep against a stub site and stub gateway, then the
+digest section rendered from the row the sweep itself wrote:
+
+```
+sweep     -> {"sites":1,"proposed":1,"acted":0}
+stored    -> {"sites":1,"proposed":1,"performed":0,"failed":0,"trigger":"scheduled"}
+digest    -> 🤖 بررسی خودکار: 1 سایت، 1 پیشنهاد
+never run -> 🤖 بررسی خودکار: روشن است ولی تا حالا اجرا نشده.
+```
+
+### Tests
+
+**281 pass, none skipped**, against a throwaway PostgreSQL — up from 270.
+
+## Needs you
+
+**`ASSISTANT_SWEEP=true`**, unchanged from the last pass, and now with the
+difference that you will be able to tell whether it is working: the digest says
+so every morning, including on the mornings it finds nothing.
+
+The decision that goes with it is also unchanged. On a site set to `auto`, the
+sweep may perform a recoverable change at 06:00 with nobody watching — that is
+what `auto` has always meant and what the audit trail records, it has simply
+never happened unattended before. Destructive tools still wait for you at every
+level.

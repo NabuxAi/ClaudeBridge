@@ -18,7 +18,7 @@
 // no capability: everything it can do, a person asking a question could already
 // have done. What it changes is that nobody has to remember.
 // ============================================================
-import { all } from './db.js'
+import { all, query, newId } from './db.js'
 import { config } from './config.js'
 import * as assistant from './assistant.js'
 import * as events from './events.js'
@@ -94,7 +94,8 @@ export async function sweepSite(site, { maxToolSteps = config.sweep.maxToolSteps
  * is how a maintenance sweep becomes an outage. Nobody is waiting for this to
  * finish.
  */
-export async function runSweep({ maxSites = config.sweep.maxSites } = {}) {
+export async function runSweep({ maxSites = config.sweep.maxSites, trigger = 'scheduled' } = {}) {
+  const startedAt = Date.now()
   const rows = await all(
     'SELECT id, name, title, url, secret, site_key, paired, authority FROM sites WHERE paired = true ORDER BY id',
   )
@@ -125,7 +126,50 @@ export async function runSweep({ maxSites = config.sweep.maxSites } = {}) {
       .catch(() => {})
   }
 
-  return { sites: targets.length, skipped, failed: failed.length, degraded: degraded.length, proposed, acted, results }
+  const summary = {
+    sites: targets.length,
+    skipped,
+    failed: failed.length,
+    degraded: degraded.length,
+    proposed,
+    acted,
+  }
+
+  // Written down, so "the sweep ran and found nothing" stops looking exactly
+  // like "the sweep never ran". Both produced the same silence until now.
+  //
+  // Non-fatal on purpose, like every other record this codebase writes beside
+  // real work: failing a completed sweep because the bookkeeping failed would
+  // turn a reporting problem into an operational one.
+  await recordRun({ ...summary, startedAt, trigger }).catch((e) => {
+    console.error('sweep: could not record the run', e?.message || e)
+  })
+
+  return { ...summary, results }
+}
+
+/** Store one row describing a completed sweep. */
+export async function recordRun({
+  startedAt, sites, skipped, failed, degraded, proposed, acted, trigger = 'scheduled',
+}) {
+  await query(
+    `INSERT INTO sweep_runs
+       (id, started_at, finished_at, sites, skipped, failed, degraded, proposed, performed, trigger)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [newId('sw_'), startedAt, Date.now(), sites, skipped, failed, degraded, proposed, acted, trigger],
+  )
+}
+
+/**
+ * The most recent sweep, or null if none has ever run.
+ *
+ * Null is a real answer and the digest says so rather than omitting the line: a
+ * missing section reads as "nothing to report", and "the assistant has never
+ * looked at your sites" is very much something to report.
+ */
+export async function lastRun() {
+  const rows = await all('SELECT * FROM sweep_runs ORDER BY finished_at DESC LIMIT 1')
+  return rows[0] || null
 }
 
 /**

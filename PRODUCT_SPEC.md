@@ -143,7 +143,15 @@ Switched on without a model configured, it refuses to schedule and says why: it 
 re-read each site every morning and never propose anything, which looks like it is working.
 
 `POST /v1/sweep/run` runs it now, behind auth and deliberately not a GET — it costs tokens
-on every site and may make a change on one set to `auto`.
+on every site and may make a change on one set to `auto`. Such a run is recorded as
+`manual`, because somebody triggering a sweep is not evidence that the schedule is alive.
+
+Every run is written to `sweep_runs` and the daily digest carries one line from it. That
+line renders even when there is nothing to report, which is the opposite of every other
+section here and the entire reason it exists: without it, a sweep that checked the fleet and
+found it healthy produced exactly the same digest as one that never started. It also
+separates a *degraded* run — the assistant read each site but had no model to think with —
+from a clean bill of health, and says when the last run is old enough that one was missed.
 
 The prompt is a constant in the module, not configuration. This runs unattended against
 live sites with tool access, and a prompt reachable from outside is an instruction channel

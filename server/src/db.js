@@ -11,6 +11,7 @@ import { hashPassword } from './auth.js'
 import { demoSites } from './seed.js'
 import { SCHEMA as EVENTS_SCHEMA } from './events.schema.js'
 import { SCHEMA as PROPOSALS_SCHEMA } from './proposals.schema.js'
+import { SCHEMA as SWEEP_SCHEMA } from './sweep.schema.js'
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 })
 
@@ -78,7 +79,7 @@ const SCHEMA = `
   -- acting on a wrong guess here means requests that silently never arrive.
   ALTER TABLE sites ADD COLUMN IF NOT EXISTS hosting JSONB
     NOT NULL DEFAULT '{"region":"unknown","provider":"other","providerName":null,"egress":"auto","callbackUrl":null}'::jsonb;
-` + EVENTS_SCHEMA + PROPOSALS_SCHEMA
+` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */
 async function waitForDb(retries = 30) {

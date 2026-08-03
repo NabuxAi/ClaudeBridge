@@ -103,7 +103,13 @@ app.post('/v1/intel/refresh', requireAuth, async (req, res, next) => {
 app.post('/v1/sweep/run', requireAuth, async (req, res, next) => {
   try {
     const maxSites = Number(req.body?.maxSites)
-    res.json(await runSweep(Number.isFinite(maxSites) && maxSites > 0 ? { maxSites } : {}))
+    // Recorded as manual. A run somebody triggered is not evidence that the
+    // schedule is alive, and the digest's staleness line would otherwise be
+    // reset by the very act of checking on it.
+    res.json(await runSweep({
+      trigger: 'manual',
+      ...(Number.isFinite(maxSites) && maxSites > 0 ? { maxSites } : {}),
+    }))
   } catch (e) { next(e) }
 })
 

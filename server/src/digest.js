@@ -9,6 +9,11 @@ import * as events from './events.js'
 import * as connector from './connector.js'
 import { sendTelegram } from './telegram.js'
 import * as proposals from './proposals.js'
+// Safe to import here: nothing in sweep's own chain reaches back to this module,
+// so there is no cycle. That was worth checking rather than assuming — an ES
+// module cycle in this codebase already took the server down at boot once, and
+// it fails or works depending purely on which side is evaluated first.
+import * as sweep from './sweep.js'
 import { config } from './config.js'
 import { alertChannelStatus } from './alerts/index.js'
 import { readFileSync } from 'node:fs'
@@ -163,6 +168,55 @@ export function renderPendingProposals(pending) {
   return `\n\n⏳ <b>در انتظار تأیید شما: ${pending.length}</b>\n` + lines.join('\n') + more
 }
 
+/**
+ * Whether the assistant looked at the fleet this morning, and what came of it.
+ *
+ * The sweep runs two hours before this message and nothing connected the two.
+ * Its proposals reach the digest, but only when there are any — so a sweep that
+ * ran and found everything healthy produced exactly the same digest as a sweep
+ * that never started, or one that died on its first site. Silence meant two
+ * opposite things.
+ *
+ * Unlike every other section here, this one renders when there is nothing to
+ * say. "The assistant checked 4 sites and found nothing to do" is the sentence
+ * that makes tomorrow's absence of it meaningful.
+ *
+ * `now` is passed in rather than read, so the staleness wording can be tested
+ * without waiting a day.
+ */
+export function renderSweep(run, now = Date.now(), enabled = config.sweep.enabled) {
+  if (!enabled) return ''
+
+  // On, and never run. Worth saying plainly: the setting is a promise the
+  // deployment has not kept, and nothing else would reveal it.
+  if (!run) {
+    return '\n\n🤖 <b>بررسی خودکار:</b> روشن است ولی تا حالا اجرا نشده.'
+  }
+
+  const hours = Math.floor((now - Number(run.finished_at)) / 3_600_000)
+  // More than a day and a half means a run was missed. The scheduler ticks every
+  // four minutes, so this is not a rounding artefact.
+  if (hours >= 36) {
+    return `\n\n🤖 <b>بررسی خودکار:</b> آخرین اجرا ${hours} ساعت پیش — یعنی حداقل یک نوبت اجرا نشده.`
+  }
+
+  const bits = [`${run.sites} سایت`]
+  if (run.proposed) bits.push(`${run.proposed} پیشنهاد`)
+  if (run.performed) bits.push(`${run.performed} اقدام`)
+  if (run.failed) bits.push(`${run.failed} ناموفق`)
+  // Ran, but with no model to think with — so proposing nothing says nothing
+  // about the sites. Distinguished, or a degraded run reads as a clean bill.
+  if (run.degraded) bits.push(`${run.degraded} بدون مدل`)
+  if (run.skipped) bits.push(`${run.skipped} خارج از سقف`)
+
+  // A degraded run counts against "nothing to do": it proposed nothing because
+  // there was no model to think with, not because the sites are healthy. The
+  // first version left it out and a broken gateway rendered as a clean fleet —
+  // caught by the test that exists for exactly that pair.
+  const quiet = !run.proposed && !run.performed && !run.failed && !run.degraded
+  return `\n\n🤖 <b>بررسی خودکار:</b> ${bits.join('، ')}${quiet ? ' — چیزی برای انجام نبود.' : ''}`
+}
+
 /** Telegram's HTML mode needs these escaped, and a tool's arguments are data. */
 function escapeHtml(v) {
   return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -251,7 +305,18 @@ export async function runDailyDigest() {
     console.error('digest: could not read plugin versions', e?.message || e)
   }
 
-  const text = renderDigest(results) + renderPendingProposals(pending) + outdated
+  // Wrapped like the two above. This section exists to make an absence
+  // meaningful, and a section that takes the whole digest down when its table is
+  // missing would be a bad trade for that.
+  let sweepLine = ''
+  try {
+    sweepLine = renderSweep(await sweep.lastRun())
+  } catch (e) {
+    console.error('digest: could not read the last sweep', e?.message || e)
+  }
+
+  const text =
+    renderDigest(results) + renderPendingProposals(pending) + outdated + sweepLine
   const sent = await sendTelegram(text)
   return { sites: results.length, totalCritical: results.reduce((a, r) => a + (r.critical || 0), 0), sent, text }
 }
