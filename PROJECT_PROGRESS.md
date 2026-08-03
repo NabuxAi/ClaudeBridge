@@ -635,11 +635,45 @@ visible statically and the failure it causes is not — a fatal takes the endpoi
 down before anything can report on itself. Reverting the fix turns 10 passing
 assertions into 3 failures naming the tool. **237 tests pass, none skipped.**
 
+## The fix was published under the version it fixed
+
+Chasing the remaining failing site turned up why it could never have recovered.
+
+Updates here are **pull**: the plugin polls `/plugin/manifest` and installs when
+the advertised version is *newer* than the installed one. Equal is not newer.
+The fix went out under **3.7.1 — the same version as the release it fixes**, so
+it was invisible to every site already running it, which is all of them.
+
+The publicly served zip did contain the fix. It simply could never be installed,
+and nothing about that state looks wrong from either side: the manifest is
+correct, the download works, the site considers itself up to date, and the
+nightly scan keeps returning HTTP 500 forever.
+
+This has happened in this repo before — the history carries *"bump to 3.7.0 and
+rebuild — none of this had reached a site"*. So it is now pinned by tests rather
+than by remembering: the header, `CB_VERSION` and the generated manifest must
+agree, the number must be comparable by `version_compare`, both distributables
+must carry it, and **every shipped build must contain the security_scan fix**.
+That last assertion is the important one — a bump advertising a fix the zip does
+not contain is worse than no bump at all.
+
+### Verified on the public update channel
+
+```
+GET /v1/plugin/manifest  ->  version 3.7.2
+GET ai.digiwp.com/digiwp-ai-bridge.zip  ->  CB_VERSION 3.7.2
+  fixed op signature  : yes
+  noargs removed      : yes
+  dispatcher hardened : yes
+```
+
+**242 tests pass with none skipped.**
+
 ## Needs you
 
-**account30t.com is still failing, and it is the same bug.** That site runs its
-own installed copy of the plugin, so the fix reaches it only when the plugin is
-updated there — the server now ships **3.7.1**. Until then its nightly scan
-keeps returning HTTP 500, and the digest shows no findings for it, which reads
-like a clean site rather than an unscanned one. That distinction is the whole
-reason the failure was worth chasing.
+**account30t.com will recover on its own, or can be pushed.** It now sees a
+genuinely newer version and should self-update on its next check. If it does
+not, the plugin there is either older than the auto-updater or pointed at a
+different server — updating it by hand from the link above settles both. Until
+it updates, its nightly scan still returns HTTP 500 and the digest shows no
+findings for it, which reads like a clean site rather than an unscanned one.
