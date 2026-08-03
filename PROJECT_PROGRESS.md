@@ -712,9 +712,62 @@ distinguishable, which they were not before.
 
 **242 tests pass with none skipped.**
 
+## The server could push an update all along, and could not say so
+
+Chasing why the stale site never updated ruled out the obvious causes first,
+using the capability built in the previous pass. Asked directly, the site
+answers:
+
+```
+account30t.com   installed as digiwp-ai-bridge/digiwp-ai-bridge.php   (matches the zip)
+demo.digiwp      installed as wp-claude-bridge/wp-claude-bridge.php
+```
+
+So the install folder matches the published zip's top folder — no mismatch — and
+`site_info` succeeds there, so the plugin is healthy apart from the scan. The
+update path is sound. What is missing is anything *triggering* it: WordPress
+checks for plugin updates on its own cron, and our nightly contact does not make
+that happen.
+
+The server has been able to trigger it all along. `cb_job_types()` handles seven
+job types including **`update_apply`**, which calls `wp_update_plugins()` — the
+call that fires the manifest injection — and then runs the upgrader. But
+`job_start` advertised only four:
+
+```
+handled:     backup, core_integrity, security_scan, conflict_hunt,
+             backup_restore, update_apply, perf
+advertised:  backup, core_integrity, security_scan, conflict_hunt
+```
+
+`backup_restore`, `update_apply` and `perf` were implemented, dispatched and
+validated by the handler map — and unreachable to any client that respects the
+tool schema. Validation was always against `cb_job_types()`, so the enum was
+pure advertisement, and advertisement drifts.
+
+Both the enum and the description now derive from the handler map, and a test
+pins that they do in every shipped build. Released as **3.7.4**.
+
+### Verified on a running site
+
+```
+manifest            -> 3.7.4
+demo.digiwp         -> bridge_version 3.7.4 (observed via site_info)
+installed plugin    -> contains array_keys( cb_job_types() )
+```
+
+**244 tests pass with none skipped.**
+
 ## Needs you
 
-**account30t.com will recover on its own, or can be pushed.** It now sees a
+**Pushing the update to account30t.com is now possible, and is your call.**
+Starting an `update_apply` job on it would install 3.7.4 and fix its scan
+without anyone touching the site — that is what this pass unlocked. It was not
+done unasked: installing a plugin update on a live site is exactly the kind of
+change this product's own authority model puts behind an approval, and it would
+be inconsistent to bypass that from here. Say the word and it goes.
+
+**account30t.com will otherwise recover on its own.** It now sees a
 genuinely newer version and should self-update on its next check. If it does
 not, the plugin there is either older than the auto-updater or pointed at a
 different server — updating it by hand from the link above settles both. Until
