@@ -260,8 +260,9 @@ through the real signed connector.
 
 - **`digiwp-pg` and the two `-manual` containers** are idle and awaiting your
   decision to remove.
-- **The demo site is paired by a secret written directly into both sides** for
-  this proof. The normal pairing flow through the panel was not exercised.
+- ~~**The demo site is paired by a secret written directly into both sides.**~~
+  **Done 2026-08-04** — the panel flow is walked end to end by
+  `test/pairing-flow.test.js`, captcha and all. See the entry at the end.
 - **MAX_TOOL_STEPS is still a constant.** Five suits a maintenance question; a
   "fix my site" flow will want a per-request budget.
 - ~~A proposal is not persisted.~~ **Done** — see below.
@@ -1163,3 +1164,78 @@ sweep may perform a recoverable change at 06:00 with nobody watching — that is
 what `auto` has always meant and what the audit trail records, it has simply
 never happened unattended before. Destructive tools still wait for you at every
 level.
+
+---
+
+## 2026-08-04 (last) — the front door, walked
+
+"The normal pairing flow through the panel was not exercised" has been in this
+file since 2 August. The live demo site was paired by writing the same secret
+into both sides by hand, which proves the connector signs correctly and proves
+nothing about the path an owner actually walks.
+
+It is walked now, over real HTTP against a real PostgreSQL, with a stub standing
+in only for the WordPress:
+
+```
+0. captcha         200  ۴ × ۳ = ?  -> 12
+1. register        201  token issued
+2. add site        201  secret shown once, siteKey issued
+3. pairing view    200  paired=false
+4. plugin register 200  {"ok":true,"site":{...}}
+5. wrong secret    401  signature did not match any known site
+6. pairing view    200  paired=true
+7. tool call       200  relayed, site answered {"wp_version":"6.7.1"}
+```
+
+**The captcha is solved, not disabled.** A walkthrough that turns off a defence
+to get past it has established that the door opens when unlocked, which was
+never the question. The test reads the challenge, converts the Persian digits
+and answers it, exactly as a person does.
+
+### Why it had never been tested
+
+Importing `src/index.js` for its app also connected to the database, bound the
+configured port and started three daily schedulers. So a test that wanted one
+HTTP request had to boot the whole service — which is a test nobody writes, and
+that is how the most security-sensitive path in the product went untested.
+
+`createApp()` now builds the app and starts nothing; `start()` does the booting;
+and the boot only runs when this file is the entry point. Nothing about the
+mounted app changed — same routers, same order, same middleware.
+
+Both real start paths were run rather than reasoned about, because this change
+could have left the container serving nothing at all:
+
+```
+node src/index.js   (the Dockerfile CMD)  -> DigiWP server on :8796, /health 200
+npm start            (package.json)        -> DigiWP server on :8795, /health 200
+```
+
+### Three properties nothing had ever checked
+
+`/connector/register` is unauthenticated by necessity — it cannot know which
+site is calling until one of the stored secrets validates the body. The
+signature is therefore the only thing between a stranger and re-pointing
+somebody's site record at a server they control.
+
+- **A wrong secret pairs nothing.** 401, and the site stays unpaired.
+- **A stale timestamp is refused even with a correct signature.** A captured
+  registration replayed an hour later must not re-point a site.
+- **One site's secret cannot pair a different site.** It legitimately pairs its
+  own — the assertion is that the other one is untouched.
+
+All three were mutation-checked. Removing the replay window turns one red;
+matching the first candidate instead of verifying the signature turns three red.
+
+### Tests
+
+**285 pass, none skipped**, against a throwaway PostgreSQL — up from 281.
+Without a database: 264 tests, 260 passing, 4 skipped.
+
+## Needs you
+
+Nothing new. `ASSISTANT_SWEEP=true` remains the one switch, with the same
+caveat about `auto` sites, and the owner-facing alert channels remain unset —
+`EMAIL_URL` is the one worth setting, since every account here has an email
+address and none has a phone or push token.
