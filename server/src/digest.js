@@ -11,6 +11,25 @@ import { sendTelegram } from './telegram.js'
 import * as proposals from './proposals.js'
 import { config } from './config.js'
 import { alertChannelStatus } from './alerts/index.js'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+/**
+ * The bridge version this server publishes, read from the same manifest the
+ * sites poll — so the digest cannot disagree with what an update would install.
+ * Returns null if it cannot be read, and the section is simply omitted: a
+ * version comparison against a guess is worse than no comparison.
+ */
+export function currentPluginVersion() {
+  try {
+    const path = join(dirname(fileURLToPath(import.meta.url)), '..', 'plugin-manifest.json')
+    const v = JSON.parse(readFileSync(path, 'utf8'))?.version
+    return typeof v === 'string' && v ? v : null
+  } catch {
+    return null
+  }
+}
 
 /** MCP tools/call wraps the op result as result.content[0].text (JSON). Unwrap it. */
 function unwrap(result) {
@@ -149,6 +168,46 @@ function escapeHtml(v) {
   return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+/**
+ * Sites running an older bridge than the one we publish.
+ *
+ * The server has known both halves of this for a while and never put them
+ * together: each site's version is recorded from the nightly contact, and the
+ * manifest says what is current. Nobody was told when they diverged — which is
+ * how a site sat five days on a version whose security scan fatally errored,
+ * while the fix was published, reachable, and installable the whole time.
+ *
+ * An outdated bridge is reported rather than alerted on: it is not an
+ * emergency, and treating it as one is how people learn to skim the digest.
+ */
+export function renderOutdatedSites(rows, current) {
+  if (!current || !rows?.length) return ''
+
+  const behind = rows
+    .map((r) => {
+      let seen = null
+      try { seen = r.connector ? (typeof r.connector === 'string' ? JSON.parse(r.connector) : r.connector) : null } catch { seen = null }
+      return { name: r.title || r.name || r.id, version: seen?.version || null }
+    })
+    // A site that has never reported a version is not known to be behind, and
+    // saying it is would be inventing a fact. It shows as unknown instead.
+    .filter((r) => r.version && r.version !== current)
+
+  const unknown = rows.length - behind.length -
+    rows.filter((r) => {
+      let seen = null
+      try { seen = r.connector ? (typeof r.connector === 'string' ? JSON.parse(r.connector) : r.connector) : null } catch { seen = null }
+      return seen?.version === current
+    }).length
+
+  if (!behind.length && unknown <= 0) return ''
+
+  const lines = behind.map((r) => `📦 <b>${escapeHtml(r.name)}</b> — ${escapeHtml(r.version)} → ${escapeHtml(current)}`)
+  if (unknown > 0) lines.push(`❔ ${unknown} سایت نسخه‌اش را گزارش نکرده`)
+
+  return `\n\n🔄 <b>افزونه به‌روز نیست: ${behind.length}</b>\n` + lines.join('\n')
+}
+
 /** Build the Telegram digest text from scan results. */
 export function renderDigest(results) {
   const when = new Date().toISOString().slice(0, 16).replace('T', ' ')
@@ -182,7 +241,17 @@ export async function runDailyDigest() {
     console.error('digest: could not read pending proposals', e?.message || e)
   }
 
-  const text = renderDigest(results) + renderPendingProposals(pending)
+  // Same treatment as proposals: a digest that loses its last section beats a
+  // digest that fails because one query hiccuped.
+  let outdated = ''
+  try {
+    const rows = await all("SELECT id, name, title, connector FROM sites WHERE paired = true")
+    outdated = renderOutdatedSites(rows, currentPluginVersion())
+  } catch (e) {
+    console.error('digest: could not read plugin versions', e?.message || e)
+  }
+
+  const text = renderDigest(results) + renderPendingProposals(pending) + outdated
   const sent = await sendTelegram(text)
   return { sites: results.length, totalCritical: results.reduce((a, r) => a + (r.critical || 0), 0), sent, text }
 }
