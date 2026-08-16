@@ -4,11 +4,11 @@
 
 ### Turn any WordPress site into a full self-hosted **MCP server** — and let Claude run it.
 
-*Edit theme & plugin files, scaffold plugins, control posts, pages, WooCommerce, settings, the database… 100+ tools, one URL, zero middlemen.*
+*Edit theme & plugin files, scaffold plugins, control posts, pages, WooCommerce, settings, the database… 130+ tools, one URL, zero middlemen.*
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-3.6.0-6c47ff?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/version-3.7.4-6c47ff?style=for-the-badge)](https://github.com/)
 [![License](https://img.shields.io/badge/license-GPLv2-blue?style=for-the-badge)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-5.6%2B-21759B?style=for-the-badge&logo=wordpress&logoColor=white)](https://wordpress.org)
@@ -88,7 +88,7 @@ No SaaS. No monthly fee. No external proxy. **Your server, your data, your rules
 
 ---
 
-## 🧰 100+ Tools
+## 🧰 130+ Tools
 
 <details open>
 <summary><b>Files, plugins, themes, cache</b></summary>

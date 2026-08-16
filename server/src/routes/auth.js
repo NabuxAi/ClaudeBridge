@@ -1,9 +1,11 @@
 import { Router } from 'express'
+import crypto from 'node:crypto'
 import { signToken, verifyPassword, verifyPasswordDummy, requireAuth } from '../auth.js'
-import { users } from '../store.js'
+import { users, passwordResets } from '../store.js'
 import { config } from '../config.js'
 import * as captcha from '../security/captcha.js'
 import { hit, clear, peek, clientIp, limiter } from '../security/ratelimit.js'
+import { sendMail } from '../mailer.js'
 
 const router = Router()
 
@@ -133,6 +135,68 @@ router.get('/auth/me', requireAuth, async (req, res, next) => {
     const user = await users.byId(req.user.sub)
     if (!user) return res.status(401).json({ message: 'Unauthorized' })
     res.json(user)
+  } catch (e) { next(e) }
+})
+
+const forgotLimit = limiter('forgot-password', {
+  limit: 5, windowMs: 60 * 60 * 1000, keyFn: ip,
+  message: 'تعداد درخواست‌های بازنشانی از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+})
+
+/**
+ * Request a password reset link.
+ *
+ * The response is deliberately vague: "if this email has an account, a link
+ * was sent". That is the only claim we can make without leaking whether the
+ * address is registered.
+ */
+router.post('/auth/forgot-password', forgotLimit, async (req, res, next) => {
+  try {
+    const { email, captchaId, captchaAnswer } = req.body || {}
+    const c = captcha.verify(captchaId, captchaAnswer)
+    if (!c.ok) return res.status(400).json({ message: captcha.MESSAGES[c.reason], captchaRequired: true })
+
+    const normalized = String(email || '').trim().toLowerCase()
+    // Always cost the same regardless of whether the account exists.
+    const row = normalized ? await users.byEmailRaw(normalized) : null
+    if (row) {
+      const { raw } = await passwordResets.create(row.id)
+      const link = `${config.publicPanelUrl || 'http://localhost:8080'}/reset?token=${raw}`
+      await sendMail({
+        to: row.email,
+        subject: 'بازنشانی رمز عبور DigiWP',
+        text: `برای بازنشانی رمز عبور روی این لینک کلیک کنید:\n${link}\n\nاین لینک یک ساعت معتبر است و فقط یک‌بار قابل استفاده است.`,
+        html: `<p>برای بازنشانی رمز عبور روی این لینک کلیک کنید:</p><p><a href="${link}">${link}</a></p><p>این لینک یک ساعت معتبر است و فقط یک‌بار قابل استفاده است.</p>`,
+      })
+    }
+    res.json({ ok: true, message: 'اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی ارسال شده است.' })
+  } catch (e) { next(e) }
+})
+
+const resetLimit = limiter('reset-password', {
+  limit: 10, windowMs: 60 * 60 * 1000, keyFn: ip,
+  message: 'تعداد تلاش‌های بازنشانی از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+})
+
+/**
+ * Spend a reset token and set a new password.
+ *
+ * A spent or expired token is a 400, with the same message for both so an
+ * attacker cannot distinguish expiration from use by timing or status code.
+ */
+router.post('/auth/reset-password', resetLimit, async (req, res, next) => {
+  try {
+    const { token, password } = req.body || {}
+    if (!token || String(token).length < 32) return res.status(400).json({ message: 'لینک بازنشانی نامعتبر است.' })
+    if (!password || String(password).length < 8) return res.status(400).json({ message: 'رمز عبور باید حداقل ۸ نویسه باشد.' })
+
+    const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex')
+    const pr = await passwordResets.find(tokenHash)
+    if (!pr) return res.status(400).json({ message: 'لینک بازنشانی منقضی یا استفاده شده است.' })
+
+    await users.updatePassword(pr.user_id, password)
+    await passwordResets.markUsed(pr.id)
+    res.json({ ok: true, message: 'رمز عبور بازنشانی شد. اکنون می‌توانید وارد شوید.' })
   } catch (e) { next(e) }
 })
 

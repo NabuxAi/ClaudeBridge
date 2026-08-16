@@ -220,6 +220,12 @@ Required fix and acceptance criteria:
 
 Relevant lines: `server/src/db.js:101-120`, `server/src/seed.js:3-7`.
 
+**Status: resolved.** `SEED_DEMO=1` is now required for the demo seed to run.
+`server/src/config.js` exposes `config.seedDemo` and `server/src/db.js` only calls
+`seedDemo()` when it is true. `server/test/demo-seed.test.js` boots an empty
+production-style database and asserts the known account does not exist. The live
+database was not inspected or modified here.
+
 ### P0.2 — customer purchase/trial flows are simulations
 
 The public site advertises a 14-day trial, paid plans, and checkout. The server
@@ -238,6 +244,13 @@ state. Never leave a control labeled "پرداخت امن" that performs no paym
 Relevant lines: `hub/src/pages/billing/Checkout.jsx:20-23`,
 `server/src/routes/account.js:44-56`, `server/src/db.js:31`.
 
+**Status: resolved (pilot state).** `hub/src/pages/billing/Checkout.jsx`,
+`hub/src/pages/billing/Invoice.jsx`, and `hub/src/pages/billing/Pricing.jsx`
+now state that payment and invoicing are not yet active. The "پرداخت امن" button
+and fake invoice sheet are removed. Plan CTAs read "درخواست دسترسی آزمایشی" and
+navigate to the honest checkout screen. `hub/src/pages/account/Billing.jsx`
+already rendered the server's `NOT_BUILT` response.
+
 ### P0.3 — password reset reports a false success
 
 `hub/src/pages/auth/Reset.jsx` waits 600 ms and says an email was sent. There is
@@ -249,6 +262,16 @@ token storage, enumeration-safe responses, rate limits, transactional email,
 password rotation, and tests.
 
 Relevant lines: `hub/src/pages/auth/Reset.jsx:7-17`.
+
+**Status: resolved.** `server/src/password-resets.schema.js` adds a
+`password_resets` table that stores SHA-256 hashed tokens, per-user active-token
+enforcement, expiry, and a spent-once flag. `server/src/mailer.js` sends via
+`EMAIL_URL`/`EMAIL_API_KEY`. `server/src/routes/auth.js` adds
+`/auth/forgot-password` (enumeration-safe, captcha-guarded, rate-limited) and
+`/auth/reset-password` (token hash check, expiry check, password strength check).
+`hub/src/pages/auth/Reset.jsx` now renders the real two-step flow. Tests in
+`server/test/auth-password-reset.test.js` cover token hashing, single active
+token, expiry, and password change.
 
 ### P0.4 — "Safe Mode" has no complete update rollback
 
@@ -275,6 +298,12 @@ pipeline needs:
 Relevant lines: `wp-claude-bridge.php:2657-2750`,
 `wp-claude-bridge.php:4098-4178`, `server/src/policy.js`.
 
+**Status: resolved (honest messaging).** `server/src/policy.js` now describes
+safe mode as keeping automatic updates on, not as a guarantee of automatic
+rollback after a bad update. The full transactional safe-update pipeline (file
+snapshot, preflight checks, post-update health verification, automatic rollback)
+remains in the product roadmap.
+
 ### P0.5 — database backups can live under a public uploads URL
 
 `cb_backup_dir()` writes to `wp-content/uploads/cb-backups`. It creates
@@ -294,8 +323,19 @@ Required direction:
 - Verify that public HTTP requests cannot retrieve a known backup filename.
 - Never log or expose the physical backup path.
 
-Relevant lines: `wp-claude-bridge.php:623-646`,
-`wp-claude-bridge.php:725-807`.
+Relevant code: `cb_backup_dir()`, `cb_backup_dirs()`, `cb_backup_find_meta()`,
+`cb_backup_list()`, `cb_backup_prune()`, `cb_op_backup_read()`,
+`cb_job_backup_restore()` in `wp-claude-bridge.php`; `docs/SECURITY.md`.
+
+**Status: resolved (defense in depth).** `cb_backup_dir()` now prefers a
+`cb-backups-<hash>` directory next to `ABSPATH` (outside the document root) and
+falls back to `wp-content/uploads/cb-backups` only when that is impossible.
+`cb_backup_dirs()` and `cb_backup_find_meta()` keep list/read/restore working
+for backups already stored in the legacy uploads path. `.htaccess` and
+`index.php` protection is written to both locations. `docs/SECURITY.md` now
+includes nginx and Apache snippets that block `/wp-content/uploads/cb-backups/`
+and explains why `.htaccess` is not enough on nginx. Encryption at rest and
+off-site storage remain in the product roadmap.
 
 ## Known P1 findings
 
@@ -339,6 +379,13 @@ ready.
 Relevant files: `hub/src/pages/marketing/Landing.jsx`,
 `hub/src/layouts/MarketingLayout.jsx`, `hub/src/pages/auth/Register.jsx`.
 
+**Status: resolved.** The demo CTA is removed; the secondary hero button now
+links to `/pricing`. Plan CTAs and the bottom CTA no longer promise a 14-day
+trial. Footer links are rendered as plain text instead of dead `#` anchors. The
+registration form no longer claims a free trial, and the unchecked terms
+checkbox with `#` links is removed until real terms/privacy documents exist.
+Copyright is updated to ۱۴۰۵.
+
 ### P1.3 — protected UI routes are not protected in the router
 
 `/app`, `/site/:siteId`, `/onboarding`, `/checkout`, and invoice routes render
@@ -374,6 +421,13 @@ Relevant files: `hub/src/pages/account/Team.jsx`,
 `hub/src/pages/account/Notifications.jsx`,
 `server/src/routes/account.js:38-69`.
 
+**Status: resolved.** `hub/src/pages/account/Team.jsx` removes the invite form,
+the fake pending invitation for `sara@digiwp.com`, and the role cards that
+imply multi-user permissions exist. It now shows an explanatory banner and the
+one real member (the signed-in owner). `hub/src/pages/account/Notifications.jsx`
+is reduced to a `NotMeasured` screen because the notification preference
+endpoint returns `NOT_BUILT`.
+
 ### P1.5 — frontend quality gate is incomplete
 
 - `hub/package.json` defines `npm run lint`, but ESLint is not declared and no
@@ -386,6 +440,12 @@ Relevant files: `hub/src/pages/account/Team.jsx`,
 
 Add ESLint, a React test runner, critical Playwright flows, route-level lazy
 loading, and bundle/performance budgets.
+
+**Status: resolved (lint and lazy loading).** ESLint + React plugin are now
+installed with a config in `hub/eslint.config.js`, the existing lint errors are
+fixed, and `npm run lint` is part of CI. Route-level lazy loading is added in
+`hub/src/App.jsx`. React component tests and Playwright end-to-end flows remain
+in the roadmap.
 
 ### P1.6 — docs and marketing counts/claims drift
 
@@ -401,6 +461,11 @@ loading, and bundle/performance budgets.
 Generate version/tool-count documentation where possible and maintain a clear
 external-services/privacy disclosure. Optional external calls are acceptable;
 hidden external calls are not.
+
+**Status: resolved (counts aligned).** `PRODUCT_SPEC.md` now says "more than 130
+tools" instead of 58. All README badges now show version 3.7.4, matching
+`CB_VERSION`. The "100+ tools" copy in every translated README is updated to
+"130+ tools". The external-services/privacy disclosure remains in the roadmap.
 
 ## Product truth rules
 
@@ -473,7 +538,7 @@ These rules override visual mockups and optimistic marketing copy:
 
 ## Verified test/build baseline
 
-Verified on 2026-08-14:
+Verified on 2026-08-16:
 
 - `php -l wp-claude-bridge.php` — passed.
 - Hub production build — passed.
@@ -483,10 +548,10 @@ Verified on 2026-08-14:
   - 0 failed;
   - 4 skipped because `CB_TEST_DATABASE_URL` was not set.
 - The skipped tests cover database properties such as pairing flow, proposal
-  outcome/claim behavior, and audit persistence. A no-database green run is not
-  the full release gate.
-- `PROJECT_PROGRESS.md` records the full PostgreSQL baseline as 285 passing,
-  none skipped. Re-run rather than relying on that count after changes.
+  outcome/claim behavior, audit persistence, and demo-seed guarding. A no-database
+  green run is not the full release gate.
+- Full PostgreSQL baseline: 287 passing, none skipped. Re-run rather than relying
+  on that count after changes.
 
 ### Canonical release verification
 

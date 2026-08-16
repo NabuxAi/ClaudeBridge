@@ -121,6 +121,50 @@ fallback برای آن ساخته شده.
 
 ---
 
+## بکاپ‌های محلی
+
+بکاپ‌های این پلاگین ابتدا سعی می‌کند **خارج از document root** سایت نوشته شوند
+(یک پوشهٔ کناری `ABSPATH` با پسوند هش‌شده). اگر آن مسیر قابل نوشتن نبود، به
+`wp-content/uploads/cb-backups` برمی‌گردد.
+
+چرا خارج از document root:
+
+- nginx فایل `.htaccess` را نمی‌خواند؛ پس protection مبتنی بر `.htaccess` روی
+  nginx کافی نیست.
+- پوشهٔ uploads در بسیاری از هاست‌ها مستقیماً از وب قابل دسترسی است.
+- فایل‌های بکاپ شامل نام کاربری، رمز پایگاه داده، توکن‌ها و دادهٔ کاربران است؛
+  لو رفتن یکی از آن‌ها بدتر از لو رفتن خود سایت است.
+
+### کانفیگ nginx
+
+اگر بکاپ‌ها همچنان در `uploads/` ساخته می‌شوند (یا می‌خواهید مطمئن شوید)، این
+location را به کانفیگ nginx اضافه کنید:
+
+```nginx
+location ~* /wp-content/uploads/cb-backups/ {
+    deny all;
+    return 403;
+}
+```
+
+### کانفیگ Apache
+
+پلاگین خودش `.htaccess` و `index.php` می‌نویسد، اما اگر Apache روی AllowOverride
+Off باشد این فایل‌ها بی‌اثرند. در این صورت در کانفیگ virtual host بنویسید:
+
+```apache
+<Directory /var/www/html/wp-content/uploads/cb-backups>
+    Require all denied
+</Directory>
+```
+
+### محدودیت فعلی
+
+بکاپ‌ها روی دیسک خود سایت هستند، نه در یک مکان مستقل یا رمزگذاری‌شده. این یک
+ابزار recovery کوتاه‌مدت است، نه یک plans disaster-recovery.
+
+---
+
 ## اجرای تست‌ها
 
 ```bash

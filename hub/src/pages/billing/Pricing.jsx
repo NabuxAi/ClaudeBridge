@@ -14,7 +14,7 @@ import { account } from '../../lib/api.js'
 const PLAN_DETAILS = {
   base: {
     subtitle: 'برای یک وب‌سایت شخصی یا فروشگاه',
-    cta: 'انتخاب پلن پایه',
+    cta: 'درخواست دسترسی آزمایشی',
     variant: 'secondary',
     features: [
       { t: '۱ سایت وردپرس' },
@@ -26,7 +26,7 @@ const PLAN_DETAILS = {
   },
   pro: {
     subtitle: 'برای فریلنسرها و کسب‌وکارهای در حال رشد',
-    cta: 'انتخاب پلن حرفه‌ای',
+    cta: 'درخواست دسترسی آزمایشی',
     variant: 'primary',
     features: [
       { t: 'همهٔ امکانات پایه، به‌علاوهٔ:', head: true },
@@ -125,7 +125,7 @@ export default function Pricing() {
       {/* Hero */}
       <div style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto', padding: '46px 24px 10px' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, color: 'var(--gd-success-text)', background: 'var(--gd-success-bg)', border: '1px solid var(--gd-success-border)', borderRadius: 999, padding: '6px 13px' }}>
-          <Icon name="gift" size={14} /> ۱۴ روز آزمایش رایگان — بدون کارت بانکی
+          <Icon name="info" size={14} /> صفحهٔ قیمت‌گذاری — پرداخت هنوز فعال نیست
         </span>
         <h1 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-.02em', margin: '18px 0 0', lineHeight: 1.2 }}>پلنی که با کسب‌وکار شما بزرگ می‌شود</h1>
         <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: '12px 0 0' }}>از یک فروشگاه تا ده‌ها سایت مشتری — همیشه یک پلن مناسب دارید. هر زمان تغییر یا لغو کنید.</p>

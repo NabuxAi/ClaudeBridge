@@ -2,7 +2,7 @@
 # DigiWP Ai Support — Coolify deployment
 # ------------------------------------------------------------
 # Three parts, one stack:
-#   • server  — the واسط server (Node + SQLite)         [internal]
+#   • server  — the واسط server (Node + PostgreSQL)      [internal]
 #   • hub     — the panel / main site (React via nginx)  [public]  ← نصب اصلی
 #   • demo    — a real WordPress site + DB to pair with  [public]  ← دمو
 #
@@ -43,9 +43,17 @@ services:
       - PORT=8787
       - DATABASE_URL=postgres://digiwp:${POSTGRES_PASSWORD:-digiwp}@db:5432/digiwp
       - AUTH_SECRET=${AUTH_SECRET:-please-change-this-secret}
-      - CORS_ORIGIN=*
+      # The hub and server share an origin, so this only matters if the server is
+      # also exposed on its own domain. Default to the hub URL; set explicitly to
+      # the server's own domain if you use SERVICE_FQDN_SERVER_8787.
+      - CORS_ORIGIN=${CORS_ORIGIN:-${SERVICE_URL_HUB:-http://localhost:8080}}
+      # Trust proxy headers only when the server really is behind Coolify/Traefik.
+      # On a direct-facing deployment this must be 0 or per-IP rate limits are bypassed.
+      - TRUST_PROXY=${TRUST_PROXY:-0}
       # Turn on live relay so paired sites are driven for real:
       - LIVE=1
+      # Demo seed is off by default. Set SEED_DEMO=1 only in development/demo deploys.
+      - SEED_DEMO=${SEED_DEMO:-0}
       # Daily security digest to Telegram (set these in Coolify env; blank = disabled).
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}

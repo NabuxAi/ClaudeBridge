@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Button, Input, Checkbox } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
 import { useAuth } from '../../lib/auth.jsx'
@@ -8,6 +8,7 @@ import { auth as authApi } from '../../lib/api.js'
 export default function Login() {
   const { login } = useAuth()
   const nav = useNavigate()
+  const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -38,7 +39,9 @@ export default function Login() {
         password,
         ...(needCaptcha ? { captchaId, captchaAnswer } : {}),
       })
-      nav('/app')
+      const returnTo = location.state?.returnTo || sessionStorage.getItem('loginReturnTo') || '/app'
+      sessionStorage.removeItem('loginReturnTo')
+      nav(returnTo, { replace: true })
     } catch (e2) {
       setErr(e2?.message || 'ورود ناموفق بود. دوباره تلاش کنید.')
       // The server tells us when the next attempt needs one. A challenge is

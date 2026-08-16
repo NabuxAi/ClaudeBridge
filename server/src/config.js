@@ -13,6 +13,9 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || 'postgres://digiwp:digiwp@localhost:5432/digiwp',
   // When '1', per-site reads try the live connector before falling back to seed data.
   live: process.env.LIVE === '1',
+  // Demo seed is intentionally opt-in and development-only. Never seed a known
+  // demo account into an empty production database.
+  seedDemo: process.env.SEED_DEMO === '1',
   // Public base URL of THIS server's API, as reachable from the internet
   // (e.g. https://hub.example.com/api). Used for the pairing serverUrl so
   // the connector on a managed site knows where to reach us. Falls back to

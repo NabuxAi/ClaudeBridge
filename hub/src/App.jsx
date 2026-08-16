@@ -1,45 +1,59 @@
+import { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 
 import MarketingLayout from './layouts/MarketingLayout.jsx'
 import AuthLayout from './layouts/AuthLayout.jsx'
 import AccountShell from './layouts/AccountShell.jsx'
 import SiteShell from './layouts/SiteShell.jsx'
+import ProtectedRoute from './lib/ProtectedRoute.jsx'
 
 // A · marketing
-import Landing from './pages/marketing/Landing.jsx'
+const Landing = lazy(() => import('./pages/marketing/Landing.jsx'))
 // B · auth + onboarding
-import Login from './pages/auth/Login.jsx'
-import Reset from './pages/auth/Reset.jsx'
-import Register from './pages/auth/Register.jsx'
-import Onboarding from './pages/auth/Onboarding.jsx'
+const Login = lazy(() => import('./pages/auth/Login.jsx'))
+const Reset = lazy(() => import('./pages/auth/Reset.jsx'))
+const Register = lazy(() => import('./pages/auth/Register.jsx'))
+const Onboarding = lazy(() => import('./pages/auth/Onboarding.jsx'))
 // C · account panel
-import Dashboard from './pages/account/Dashboard.jsx'
-import Sites from './pages/account/Sites.jsx'
-import Billing from './pages/account/Billing.jsx'
-import Team from './pages/account/Team.jsx'
-import Notifications from './pages/account/Notifications.jsx'
-import Profile from './pages/account/Profile.jsx'
+const Dashboard = lazy(() => import('./pages/account/Dashboard.jsx'))
+const Sites = lazy(() => import('./pages/account/Sites.jsx'))
+const Billing = lazy(() => import('./pages/account/Billing.jsx'))
+const Team = lazy(() => import('./pages/account/Team.jsx'))
+const Notifications = lazy(() => import('./pages/account/Notifications.jsx'))
+const Profile = lazy(() => import('./pages/account/Profile.jsx'))
+const Alerts = lazy(() => import('./pages/account/Alerts.jsx'))
 // D · per-site panel
-import Overview from './pages/site/Overview.jsx'
-import Incidents from './pages/site/Incidents.jsx'
-import Updates from './pages/site/Updates.jsx'
-import Security from './pages/site/Security.jsx'
-import Backups from './pages/site/Backups.jsx'
-import Assistant from './pages/site/Assistant.jsx'
-import Rescue from './pages/site/Rescue.jsx'
-import Conflict from './pages/site/Conflict.jsx'
-import Speed from './pages/site/Speed.jsx'
-import Hosting from './pages/site/Hosting.jsx'
-import Alerts from './pages/account/Alerts.jsx'
-import Settings from './pages/site/Settings.jsx'
+const Overview = lazy(() => import('./pages/site/Overview.jsx'))
+const Incidents = lazy(() => import('./pages/site/Incidents.jsx'))
+const Updates = lazy(() => import('./pages/site/Updates.jsx'))
+const Security = lazy(() => import('./pages/site/Security.jsx'))
+const Backups = lazy(() => import('./pages/site/Backups.jsx'))
+const Assistant = lazy(() => import('./pages/site/Assistant.jsx'))
+const Rescue = lazy(() => import('./pages/site/Rescue.jsx'))
+const Conflict = lazy(() => import('./pages/site/Conflict.jsx'))
+const Speed = lazy(() => import('./pages/site/Speed.jsx'))
+const Hosting = lazy(() => import('./pages/site/Hosting.jsx'))
+const Settings = lazy(() => import('./pages/site/Settings.jsx'))
 // E · payment
-import Pricing from './pages/billing/Pricing.jsx'
-import Checkout from './pages/billing/Checkout.jsx'
-import Invoice from './pages/billing/Invoice.jsx'
+const Pricing = lazy(() => import('./pages/billing/Pricing.jsx'))
+const Checkout = lazy(() => import('./pages/billing/Checkout.jsx'))
+const Invoice = lazy(() => import('./pages/billing/Invoice.jsx'))
+
+function PageLoader() {
+  return (
+    <div dir="rtl" style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'var(--gd-bg-app)', color: 'var(--gd-text-secondary)', fontFamily: 'var(--gd-font-sans)',
+    }}>
+      <span>در حال بارگذاری…</span>
+    </div>
+  )
+}
 
 export default function App() {
   return (
-    <Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
       {/* A · marketing */}
       <Route element={<MarketingLayout />}>
         <Route path="/" element={<Landing />} />
@@ -52,10 +66,10 @@ export default function App() {
         <Route path="/reset-password" element={<Reset />} />
         <Route path="/register" element={<Register />} />
       </Route>
-      <Route path="/onboarding" element={<Onboarding />} />
+      <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
 
       {/* C · account panel */}
-      <Route path="/app" element={<AccountShell />}>
+      <Route path="/app" element={<ProtectedRoute><AccountShell /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="sites" element={<Sites />} />
         <Route path="billing" element={<Billing />} />
@@ -66,7 +80,7 @@ export default function App() {
       </Route>
 
       {/* D · per-site management panel */}
-      <Route path="/site/:siteId" element={<SiteShell />}>
+      <Route path="/site/:siteId" element={<ProtectedRoute><SiteShell /></ProtectedRoute>}>
         <Route index element={<Overview />} />
         <Route path="incidents" element={<Incidents />} />
         <Route path="updates" element={<Updates />} />
@@ -81,10 +95,11 @@ export default function App() {
       </Route>
 
       {/* E · payment */}
-      <Route path="/checkout" element={<Checkout />} />
-      <Route path="/invoice/:id" element={<Invoice />} />
+      <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+      <Route path="/invoice/:id" element={<ProtectedRoute><Invoice /></ProtectedRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   )
 }

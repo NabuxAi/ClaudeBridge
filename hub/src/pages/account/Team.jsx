@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Input, Select, Badge, IconButton } from '../../components/index.js'
+import { Badge, IconButton } from '../../components/index.js'
 import { account } from '../../lib/api.js'
 
 // Presentational metadata per role — merged onto the fetched member list
@@ -41,15 +41,13 @@ export default function Team() {
     <>
       {head}
 
-      {/* Invite row */}
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '16px 20px', display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 220 }}>
-          <Input label="دعوت عضو جدید" placeholder="ایمیل همکار…" leftIcon="mail" />
-        </div>
-        <div style={{ width: 210 }}>
-          <Select label="نقش" options={[{ value: 'admin', label: 'مدیر' }, { value: 'viewer', label: 'فقط مشاهده' }]} />
-        </div>
-        <Button variant="primary" size="md" leftIcon="user-plus">ارسال دعوت</Button>
+      {/* Team invitations are not built yet. The table below shows only the
+          one real member: the signed-in account owner. */}
+      <div style={{ background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: '14px 18px', marginBottom: 22, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Icon name="info" size={18} style={{ color: 'var(--gd-text-muted)', flex: '0 0 auto' }} />
+        <span style={{ fontSize: 13.5, color: 'var(--gd-text-secondary)', lineHeight: 1.7 }}>
+          دعوت هم‌تیمی و دسترسی چندکاربره هنوز ساخته نشده. فقط حساب خودتان در این لیست دیده می‌شود.
+        </span>
       </div>
 
       {/* Members table */}
@@ -94,22 +92,6 @@ export default function Team() {
           )
         })}
 
-        {/* Pending invitation */}
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, alignItems: 'center', padding: '13px 20px', fontSize: 13.5, background: 'var(--gd-bg-subtle)' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-            <span style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--gd-bg-inset)', color: 'var(--gd-text-muted)', border: '1px dashed var(--gd-border-strong)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flex: '0 0 auto' }}>س</span>
-            <span>
-              <span style={{ display: 'block', fontWeight: 700 }}>سارا احمدی</span>
-              <span style={{ display: 'block', fontSize: 12, color: 'var(--gd-text-muted)', fontFamily: 'var(--gd-font-mono)' }}>sara@digiwp.com</span>
-            </span>
-          </span>
-          <Badge variant="info" appearance="soft">مدیر</Badge>
-          <span style={{ color: 'var(--gd-text-secondary)', fontFamily: 'var(--gd-font-mono)', fontSize: 12.5 }}>mystore.ir</span>
-          <Badge variant="warning" appearance="soft" icon="clock">در انتظار دعوت</Badge>
-          <span style={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <IconButton icon="x" label="لغو دعوت" size="sm" />
-          </span>
-        </div>
       </div>
 
       {/* Role reference cards */}

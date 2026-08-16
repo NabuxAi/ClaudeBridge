@@ -41,15 +41,15 @@ export default function MarketingLayout() {
           ].map((c) => (
             <div key={c.h}>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>{c.h}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 13, color: 'var(--gd-text-secondary)' }}>
-                {c.links.map((l) => <a key={l} href="#" style={{ color: 'inherit' }}>{l}</a>)}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 13, color: 'var(--gd-text-muted)' }}>
+                {c.links.map((l) => <span key={l}>{l}</span>)}
               </div>
             </div>
           ))}
         </div>
         <div style={{ borderTop: '1px solid var(--gd-border)' }}>
           <div className="dwp-container" style={{ padding: '16px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, color: 'var(--gd-text-muted)' }}>
-            <span>© ۱۴۰۳ DigiWP Ai Support — همهٔ حقوق محفوظ است.</span>
+            <span>© ۱۴۰۵ DigiWP Ai Support — همهٔ حقوق محفوظ است.</span>
             <span className="dwp-mono">ai.digiwp.com</span>
           </div>
         </div>

@@ -16,6 +16,14 @@ const SUGGESTIONS = [
 
 const mono = { fontFamily: 'var(--gd-font-mono)' }
 
+function AiAvatar() {
+  return (
+    <span style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--gd-accent-subtle)', color: 'var(--gd-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
+      <Icon name="sparkles" size={19} />
+    </span>
+  )
+}
+
 export default function Assistant() {
   const { siteId, site } = useOutletContext()
   const siteName = site?.name || 'mystore.ir'
@@ -132,12 +140,6 @@ export default function Assistant() {
       }
     }))
   }
-
-  const AiAvatar = () => (
-    <span style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--gd-accent-subtle)', color: 'var(--gd-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
-      <Icon name="sparkles" size={19} />
-    </span>
-  )
 
   function renderMessage(m, i) {
     if (m.from === 'user') {

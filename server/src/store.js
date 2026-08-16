@@ -69,6 +69,58 @@ export const users = {
     const row = await one(`UPDATE users SET ${sets} WHERE id = $1 RETURNING *`, [id, ...keys.map((k) => fields[k])])
     return publicUser(row)
   },
+
+  async updatePassword(id, password) {
+    if (!password || String(password).length < 8) throw httpError(400, 'رمز عبور باید حداقل ۸ نویسه باشد.')
+    const row = await one('UPDATE users SET pass_hash = $2 WHERE id = $1 RETURNING *', [id, await hashPassword(password)])
+    if (!row) throw httpError(404, 'کاربر پیدا نشد.')
+    return publicUser(row)
+  },
+}
+
+export const passwordResets = {
+  /**
+   * Create a reset token for a user.
+   *
+   * Returns the raw token (to put in the email) and stores its SHA-256 hash.
+   * A user can only have one active token at a time, enforced by a partial
+   * unique index; creating a new one replaces the old.
+   */
+  async create(userId) {
+    const raw = crypto.randomBytes(32).toString('hex')
+    const tokenHash = crypto.createHash('sha256').update(raw).digest('hex')
+    const id = newId('pr_')
+    const now = Date.now()
+    // Expire in 1 hour.
+    const expiresAt = now + 60 * 60 * 1000
+    // Remove expired unused tokens for this user before inserting a new one.
+    await one(
+      'DELETE FROM password_resets WHERE user_id = $1 AND used_at IS NULL AND expires_at <= $2',
+      [userId, now]
+    )
+    await one(
+      `INSERT INTO password_resets (id, user_id, token_hash, expires_at, created_at)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (user_id) WHERE used_at IS NULL
+       DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, created_at = EXCLUDED.created_at`,
+      [id, userId, tokenHash, expiresAt, now]
+    )
+    return { id, raw, expiresAt }
+  },
+
+  /** Find an active, unused token by its hash. */
+  async find(tokenHash) {
+    return one(
+      `SELECT * FROM password_resets
+        WHERE token_hash = $1 AND used_at IS NULL AND expires_at > EXTRACT(EPOCH FROM NOW()) * 1000`,
+      [tokenHash]
+    )
+  },
+
+  /** Mark a token as used. */
+  async markUsed(id) {
+    return one('UPDATE password_resets SET used_at = $2 WHERE id = $1 RETURNING *', [id, Date.now()])
+  },
 }
 
 export const sites = {

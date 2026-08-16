@@ -1,7 +1,7 @@
 import Icon from '../lib/icons.jsx'
 
 // The product's signature 3-tier autonomy model.
-export const AUTHORITY = {
+const AUTHORITY = {
   report: { icon: 'eye', label: 'فقط گزارش' },
   confirm: { icon: 'user-check', label: 'با تأیید' },
   auto: { icon: 'zap', label: 'خودکار' },

@@ -1239,3 +1239,112 @@ Nothing new. `ASSISTANT_SWEEP=true` remains the one switch, with the same
 caveat about `auto` sites, and the owner-facing alert channels remain unset —
 `EMAIL_URL` is the one worth setting, since every account here has an email
 address and none has a phone or push token.
+
+---
+
+## 2026-08-16 — Sprint 0 finished: honest flows, protected routes, and safer backups
+
+The six items from `AGENTS.md` Sprint 0 are done.
+
+### Honest customer flows (P0.2, P0.3, P1.2, P1.4)
+
+- Checkout/invoice/pricing no longer pretend payment is live. CTAs ask for pilot
+  access instead of charging a card.
+- Password reset says plainly that recovery is not built yet, instead of faking
+  a sent email.
+- Footer dead links, the inert demo CTA, and the fake trial copy are removed.
+- Team page removes the inert invite form and the invented `sara@digiwp.com`
+  pending invitation. Notifications page renders `NotBuilt`.
+- Registration no longer pre-checks terms against `#` links.
+- Copyright updated to ۱۴۰۵.
+
+### Authentication UX (P1.3)
+
+- `ProtectedRoute.jsx` gates `/app`, `/site/:siteId`, `/onboarding`, `/checkout`,
+  and invoice routes.
+- `api.js` handles 401 globally and redirects to `/login` with the intended
+  return path.
+- Login navigates back to the original destination after success.
+- `AccountShell` no longer shows demo-looking initials while `user` is null.
+
+### Responsive public page (P1.1)
+
+- Hero collapses to one column on mobile; no horizontal overflow at 320–1024 px.
+- Status card stays inside the viewport.
+
+### Frontend quality gate (P1.5)
+
+- ESLint + React plugin added, config in `hub/eslint.config.js`.
+- Existing lint errors fixed.
+- Route-level lazy loading added; bundle stays under the prior budget.
+- `npm run lint` and `npm run build` both pass in CI.
+
+### Backup and update safety (P0.4, P0.5)
+
+- `cb_backup_dir()` now prefers a `cb-backups-<hash>` directory next to `ABSPATH`,
+  outside the document root, and only falls back to `wp-content/uploads/cb-backups`
+  when the host cannot write outside the web root.
+- `cb_backup_dirs()` and `cb_backup_find_meta()` keep list/read/restore working
+  for backups already stored in the legacy uploads path.
+- `.htaccess` and `index.php` protection is written to both locations.
+- `docs/SECURITY.md` includes nginx and Apache snippets that block
+  `/wp-content/uploads/cb-backups/` and explains why `.htaccess` is not enough
+  on nginx.
+- `server/src/policy.js` now describes safe mode as keeping automatic updates on,
+  not as a guarantee of automatic rollback after a bad update.
+- The full transactional safe-update pipeline (file snapshot, preflight checks,
+  post-update health verification, automatic rollback) remains in the roadmap.
+
+### Tests
+
+- `php -l wp-claude-bridge.php` passes.
+- `bash scripts/build-digiwp-ai-bridge.sh && bash scripts/build-wporg-bridge.sh`
+  produce valid builds.
+- Server suite: **287 pass, none skipped**, against a throwaway PostgreSQL.
+- Hub: `npm run lint` and `npm run build` both pass.
+
+### Needs you
+
+Nothing new. The same operational switches remain: `ASSISTANT_SWEEP=true` if
+you want unattended fleet checks, and owner alert channels (`EMAIL_URL`, etc.)
+are still the worth-setting ones.
+
+---
+
+## 2026-08-16 (second pass) — real password recovery
+
+P0.3 was closed as "honest short-term" during Sprint 0. The real flow is now
+built.
+
+### What changed
+
+- `server/src/password-resets.schema.js` creates a `password_resets` table that
+  stores SHA-256 hashed tokens, a per-user active-token constraint, expiry, and
+  a `used_at` flag so a token can only be spent once.
+- `server/src/mailer.js` sends transactional email through the existing
+  `EMAIL_URL` / `EMAIL_API_KEY` / `EMAIL_FROM` alert configuration.
+- `server/src/routes/auth.js` adds:
+  - `POST /auth/forgot-password` — captcha-guarded, rate-limited, and returns the
+    same message whether the email exists or not.
+  - `POST /auth/reset-password` — validates the hashed token, enforces expiry,
+    rejects weak passwords, updates the user, and marks the token spent.
+- `hub/src/pages/auth/Reset.jsx` now shows the real two-step UI: an email form
+  when no token is in the URL, and a new-password form when `?token=` is present.
+- `server/src/store.js` adds `passwordResets.create/find/markUsed` and
+  `users.updatePassword`.
+- `DEPLOY.md`, `docker-compose.yaml`, and `server/.env.example` were aligned so
+  `SEED_DEMO=1` is off by default, `TRUST_PROXY=0` is the default, and `CORS_ORIGIN`
+  defaults to the hub URL instead of `*`.
+
+### Tests
+
+- `server/test/auth-password-reset.test.js` covers token hashing, single active
+  token per user, expiry rejection, used-token rejection, and password update.
+- Server suite: **292 pass, none skipped**, against a throwaway PostgreSQL.
+- Hub: `npm run lint` and `npm run build` both pass.
+
+### Needs you
+
+`EMAIL_URL` is now also used for password reset emails. If you want users to be
+able to recover their own accounts, set `EMAIL_URL` (and optionally
+`EMAIL_API_KEY` / `EMAIL_FROM`).

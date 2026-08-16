@@ -4,11 +4,11 @@
 
 ### 把任意 WordPress 站点变成一个完整的自托管 **MCP server** —— 让 Claude 来运营它。
 
-*编辑主题与插件文件、脚手架式生成插件、管理文章、页面、WooCommerce、设置、数据库…… 100+ 工具，一个 URL，零中间商。*
+*编辑主题与插件文件、脚手架式生成插件、管理文章、页面、WooCommerce、设置、数据库…… 130+ 工具，一个 URL，零中间商。*
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-3.6.0-6c47ff?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/version-3.7.4-6c47ff?style=for-the-badge)](https://github.com/)
 [![License](https://img.shields.io/badge/license-GPLv2-blue?style=for-the-badge)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-5.6%2B-21759B?style=for-the-badge&logo=wordpress&logoColor=white)](https://wordpress.org)
@@ -75,7 +75,7 @@
 
 ---
 
-## 🧰 100+ 工具
+## 🧰 130+ 工具
 
 <details open>
 <summary><b>文件、插件、主题、缓存</b></summary>

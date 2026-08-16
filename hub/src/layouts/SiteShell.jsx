@@ -5,9 +5,11 @@ import Icon from '../lib/icons.jsx'
 import { Button, IconButton, SidebarItem, StatusPill, AuthorityBadge } from '../components/index.js'
 import { account } from '../lib/api.js'
 import { faNum } from '../lib/format.js'
+import { useAuth } from '../lib/auth.jsx'
 
 export default function SiteShell() {
   const { siteId } = useParams()
+  const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [site, setSite] = useState(null)
 
@@ -75,7 +77,7 @@ export default function SiteShell() {
           <span className="dwp-spacer" />
           <Button as={Link} to={`${base}/assistant`} variant="subtle" size="sm" leftIcon="sparkles" className="dwp-desktop-only">از پشتیبان بپرسید</Button>
           <IconButton icon="bell" label="اعلان‌ها" />
-          <span className="dwp-avatar">م</span>
+          <span className="dwp-avatar">{user?.initials || '؟'}</span>
         </header>
         <main className="dwp-content"><Outlet context={{ siteId, site }} /></main>
       </div>

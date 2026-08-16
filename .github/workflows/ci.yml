@@ -92,6 +92,10 @@ jobs:
 
       # The panel is the only client of the server's API. A build failure here
       # is a deploy that serves a stale bundle without saying so.
+      - name: Lint
+        working-directory: hub
+        run: npm run lint
+
       - name: Build
         working-directory: hub
         run: npm run build

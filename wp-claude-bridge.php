@@ -631,15 +631,67 @@ function cb_backup_dir() {
 	if ( empty( $up['basedir'] ) ) {
 		return '';
 	}
+
+	// Prefer storage outside the document root. If ABSPATH is /var/www/html/,
+	// dirname() is /var/www/ and nginx will not serve that path by default.
+	// We hash ABSPATH so multiple sites on one host do not share a directory.
+	$parent = rtrim( dirname( ABSPATH ), '/\\' );
+	$abspath_trimmed = rtrim( ABSPATH, '/\\' );
+	if ( $parent && $parent !== $abspath_trimmed && '/' !== $parent && '\\' !== $parent && is_dir( $parent ) && wp_is_writable( $parent ) ) {
+		$outside = $parent . '/cb-backups-' . substr( md5( ABSPATH ), 0, 8 );
+		if ( ! is_dir( $outside ) ) {
+			wp_mkdir_p( $outside );
+		}
+		if ( is_dir( $outside ) && wp_is_writable( $outside ) ) {
+			// Belt and braces: a misconfigured Apache alias could still expose it.
+			cb_put_contents( $outside . '/.htaccess', "Require all denied\nDeny from all\n" );
+			cb_put_contents( $outside . '/index.php', "<?php // Silence is golden.\n" );
+			return $outside;
+		}
+	}
+
+	// Fallback to uploads with explicit web-server protection. .htaccess helps
+	// Apache; nginx ignores it, so this is only a fallback when outside storage
+	// is impossible.
 	$dir = $up['basedir'] . '/cb-backups';
 	if ( ! is_dir( $dir ) ) {
 		wp_mkdir_p( $dir );
-		// Belt and braces: these files must never be served, and uploads/ is
-		// web-reachable on every host.
 		cb_put_contents( $dir . '/.htaccess', "Require all denied\nDeny from all\n" );
 		cb_put_contents( $dir . '/index.php', "<?php // Silence is golden.\n" );
 	}
 	return $dir;
+}
+
+/** All backup directories: current preferred dir first, legacy uploads dir last. */
+function cb_backup_dirs() {
+	$dirs = array();
+	$preferred = cb_backup_dir();
+	if ( $preferred ) {
+		$dirs[] = $preferred;
+	}
+	$up = wp_get_upload_dir();
+	if ( ! empty( $up['basedir'] ) ) {
+		$legacy = $up['basedir'] . '/cb-backups';
+		if ( $legacy !== $preferred && is_dir( $legacy ) ) {
+			$dirs[] = $legacy;
+		}
+	}
+	return $dirs;
+}
+
+/** Locate a backup's meta file across all known backup directories. */
+function cb_backup_find_meta( $id ) {
+	$id = preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $id );
+	if ( '' === $id ) {
+		return null;
+	}
+	foreach ( cb_backup_dirs() as $dir ) {
+		$path = $dir . "/meta-{$id}.json";
+		if ( file_exists( $path ) ) {
+			return array( 'dir' => $dir, 'path' => $path );
+		}
+	}
+	return null;
 }
 
 /**
@@ -816,48 +868,59 @@ function cb_backup_verify_file( $path ) {
 }
 
 function cb_backup_list() {
-	$dir = cb_backup_dir();
+	$dirs = cb_backup_dirs();
 	$out = array();
 	// cb_backup_dir() is empty when uploads is unavailable; without this the
 	// paths below would resolve against the filesystem root.
-	if ( '' === $dir ) {
+	if ( ! $dirs ) {
 		return array( 'backups' => $out );
 	}
-	foreach ( (array) glob( $dir . '/meta-*.json' ) as $m ) {
-		$meta = json_decode( (string) cb_get_contents( $m ), true );
-		if ( is_array( $meta ) ) {
-			$meta['db_present'] = file_exists( $dir . '/' . $meta['db_file'] );
-			$out[] = $meta;
+	foreach ( $dirs as $dir ) {
+		foreach ( (array) glob( $dir . '/meta-*.json' ) as $m ) {
+			$meta = json_decode( (string) cb_get_contents( $m ), true );
+			if ( is_array( $meta ) ) {
+				$meta['db_present'] = file_exists( $dir . '/' . $meta['db_file'] );
+				$meta['_dir']       = $dir;
+				$out[] = $meta;
+			}
 		}
 	}
 	usort( $out, function ( $a, $b ) { return $b['created_at'] <=> $a['created_at']; } );
+	$preferred = $dirs[0];
+	$dir_label = ( 0 === strpos( $preferred, ABSPATH ) ) ? str_replace( ABSPATH, '', $preferred ) : 'OUTSIDE_DOCROOT';
 	return array(
 		'backups'  => $out,
-		'dir'      => str_replace( ABSPATH, '', $dir ),
+		'dir'      => $dir_label,
 		'total'    => count( $out ),
 		'bytes'    => array_sum( array_map( function ( $b ) { return $b['db_bytes'] + $b['files_bytes']; }, $out ) ),
 	);
 }
 
-/** Keep the newest N; a backup directory that grows forever fills the host. */
+/** Keep the newest N per directory; a backup directory that grows forever fills the host. */
 function cb_backup_prune( $keep = 7 ) {
-	$list = cb_backup_list();
-	$dir  = cb_backup_dir();
-	// cb_backup_dir() is empty when uploads is unavailable; without this the
-	// paths below would resolve against the filesystem root.
-	if ( '' === $dir ) {
-		return;
-	}
-	$i = 0;
-	foreach ( $list['backups'] as $b ) {
-		if ( ++$i <= max( 1, $keep ) ) {
-			continue;
+	$keep = max( 1, (int) $keep );
+	foreach ( cb_backup_dirs() as $dir ) {
+		$metas = (array) glob( $dir . '/meta-*.json' );
+		$backups = array();
+		foreach ( $metas as $m ) {
+			$meta = json_decode( (string) cb_get_contents( $m ), true );
+			if ( is_array( $meta ) && ! empty( $meta['id'] ) && isset( $meta['created_at'] ) ) {
+				$meta['_path'] = $m;
+				$backups[] = $meta;
+			}
 		}
-		cb_delete_file( $dir . '/' . $b['db_file'] );
-		if ( ! empty( $b['files_file'] ) ) {
-			cb_delete_file( $dir . '/' . $b['files_file'] );
+		usort( $backups, function ( $a, $b ) { return $b['created_at'] <=> $a['created_at']; } );
+		$i = 0;
+		foreach ( $backups as $b ) {
+			if ( ++$i <= $keep ) {
+				continue;
+			}
+			cb_delete_file( $dir . '/' . $b['db_file'] );
+			if ( ! empty( $b['files_file'] ) ) {
+				cb_delete_file( $dir . '/' . $b['files_file'] );
+			}
+			cb_delete_file( $b['_path'] );
 		}
-		cb_delete_file( $dir . "/meta-{$b['id']}.json" );
 	}
 }
 
@@ -888,18 +951,17 @@ function cb_op_backup_list()        { return cb_backup_list(); }
  * how big the backup is.
  */
 function cb_op_backup_read( $args ) {
-	$dir  = cb_backup_dir();
-	// cb_backup_dir() is empty when uploads is unavailable; without this the
-	// paths below would resolve against the filesystem root.
-	if ( '' === $dir ) {
-		return new WP_Error( 'cb_backup_read', 'پوشهٔ بکاپ در دسترس نیست.' );
-	}
 	$id   = isset( $args['id'] ) ? preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $args['id'] ) : '';
 	$what = isset( $args['what'] ) && 'files' === $args['what'] ? 'files' : 'db';
 	if ( '' === $id ) {
 		return new WP_Error( 'cb_backup_read', 'شناسهٔ بکاپ لازم است.' );
 	}
-	$meta = json_decode( (string) cb_get_contents( $dir . "/meta-{$id}.json" ), true );
+	$found = cb_backup_find_meta( $id );
+	if ( ! $found ) {
+		return new WP_Error( 'cb_backup_read', 'این بکاپ پیدا نشد.' );
+	}
+	$dir  = $found['dir'];
+	$meta = json_decode( (string) cb_get_contents( $found['path'] ), true );
 	if ( ! is_array( $meta ) ) {
 		return new WP_Error( 'cb_backup_read', 'این بکاپ پیدا نشد.' );
 	}
@@ -2766,13 +2828,6 @@ function cb_job_update_apply( $job ) {
 function cb_job_backup_restore( $job ) {
 	$args  = is_array( $job['args'] ) ? $job['args'] : array();
 	$state = is_array( $job['cursor'] ) ? $job['cursor'] : array();
-	$dir   = cb_backup_dir();
-	// cb_backup_dir() is empty when uploads is unavailable; without this the
-	// paths below would resolve against the filesystem root.
-	if ( '' === $dir ) {
-		return array( 'done' => true, 'message' => 'پوشهٔ بکاپ در دسترس نیست.',
-			'result' => array( 'ok' => false, 'error' => 'no backup dir' ) );
-	}
 	$id    = isset( $args['id'] ) ? preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $args['id'] ) : '';
 
 	if ( '' === $id ) {
@@ -2780,7 +2835,13 @@ function cb_job_backup_restore( $job ) {
 			'result' => array( 'ok' => false, 'error' => 'missing id' ) );
 	}
 
-	$meta = json_decode( (string) cb_get_contents( $dir . "/meta-{$id}.json" ), true );
+	$found = cb_backup_find_meta( $id );
+	if ( ! $found ) {
+		return array( 'done' => true, 'message' => 'این بکاپ پیدا نشد.',
+			'result' => array( 'ok' => false, 'error' => 'backup not found' ) );
+	}
+	$dir  = $found['dir'];
+	$meta = json_decode( (string) cb_get_contents( $found['path'] ), true );
 	if ( ! is_array( $meta ) || empty( $meta['db_file'] ) ) {
 		return array( 'done' => true, 'message' => 'این بکاپ پیدا نشد.',
 			'result' => array( 'ok' => false, 'error' => 'backup not found' ) );

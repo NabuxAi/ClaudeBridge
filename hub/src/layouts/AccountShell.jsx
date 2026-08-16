@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, Outlet } from 'react-router-dom'
 import Brand from './Brand.jsx'
 import Icon from '../lib/icons.jsx'
-import { Button, IconButton, SidebarItem, ProgressBar } from '../components/index.js'
+import { Button, IconButton, SidebarItem } from '../components/index.js'
 import { useAuth } from '../lib/auth.jsx'
 
 // The site count used to be a hardcoded "۳" next to سایت‌های من, for every
@@ -51,10 +51,10 @@ export default function AccountShell() {
           <Button as={Link} to="/onboarding" variant="primary" size="sm" leftIcon="plus">افزودن سایت</Button>
           <IconButton icon="bell" label="اعلان‌ها" />
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, paddingInlineStart: 10, borderInlineStart: '1px solid var(--gd-border)' }}>
-            <span className="dwp-avatar">{user?.initials || 'م'}</span>
+            <span className="dwp-avatar">{user?.initials || '؟'}</span>
             <span className="dwp-desktop-only">
-              <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, lineHeight: 1.2 }}>{user?.name || 'مریم رضایی'}</span>
-              <span style={{ display: 'block', fontSize: 10.5, color: 'var(--gd-text-muted)' }}>{user?.role || 'مدیر حساب'}</span>
+              <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, lineHeight: 1.2 }}>{user?.name || '…'}</span>
+              <span style={{ display: 'block', fontSize: 10.5, color: 'var(--gd-text-muted)' }}>{user?.role || 'بارگذاری…'}</span>
             </span>
           </span>
         </header>

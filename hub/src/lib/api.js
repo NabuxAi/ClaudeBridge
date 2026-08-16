@@ -35,7 +35,15 @@ async function http(path, { method = 'GET', body, signal } = {}) {
     body: body != null ? JSON.stringify(body) : undefined,
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new ApiError(data?.message || res.statusText, res.status, data)
+  if (!res.ok) {
+    if (res.status === 401) {
+      setToken('')
+      sessionStorage.setItem('loginReturnTo', window.location.pathname + window.location.search)
+      window.location.replace('/login')
+      return data
+    }
+    throw new ApiError(data?.message || res.statusText, res.status, data)
+  }
   return data
 }
 
@@ -61,6 +69,8 @@ export const auth = {
   // arithmetic to sign in. The challenge only appears once this address has
   // failed a few times.
   challengeState: call(mock.challengeState, () => http('/auth/challenge-state')),
+  forgotPassword: call(mock.forgotPassword, (b) => http('/auth/forgot-password', { method: 'POST', body: b })),
+  resetPassword: call(mock.resetPassword, (b) => http('/auth/reset-password', { method: 'POST', body: b })),
   logout: () => { setToken(''); return Promise.resolve({ ok: true }) },
 }
 

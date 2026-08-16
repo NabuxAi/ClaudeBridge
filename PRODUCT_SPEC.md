@@ -14,9 +14,9 @@ you → Hub (React)  ──►  server (Node)  ──►  connector  ──►  
 ```
 
 1. **`wp-claude-bridge.php`** — a single PHP file dropped into any WordPress site. It turns
-   that site into a complete **MCP server**, exposing 58 tools: files, plugins, themes,
-   posts, WooCommerce, options, the database, caches, backups, screenshots. Claude — or any
-   MCP client — connects to it directly and operates the site. No SaaS, no proxy.
+   that site into a complete **MCP server**, exposing more than 130 tools: files, plugins,
+   themes, posts, WooCommerce, options, the database, caches, backups, screenshots. Claude
+   — or any MCP client — connects to it directly and operates the site. No SaaS, no proxy.
 2. **`server/`** — the relay. The hub never holds a site URL or token; it calls this server,
    which stores each site's pairing credentials and forwards **HMAC-signed** commands to
    that site's connector, using the exact signature the plugin's Hub Connector Mode
@@ -31,10 +31,10 @@ that was incomplete.
 ## Stack
 
 PHP 7.4+ / WordPress 5.6+ for the plugin, single file, zero dependencies. Node + Express +
-PostgreSQL for the server. React + Vite for the hub. `node --test` throughout: 245 tests
-with 3 skipped, or 263 with none skipped when `CB_TEST_DATABASE_URL` names a PostgreSQL —
-several assertions are database properties (a partial unique index, a conditional UPDATE)
-and testing those against a stand-in would test the stand-in.
+PostgreSQL for the server. React + Vite for the hub. `node --test` throughout: 287 tests
+with none skipped when `CB_TEST_DATABASE_URL` names a PostgreSQL — several assertions are
+database properties (a partial unique index, a conditional UPDATE) and testing those against
+a stand-in would test the stand-in.
 
 ## Users
 
@@ -105,7 +105,7 @@ current deployment.
 
 ## Complete
 
-The plugin and its 58 tools, pairing and signing, monitoring, digests, security scanning,
+The plugin and its 130+ tools, pairing and signing, monitoring, digests, security scanning,
 the hub, server-initiated tool execution with authority enforcement and an audit trail, the
 plugin update channel, and the fleet's own version state — each site's installed version is
 observed during the nightly run and divergence from the published one is reported in the

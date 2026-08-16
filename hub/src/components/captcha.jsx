@@ -35,7 +35,21 @@ export default function Captcha({ value, onChange, onReady, refreshKey = 0, erro
     }
   }, [onReady, onChange])
 
-  useEffect(() => { load() }, [refreshKey])
+  useEffect(() => {
+    let alive = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true); setFailed('')
+    authApi.captcha()
+      .then((c) => {
+        if (!alive) return
+        setChallenge(c)
+        onReady?.(c.id)
+        onChange?.('')
+      })
+      .catch((e) => { if (alive) setFailed(e?.message || 'سؤال امنیتی بارگذاری نشد.') })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [refreshKey, onReady, onChange])
 
   if (failed) {
     return (

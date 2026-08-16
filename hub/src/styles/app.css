@@ -53,6 +53,8 @@
 .dwp-mkt-links a { color: inherit; }
 .dwp-footer { border-top: 1px solid var(--gd-border); background: var(--gd-bg-subtle); }
 
+.dwp-hero { grid-template-columns: 1.05fr .95fr; }
+
 /* ---- responsive: fold to the mobile variants -------------- */
 .dwp-mobile-only { display: none; }
 
@@ -77,6 +79,7 @@
   .dwp-content { padding: 18px 16px 40px; }
   .dwp-mkt-links { display: none; }
   .dwp-grid-2, .dwp-grid-3, .dwp-grid-4 { grid-template-columns: 1fr; }
+  .dwp-hero { grid-template-columns: 1fr; }
   .dwp-desktop-only { display: none !important; }
   .dwp-mobile-only { display: revert; }
 }

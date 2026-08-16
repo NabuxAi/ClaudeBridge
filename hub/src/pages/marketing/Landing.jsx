@@ -26,9 +26,9 @@ const AUTH_LEVELS = [
 ]
 
 const PLANS = [
-  { name: 'پایه', price: '۱۹۰٬۰۰۰', popular: false, feats: ['۱ سایت', 'به‌روزرسانی خودکار', 'بکاپ و اسکن روزانه'], cta: 'انتخاب پایه', variant: 'secondary' },
-  { name: 'حرفه‌ای', price: '۴۹۰٬۰۰۰', popular: true, feats: ['۵ سایت', 'بررسی یکپارچگی هسته', 'بررسی تداخل و عملیات نجات'], cta: 'انتخاب حرفه‌ای', variant: 'primary' },
-  { name: 'آژانس', price: '۹۹۰٬۰۰۰', popular: false, feats: ['سایت نامحدود', 'همهٔ امکانات حرفه‌ای', 'گزارش روزانه در تلگرام'], cta: 'انتخاب آژانس', variant: 'secondary' },
+  { name: 'پایه', price: '۱۹۰٬۰۰۰', popular: false, feats: ['۱ سایت', 'به‌روزرسانی خودکار', 'بکاپ و اسکن روزانه'], cta: 'درخواست دسترسی', variant: 'secondary' },
+  { name: 'حرفه‌ای', price: '۴۹۰٬۰۰۰', popular: true, feats: ['۵ سایت', 'بررسی یکپارچگی هسته', 'بررسی تداخل و عملیات نجات'], cta: 'درخواست دسترسی', variant: 'primary' },
+  { name: 'آژانس', price: '۹۹۰٬۰۰۰', popular: false, feats: ['سایت نامحدود', 'همهٔ امکانات حرفه‌ای', 'گزارش روزانه در تلگرام'], cta: 'تماس با فروش', variant: 'secondary' },
 ]
 
 
@@ -37,7 +37,7 @@ export default function Landing() {
     <>
       {/* Hero (ink) */}
       <div data-theme="ink" style={{ background: 'var(--gd-bg-app)' }}>
-        <div className="dwp-container dwp-hero" style={{ padding: '66px 40px 74px', display: 'grid', gridTemplateColumns: '1.05fr .95fr', gap: 44, alignItems: 'center' }}>
+        <div className="dwp-container dwp-hero" style={{ paddingBlock: '66px 74px', display: 'grid', gap: 44, alignItems: 'center' }}>
           <div>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, color: 'var(--gd-primary)', background: 'var(--gd-primary-subtle)', border: '1px solid var(--gd-primary-border)', padding: '6px 13px', borderRadius: 'var(--gd-radius-pill)' }}>
               <Icon name="sparkles" size={14} /> پشتیبان هوشمند وردپرس
@@ -49,12 +49,12 @@ export default function Landing() {
               به‌جای استخدام پشتیبان دائمی سایت. کارهای روزمرهٔ نگهداری خودکار می‌شوند و فقط برای تصمیم‌های حساس از شما اجازه گرفته می‌شود.
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 28, flexWrap: 'wrap' }}>
-              <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">شروع رایگان ۱۴ روزه</Button>
-              <Button variant="secondary" size="lg" rightIcon="play">تماشای دمو</Button>
+              <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">ساخت حساب</Button>
+              <Button as={Link} to="/pricing" variant="secondary" size="lg" rightIcon="arrow-left">مشاهده قیمت‌ها</Button>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 22, fontSize: 12.5, color: 'var(--gd-text-muted)' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={15} style={{ color: 'var(--gd-primary)' }} /> بدون کارت بانکی</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={15} style={{ color: 'var(--gd-primary)' }} /> نصب در ۲ دقیقه</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={15} style={{ color: 'var(--gd-primary)' }} /> بدون نیاز به کارت بانکی در دسترسی آزمایشی</span>
             </div>
           </div>
           <div>
@@ -173,9 +173,9 @@ export default function Landing() {
         <div className="dwp-container dwp-cta" style={{ padding: '60px 40px', display: 'flex', alignItems: 'center', gap: 30, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 280 }}>
             <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: 0, color: 'var(--gd-text)' }}>همین امروز خیال‌تان از سایت راحت شود</h2>
-            <p style={{ fontSize: 15, color: 'var(--gd-text-secondary)', margin: '10px 0 0' }}>۱۴ روز رایگان، بدون کارت بانکی. اتصال در کمتر از دو دقیقه.</p>
+            <p style={{ fontSize: 15, color: 'var(--gd-text-secondary)', margin: '10px 0 0' }}>دسترسی آزمایشی — بدون کارت بانکی. اتصال در کمتر از دو دقیقه.</p>
           </div>
-          <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">شروع رایگان ۱۴ روزه</Button>
+          <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">ساخت حساب</Button>
         </div>
       </div>
     </>

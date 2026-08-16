@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Button, Input, Checkbox } from '../../components/index.js'
+import { Button, Input } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
 import { useAuth } from '../../lib/auth.jsx'
 
@@ -38,7 +38,7 @@ export default function Register() {
     <>
       <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.01em', margin: 0 }}>ساخت حساب رایگان</h2>
       <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 24px' }}>
-        ۱۴ روز رایگان — بدون نیاز به کارت بانکی.
+        دسترسی آزمایشی — بدون نیاز به کارت بانکی.
       </p>
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
         <Input label="نام و نام خانوادگی" placeholder="مثلاً مریم رضایی" leftIcon="user"
@@ -47,15 +47,6 @@ export default function Register() {
           value={email} onChange={(e) => setEmail(e.target.value)} required />
         <Input label="رمز عبور" type="password" leftIcon="lock" hint="حداقل ۸ نویسه"
           value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <Checkbox
-          defaultChecked
-          label={(
-            <span>
-              با <a href="#" style={{ fontWeight: 600 }}>قوانین</a> و{' '}
-              <a href="#" style={{ fontWeight: 600 }}>حریم خصوصی</a> موافقم
-            </span>
-          )}
-        />
         <Captcha
           value={captchaAnswer}
           onChange={setCaptchaAnswer}

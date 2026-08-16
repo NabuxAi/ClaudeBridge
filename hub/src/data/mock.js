@@ -176,7 +176,7 @@ export const siteIncidents = (id) => delay({
       { t: '۰۲:۱۴', label: 'اسکن شبانه — همچنان دیده می‌شود', tone: 'warning' },
     ],
   },
-  list: demoEvents.map(({ detail, ...rest }) => rest),
+  list: demoEvents.map(({ detail: _detail, ...rest }) => rest),
 })
 
 export const dismissIncident = (id, eventId) => delay({ ok: true, eventId })
@@ -390,7 +390,7 @@ export const setAuthority = (id, authority) => delay({ authority })
 // The demo walks the same queued path the real thing does — returning a
 // finished result immediately would hide the polling the UI has to handle.
 let mockJobTick = 0
-export const findConflict = (id, body) => {
+export const findConflict = (_id, _body) => {
   mockJobTick = 0
   return delay({ queued: true, job: { id: 'job_demo', state: 'queued', progress: 0, message: 'در صف' } })
 }
@@ -438,7 +438,7 @@ export const jobStatus = (id, jobId) => {
 
 // Backup writes in the demo behave like the real ones: queued, polled, and —
 // for restore — refused outright without an explicit confirm.
-export const runBackup = (id, body = {}) =>
+export const runBackup = (id, _body = {}) =>
   delay({ queued: true, job: { id: 'job_backup_demo', state: 'queued', progress: 0, message: 'در صف' } })
 
 export const restoreBackup = (id, backupId, body = {}) => {
@@ -451,10 +451,10 @@ export const restoreBackup = (id, backupId, body = {}) => {
   return delay({ queued: true, job: { id: 'job_restore_demo', state: 'queued', progress: 0, message: 'در صف' } })
 }
 
-export const downloadBackup = (id, backupId, what) =>
+export const downloadBackup = (_id, _backupId, _what) =>
   delay({ ok: false, demo: true, message: 'در حالت نمایشی فایلی برای دانلود وجود ندارد.' })
 
-export const runUpdates = (id, items) =>
+export const runUpdates = (_id, _items) =>
   delay({ queued: true, job: { id: 'job_update_demo', state: 'queued', progress: 0, message: 'در صف' } })
 
 export const saveProfile = (body) => delay({ ...body, saved: true })
@@ -503,7 +503,7 @@ const demoProfile = {
   },
 }
 
-export const measureSpeed = (id, body = {}) =>
+export const measureSpeed = (id, _body = {}) =>
   delay({ queued: true, job: { id: 'job_perf_demo', state: 'queued', progress: 0, message: 'در صف' } })
 
 export const analyseSpeed = async (id, profile) => {
@@ -527,6 +527,8 @@ export const captcha = () => {
   return delay({ id: `demo.${a + b}`, question: `${faDigits(a)} + ${faDigits(b)} = ?`, expiresIn: 600 })
 }
 export const challengeState = () => delay({ captchaRequired: mockCaptchaFails >= 3, failures: mockCaptchaFails })
+export const forgotPassword = () => delay({ ok: true, message: 'اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی ارسال شده است.' })
+export const resetPassword = () => delay({ ok: true, message: 'رمز عبور بازنشانی شد. اکنون می‌توانید وارد شوید.' })
 
 const faDigits = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
 
@@ -569,5 +571,5 @@ export const alertReadiness = () => delay({
   verdict: 'فقط یک راه فعال است (ایمیل). اگر همان یکی کار نکند، هشداری به شما نمی‌رسد.',
 })
 
-export const startScan = (id) =>
+export const startScan = (_id) =>
   delay({ queued: true, job: { id: 'job_scan_demo', state: 'queued', progress: 0, message: 'در صف' } })
