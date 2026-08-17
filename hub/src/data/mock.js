@@ -69,7 +69,33 @@ export const plans = () => delay([
     'سایت نامحدود', 'همهٔ امکانات پلن حرفه‌ای', 'گزارش امنیتی روزانه در تلگرام',
   ] },
 ])
-export const billing = () => delay({ provenance: { live: [], unavailable: 'صورتحساب و پرداخت هنوز ساخته نشده — هیچ درگاه پرداختی متصل نیست و کارتی ذخیره نمی‌شود.' } })
+export const billing = () => delay({
+  subscription: {
+    plan: { id: 'pro', name: 'حرفه‌ای', price: 490000, popular: true, siteLimit: 5, features: plans()[0].features },
+    status: 'trialing',
+    isTrialing: true,
+    trialEndsAt: Date.now() + 12 * 24 * 60 * 60 * 1000,
+    daysLeftInTrial: 12,
+    currentPeriodStart: Date.now() - 2 * 24 * 60 * 60 * 1000,
+    currentPeriodEnd: Date.now() + 12 * 24 * 60 * 60 * 1000,
+    cancelAtPeriodEnd: false,
+    sitesUsed: 3,
+    sitesLimit: 5,
+    pilotRequested: false,
+    metadata: {},
+  },
+  provenance: { live: ['subscriptions'], unavailable: null },
+  payment: { provenance: { live: [], unavailable: 'درگاه پرداخت هنوز متصل نیست و کارتی ذخیره نمی‌شود.' } },
+  invoices: { provenance: { live: [], unavailable: 'فاکتوری صادر نمی‌شود چون سیستم پرداخت هنوز وجود ندارد.' }, list: [] },
+})
+export const trial = () => delay({
+  status: 'trialing',
+  isTrialing: true,
+  trialEndsAt: Date.now() + 12 * 24 * 60 * 60 * 1000,
+  daysLeftInTrial: 12,
+  cancelAtPeriodEnd: false,
+})
+export const requestPilot = (plan) => delay({ ok: true, subscription: { ...billing().subscription, plan: plans().find((p) => p.id === plan) || plans()[0], pilotRequested: true } })
 export const invoices = () => delay({
   provenance: { live: [], unavailable: 'فاکتوری صادر نمی‌شود چون سیستم پرداخت هنوز وجود ندارد.' },
   list: [],
@@ -87,7 +113,78 @@ export const team = () => delay({
   provenance: { live: [], unavailable: 'دعوت هم‌تیمی و دسترسی چندکاربره هنوز ساخته نشده. فقط حساب خودتان وجود دارد.' },
   list: [{ id: 'me', name: 'مریم رضایی', email: 'maryam@example.com', role: 'owner', roleLabel: 'مالک', initials: 'م', sites: 'همه' }],
 })
+
+export const siteTeam = (siteId) => delay({
+  site: { id: siteId, name: sites.find((s) => s.id === siteId)?.name || 'mystore.ir', title: sites.find((s) => s.id === siteId)?.title || 'سایت من' },
+  owner: { id: 'u_1', userId: 'u_1', name: 'مریم رضایی', email: 'maryam@example.com', role: 'owner', roleLabel: 'مالک', initials: 'م', status: 'active', joinedAt: Date.now() },
+  members: [],
+  invitations: [],
+})
+export const inviteMember = (_siteId, body) => delay({
+  invitation: {
+    id: 'in_demo',
+    email: body?.email || 'demo@example.com',
+    role: body?.role || 'viewer',
+    roleLabel: body?.role === 'admin' ? 'مدیر' : 'فقط مشاهده',
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+  },
+  raw: 'demo-token-do-not-use',
+  mail: { ok: false, reason: 'no_email_url' },
+})
+export const revokeInvitation = () => delay({ ok: true })
+export const updateMemberRole = (_siteId, memberId, role) => delay({
+  id: memberId, userId: 'u_demo', name: 'عضو نمونه', email: 'demo@example.com',
+  role, roleLabel: role === 'admin' ? 'مدیر' : 'فقط مشاهده', initials: 'ع', status: 'active', joinedAt: Date.now(),
+})
+export const removeMember = () => delay({ ok: true })
+export const acceptInvitation = () => delay({
+  id: 'tm_demo', userId: 'u_1', name: 'مریم رضایی', email: 'maryam@example.com',
+  role: 'viewer', roleLabel: 'فقط مشاهده', initials: 'م', status: 'active', joinedAt: Date.now(),
+})
 export const notifications = () => delay({ provenance: { live: [], unavailable: 'تنظیمات اعلان هنوز ساخته نشده. گزارش امنیتی روزانه فقط به تلگرامی می‌رود که در سرور پیکربندی شده.' } })
+
+let mockNotificationChannels = [
+  { id: 'email', label: 'ایمیل', desc: 'هشدارها و گزارش روزانه به ایمیل شما', enabled: true, destination: currentUser.email, quietHoursStart: null, quietHoursEnd: null, updatedAt: Date.now() },
+  { id: 'sms', label: 'پیامک', desc: 'هشدارهای مهم به شماره موبایل', enabled: false, destination: null, quietHoursStart: null, quietHoursEnd: null, updatedAt: null },
+  { id: 'push', label: 'اعلان مرورگر', desc: 'اعلان فوری روی دستگاه‌هایی که مجوز داده‌اند', enabled: false, destination: null, quietHoursStart: null, quietHoursEnd: null, updatedAt: null },
+]
+let mockContacts = [
+  { id: 'uc_demo_email', type: 'email', value: currentUser.email, verified: true, verifiedAt: Date.now(), createdAt: Date.now() },
+]
+
+export const notificationPreferences = () => delay({ channels: mockNotificationChannels })
+export const saveNotificationPreference = (channel, body) => {
+  mockNotificationChannels = mockNotificationChannels.map((c) =>
+    c.id === channel ? { ...c, ...body, updatedAt: Date.now() } : c
+  )
+  const saved = mockNotificationChannels.find((c) => c.id === channel)
+  return delay(saved)
+}
+export const notificationContacts = () => delay({ contacts: mockContacts })
+export const addNotificationContact = (body) => {
+  const contact = {
+    id: `uc_${Math.random().toString(16).slice(2, 10)}`,
+    type: body.type,
+    value: body.value,
+    verified: false,
+    verifiedAt: null,
+    createdAt: Date.now(),
+  }
+  mockContacts = [...mockContacts.filter((c) => !(c.type === contact.type && c.value === contact.value)), contact]
+  return delay(contact, 400)
+}
+export const deleteNotificationContact = (id) => {
+  mockContacts = mockContacts.filter((c) => c.id !== id)
+  return delay({ ok: true, id })
+}
+export const verifyNotificationContact = (id) => {
+  mockContacts = mockContacts.map((c) =>
+    c.id === id ? { ...c, verified: true, verifiedAt: Date.now() } : c
+  )
+  return delay(mockContacts.find((c) => c.id === id))
+}
+
 export const profile = () => delay({ ...currentUser, twoFactor: true, lang: 'fa', timezone: 'Asia/Tehran' })
 
 // ---- Per-site ---------------------------------------------
@@ -440,6 +537,21 @@ export const jobStatus = (id, jobId) => {
 // for restore — refused outright without an explicit confirm.
 export const runBackup = (id, _body = {}) =>
   delay({ queued: true, job: { id: 'job_backup_demo', state: 'queued', progress: 0, message: 'در صف' } })
+
+export const offsiteTargets = (_id) => delay({ targets: [] })
+export const createOffsiteTarget = (_id, body) => delay({
+  id: 'obt_demo', siteId: _id, type: 's3', endpoint: body?.endpoint || '', bucket: body?.bucket || '',
+  region: body?.region || '', accessKeyId: body?.accessKeyId || '', pathPrefix: body?.pathPrefix || '',
+  retentionDays: body?.retentionDays || 30, createdAt: Date.now(),
+})
+export const updateOffsiteTarget = (_id, targetId, body) => delay({
+  id: targetId, siteId: _id, type: 's3', ...body, createdAt: Date.now(),
+})
+export const deleteOffsiteTarget = (_id, _targetId) => delay({ ok: true })
+export const offsiteJobs = (_id, _targetId) => delay({ jobs: [] })
+export const runOffsiteBackup = (_id, targetId) => delay({
+  queued: true, job: { id: 'obj_demo', siteId: _id, targetId, status: 'queued', startedAt: Date.now(), createdAt: Date.now() },
+})
 
 export const restoreBackup = (id, backupId, body = {}) => {
   if (!body.confirm) {

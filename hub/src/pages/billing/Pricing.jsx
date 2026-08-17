@@ -5,12 +5,9 @@ import { Button } from '../../components/index.js'
 import { faMoney } from '../../lib/format.js'
 import { account } from '../../lib/api.js'
 
-// Design copy per plan id — merged onto the fetched plans so prices stay
-// data-driven while the marketing text is reproduced verbatim.
-// Feature lists rewritten to what exists. The old ones sold one-minute
-// monitoring, a staging environment, SMS alerts, weekly reports, white-label
-// reporting, an API and webhooks, and a dedicated account manager. None are
-// built. A comparison table is the most literal promise a product makes.
+// Marketing copy per plan id. Feature lists are kept honest: only capabilities
+// that exist in the product are listed. Prices come from the API so the page
+// stays data-driven.
 const PLAN_DETAILS = {
   base: {
     subtitle: 'برای یک وب‌سایت شخصی یا فروشگاه',
@@ -62,10 +59,6 @@ const ROWS = [
   { label: 'پشتیبانی', base: 'تیکت', pro: 'تیکت', agency: 'اولویت‌دار' },
 ]
 
-// The trust badges claimed an e-namad certificate, a 7-day refund policy,
-// Shetab card payments and official invoicing — no payment gateway is
-// connected, so none of the last three can be true yet, and the certificate is
-// not ours to display. Left empty until they are real.
 const TRUST = []
 
 function ValueCell({ v, pro, last }) {
@@ -93,13 +86,54 @@ function ValueCell({ v, pro, last }) {
   return <div style={textStyle}>{text}</div>
 }
 
+function formatTrial(days) {
+  if (days == null) return null
+  return days === 0 ? 'امروز آخرین روز دسترسی آزمایشی است'
+    : days === 1 ? '۱ روز دسترسی آزمایشی باقی مانده'
+    : `${days} روز دسترسی آزمایشی باقی مانده`
+}
+
 export default function Pricing() {
   const [plans, setPlans] = useState(null)
+  const [trial, setTrial] = useState(null)
+  const [error, setError] = useState(null)
+  const [requesting, setRequesting] = useState(null)
+  const [requestOk, setRequestOk] = useState(null)
   const [cycle, setCycle] = useState('yearly')
 
   useEffect(() => {
-    account.plans().then(setPlans)
+    let alive = true
+    Promise.all([account.plans(), account.trial()])
+      .then(([p, t]) => {
+        if (!alive) return
+        setPlans(p)
+        setTrial(t)
+      })
+      .catch((e) => alive && setError(e?.message || 'بارگذاری طرح‌ها انجام نشد.'))
+    return () => { alive = false }
   }, [])
+
+  async function requestPilot(planId) {
+    setRequesting(planId)
+    setRequestOk(null)
+    try {
+      const res = await account.requestPilot(planId)
+      setRequestOk({ planId, message: 'درخواست دسترسی آزمایشی ثبت شد.' })
+      if (res?.subscription) {
+        setTrial({
+          status: res.subscription.status,
+          isTrialing: res.subscription.isTrialing,
+          trialEndsAt: res.subscription.trialEndsAt,
+          daysLeftInTrial: res.subscription.daysLeftInTrial,
+          cancelAtPeriodEnd: res.subscription.cancelAtPeriodEnd,
+        })
+      }
+    } catch (e) {
+      setRequestOk({ planId, error: e?.message || 'ثبت درخواست انجام نشد.' })
+    } finally {
+      setRequesting(null)
+    }
+  }
 
   const toggleOption = (active) => ({
     padding: '9px 20px',
@@ -116,6 +150,17 @@ export default function Pricing() {
       : { background: 'transparent', color: 'var(--gd-text-secondary)' }),
   })
 
+  if (error) {
+    return (
+      <div style={{ background: 'var(--gd-bg-app)', color: 'var(--gd-text)', minHeight: '60vh', padding: 40, textAlign: 'center' }}>
+        <Icon name="alert-triangle" size={32} style={{ color: 'var(--gd-warning)', marginBottom: 12 }} />
+        <div style={{ fontSize: 16, fontWeight: 700 }}>خطا در بارگذاری</div>
+        <div style={{ fontSize: 14, color: 'var(--gd-text-secondary)', marginTop: 8 }}>{error}</div>
+        <Button variant="secondary" size="sm" onClick={() => window.location.reload()} style={{ marginTop: 16 }}>تلاش دوباره</Button>
+      </div>
+    )
+  }
+
   if (!plans) return null
 
   const isYearly = cycle === 'yearly'
@@ -129,6 +174,12 @@ export default function Pricing() {
         </span>
         <h1 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-.02em', margin: '18px 0 0', lineHeight: 1.2 }}>پلنی که با کسب‌وکار شما بزرگ می‌شود</h1>
         <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: '12px 0 0' }}>از یک فروشگاه تا ده‌ها سایت مشتری — همیشه یک پلن مناسب دارید. هر زمان تغییر یا لغو کنید.</p>
+        {trial?.isTrialing && (
+          <div style={{ marginTop: 16, fontSize: 13.5, color: 'var(--gd-success-text)', background: 'var(--gd-success-bg)', border: '1px solid var(--gd-success-border)', borderRadius: 'var(--gd-radius-lg)', padding: '10px 16px', display: 'inline-block' }}>
+            <Icon name="sparkles" size={15} style={{ marginInlineEnd: 8 }} />
+            {formatTrial(trial.daysLeftInTrial)}
+          </div>
+        )}
       </div>
 
       {/* Billing cycle toggle */}
@@ -152,6 +203,8 @@ export default function Pricing() {
           const big = isYearly ? faMoney(yearly) : faMoney(monthly)
           const unit = isYearly ? 'تومان / سال' : 'تومان / ماه'
           const sub = isYearly ? `معادل ${faMoney(monthlyEquiv)} تومان در ماه` : null
+          const requested = requestOk?.planId === plan.id
+          const busy = requesting === plan.id
           return (
             <div key={plan.id} style={{ background: 'var(--gd-bg-surface)', border: plan.popular ? '2px solid var(--gd-primary)' : '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', padding: 26, boxShadow: plan.popular ? 'var(--gd-shadow-lg)' : 'var(--gd-shadow-xs)', position: 'relative', display: 'flex', flexDirection: 'column', gap: 16 }}>
               {plan.popular && (
@@ -168,7 +221,25 @@ export default function Pricing() {
                 </div>
                 {sub && <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 4 }}>{sub}</div>}
               </div>
-              <Button as={Link} to="/checkout" variant={detail.variant} size="lg" fullWidth>{detail.cta}</Button>
+              <Button
+                variant={detail.variant}
+                size="lg"
+                fullWidth
+                disabled={busy}
+                leftIcon={busy ? 'loader' : undefined}
+                onClick={() => requestPilot(plan.id)}
+              >
+                {busy ? 'در حال ثبت…' : detail.cta}
+              </Button>
+              {requested && (
+                <div style={{ fontSize: 12.5, color: requestOk.error ? 'var(--gd-danger)' : 'var(--gd-success-text)', textAlign: 'center' }}>
+                  {requestOk.error ? (
+                    <><Icon name="alert-circle" size={14} /> {requestOk.error}</>
+                  ) : (
+                    <><Icon name="check" size={14} /> {requestOk.message}</>
+                  )}
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 11, fontSize: 13.5, color: 'var(--gd-text-secondary)' }}>
                 {detail.features.map((f) => (
                   <span key={f.t} style={{ display: 'flex', gap: 9, ...(f.head ? { fontWeight: 600, color: 'var(--gd-text)' } : {}) }}>

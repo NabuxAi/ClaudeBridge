@@ -65,6 +65,10 @@ export const config = {
     // waiting on this, but nobody is watching it either.
     maxToolSteps: Number(process.env.ASSISTANT_SWEEP_TOOL_STEPS || 6),
   },
+  // AES-256-GCM key for off-site backup target secrets. Must become 32 bytes
+  // (or be hashed to 32 bytes). Without it, target CRUD still works but stored
+  // credentials cannot be encrypted/decrypted.
+  offsiteBackupKey: process.env.OFFSITE_BACKUP_KEY || '',
   // Whether an X-Forwarded-For header may be believed. On by default because
   // this runs behind Traefik; it must be OFF anywhere the server is reachable
   // directly, since the header is trivially forged and a forged one bypasses

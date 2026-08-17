@@ -64,8 +64,6 @@ router.get('/team', async (req, res, next) => {
     })
   } catch (e) { next(e) }
 })
-router.get('/notifications', (_req, res) =>
-  res.json(NOT_BUILT('تنظیمات اعلان هنوز ساخته نشده. گزارش امنیتی روزانه فقط به تلگرامی می‌رود که در سرور پیکربندی شده.')))
 /**
  * Where to reach this person in an emergency.
  *

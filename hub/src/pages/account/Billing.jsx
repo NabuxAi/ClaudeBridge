@@ -8,53 +8,86 @@ import { account } from '../../lib/api.js'
 
 const HEAD = { title: 'اشتراک و صورت‌حساب', subtitle: 'پلن، روش پرداخت و فاکتورها' }
 
-const INVOICE_STATUS = {
-  paid: { variant: 'success', label: 'پرداخت‌شده' },
-  pending: { variant: 'warning', label: 'در انتظار پرداخت' },
-  failed: { variant: 'danger', label: 'ناموفق' },
+const INVOICE_COLS = '1.3fr 1fr 1fr 0.9fr'
+
+function formatDate(ts) {
+  if (!ts) return '—'
+  try {
+    return new Date(Number(ts)).toLocaleDateString('fa-IR')
+  } catch {
+    return '—'
+  }
 }
 
-const INVOICE_COLS = '1.3fr 1fr 1fr 0.9fr'
+function formatTrial(days) {
+  if (days == null) return null
+  return days === 0 ? 'امروز آخرین روز دسترسی آزمایشی'
+    : days === 1 ? '۱ روز دیگر تا پایان دسترسی آزمایشی'
+    : `${days} روز دیگر تا پایان دسترسی آزمایشی`
+}
 
 export default function Billing() {
   const [data, setData] = useState(null)
+  const [error, setError] = useState(null)
+  const [requesting, setRequesting] = useState(null)
+  const [requestOk, setRequestOk] = useState(null)
 
   useEffect(() => {
     let alive = true
-    Promise.all([account.billing(), account.invoices(), account.plans()])
-      .then(([billing, invoices, plans]) => alive && setData({ billing, invoices, plans }))
+    Promise.all([account.billing(), account.plans()])
+      .then(([billing, plans]) => {
+        if (!alive) return
+        setData({ billing, plans })
+      })
+      .catch((e) => alive && setError(e?.message || 'بارگذاری اطلاعات اشتراک انجام نشد.'))
     return () => { alive = false }
   }, [])
 
-  if (!data) return <PageHead {...HEAD} />
+  async function requestPilot(planId) {
+    setRequesting(planId)
+    setRequestOk(null)
+    try {
+      const res = await account.requestPilot(planId)
+      setRequestOk({ planId, message: 'درخواست دسترسی آزمایشی ثبت شد.' })
+      if (res?.subscription) {
+        setData((prev) => ({
+          ...prev,
+          billing: {
+            ...prev.billing,
+            subscription: res.subscription,
+          },
+        }))
+      }
+    } catch (e) {
+      setRequestOk({ planId, error: e?.message || 'ثبت درخواست انجام نشد.' })
+    } finally {
+      setRequesting(null)
+    }
+  }
 
-  // Everything except the price list is unbuilt: no payment gateway, no stored
-  // card, no invoices. The page says so instead of showing a plausible account.
-  if (data.billing?.provenance?.unavailable) {
+  if (error) {
     return (
       <>
         <PageHead {...HEAD} />
-        <NotMeasured title="اشتراک و صورت‌حساب" reason={data.billing.provenance.unavailable} />
-        <div style={{ fontSize: 15, fontWeight: 700, margin: '22px 0 12px' }}>پلن‌ها</div>
-        <div className="dwp-grid dwp-grid-3">
-          {(data.plans || []).map((plan) => (
-            <div key={plan.name} style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '20px 22px' }}>
-              <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>{plan.name}</div>
-              <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 10 }}>
-                {faMoney(plan.price)} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gd-text-muted)' }}>تومان / ماه</span>
-              </div>
-              <ul style={{ margin: 0, paddingInlineStart: 18, fontSize: 12.5, color: 'var(--gd-text-muted)', lineHeight: 2 }}>
-                {(plan.features || []).map((f) => <li key={f}>{f}</li>)}
-              </ul>
-            </div>
-          ))}
+        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: 28, textAlign: 'center' }}>
+          <Icon name="alert-triangle" size={32} style={{ color: 'var(--gd-warning)', marginBottom: 12 }} />
+          <div style={{ fontSize: 16, fontWeight: 700 }}>خطا در بارگذاری</div>
+          <div style={{ fontSize: 14, color: 'var(--gd-text-secondary)', marginTop: 8 }}>{error}</div>
+          <Button variant="secondary" size="sm" onClick={() => window.location.reload()} style={{ marginTop: 16 }}>تلاش دوباره</Button>
         </div>
       </>
     )
   }
 
-  const { billing, invoices, plans } = data
-  const usagePct = billing.sitesLimit ? Math.round((billing.sitesUsed / billing.sitesLimit) * 100) : 0
+  if (!data) return <PageHead {...HEAD} />
+
+  const { billing, plans } = data
+  const subscription = billing?.subscription
+  const paymentUnavailable = billing?.payment?.provenance?.unavailable
+  const invoicesUnavailable = billing?.invoices?.provenance?.unavailable
+
+  const currentPlan = subscription?.plan
+  const usagePct = currentPlan?.siteLimit ? Math.round(((subscription?.sitesUsed || 0) / currentPlan.siteLimit) * 100) : 0
 
   return (
     <>
@@ -69,34 +102,37 @@ export default function Billing() {
         <div style={{ borderRadius: 'var(--gd-radius-xl)', border: '1px solid var(--gd-primary-border)', background: 'var(--gd-primary-subtle)', padding: '22px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
                 <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--gd-primary)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Icon name="crown" size={19} />
                 </span>
-                <span style={{ fontSize: 19, fontWeight: 800 }}>پلن {billing.plan}</span>
-                <Badge variant="primary" appearance="solid">فعال</Badge>
+                <span style={{ fontSize: 19, fontWeight: 800 }}>پلن {currentPlan?.name || '—'}</span>
+                <Badge variant="primary" appearance="solid">{subscription?.status === 'trialing' ? 'دسترسی آزمایشی' : 'فعال'}</Badge>
               </div>
               <div style={{ fontSize: 13, color: 'var(--gd-text-secondary)', marginTop: 10 }}>
-                تمدید بعدی: <b style={{ fontFamily: 'var(--gd-font-mono)' }}>{billing.renewsAt}</b> · تمدید خودکار روشن
+                {subscription?.isTrialing ? (
+                  <><Icon name="sparkles" size={14} /> {formatTrial(subscription.daysLeftInTrial)}</>
+                ) : (
+                  <>تمدید بعدی: <b style={{ fontFamily: 'var(--gd-font-mono)' }}>{formatDate(subscription?.currentPeriodEnd)}</b></>
+                )}
               </div>
             </div>
             <div style={{ textAlign: 'left', flex: '0 0 auto' }}>
-              <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)' }}>{faMoney(billing.price)}</div>
+              <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)' }}>{faMoney(currentPlan?.price || 0)}</div>
               <div style={{ fontSize: 12, color: 'var(--gd-text-muted)' }}>تومان / ماه</div>
             </div>
           </div>
           <div style={{ marginTop: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 6 }}>
               <span style={{ color: 'var(--gd-text-secondary)', fontWeight: 600 }}>سایت‌های استفاده‌شده</span>
-              <span style={{ fontFamily: 'var(--gd-font-mono)', fontWeight: 700 }}>{faNum(billing.sitesUsed)} از {faNum(billing.sitesLimit)}</span>
+              <span style={{ fontFamily: 'var(--gd-font-mono)', fontWeight: 700 }}>{faNum(subscription?.sitesUsed || 0)} از {currentPlan?.siteLimit ? faNum(currentPlan.siteLimit) : 'نامحدود'}</span>
             </div>
             <div style={{ height: 9, borderRadius: 999, background: 'var(--gd-blue-100)', overflow: 'hidden' }}>
-              <div style={{ width: `${usagePct}%`, height: '100%', background: 'var(--gd-primary)', borderRadius: 999 }} />
+              <div style={{ width: `${Math.min(usagePct, 100)}%`, height: '100%', background: 'var(--gd-primary)', borderRadius: 999 }} />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 9, marginTop: 18 }}>
-            <Button variant="primary" size="sm" leftIcon="arrow-up-circle">ارتقای پلن</Button>
-            <Button variant="ghost" size="sm">مدیریت اشتراک</Button>
+            <Button as={Link} to="/pricing" variant="primary" size="sm" leftIcon="arrow-up-circle">تغییر پلن</Button>
           </div>
         </div>
 
@@ -110,15 +146,14 @@ export default function Billing() {
               <Icon name="landmark" size={20} style={{ color: 'var(--gd-text-secondary)' }} />
             </span>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700 }}>درگاه زرین‌پال</div>
-              <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 1 }}>کارت <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{billing.card}</span></div>
+              <div style={{ fontSize: 13.5, fontWeight: 700 }}>درگاهی متصل نیست</div>
+              <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 1 }}>{paymentUnavailable || 'پرداخت هنوز فعال نشده است.'}</div>
             </div>
-            <Badge variant="success" appearance="soft" dot>متصل</Badge>
+            <Badge variant="neutral" appearance="soft">غیرفعال</Badge>
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', lineHeight: 1.7 }}>
-            مبلغ بعدی <b style={{ fontFamily: 'var(--gd-font-mono)', color: 'var(--gd-text)' }}>{faMoney(billing.price)}</b> تومان در تاریخ <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{billing.renewsAt}</span> برداشت می‌شود.
+            در حال حاضر هزینه‌ای برداشت نمی‌شود. برای فعال‌سازی پرداخت با تیم فروش تماس بگیرید.
           </div>
-          <Button variant="secondary" size="sm" leftIcon="repeat" fullWidth>تغییر روش پرداخت</Button>
         </div>
       </div>
 
@@ -129,8 +164,10 @@ export default function Billing() {
         style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}
       >
         {plans.map((plan) => {
-          const isCurrent = plan.name === billing.plan
-          const isDowngrade = plan.price < billing.price
+          const isCurrent = plan.id === currentPlan?.id
+          const isDowngrade = plan.price < (currentPlan?.price || 0)
+          const requested = requestOk?.planId === plan.id
+          const busy = requesting === plan.id
           return (
             <div
               key={plan.id}
@@ -155,7 +192,7 @@ export default function Billing() {
                 <span style={{ fontSize: 12, color: 'var(--gd-text-muted)' }}>تومان / ماه</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: 'var(--gd-text-secondary)' }}>
-                {plan.features.map((f) => (
+                {(plan.features || []).map((f) => (
                   <span key={f} style={{ display: 'flex', gap: 8 }}>
                     <Icon name="check" size={16} style={{ color: 'var(--gd-success)' }} /> {f}
                   </span>
@@ -163,10 +200,22 @@ export default function Billing() {
               </div>
               {isCurrent ? (
                 <Button variant="secondary" size="sm" fullWidth disabled>پلن فعلی شما</Button>
-              ) : isDowngrade ? (
-                <Button variant="ghost" size="sm" fullWidth>تنزل به {plan.name}</Button>
               ) : (
-                <Button variant="primary" size="sm" fullWidth>ارتقا به {plan.name}</Button>
+                <Button
+                  variant={isDowngrade ? 'ghost' : 'primary'}
+                  size="sm"
+                  fullWidth
+                  disabled={busy}
+                  leftIcon={busy ? 'loader' : undefined}
+                  onClick={() => requestPilot(plan.id)}
+                >
+                  {busy ? 'در حال ثبت…' : isDowngrade ? `تنزل به ${plan.name}` : `ارتقا به ${plan.name}`}
+                </Button>
+              )}
+              {requested && (
+                <div style={{ fontSize: 12, color: requestOk.error ? 'var(--gd-danger)' : 'var(--gd-success-text)', textAlign: 'center' }}>
+                  {requestOk.error ? requestOk.error : requestOk.message}
+                </div>
               )}
             </div>
           )
@@ -175,33 +224,21 @@ export default function Billing() {
 
       {/* Invoices */}
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>فاکتورها</div>
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: INVOICE_COLS, gap: 12, padding: '11px 20px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', fontSize: 12, fontWeight: 700, color: 'var(--gd-text-muted)' }}>
-          <span>تاریخ</span>
-          <span>مبلغ</span>
-          <span>وضعیت</span>
-          <span />
+      {invoicesUnavailable ? (
+        <NotMeasured title="فاکتورها" reason={invoicesUnavailable} />
+      ) : (
+        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: INVOICE_COLS, gap: 12, padding: '11px 20px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', fontSize: 12, fontWeight: 700, color: 'var(--gd-text-muted)' }}>
+            <span>تاریخ</span>
+            <span>مبلغ</span>
+            <span>وضعیت</span>
+            <span />
+          </div>
+          {(billing?.invoices?.list || []).length === 0 && (
+            <div style={{ padding: '20px', textAlign: 'center', fontSize: 13, color: 'var(--gd-text-muted)' }}>فاکتوری ثبت نشده.</div>
+          )}
         </div>
-        {invoices.map((inv, i) => {
-          const st = INVOICE_STATUS[inv.status] || INVOICE_STATUS.paid
-          const last = i === invoices.length - 1
-          return (
-            <div
-              key={inv.id}
-              style={{ display: 'grid', gridTemplateColumns: INVOICE_COLS, gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: last ? 'none' : '1px solid var(--gd-border-subtle)', fontSize: 13.5 }}
-            >
-              <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{inv.date}</span>
-              <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{faMoney(inv.amount)} ت</span>
-              <span style={{ display: 'flex' }}>
-                <Badge variant={st.variant} appearance="soft">{st.label}</Badge>
-              </span>
-              <span style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <Button as={Link} to={`/invoice/${inv.id}`} variant="ghost" size="sm" leftIcon="download">فاکتور</Button>
-              </span>
-            </div>
-          )
-        })}
-      </div>
+      )}
     </>
   )
 }

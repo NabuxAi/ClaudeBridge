@@ -154,6 +154,9 @@ for UI convenience.
 - Conflict bisect, rescue inventory/audit/key rotation/verification steps.
 - Performance measurement and server-side recommendation recipes.
 - Telegram operator digest machinery and multi-channel owner alert dispatcher.
+- Persistent notification preferences, quiet hours, and contact enrollment
+  (`notification_settings` + `user_contacts` tables, `/notifications/*` endpoints,
+  and the hub Notifications page).
 - Assistant answers/tool loop and optional scheduled fleet sweep.
 - Plugin manifest/update channel and two release variants.
 
@@ -182,7 +185,6 @@ for UI convenience.
   revocation before expiry, or "log out all devices".
 - Account deletion workflow.
 - Team invitations, multi-user RBAC, or per-site member permissions.
-- Persistent notification preferences or quiet hours.
 - Browser push subscription enrollment from the hub.
 - Off-site encrypted backups and automated restore drills.
 - Staging/canary update execution and automatic file rollback.
@@ -621,8 +623,9 @@ Do this before expanding the feature list:
 - Password recovery, 2FA/passkeys, device/session list, revocation, and account
   deletion.
 - Team invitations, roles, per-site grants, and immutable permission audit.
-- Persistent notification preferences, contact enrollment, push subscription,
-  and channel readiness UX.
+- Browser push subscription enrollment from the hub and end-to-end channel
+  readiness UX (the preference/contact store is live; push token enrollment and
+  readiness still use the existing `/contact` and `/alerts/readiness` paths).
 
 ### Site safety
 

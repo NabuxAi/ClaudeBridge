@@ -80,10 +80,30 @@ export const account = {
   addSite: call(mock.addSite, (b) => http('/sites', { method: 'POST', body: b })),
   pingSite: call(mock.pingSite, (id) => http(`/sites/${id}/ping`, { method: 'POST' })),
   billing: call(mock.billing, () => http('/billing')),
+  trial: call(mock.trial, () => http('/billing/trial')),
+  requestPilot: call(mock.requestPilot, (plan) => http('/billing/request-pilot', { method: 'POST', body: { plan } })),
   invoices: call(mock.invoices, () => http('/billing/invoices')),
   invoice: call(mock.invoice, (id) => http(`/billing/invoices/${id}`)),
   team: call(mock.team, () => http('/team')),
   notifications: call(mock.notifications, () => http('/notifications')),
+  notificationPreferences: call(mock.notificationPreferences, () => http('/notifications/preferences')),
+  saveNotificationPreference: call(
+    mock.saveNotificationPreference,
+    (channel, body) => http(`/notifications/preferences/${channel}`, { method: 'PUT', body })
+  ),
+  notificationContacts: call(mock.notificationContacts, () => http('/notifications/contacts')),
+  addNotificationContact: call(
+    mock.addNotificationContact,
+    (body) => http('/notifications/contacts', { method: 'POST', body })
+  ),
+  deleteNotificationContact: call(
+    mock.deleteNotificationContact,
+    (id) => http(`/notifications/contacts/${id}`, { method: 'DELETE' })
+  ),
+  verifyNotificationContact: call(
+    mock.verifyNotificationContact,
+    (id) => http(`/notifications/contacts/${id}/verify`, { method: 'POST' })
+  ),
   profile: call(mock.profile, () => http('/profile')),
   saveProfile: call(
     (body) => mock.saveProfile(body),
@@ -208,6 +228,31 @@ export function site(siteId) {
       (step, body) => mock.rescueStep(siteId, step, body),
       (step, body) => http(p(`/rescue/${step}`), { method: 'POST', body: body || {} })
     ),
+    // Team members and invitations for this site.
+    team: call(
+      () => mock.siteTeam(siteId),
+      () => http(p('/team'))
+    ),
+    inviteMember: call(
+      (body) => mock.inviteMember(siteId, body),
+      (body) => http(p('/team/invitations'), { method: 'POST', body })
+    ),
+    revokeInvitation: call(
+      (invitationId) => mock.revokeInvitation(siteId, invitationId),
+      (invitationId) => http(p(`/team/invitations/${invitationId}`), { method: 'DELETE' })
+    ),
+    updateMemberRole: call(
+      (memberId, role) => mock.updateMemberRole(siteId, memberId, role),
+      (memberId, role) => http(p(`/team/members/${memberId}`), { method: 'PATCH', body: { role } })
+    ),
+    removeMember: call(
+      (memberId) => mock.removeMember(siteId, memberId),
+      (memberId) => http(p(`/team/members/${memberId}`), { method: 'DELETE' })
+    ),
+    acceptInvitation: call(
+      (token) => mock.acceptInvitation(siteId, token),
+      (token) => http('/team/invitations/accept', { method: 'POST', body: { siteId, token } })
+    ),
     // A guarded action = a command your server relays to the connector.
     // Sensitive actions ALWAYS require approval regardless of authority level.
     runAction: call(
@@ -228,6 +273,31 @@ export function site(siteId) {
     rejectProposal: call(
       () => Promise.resolve({ ok: true }),
       (proposalId) => http(p(`/proposals/${proposalId}/reject`), { method: 'POST' })
+    ),
+    // Off-site (S3-compatible) backup targets and upload jobs.
+    offsiteTargets: call(
+      () => mock.offsiteTargets(siteId),
+      () => http(p('/offsite-backups/targets'))
+    ),
+    createOffsiteTarget: call(
+      (body) => mock.createOffsiteTarget(siteId, body),
+      (body) => http(p('/offsite-backups/targets'), { method: 'POST', body })
+    ),
+    updateOffsiteTarget: call(
+      (targetId, body) => mock.updateOffsiteTarget(siteId, targetId, body),
+      (targetId, body) => http(p(`/offsite-backups/targets/${targetId}`), { method: 'PATCH', body })
+    ),
+    deleteOffsiteTarget: call(
+      (targetId) => mock.deleteOffsiteTarget(siteId, targetId),
+      (targetId) => http(p(`/offsite-backups/targets/${targetId}`), { method: 'DELETE' })
+    ),
+    offsiteJobs: call(
+      (targetId) => mock.offsiteJobs(siteId, targetId),
+      (targetId) => http(p(`/offsite-backups/jobs${targetId ? `?targetId=${encodeURIComponent(targetId)}` : ''}`))
+    ),
+    runOffsiteBackup: call(
+      (targetId) => mock.runOffsiteBackup(siteId, targetId),
+      (targetId) => http(p('/offsite-backups/jobs'), { method: 'POST', body: { targetId } })
     ),
   }
 }

@@ -13,6 +13,10 @@ import { SCHEMA as EVENTS_SCHEMA } from './events.schema.js'
 import { SCHEMA as PROPOSALS_SCHEMA } from './proposals.schema.js'
 import { SCHEMA as SWEEP_SCHEMA } from './sweep.schema.js'
 import { SCHEMA as PASSWORD_RESETS_SCHEMA } from './password-resets.schema.js'
+import { SCHEMA as TEAM_SCHEMA } from './team.schema.js'
+import { SCHEMA as NOTIFICATIONS_SCHEMA } from './notifications.schema.js'
+import { SCHEMA as BILLING_SCHEMA } from './billing.schema.js'
+import { SCHEMA as OFFSITE_BACKUPS_SCHEMA } from './offsite-backups.schema.js'
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 })
 
@@ -80,7 +84,7 @@ const SCHEMA = `
   -- acting on a wrong guess here means requests that silently never arrive.
   ALTER TABLE sites ADD COLUMN IF NOT EXISTS hosting JSONB
     NOT NULL DEFAULT '{"region":"unknown","provider":"other","providerName":null,"egress":"auto","callbackUrl":null}'::jsonb;
-` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA
+` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */
 async function waitForDb(retries = 30) {
