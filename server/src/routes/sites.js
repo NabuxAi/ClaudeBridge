@@ -8,6 +8,7 @@ import { PROVENANCE, updatesFromStatus } from '../live.js'
 import * as events from '../events.js'
 import * as proposals from '../proposals.js'
 import * as assistant from '../assistant.js'
+import * as conversations from '../conversations.store.js'
 import { isSensitive, SENSITIVE_SET } from '../authority.js'
 import { probeSite } from '../probe.js'
 import { analyse as analysePerf } from '../perf/recipes.js'
@@ -1068,11 +1069,88 @@ router.post('/sites/:id/assistant', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)
     if (!site) return
-    // maxToolSteps lets a "work out why this is broken" question read more
-    // than a "is it up to date?" one. The assistant clamps it to a ceiling the
-    // deployment sets, so a caller cannot turn a bound into no bound.
     const { message, maxToolSteps } = req.body || {}
     res.json(await assistant.answer(site, message, { maxToolSteps }))
+  } catch (e) { next(e) }
+})
+
+// ---- Assistant Persistent Conversations -----------------------
+
+router.get('/sites/:id/conversations', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const list = await conversations.list(site.id)
+    res.json({ conversations: list })
+  } catch (e) { next(e) }
+})
+
+router.post('/sites/:id/conversations', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const { title } = req.body || {}
+    const created = await conversations.create(site.id, req.user?.sub, title)
+    res.status(201).json(created)
+  } catch (e) { next(e) }
+})
+
+router.get('/sites/:id/conversations/:convId', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const conv = await conversations.get(site.id, req.params.convId)
+    if (!conv) return res.status(404).json({ message: 'گفتگو یافت نشد.' })
+    res.json(conv)
+  } catch (e) { next(e) }
+})
+
+router.patch('/sites/:id/conversations/:convId', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const { title, status } = req.body || {}
+    const updated = await conversations.update(site.id, req.params.convId, { title, status })
+    if (!updated) return res.status(404).json({ message: 'گفتگو یافت نشد.' })
+    res.json(updated)
+  } catch (e) { next(e) }
+})
+
+router.delete('/sites/:id/conversations/:convId', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const ok = await conversations.deleteConv(site.id, req.params.convId)
+    if (!ok) return res.status(404).json({ message: 'گفتگو یافت نشد.' })
+    res.json({ ok: true })
+  } catch (e) { next(e) }
+})
+
+router.post('/sites/:id/conversations/:convId/messages', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const { message, maxToolSteps, waitForReply = true } = req.body || {}
+    const result = await conversations.postAndProcess(site, req.params.convId, message, {
+      userId: req.user?.sub,
+      maxToolSteps,
+    })
+
+    if (waitForReply && result.backgroundPromise) {
+      // Wait up to 30s so the client receives the reply directly if it stays on the page
+      await Promise.race([
+        result.backgroundPromise,
+        new Promise((r) => setTimeout(r, 29000)),
+      ])
+      const fullConv = await conversations.get(site.id, req.params.convId)
+      return res.json(fullConv)
+    }
+
+    res.status(202).json({
+      status: 'processing',
+      userMessage: result.userMessage,
+      conversationId: req.params.convId,
+    })
   } catch (e) { next(e) }
 })
 

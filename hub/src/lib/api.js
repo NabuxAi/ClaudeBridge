@@ -263,6 +263,31 @@ export function site(siteId) {
       (message) => mock.askGuardian(siteId, message),
       (message) => http(p('/assistant'), { method: 'POST', body: { message } })
     ),
+    // Assistant persistent conversations
+    listConversations: call(
+      () => Promise.resolve({ conversations: [] }),
+      () => http(p('/conversations'))
+    ),
+    createConversation: call(
+      (title) => Promise.resolve({ id: 'conv-mock', title: title || 'گفتگوی جدید', status: 'ready', messages: [] }),
+      (title) => http(p('/conversations'), { method: 'POST', body: { title } })
+    ),
+    getConversation: call(
+      (convId) => Promise.resolve({ id: convId, title: 'گفتگو', status: 'ready', messages: [] }),
+      (convId) => http(p(`/conversations/${convId}`))
+    ),
+    updateConversation: call(
+      (convId, patch) => Promise.resolve({ id: convId, ...patch }),
+      (convId, patch) => http(p(`/conversations/${convId}`), { method: 'PATCH', body: patch })
+    ),
+    deleteConversation: call(
+      (_convId) => Promise.resolve({ ok: true }),
+      (convId) => http(p(`/conversations/${convId}`), { method: 'DELETE' })
+    ),
+    sendConversationMessage: call(
+      (convId, message) => Promise.resolve({ id: convId, status: 'ready', messages: [{ sender: 'user', text: message }] }),
+      (convId, message, maxToolSteps) => http(p(`/conversations/${convId}/messages`), { method: 'POST', body: { message, maxToolSteps } })
+    ),
     // Proposals the assistant made and could not run, still waiting. Read on
     // mount so an approval can arrive later, and from someone who was not in
     // the conversation that produced it.
