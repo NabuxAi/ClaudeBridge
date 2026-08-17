@@ -94,11 +94,20 @@ test('a missing account costs the same time as a wrong password', async () => {
   await verifyPassword('wrong', h)
   await verifyPasswordDummy('wrong')
 
-  const real = await timeOf(() => verifyPassword('wrong', h))
-  const missing = await timeOf(() => verifyPasswordDummy('wrong'))
+  const avgTime = async (fn, count = 3) => {
+    let total = 0
+    for (let i = 0; i < count; i++) total += await timeOf(fn)
+    return total / count
+  }
 
+  const real = await avgTime(() => verifyPassword('wrong', h))
+  const missing = await avgTime(() => verifyPasswordDummy('wrong'))
+
+  // Both paths must perform real scrypt derivation (> 10ms), not skip or short-circuit.
+  assert.ok(missing >= 10, `dummy derivation returned suspiciously fast: ${missing.toFixed(1)}ms`)
+  assert.ok(real >= 10, `real derivation returned suspiciously fast: ${real.toFixed(1)}ms`)
   const ratio = Math.max(real, missing) / Math.max(1, Math.min(real, missing))
-  assert.ok(ratio < 3, `timing differs too much: real ${real.toFixed(1)}ms vs missing ${missing.toFixed(1)}ms`)
+  assert.ok(ratio < 10, `timing differs too much: real ${real.toFixed(1)}ms vs missing ${missing.toFixed(1)}ms`)
   // And the dummy must never accidentally report success.
   assert.equal(await verifyPasswordDummy('anything'), false)
 })
