@@ -102,10 +102,11 @@ export async function gatherFacts(site) {
   }
 
   const target = { url: site.url, secret: site.secret, siteKey: site.site_key }
-  const [info, updates, backups] = await Promise.allSettled([
+  const [info, updates, backups, preflight] = await Promise.allSettled([
     connector.callTool(target, 'site_info', {}),
     connector.callTool(target, 'update_status', {}),
     connector.callTool(target, 'backup_list', {}),
+    connector.callTool(target, 'backup_preflight', {}),
   ])
 
   if (info.status === 'fulfilled') {
@@ -142,11 +143,21 @@ export async function gatherFacts(site) {
     facts.unknown.push(`فهرست بکاپ‌ها خوانده نشد: ${backups.reason?.message || 'خطا'}`)
   }
 
+  if (preflight.status === 'fulfilled') {
+    const d = unwrap(preflight.value)
+    if (d && d.free_disk_formatted) {
+      facts.disk = {
+        freeFormatted: d.free_disk_formatted,
+        totalFull: d.total_full_formatted,
+        freeBytes: d.free_disk_bytes,
+      }
+    }
+  }
+
   // Named explicitly rather than left silent. These are the questions people
   // ask an assistant first, and an answer that skips the question reads as
   // "everything is fine" instead of "I cannot see that".
   facts.unknown.push('آپ‌تایم و سرعت پاسخ سایت را نمی‌سنجیم — پایش مستمر هنوز ساخته نشده.')
-  facts.unknown.push('فضای دیسک و منابع هاست را نمی‌بینیم.')
 
   return facts
 }
@@ -160,6 +171,10 @@ export function renderBriefing(facts) {
     if (facts.site.wp) bits.push(`وردپرس ${facts.site.wp}`)
     if (facts.site.php) bits.push(`PHP ${facts.site.php}`)
     if (bits.length) lines.push(`سایت روی ${bits.join(' و ')} است.`)
+  }
+
+  if (facts.disk?.freeFormatted) {
+    lines.push(`فضای آزاد دیسک هاست: ${facts.disk.freeFormatted} (حجم تخمینی نسخه کامل: ${facts.disk.totalFull || '—'}).`)
   }
 
   if (facts.updates) {

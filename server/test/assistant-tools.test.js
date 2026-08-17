@@ -172,7 +172,7 @@ test('the loop stops instead of driving the site forever', async () => {
 
   const out = await assistant.answer({ ...SITE, authority: 'auto' }, 'وضعیت؟')
 
-  assert.ok(calledTools.length <= 8, `tool loop ran ${calledTools.length} times`)
+  assert.ok(calledTools.length <= 10, `tool loop ran ${calledTools.length} times`)
   assert.ok(out.reply, 'the loop must still produce an answer')
 })
 
