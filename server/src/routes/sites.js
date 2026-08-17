@@ -15,6 +15,8 @@ import { analyse as analysePerf } from '../perf/recipes.js'
 import { checkInventory, slugOf } from '../intel/vulns.js'
 import { REGIONS, PROVIDERS, TRAITS, needsCacheBust } from '../hosting.js'
 import { measureUrl } from '../speedtest.js'
+import { offsiteBackups } from '../offsite-backups.store.js'
+import { runOffsiteBackup } from '../offsite-backups.runner.js'
 
 const router = Router()
 
@@ -878,6 +880,92 @@ router.get('/sites/:id/backups/:backupId/download', async (req, res, next) => {
     res.end()
   } catch (e) {
     if (res.headersSent) return res.destroy()
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
+/**
+ * Off-site cloud backup targets and sync jobs.
+ */
+router.get('/sites/:id/offsite/targets', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const targets = await offsiteBackups.listTargets(site.id)
+    res.json({ targets })
+  } catch (e) { next(e) }
+})
+
+router.post('/sites/:id/offsite/targets', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const target = await offsiteBackups.create(site.id, req.body)
+    events.record({
+      siteId: site.id, kind: 'policy', severity: 'info',
+      title: 'مقصد پشتیبان‌گیری ابری جدید افزوده شد',
+      detail: { endpoint: target.endpoint, bucket: target.bucket },
+    }).catch(() => {})
+    res.status(201).json(target)
+  } catch (e) {
+    res.status(e.status || 400).json({ message: e.message })
+  }
+})
+
+router.delete('/sites/:id/offsite/targets/:targetId', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    await offsiteBackups.remove(site.id, req.params.targetId)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(e.status || 404).json({ message: e.message })
+  }
+})
+
+router.get('/sites/:id/offsite/jobs', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const jobs = await offsiteBackups.listJobs(site.id, {
+      targetId: req.query.targetId,
+      limit: req.query.limit,
+    })
+    res.json({ jobs })
+  } catch (e) { next(e) }
+})
+
+router.post('/sites/:id/offsite/sync', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+
+    const targets = await offsiteBackups.listTargets(site.id)
+    if (!targets.length) {
+      return res.status(400).json({ message: 'هیچ مقصد پشتیبان ابری (S3) تنظیم نشده است.' })
+    }
+
+    const targetId = req.body?.targetId || targets[0].id
+    const target = targets.find((t) => t.id === targetId) || targets[0]
+
+    const job = await offsiteBackups.createJob(site.id, target.id)
+
+    // Launch background upload runner
+    runOffsiteBackup(site, target, job.id).catch((err) => {
+      console.error('Offsite backup background runner error:', err)
+    })
+
+    events.record({
+      siteId: site.id, kind: 'backup', severity: 'info',
+      title: 'همگام‌سازی پشتیبان ابری شروع شد',
+      detail: { targetId: target.id, jobId: job.id },
+    }).catch(() => {})
+
+    res.json({ queued: true, job })
+  } catch (e) {
     res.status(e.status || 502).json({ message: e.message })
   }
 })

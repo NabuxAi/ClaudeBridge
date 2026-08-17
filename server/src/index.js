@@ -16,6 +16,7 @@ import accountRouter from './routes/account.js'
 import cookbookRouter from './routes/cookbook.js'
 import sitesRouter from './routes/sites.js'
 import connectorRouter from './routes/connector.js'
+import offsiteBackupsRouter from './routes/offsite-backups.js'
 import { runDailyDigest, scheduleDailyDigest } from './digest.js'
 import { initIntel, scheduleIntel, refresh as refreshIntel } from './intel/index.js'
 import { runSweep, scheduleSweep } from './sweep.js'
@@ -89,6 +90,7 @@ export function createApp() {
   // Protected: everything the hub reads after login.
   app.use('/v1', requireAuth, accountRouter)
   app.use('/v1', requireAuth, sitesRouter)
+  app.use('/v1', requireAuth, offsiteBackupsRouter)
 
   // Run the daily security digest on demand (scan all paired sites + send to Telegram).
   app.post('/v1/digest/run', requireAuth, async (_req, res, next) => {

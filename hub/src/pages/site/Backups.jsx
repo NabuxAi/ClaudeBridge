@@ -33,6 +33,33 @@ export default function Backups() {
   const [typed, setTyped] = useState('')
   const timer = useRef(null)
 
+  // Off-site S3 Cloud Backups
+  const [offsiteTargets, setOffsiteTargets] = useState([])
+  const [offsiteJobs, setOffsiteJobs] = useState([])
+  const [offsiteLoading, setOffsiteLoading] = useState(false)
+  const [targetModal, setTargetModal] = useState(false)
+  const [newTarget, setNewTarget] = useState({
+    type: 's3',
+    endpoint: '',
+    bucket: '',
+    region: 'us-east-1',
+    accessKeyId: '',
+    secretAccessKey: '',
+    pathPrefix: 'backups',
+    retentionDays: 30,
+  })
+
+  const loadOffsite = useCallback(() => {
+    setOffsiteLoading(true)
+    Promise.allSettled([
+      siteApi(siteId).listOffsiteTargets(),
+      siteApi(siteId).listOffsiteJobs(),
+    ]).then(([tRes, jRes]) => {
+      if (tRes.status === 'fulfilled') setOffsiteTargets(tRes.value?.targets || [])
+      if (jRes.status === 'fulfilled') setOffsiteJobs(jRes.value?.jobs || [])
+    }).finally(() => setOffsiteLoading(false))
+  }, [siteId])
+
   const load = useCallback(() => {
     setLoading(true)
     return siteApi(siteId)
@@ -45,8 +72,9 @@ export default function Backups() {
   useEffect(() => {
     let alive = true
     load()
+    loadOffsite()
     return () => { alive = false; clearTimeout(timer.current) }
-  }, [load])
+  }, [load, loadOffsite])
 
   // Open preflight modal and calculate sizes
   const openPreflightModal = async () => {
@@ -141,20 +169,79 @@ export default function Backups() {
     }
   }
 
+  async function saveTarget() {
+    setBusy('saving-target')
+    setError('')
+    try {
+      await siteApi(siteId).createOffsiteTarget(newTarget)
+      setTargetModal(false)
+      loadOffsite()
+    } catch (e) {
+      setError(e?.message || 'ثبت مقصد ابری با خطا مواجه شد.')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function deleteTarget(targetId) {
+    if (!window.confirm('آیا از حذف این مقصد ابری اطمینان دارید؟')) return
+    setBusy(`del-${targetId}`)
+    setError('')
+    try {
+      await siteApi(siteId).deleteOffsiteTarget(targetId)
+      loadOffsite()
+    } catch (e) {
+      setError(e?.message || 'حذف مقصد ابری با خطا مواجه شد.')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function syncOffsiteNow(targetId) {
+    setBusy('offsite-sync')
+    setError('')
+    try {
+      const res = await siteApi(siteId).syncOffsite({ targetId })
+      const started = res.job || res
+      if (started?.id) {
+        startTask({
+          id: started.id,
+          title: 'همگام‌سازی پشتیبان با فضای ابری S3',
+          type: 'backup',
+        })
+      }
+      loadOffsite()
+    } catch (e) {
+      setError(e?.message || 'شروع همگام‌سازی ابری با خطا مواجه شد.')
+    } finally {
+      setBusy('')
+    }
+  }
+
   const head = (
     <PageHead
       title="بکاپ‌ها و بازیابی"
-      subtitle="نسخه‌های پشتیبان تفکیک‌شده، سنجش حجم هاست و قابلیت بازگردانی مطمئن"
+      subtitle="نسخه‌های پشتیبان تفکیک‌شده، فضای ذخیره‌سازی ابری S3 و بازگردانی مطمئن"
       action={(
-        <Button
-          variant="primary"
-          size="sm"
-          leftIcon="database-backup"
-          disabled={busy === 'run' || activeTask?.state === 'running'}
-          onClick={openPreflightModal}
-        >
-          {busy === 'run' ? 'در حال آماده‌سازی…' : 'تهیه بکاپ دستی'}
-        </Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button
+            variant="subtle"
+            size="sm"
+            leftIcon="cloud"
+            onClick={() => setTargetModal(true)}
+          >
+            پیکربندی مقصد ابری (S3)
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            leftIcon="database-backup"
+            disabled={Boolean(busy) || activeTask?.state === 'running'}
+            onClick={openPreflightModal}
+          >
+            تهیه بکاپ دستی
+          </Button>
+        </div>
       )}
     />
   )
@@ -262,10 +349,265 @@ export default function Backups() {
         })}
       </div>
 
+      {/* Off-site S3 Storage Card & Section */}
+      <div style={{ marginTop: 32, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--gd-border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Icon name="cloud" size={20} style={{ color: 'var(--gd-primary)' }} />
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>پشتیبان‌گیری ابری و آف‌سایت (Off-site Cloud Storage)</h3>
+              <Badge variant="primary" appearance="soft">رمزنگاری AES-256</Badge>
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '4px 0 0 0' }}>
+              انتقال مستقیم نسخه‌های پشتیبان به فضاهای ذخیره‌سازی ابری سازگار با پروتکل S3 (ابر آروان، لیارا، AWS S3، مین‌آی‌او)
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="subtle"
+            leftIcon="plus"
+            onClick={() => setTargetModal(true)}
+          >
+            افزودن مقصد S3
+          </Button>
+        </div>
+
+        {offsiteTargets.length === 0 ? (
+          <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--gd-bg-subtle)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gd-text-muted)', marginBottom: 12 }}>
+              <Icon name="cloud" size={24} />
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gd-text)' }}>هیچ مقصد ابری تنظیم نشده است</div>
+            <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', maxWidth: 450, margin: '6px auto 16px auto', lineHeight: 1.6 }}>
+              پشتیبان‌های محلی در صورت بروز اختلال در سرور یا هاست ممکن است از دست بروند. با اتصال فضای S3، نسخه‌های بکاپ به صورت خودکار و امن در مکانی مجزا نگهداری می‌شوند.
+            </p>
+            <Button size="sm" variant="primary" leftIcon="plus" onClick={() => setTargetModal(true)}>
+              پیکربندی اولین مقصد ابری
+            </Button>
+          </div>
+        ) : (
+          <div style={{ padding: '16px 20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+              {offsiteTargets.map((target) => (
+                <div
+                  key={target.id}
+                  style={{
+                    border: '1px solid var(--gd-border)',
+                    borderRadius: 'var(--gd-radius-lg)',
+                    padding: '14px 16px',
+                    background: 'var(--gd-bg-subtle)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Icon name="database" size={16} style={{ color: 'var(--gd-primary)' }} />
+                        {target.bucket}
+                      </div>
+                      <Badge variant="success" appearance="soft">فعال</Badge>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 4, fontFamily: 'var(--gd-font-mono)', wordBreak: 'break-all' }}>
+                      {target.endpoint}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--gd-text-secondary)', marginTop: 8, display: 'flex', gap: 14 }}>
+                      <span>پیشوند: <code style={{ fontFamily: 'var(--gd-font-mono)' }}>{target.pathPrefix || '—'}</code></span>
+                      <span>ماندگاری: {faNum(target.retentionDays)} روز</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border-subtle)', paddingTop: 10 }}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      leftIcon="trash"
+                      style={{ color: 'var(--gd-danger-text)' }}
+                      onClick={() => deleteTarget(target.id)}
+                      disabled={busy === `del-${target.id}`}
+                    >
+                      حذف
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      leftIcon="cloud"
+                      disabled={busy === 'offsite-sync' || activeTask?.state === 'running'}
+                      onClick={() => syncOffsiteNow(target.id)}
+                    >
+                      همگام‌سازی ابری الان
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Offsite Jobs History */}
+            {offsiteJobs.length > 0 && (
+              <div style={{ marginTop: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--gd-text)' }}>
+                  تاریخچه آخرین انتقال‌های ابری:
+                </div>
+                <div style={{ border: '1px solid var(--gd-border-subtle)', borderRadius: 'var(--gd-radius-md)', overflow: 'hidden' }}>
+                  {offsiteJobs.slice(0, 5).map((job, idx) => (
+                    <div
+                      key={job.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 14px',
+                        fontSize: 12.5,
+                        background: idx % 2 === 0 ? 'var(--gd-bg-surface)' : 'var(--gd-bg-subtle)',
+                        borderBottom: idx < Math.min(offsiteJobs.length, 5) - 1 ? '1px solid var(--gd-border-subtle)' : 'none',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Badge
+                          variant={job.status === 'done' ? 'success' : job.status === 'failed' ? 'danger' : 'info'}
+                          appearance="soft"
+                          dot
+                        >
+                          {job.status === 'done' ? 'موفق' : job.status === 'failed' ? 'ناموفق' : 'در حال انتقال'}
+                        </Badge>
+                        <span className="dwp-mono" style={{ color: 'var(--gd-text-secondary)' }}>
+                          {new Date(job.createdAt).toLocaleString('fa-IR')}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        {job.sizeBytes && (
+                          <span className="dwp-mono" style={{ color: 'var(--gd-text-muted)' }}>
+                            {faNum((job.sizeBytes / (1024 * 1024)).toFixed(1))} MB
+                          </span>
+                        )}
+                        {job.error && (
+                          <span style={{ color: 'var(--gd-danger-text)', fontSize: 11.5 }}>
+                            {job.error}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {error && (
         <p style={{ fontSize: 13, color: 'var(--gd-danger-text)', background: 'var(--gd-danger-bg)', border: '1px solid var(--gd-danger)', borderRadius: 'var(--gd-radius-md)', padding: '11px 14px', marginTop: 16 }}>
           {error}
         </p>
+      )}
+
+      {/* Off-site S3 Target Configuration Modal */}
+      {targetModal && (
+        <Dialog
+          title="پیکربندی مقصد ذخیره‌سازی ابری (S3)"
+          isOpen={targetModal}
+          onClose={() => setTargetModal(false)}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.6 }}>
+              مشخصات باکت سازگار با S3 خود را وارد کنید. کلیدهای امنیتی به صورت رمزنگاری‌شده (AES-256-GCM) ذخیره می‌شوند.
+            </p>
+
+            <div>
+              <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>نشانی اندپوینت S3 (Endpoint URL):</label>
+              <input
+                type="text"
+                placeholder="https://s3.ir-thr-at1.arvanstorage.ir یا https://s3.amazonaws.com"
+                value={newTarget.endpoint}
+                onChange={(e) => setNewTarget({ ...newTarget, endpoint: e.target.value })}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 13, direction: 'ltr', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>نام باکت (Bucket Name):</label>
+                <input
+                  type="text"
+                  placeholder="my-wordpress-backups"
+                  value={newTarget.bucket}
+                  onChange={(e) => setNewTarget({ ...newTarget, bucket: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 13, direction: 'ltr', outline: 'none' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>منطقه (Region):</label>
+                <input
+                  type="text"
+                  placeholder="us-east-1 یا ir-thr-at1"
+                  value={newTarget.region}
+                  onChange={(e) => setNewTarget({ ...newTarget, region: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 13, direction: 'ltr', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>شناسه کلید دسترسی (Access Key ID):</label>
+              <input
+                type="text"
+                placeholder="AKIAIOSFODNN7EXAMPLE"
+                value={newTarget.accessKeyId}
+                onChange={(e) => setNewTarget({ ...newTarget, accessKeyId: e.target.value })}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 13, direction: 'ltr', outline: 'none' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>کلید محرمانه (Secret Access Key):</label>
+              <input
+                type="password"
+                placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                value={newTarget.secretAccessKey}
+                onChange={(e) => setNewTarget({ ...newTarget, secretAccessKey: e.target.value })}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 13, direction: 'ltr', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>پیشوند مسیر (Path Prefix):</label>
+                <input
+                  type="text"
+                  placeholder="backups/site1"
+                  value={newTarget.pathPrefix}
+                  onChange={(e) => setNewTarget({ ...newTarget, pathPrefix: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 13, direction: 'ltr', outline: 'none' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>دوره نگهداری (روز):</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={newTarget.retentionDays}
+                  onChange={(e) => setNewTarget({ ...newTarget, retentionDays: Number(e.target.value) || 30 })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 13, outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+              <Button variant="subtle" onClick={() => setTargetModal(false)}>انصراف</Button>
+              <Button
+                variant="primary"
+                leftIcon="save"
+                disabled={!newTarget.endpoint || !newTarget.bucket || !newTarget.accessKeyId || !newTarget.secretAccessKey || busy === 'saving-target'}
+                onClick={saveTarget}
+              >
+                ذخیره مقصد ابری
+              </Button>
+            </div>
+          </div>
+        </Dialog>
       )}
 
       {/* Preflight & Section Selection Modal */}

@@ -228,6 +228,26 @@ export function site(siteId) {
       URL.revokeObjectURL(url)
       return { ok: true, name }
     },
+    listOffsiteTargets: call(
+      () => Promise.resolve({ targets: [] }),
+      () => http(p('/offsite-backups/targets'))
+    ),
+    createOffsiteTarget: call(
+      (body) => Promise.resolve({ id: 'mock-target', ...body }),
+      (body) => http(p('/offsite-backups/targets'), { method: 'POST', body })
+    ),
+    deleteOffsiteTarget: call(
+      (targetId) => Promise.resolve({ ok: true }),
+      (targetId) => http(p(`/offsite-backups/targets/${targetId}`), { method: 'DELETE' })
+    ),
+    listOffsiteJobs: call(
+      (params) => Promise.resolve({ jobs: [] }),
+      (params) => http(p(`/offsite-backups/jobs${params ? '?' + new URLSearchParams(params) : ''}`))
+    ),
+    syncOffsite: call(
+      (body) => Promise.resolve({ queued: true, job: { id: 'mock-job', status: 'queued' } }),
+      (body) => http(p('/offsite-backups/jobs'), { method: 'POST', body: body || {} })
+    ),
     // Conflict hunt. Queued on the site, so this returns a job id in
     // milliseconds rather than holding a connection open while plugins are
     // flipped one group at a time.
