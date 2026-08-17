@@ -46,11 +46,10 @@ export default function Team() {
 
   const loadTeam = useCallback(async (siteId) => {
     if (!siteId) return
-    setLoading(true)
-    setError(null)
     try {
       const data = await siteClient(siteId).team()
       setTeam(data)
+      setError(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'بارگذاری اعضا با خطا مواجه شد.')
     } finally {
@@ -59,11 +58,24 @@ export default function Team() {
   }, [])
 
   useEffect(() => {
+    let alive = true
     if (selectedSiteId) {
-      loadTeam(selectedSiteId)
       setSearchParams({ site: selectedSiteId })
+      siteClient(selectedSiteId).team().then((data) => {
+        if (alive) {
+          setTeam(data)
+          setError(null)
+          setLoading(false)
+        }
+      }).catch((e) => {
+        if (alive) {
+          setError(e instanceof ApiError ? e.message : 'بارگذاری اعضا با خطا مواجه شد.')
+          setLoading(false)
+        }
+      })
     }
-  }, [selectedSiteId, loadTeam, setSearchParams])
+    return () => { alive = false }
+  }, [selectedSiteId, setSearchParams])
 
   const showToast = (title, tone = 'success') => {
     setToast({ title, tone })
@@ -115,8 +127,7 @@ export default function Team() {
   }
 
   const remove = async (memberId) => {
-    // eslint-disable-next-line no-restricted-globals
-    if (!confirm('این عضو از سایت حذف می‌شود. ادامه می‌دهید؟')) return
+    if (!window.confirm('این عضو از سایت حذف می‌شود. ادامه می‌دهید؟')) return
     setActionBusy((b) => ({ ...b, [`remove:${memberId}`]: true }))
     try {
       await siteClient(selectedSiteId).removeMember(memberId)

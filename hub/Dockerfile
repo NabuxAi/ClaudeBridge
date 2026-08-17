@@ -11,9 +11,10 @@ RUN --mount=type=secret,id=ca_bundle,target=/tmp/ca.crt \
     { [ -s /tmp/ca.crt ] && export NODE_EXTRA_CA_CERTS=/tmp/ca.crt; }; \
     npm ci --include=dev --no-audit --no-fund
 COPY . .
-# The API is same-origin at /api (nginx proxies it to the server), so the
-# built app talks to /api regardless of the deployed domain.
-ENV VITE_USE_MOCK=0 VITE_API_BASE_URL=/api
+# The API endpoint is configurable via build args and defaults to the server API domain.
+ARG VITE_API_BASE_URL=https://api.digiwp.com/v1
+ARG VITE_USE_MOCK=0
+ENV VITE_USE_MOCK=${VITE_USE_MOCK} VITE_API_BASE_URL=${VITE_API_BASE_URL}
 RUN npm run build
 
 # ---- serve static + proxy /api ----

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import { Button, Input, IconButton, Badge, MetricCard, NotMeasured } from '../../components/index.js'
@@ -19,7 +19,7 @@ export default function OffsiteBackups() {
   const [form, setForm] = useState(emptyForm())
   const timer = useRef(null)
 
-  const api = siteApi(siteId)
+  const api = useMemo(() => siteApi(siteId), [siteId])
 
   async function loadTargets() {
     const data = await api.offsiteTargets()
@@ -31,15 +31,6 @@ export default function OffsiteBackups() {
     setJobs(data?.jobs || [])
   }
 
-  async function load() {
-    setLoading(true); setError('')
-    try {
-      await Promise.all([loadTargets(), loadJobs()])
-    } catch (e) {
-      setError(e?.message || 'بارگذاری انجام نشد.')
-    } finally { setLoading(false) }
-  }
-
   useEffect(() => {
     let alive = true
     Promise.all([
@@ -47,7 +38,7 @@ export default function OffsiteBackups() {
       api.offsiteJobs().then((d) => alive && setJobs(d?.jobs || [])),
     ]).then(() => alive && setLoading(false)).catch((e) => alive && setError(e?.message || 'بارگذاری انجام نشد.'))
     return () => { alive = false; clearTimeout(timer.current) }
-  }, [siteId])
+  }, [api])
 
   function poll() {
     clearTimeout(timer.current)

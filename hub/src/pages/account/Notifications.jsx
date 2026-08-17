@@ -26,22 +26,6 @@ export default function Notifications() {
   const [channelSaved, setChannelSaved] = useState('')
   const [channelError, setChannelError] = useState('')
 
-  async function load() {
-    setError('')
-    try {
-      const [prefs, cts] = await Promise.all([
-        account.notificationPreferences(),
-        account.notificationContacts(),
-      ])
-      setChannels(prefs.channels || [])
-      setContacts(cts.contacts || [])
-    } catch (e) {
-      setError(e?.message || 'بارگذاری تنظیمات انجام نشد.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
     let alive = true
     Promise.all([account.notificationPreferences(), account.notificationContacts()]).then(([prefs, cts]) => {

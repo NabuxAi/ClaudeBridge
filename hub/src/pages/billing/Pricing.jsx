@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import { Button } from '../../components/index.js'
 import { faMoney } from '../../lib/format.js'

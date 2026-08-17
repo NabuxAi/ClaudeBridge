@@ -16,8 +16,8 @@
 
 import * as mock from '../data/mock.js'
 
-const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === '1' || !BASE
+const BASE = (import.meta.env.VITE_API_BASE_URL || 'https://api.digiwp.com/v1').replace(/\/$/, '')
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === '1'
 
 /** Auth token for YOUR server (never a managed-site token). */
 const TOKEN_KEY = 'digiwp.token'
