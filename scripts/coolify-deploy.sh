@@ -23,6 +23,7 @@ API="${COOLIFY_API_URL%/}"
 # --fail-with-body: a bare curl exits 0 on a 401, and a deployment that never
 # started would be reported as a success.
 response="$(curl --fail-with-body --silent --show-error \
+  --request POST \
   --header "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
   "${API}/deploy?uuid=${COOLIFY_RESOURCE_UUID}&force=false")" || {
     echo "::error::Coolify refused the deployment request"
