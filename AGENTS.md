@@ -366,6 +366,11 @@ Acceptance criteria:
 Relevant lines: `hub/src/pages/marketing/Landing.jsx:38-78`,
 `hub/src/styles/app.css:59-80`.
 
+**Status: resolved.** `.dwp-hero` and `.dwp-report` now collapse cleanly to a
+single column on viewports under 860px in `hub/src/styles/app.css`. The landing
+page hero heading uses fluid typography (`clamp(28px, 5vw, 44px)`), and container
+padding blocks prevent horizontal clipping across all mobile viewports (320px to 390px).
+
 ### P1.2 — public navigation contains dead or misleading controls
 
 - Landing "تماشای دمو" is a button with no action.
@@ -404,6 +409,12 @@ globally. Do not leak protected shell content before readiness is known.
 
 Relevant files: `hub/src/App.jsx`, `hub/src/lib/auth.jsx`,
 `hub/src/layouts/AccountShell.jsx`, `hub/src/layouts/SiteShell.jsx`.
+
+**Status: resolved.** `ProtectedRoute` component (`hub/src/lib/ProtectedRoute.jsx`)
+guards all `/app`, `/site/:siteId`, `/onboarding`, `/checkout`, and `/invoice/:id`
+routes. It waits for auth readiness, prevents shell content leakage for anonymous
+sessions, and preserves `returnTo` state upon redirecting to `/login`. User initials
+and names fall back gracefully without demo mocks.
 
 ### P1.4 — account UI still contains inert controls and invented rows
 
