@@ -5,6 +5,7 @@ import Icon from '../../lib/icons.jsx'
 import { Button, Badge } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
+import { useTask } from '../../lib/tasks.jsx'
 
 /**
  * Rescue — recovering a site compromised past the point where any scanner can
@@ -69,6 +70,7 @@ const STEPS = [
 
 export default function Rescue() {
   const { siteId } = useOutletContext()
+  const { startTask, activeTask } = useTask()
   const [results, setResults] = useState({})
   const [busy, setBusy] = useState('')
   const [errors, setErrors] = useState({})
@@ -84,6 +86,11 @@ export default function Rescue() {
     setBusy(step.id)
     setErrors((e) => ({ ...e, [step.id]: null }))
     try {
+      startTask({
+        id: `rescue-${step.id}`,
+        title: `عملیات نجات: ${step.title}`,
+        type: 'rescue',
+      })
       const res = await siteApi(siteId).rescue(step.id, step.confirm ? { confirm: true } : {})
       setResults((r) => ({ ...r, [step.id]: res.result }))
     } catch (e) {
