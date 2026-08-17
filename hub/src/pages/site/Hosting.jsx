@@ -2,21 +2,11 @@ import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Input, Select, Badge } from '../../components/index.js'
+import { Button, Input, Select, Badge, SkeletonStats, SkeletonCard } from '../../components/index.js'
 import { site as siteApi, account } from '../../lib/api.js'
 
 /**
  * Where this site is hosted.
- *
- * Not a form for its own sake — three things depend on the answer, and the
- * page says which, because a field whose effect is invisible is a field people
- * fill in carelessly:
- *
- *   which of our servers reaches the site,
- *   which address the site's connector is told to call us back on,
- *   and what we already know we cannot do on that host.
- *
- * All three fail silently when wrong: the requests simply never arrive.
  */
 export default function Hosting() {
   const { siteId } = useOutletContext()
@@ -47,7 +37,17 @@ export default function Hosting() {
     return () => { alive = false }
   }, [siteId])
 
-  if (!form || !options) return <PageHead title="میزبانی" subtitle="محل سایت و مسیر ارتباط ما با آن" />
+  const head = <PageHead title="میزبانی" subtitle="محل سایت و مسیر ارتباط ما با آن" />
+
+  if (!form || !options) {
+    return (
+      <>
+        {head}
+        <SkeletonStats count={3} />
+        <SkeletonCard height={160} />
+      </>
+    )
+  }
 
   const set = (k) => (v) => { setForm((f) => ({ ...f, [k]: v })); setSaved('') }
 

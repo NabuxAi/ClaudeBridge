@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, MetricCard, Badge, ActivityRow } from '../../components/index.js'
+import { Button, MetricCard, Badge, ActivityRow, SkeletonStats, SkeletonCard } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
+import { useTask } from '../../lib/tasks.jsx'
 
 /**
  * The headline: what the site actually reported.
@@ -71,6 +72,7 @@ function SecurityBanner({ data }) {
 
 export default function Security() {
   const { siteId } = useOutletContext()
+  const { startTask, activeTask } = useTask()
   const [data, setData] = useState(null)
   const [scanning, setScanning] = useState(false)
   const timer = useRef(null)
@@ -81,14 +83,18 @@ export default function Security() {
     return () => { alive = false; clearTimeout(timer.current) }
   }, [siteId])
 
-  // Starts a real scan and polls it. It used to await the scan inline, which
-  // worked until a site with 28,568 files blew through the relay timeout and
-  // the panel showed "tool security_scan failed" — so now the site queues it
-  // and this watches. Integrity is still read inline: that one is bounded.
   async function rescan() {
     setScanning(true)
     try {
-      await siteApi(siteId).startScan()
+      const res = await siteApi(siteId).startScan()
+      const started = res?.job || res
+      if (started?.id) {
+        startTask({
+          id: started.id,
+          title: 'اسکن کامل بدافزار و فایل‌های هسته',
+          type: 'security',
+        })
+      }
       poll()
     } catch {
       setScanning(false)
@@ -106,19 +112,41 @@ export default function Security() {
     }, 3000)
   }
 
-  if (!data) return <PageHead title="امنیت" subtitle="نگهبانی امنیتی روزانه و کنترل دسترسی" />
+  const isRunning = scanning || activeTask?.state === 'running'
+
+  const head = (
+    <PageHead
+      title="امنیت"
+      subtitle="نگهبانی امنیتی روزانه و کنترل دسترسی"
+      action={
+        <Button
+          variant="primary"
+          size="sm"
+          leftIcon="scan-search"
+          disabled={isRunning}
+          onClick={rescan}
+        >
+          {isRunning ? 'در حال اسکن…' : 'اسکن کامل'}
+        </Button>
+      }
+    />
+  )
+
+  if (!data) {
+    return (
+      <>
+        {head}
+        <SkeletonCard height={110} />
+        <div style={{ marginTop: 18 }}>
+          <SkeletonStats count={4} />
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
-      <PageHead
-        title="امنیت"
-        subtitle="نگهبانی امنیتی روزانه و کنترل دسترسی"
-        action={
-          <Button variant="primary" size="sm" leftIcon="scan-search" disabled={scanning} onClick={rescan}>
-            {scanning ? 'در حال اسکن…' : 'اسکن کامل'}
-          </Button>
-        }
-      />
+      {head}
 
       {/* Core integrity — measured against WordPress's own manifest. This card
           only appears when the site actually answered; there is no placeholder

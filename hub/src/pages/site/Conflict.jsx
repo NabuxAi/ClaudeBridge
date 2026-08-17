@@ -2,25 +2,17 @@ import { useState, useRef, useEffect } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Input, Badge } from '../../components/index.js'
+import { Button, Input, Badge, SkeletonCard, SkeletonStats } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
+import { useTask } from '../../lib/tasks.jsx'
 
 /**
  * Conflict hunt — find what breaks a page.
- *
- * The work is queued on the site and polled, not awaited. That is not a UI
- * nicety: flipping plugins on a live site takes minutes, and holding a request
- * open for that long ties up one of the two or four PHP workers a shared host
- * gives you, which makes the customer's site slow while we diagnose it.
- *
- * The page is honest about what it is doing, because it IS disruptive: plugins
- * really are switched off in groups while it runs, and a visitor who lands
- * mid-round sees the site in that state. Saying so is the difference between a
- * tool someone trusts and one they run once by accident.
  */
 export default function Conflict() {
   const { siteId } = useOutletContext()
+  const { startTask, activeTask } = useTask()
   const [url, setUrl] = useState('')
   const [expect, setExpect] = useState('')
   const [forbid, setForbid] = useState('')
@@ -38,6 +30,13 @@ export default function Conflict() {
       const res = await siteApi(siteId).findConflict({ url: url.trim(), expect: expect.trim(), forbid: forbid.trim() })
       const started = res.job || res
       setJob(started)
+      if (started?.id) {
+        startTask({
+          id: started.id,
+          title: `بررسی تداخل افزونه‌ها روی صفحه ${url}`,
+          type: 'conflict',
+        })
+      }
       poll(started.id)
     } catch (e) {
       setError(e?.message || 'شروع نشد.')

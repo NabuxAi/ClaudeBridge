@@ -2,23 +2,14 @@ import { useState, useRef, useEffect } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Input, Badge } from '../../components/index.js'
+import { Button, Input, Badge, SkeletonStats, SkeletonCard } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
+import { useTask } from '../../lib/tasks.jsx'
 
 /**
  * Speed — what makes a page slow, measured rather than guessed.
- *
- * Two readings that fail differently, so they are shown apart: the site-wide
- * one (autoloaded options, object cache, cron backlog) which taxes every
- * request, and the per-page query log with each query attributed to the plugin
- * that issued it.
- *
- * Findings are ordered by risk, and only the reversible-and-invisible ones get
- * a button. Everything else is advice with the number that triggered it
- * attached, so the owner can disagree with us.
  */
-
 const RISK = {
   safe: { label: 'بی‌خطر', variant: 'success', note: 'برگشت‌پذیر و بدون تغییر ظاهری' },
   careful: { label: 'با احتیاط', variant: 'warning', note: 'برگشت‌پذیر، ولی رفتاری را تغییر می‌دهد' },
@@ -27,6 +18,7 @@ const RISK = {
 
 export default function Speed() {
   const { siteId } = useOutletContext()
+  const { startTask, activeTask } = useTask()
   const [url, setUrl] = useState('')
   const [job, setJob] = useState(null)
   const [report, setReport] = useState(null)
@@ -42,6 +34,13 @@ export default function Speed() {
       const res = await siteApi(siteId).measureSpeed({ url: url.trim() })
       const started = res.job || res
       setJob(started)
+      if (started?.id) {
+        startTask({
+          id: started.id,
+          title: `سنجش سرعت و کوئری‌های صفحه ${url ? '«' + url + '»' : 'اصلی'}`,
+          type: 'speed',
+        })
+      }
       poll(started.id)
     } catch (e) { setError(e?.message || 'شروع نشد.') }
   }
@@ -117,6 +116,13 @@ export default function Speed() {
           <div style={bar}>
             <div style={{ ...barFill, width: `${job.state === 'done' ? 100 : job.progress || 0}%`, background: job.state === 'failed' ? 'var(--gd-danger)' : 'var(--gd-primary)' }} />
           </div>
+        </div>
+      )}
+
+      {running && !job?.result && (
+        <div style={{ marginTop: 20 }}>
+          <SkeletonStats count={3} />
+          <SkeletonCard height={130} />
         </div>
       )}
 

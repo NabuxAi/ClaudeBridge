@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Badge, AlertCard, Tabs, Provenance } from '../../components/index.js'
+import { Button, Badge, AlertCard, Tabs, Provenance, SkeletonStats, SkeletonTable, SkeletonCard } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
 
@@ -43,7 +43,19 @@ export default function Incidents() {
     try { await siteApi(siteId).dismissIncident(id); await load() } finally { setBusy('') }
   }
 
-  if (!data) return <PageHead title="هشدارها" subtitle="رخدادها و اقدام‌های خودکار پشتیبان" />
+  const head = <PageHead title="هشدارها" subtitle="رخدادها و اقدام‌های خودکار پشتیبان" />
+
+  if (!data) {
+    return (
+      <>
+        {head}
+        <SkeletonCard height={140} />
+        <div style={{ marginTop: 20 }}>
+          <SkeletonTable rows={4} cols={3} />
+        </div>
+      </>
+    )
+  }
 
   const { featured, list } = data
   const filtered = list.filter((it) => {

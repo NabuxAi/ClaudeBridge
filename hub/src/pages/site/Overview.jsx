@@ -4,6 +4,7 @@ import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import {
   Button, MetricCard, StatusPill, ActivityRow, AuthorityBadge, ProgressBar, Provenance,
+  SkeletonStats, SkeletonCard, SkeletonTable,
 } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
@@ -26,7 +27,32 @@ export default function Overview() {
     return () => { alive = false }
   }, [siteId])
 
-  if (!data) return <PageHead title="نمای کلی" subtitle="وضعیت لحظه‌ای سایت شما" />
+  const head = (
+    <PageHead
+      title="نمای کلی"
+      subtitle="وضعیت لحظه‌ای سایت شما"
+      action={(
+        <Button variant="secondary" size="sm" leftIcon="refresh-cw" disabled={checking} onClick={load}>
+          {checking ? 'در حال بررسی…' : 'بررسی دوباره'}
+        </Button>
+      )}
+    />
+  )
+
+  if (!data) {
+    return (
+      <>
+        {head}
+        <SkeletonCard height={120} />
+        <div style={{ marginTop: 20 }}>
+          <SkeletonStats count={4} />
+        </div>
+        <div style={{ marginTop: 20 }}>
+          <SkeletonTable rows={3} cols={2} />
+        </div>
+      </>
+    )
+  }
 
   const reachable = data.probe ? data.probe.reachable : data.status !== 'down'
   const services = data.services || []
@@ -35,15 +61,7 @@ export default function Overview() {
 
   return (
     <>
-      <PageHead
-        title="نمای کلی"
-        subtitle="وضعیت لحظه‌ای سایت شما"
-        action={(
-          <Button variant="secondary" size="sm" leftIcon="refresh-cw" disabled={checking} onClick={load}>
-            {checking ? 'در حال بررسی…' : 'بررسی دوباره'}
-          </Button>
-        )}
-      />
+      {head}
 
       {/* Health banner + service checklist */}
       <div className="dwp-ov-banner" style={{ display: 'flex', alignItems: 'center', gap: 26, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-sm)', padding: '22px 26px', marginBottom: 18, flexWrap: 'wrap' }}>
