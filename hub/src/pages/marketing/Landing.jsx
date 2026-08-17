@@ -42,7 +42,7 @@ export default function Landing() {
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, color: 'var(--gd-primary)', background: 'var(--gd-primary-subtle)', border: '1px solid var(--gd-primary-border)', padding: '6px 13px', borderRadius: 'var(--gd-radius-pill)' }}>
               <Icon name="sparkles" size={14} /> پشتیبان هوشمند وردپرس
             </span>
-            <h1 style={{ fontSize: 44, lineHeight: 1.18, fontWeight: 800, letterSpacing: '-.02em', margin: '18px 0 0', color: 'var(--gd-text)' }}>
+            <h1 style={{ fontSize: 'clamp(28px, 5vw, 44px)', lineHeight: 1.25, fontWeight: 800, letterSpacing: '-.02em', margin: '18px 0 0', color: 'var(--gd-text)' }}>
               سایت وردپرسی شما، <span style={{ color: 'var(--gd-primary)' }}>همیشه به‌روز</span> و زیر نظر اسکن روزانه
             </h1>
             <p style={{ fontSize: 17, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: '16px 0 0', maxWidth: 520 }}>
@@ -52,7 +52,7 @@ export default function Landing() {
               <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">ساخت حساب</Button>
               <Button as={Link} to="/pricing" variant="secondary" size="lg" rightIcon="arrow-left">مشاهده قیمت‌ها</Button>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 22, fontSize: 12.5, color: 'var(--gd-text-muted)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 22, fontSize: 12.5, color: 'var(--gd-text-muted)', flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={15} style={{ color: 'var(--gd-primary)' }} /> نصب در ۲ دقیقه</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={15} style={{ color: 'var(--gd-primary)' }} /> بدون نیاز به کارت بانکی در دسترسی آزمایشی</span>
             </div>
@@ -80,7 +80,7 @@ export default function Landing() {
       </div>
 
       {/* Features */}
-      <section id="features" className="dwp-container" style={{ padding: '66px 40px' }}>
+      <section id="features" className="dwp-container" style={{ paddingBlock: 66 }}>
         <div style={{ textAlign: 'center', maxWidth: 600, margin: '0 auto 40px' }}>
           <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', color: 'var(--gd-primary)' }}>قابلیت‌ها</span>
           <h2 style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-.01em', margin: '10px 0 0' }}>دقیقاً چه کارهایی انجام می‌دهد؟</h2>
@@ -98,7 +98,7 @@ export default function Landing() {
 
       {/* Authority levels */}
       <section id="authority" style={{ background: 'var(--gd-bg-app)', borderTop: '1px solid var(--gd-border)', borderBottom: '1px solid var(--gd-border)' }}>
-        <div className="dwp-container" style={{ padding: '60px 40px' }}>
+        <div className="dwp-container" style={{ paddingBlock: 60 }}>
           <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 34px' }}>
             <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', color: 'var(--gd-primary)' }}>کنترل با شماست</span>
             <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: '10px 0 8px' }}>سه سطح اختیار</h2>
@@ -120,7 +120,7 @@ export default function Landing() {
       </section>
 
       {/* Transparent report sample */}
-      <section className="dwp-container dwp-report" style={{ padding: '64px 40px', display: 'grid', gridTemplateColumns: '.9fr 1.1fr', gap: 44, alignItems: 'center' }}>
+      <section className="dwp-container dwp-report" style={{ paddingBlock: 64, display: 'grid', gap: 44, alignItems: 'center' }}>
         <div>
           <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', color: 'var(--gd-primary)' }}>گزارش شفاف</span>
           <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: '10px 0 12px' }}>به زبان ساده به شما می‌گوید چه شد</h2>
@@ -128,7 +128,7 @@ export default function Landing() {
         </div>
         <div style={{ display: 'flex', gap: 12, borderRadius: 'var(--gd-radius-lg)', border: '1px solid var(--gd-danger-border)', background: 'var(--gd-danger-bg)', padding: '18px 22px', boxShadow: 'var(--gd-shadow-sm)' }}>
           <span style={{ width: 40, height: 40, borderRadius: 'var(--gd-radius-md)', background: 'var(--gd-danger)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}><Icon name="alert-octagon" size={22} /></span>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--gd-danger-text)' }}>هشدار مهم</span>
               <span className="dwp-mono" style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginInlineStart: 'auto' }}>۱۴:۳۲</span>
@@ -145,7 +145,7 @@ export default function Landing() {
 
       {/* Pricing teaser */}
       <section style={{ background: 'var(--gd-bg-app)', borderTop: '1px solid var(--gd-border)' }}>
-        <div className="dwp-container" style={{ padding: '64px 40px' }}>
+        <div className="dwp-container" style={{ paddingBlock: 64 }}>
           <div style={{ textAlign: 'center', maxWidth: 600, margin: '0 auto 36px' }}>
             <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', color: 'var(--gd-primary)' }}>قیمت‌گذاری ساده</span>
             <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: '10px 0 0' }}>پلنی برای هر اندازه</h2>
@@ -170,7 +170,7 @@ export default function Landing() {
 
       {/* CTA (ink) */}
       <div data-theme="ink" style={{ background: 'var(--gd-bg-app)' }}>
-        <div className="dwp-container dwp-cta" style={{ padding: '60px 40px', display: 'flex', alignItems: 'center', gap: 30, flexWrap: 'wrap' }}>
+        <div className="dwp-container dwp-cta" style={{ paddingBlock: 60, display: 'flex', alignItems: 'center', gap: 30, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 280 }}>
             <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: 0, color: 'var(--gd-text)' }}>همین امروز خیال‌تان از سایت راحت شود</h2>
             <p style={{ fontSize: 15, color: 'var(--gd-text-secondary)', margin: '10px 0 0' }}>دسترسی آزمایشی — بدون کارت بانکی. اتصال در کمتر از دو دقیقه.</p>
