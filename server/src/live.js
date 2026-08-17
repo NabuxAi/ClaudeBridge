@@ -86,8 +86,10 @@ export function updatesFromStatus(status) {
   }
   for (const p of status.plugins_pending || []) {
     queue.push({
-      id: `plugin:${p.name}`,
+      id: `plugin:${p.file || p.name}`,
       name: p.name,
+      file: p.file || p.name,
+      kind: 'plugin',
       from: p.from,
       to: p.to,
       type: 'افزونه',
@@ -96,8 +98,10 @@ export function updatesFromStatus(status) {
   }
   for (const t of status.themes_pending || []) {
     queue.push({
-      id: `theme:${t.name}`,
+      id: `theme:${t.file || t.name}`,
       name: t.name,
+      file: t.file || t.name,
+      kind: 'theme',
       from: t.from,
       to: t.to,
       type: 'قالب',

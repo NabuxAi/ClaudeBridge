@@ -776,6 +776,9 @@ function cb_backup_database( $path ) {
  */
 function cb_backup_run( $args = array() ) {
 	$want_files = ! empty( $args['files'] );
+	$sections   = isset( $args['sections'] ) && is_array( $args['sections'] ) && ! empty( $args['sections'] )
+		? $args['sections']
+		: ( $want_files ? array( 'db', 'plugins', 'themes', 'uploads' ) : array( 'db' ) );
 	$label      = isset( $args['label'] ) ? sanitize_text_field( $args['label'] ) : 'manual';
 
 	@set_time_limit( 0 );
@@ -785,37 +788,61 @@ function cb_backup_run( $args = array() ) {
 	if ( '' === $dir ) {
 		return array( 'ok' => false, 'message' => 'پوشهٔ بارگذاری در دسترس نیست؛ بکاپ ممکن نشد.' );
 	}
+
+	// Host Disk Space Preflight Check
+	$free_bytes = @disk_free_space( $dir );
+	if ( false === $free_bytes || null === $free_bytes ) {
+		$free_bytes = @disk_free_space( ABSPATH );
+	}
+	if ( false !== $free_bytes && $free_bytes < ( 50 * 1024 * 1024 ) ) {
+		return array( 'ok' => false, 'message' => 'فضای خالی هاست کمتر از ۵۰ مگابایت است؛ بکاپ برای جلوگیری از پر شدن هاست متوقف شد.' );
+	}
+
 	$stamp = gmdate( 'Ymd-His' );
 	$id    = $stamp . '-' . wp_generate_password( 6, false, false );
 	$sql   = $dir . "/db-{$id}.sql";
 
-	$db = cb_backup_database( $sql );
-	if ( is_wp_error( $db ) ) {
-		return array( 'ok' => false, 'message' => $db->get_error_message() );
+	$db = null;
+	if ( in_array( 'db', $sections, true ) ) {
+		$db = cb_backup_database( $sql );
+		if ( is_wp_error( $db ) ) {
+			return array( 'ok' => false, 'message' => $db->get_error_message() );
+		}
 	}
 
 	$zip_path = null;
 	$zip_size = 0;
-	if ( $want_files && class_exists( 'ZipArchive' ) ) {
+	$file_sections = array_intersect( $sections, array( 'plugins', 'themes', 'uploads' ) );
+	if ( ! empty( $file_sections ) && class_exists( 'ZipArchive' ) ) {
 		$zip_path = $dir . "/files-{$id}.zip";
 		$zip      = new ZipArchive();
 		if ( true === $zip->open( $zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE ) ) {
-			$root = untrailingslashit( WP_CONTENT_DIR );
-			$it   = new RecursiveIteratorIterator(
-				new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ),
-				RecursiveIteratorIterator::LEAVES_ONLY,
-				RecursiveIteratorIterator::CATCH_GET_CHILD
-			);
-			foreach ( $it as $f ) {
-				if ( ! $f->isFile() ) {
-					continue;
+			$upload_dir = wp_upload_dir();
+			$targets = array();
+			if ( in_array( 'plugins', $file_sections, true ) ) {
+				$targets['plugins'] = WP_PLUGIN_DIR;
+			}
+			if ( in_array( 'themes', $file_sections, true ) ) {
+				$targets['themes'] = get_theme_root();
+			}
+			if ( in_array( 'uploads', $file_sections, true ) ) {
+				$targets['uploads'] = $upload_dir['basedir'];
+			}
+
+			foreach ( $targets as $prefix => $target_dir ) {
+				if ( ! is_dir( $target_dir ) ) continue;
+				$it = new RecursiveIteratorIterator(
+					new RecursiveDirectoryIterator( $target_dir, FilesystemIterator::SKIP_DOTS ),
+					RecursiveIteratorIterator::LEAVES_ONLY,
+					RecursiveIteratorIterator::CATCH_GET_CHILD
+				);
+				foreach ( $it as $f ) {
+					if ( ! $f->isFile() ) continue;
+					$p = str_replace( '\\', '/', $f->getPathname() );
+					// Never back the backups up into themselves.
+					if ( false !== strpos( $p, '/cb-backups/' ) ) continue;
+					$zip->addFile( $p, $prefix . '/' . ltrim( substr( $p, strlen( $target_dir ) ), '/' ) );
 				}
-				$p = str_replace( '\\', '/', $f->getPathname() );
-				// Never back the backups up into themselves.
-				if ( false !== strpos( $p, '/cb-backups/' ) ) {
-					continue;
-				}
-				$zip->addFile( $p, ltrim( substr( $p, strlen( $root ) ), '/' ) );
 			}
 			$zip->close();
 			$zip_size = (int) @filesize( $zip_path );
@@ -827,17 +854,18 @@ function cb_backup_run( $args = array() ) {
 	$meta = array(
 		'id'         => $id,
 		'label'      => $label,
+		'sections'   => $sections,
 		'created_at' => time(),
-		'db_file'    => basename( $sql ),
-		'db_bytes'   => (int) $db['bytes'],
-		'tables'     => (int) $db['tables'],
-		'rows'       => (int) $db['rows'],
+		'db_file'    => $db ? basename( $sql ) : null,
+		'db_bytes'   => $db ? (int) $db['bytes'] : 0,
+		'tables'     => $db ? (int) $db['tables'] : 0,
+		'rows'       => $db ? (int) $db['rows'] : 0,
 		'files_file' => $zip_path ? basename( $zip_path ) : null,
 		'files_bytes'=> $zip_size,
 		'wp_version' => get_bloginfo( 'version' ),
 		// Verified means: the dump is present, non-empty, and ends the way a
 		// complete dump ends. An unverified backup is a guess about the future.
-		'verified'   => cb_backup_verify_file( $sql ),
+		'verified'   => $db ? cb_backup_verify_file( $sql ) : ( $zip_size > 0 ),
 	);
 	cb_put_contents( $dir . "/meta-{$id}.json", wp_json_encode( $meta ) );
 
@@ -937,6 +965,118 @@ add_action( 'init', function () {
 
 function cb_op_backup_run( $args )  { return cb_backup_run( is_array( $args ) ? $args : array() ); }
 function cb_op_backup_list()        { return cb_backup_list(); }
+function cb_op_backup_preflight()   { return cb_backup_preflight(); }
+
+function cb_dir_size_quick( $dir ) {
+	if ( ! is_dir( $dir ) ) {
+		return 0;
+	}
+	$size = 0;
+	$count = 0;
+	try {
+		$it = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS ),
+			RecursiveIteratorIterator::LEAVES_ONLY,
+			RecursiveIteratorIterator::CATCH_GET_CHILD
+		);
+		foreach ( $it as $f ) {
+			if ( $f->isFile() ) {
+				$size += (int) $f->getSize();
+				$count++;
+				if ( $count > 30000 ) {
+					break;
+				}
+			}
+		}
+	} catch ( Throwable $e ) {
+		// ignore traversal error
+	}
+	return $size;
+}
+
+function cb_backup_preflight( $args = array() ) {
+	global $wpdb;
+
+	$free_bytes = @disk_free_space( WP_CONTENT_DIR );
+	if ( false === $free_bytes || null === $free_bytes ) {
+		$free_bytes = @disk_free_space( ABSPATH );
+	}
+
+	// 1. DB Size estimate
+	$db_size_row = $wpdb->get_row( "SELECT SUM(data_length + index_length) as db_size FROM information_schema.TABLES WHERE table_schema = DATABASE()", ARRAY_A );
+	$db_bytes = ! empty( $db_size_row['db_size'] ) ? (int) $db_size_row['db_size'] : 15 * 1024 * 1024;
+
+	// 2. Plugins Size
+	$plugins_bytes = cb_dir_size_quick( WP_PLUGIN_DIR );
+
+	// 3. Themes Size
+	$themes_bytes = cb_dir_size_quick( get_theme_root() );
+
+	// 4. Uploads Size
+	$upload_dir = wp_upload_dir();
+	$uploads_bytes = cb_dir_size_quick( $upload_dir['basedir'] );
+
+	$total_full_bytes = $db_bytes + $plugins_bytes + $themes_bytes + $uploads_bytes;
+
+	$est_duration = function( $bytes ) {
+		return max( 3, (int) ceil( $bytes / (8 * 1024 * 1024) ) );
+	};
+
+	$sections = array(
+		'db' => array(
+			'key'         => 'db',
+			'title'       => 'پایگاه داده (SQL)',
+			'description' => 'شامل جداول پست‌ها، کاربران، تنظیمات و سفارش‌ها',
+			'bytes'       => $db_bytes,
+			'formatted'   => size_format( $db_bytes, 1 ),
+			'duration_sec'=> $est_duration( $db_bytes ),
+			'required'    => true,
+		),
+		'plugins' => array(
+			'key'         => 'plugins',
+			'title'       => 'افزونه‌ها (Plugins)',
+			'description' => 'پوشه تمام افزونه‌های نصب‌شده روی وردپرس',
+			'bytes'       => $plugins_bytes,
+			'formatted'   => size_format( $plugins_bytes, 1 ),
+			'duration_sec'=> $est_duration( $plugins_bytes ),
+			'required'    => false,
+		),
+		'themes' => array(
+			'key'         => 'themes',
+			'title'       => 'قالب‌ها (Themes)',
+			'description' => 'پوشه قالب فعال و سایر پوسته‌های نصب‌شده',
+			'bytes'       => $themes_bytes,
+			'formatted'   => size_format( $themes_bytes, 1 ),
+			'duration_sec'=> $est_duration( $themes_bytes ),
+			'required'    => false,
+		),
+		'uploads' => array(
+			'key'         => 'uploads',
+			'title'       => 'رسانه‌ها و آپلودها (Uploads)',
+			'description' => 'تصاویر، ویدئوها و فایل‌های کتابخانه چندرسانه‌ای',
+			'bytes'       => $uploads_bytes,
+			'formatted'   => size_format( $uploads_bytes, 1 ),
+			'duration_sec'=> $est_duration( $uploads_bytes ),
+			'required'    => false,
+		),
+	);
+
+	$safety_margin = 1.25;
+	$can_full = ( false !== $free_bytes && $free_bytes > ( $total_full_bytes * $safety_margin ) );
+	$can_db   = ( false !== $free_bytes && $free_bytes > ( $db_bytes * $safety_margin ) );
+
+	return array(
+		'ok'                  => true,
+		'free_disk_bytes'     => $free_bytes,
+		'free_disk_formatted' => false !== $free_bytes ? size_format( $free_bytes, 1 ) : 'نامشخص',
+		'total_full_bytes'    => $total_full_bytes,
+		'total_full_formatted'=> size_format( $total_full_bytes, 1 ),
+		'total_full_duration' => $est_duration( $total_full_bytes ),
+		'can_full_backup'     => $can_full,
+		'can_db_backup'       => $can_db,
+		'sections'            => $sections,
+	);
+}
 
 /**
  * Read a slice of a snapshot file, base64-encoded.
@@ -1732,8 +1872,9 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'core_integrity', 'description' => 'Verify every WordPress core file against the official md5 manifest from api.wordpress.org for this exact version and locale. Reports modified core files, missing ones, and — the finding that actually catches backdoors — files sitting inside wp-admin/ or wp-includes/ that WordPress never shipped. Read-only. A clean core has all three lists empty.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_core_integrity', 'noargs' => true );
 
 	// Backups, taken by this plugin. Real snapshots, not a status screen.
-	$tools[] = array( 'name' => 'backup_run', 'description' => 'Take a snapshot of this site now: full database dump always, and optionally a zip of wp-content. The dump is written in pure PHP so it works on hosts where exec() is disabled, and is verified complete before being recorded. Old snapshots beyond `keep` are pruned.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'files' => array( 'type' => 'boolean', 'description' => 'Also archive wp-content. Slow and large on media-heavy sites.' ), 'label' => array( 'type' => 'string' ), 'keep' => array( 'type' => 'integer', 'description' => 'How many snapshots to retain (default 7).' ) ) ), 'op' => 'cb_op_backup_run' );
+	$tools[] = array( 'name' => 'backup_run', 'description' => 'Take a snapshot of this site now: full database dump always, and optionally a zip of wp-content or selected sections. The dump is written in pure PHP so it works on hosts where exec() is disabled, and is verified complete before being recorded. Old snapshots beyond `keep` are pruned.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'files' => array( 'type' => 'boolean', 'description' => 'Also archive wp-content. Slow and large on media-heavy sites.' ), 'sections' => array( 'type' => 'array', 'items' => array( 'type' => 'string' ), 'description' => 'Selectable sections: db, plugins, themes, uploads.' ), 'label' => array( 'type' => 'string' ), 'keep' => array( 'type' => 'integer', 'description' => 'How many snapshots to retain (default 7).' ) ) ), 'op' => 'cb_op_backup_run' );
 	$tools[] = array( 'name' => 'backup_list', 'description' => 'Every snapshot this site actually holds, with size, table and row counts, and whether the dump was verified complete. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_list', 'noargs' => true );
+	$tools[] = array( 'name' => 'backup_preflight', 'description' => 'Check free host disk space and estimate backup size and duration per section (db, plugins, themes, uploads). Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_preflight', 'noargs' => true );
 	// Performance. perf_report measures; perf_clean_transients is the only fix
 	// here safe enough to run without a human deciding.
 	$tools[] = array( 'name' => 'perf_clean_transients', 'description' => 'Delete transients that have already expired. Safe: nothing relies on an expired transient, and anything that needs one rebuilds it. Batched, so run again while `remaining` is above zero.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'limit' => array( 'type' => 'integer' ) ) ), 'op' => 'cb_op_perf_clean_transients' );
@@ -2786,13 +2927,47 @@ function cb_job_update_apply( $job ) {
 	$item = $state['queue'][ $state['i'] ];
 	$skin = cb_upgrader_skin();
 	try {
-		if ( 'theme' === $item['type'] ) {
+		if ( 'core' === $item['type'] ) {
+			$up = new Core_Upgrader( $skin );
+			$core_updates = get_core_updates();
+			$target_update = ( is_array( $core_updates ) && ! empty( $core_updates ) ) ? $core_updates[0] : false;
+			if ( $target_update ) {
+				$res = $up->upgrade( $target_update );
+			} else {
+				$res = new WP_Error( 'no_core_update', 'آپدیت هسته‌ای در دسترس نیست' );
+			}
+		} elseif ( 'theme' === $item['type'] ) {
+			$target = $item['name'];
+			if ( function_exists( 'wp_get_themes' ) ) {
+				$themes = wp_get_themes();
+				if ( ! isset( $themes[ $target ] ) ) {
+					foreach ( $themes as $stylesheet => $t ) {
+						if ( strtolower( $t->get( 'Name' ) ) === strtolower( $target ) ) {
+							$target = $stylesheet;
+							break;
+						}
+					}
+				}
+			}
 			$up  = new Theme_Upgrader( $skin );
-			$res = $up->upgrade( $item['name'] );
+			$res = $up->upgrade( $target );
 		} else {
+			$target = $item['name'];
+			if ( function_exists( 'get_plugins' ) ) {
+				$all_plugins = get_plugins();
+				if ( ! isset( $all_plugins[ $target ] ) ) {
+					foreach ( $all_plugins as $file => $info ) {
+						if ( strtolower( $info['Name'] ) === strtolower( $target ) || strpos( $file, $target . '/' ) === 0 ) {
+							$target = $file;
+							break;
+						}
+					}
+				}
+			}
 			$up  = new Plugin_Upgrader( $skin );
-			$res = $up->upgrade( $item['name'] );
+			$res = $up->upgrade( $target );
 		}
+
 		if ( is_wp_error( $res ) ) {
 			$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => $res->get_error_message() );
 		} elseif ( false === $res ) {
@@ -2805,6 +2980,12 @@ function cb_job_update_apply( $job ) {
 	}
 
 	$state['i']++;
+	if ( $state['i'] >= $n ) {
+		wp_update_plugins();
+		wp_update_themes();
+		wp_version_check();
+	}
+
 	return array(
 		'cursor'   => $state,
 		'progress' => (int) ( 100 * $state['i'] / max( 1, $n ) ),
@@ -4273,28 +4454,37 @@ function cb_update_status() {
 	$plugins = function_exists( 'get_plugin_updates' ) ? get_plugin_updates() : array();
 	$themes  = function_exists( 'get_theme_updates' ) ? get_theme_updates() : array();
 
-	$map_plugin = function ( $p ) {
-		return array(
-			'name' => isset( $p->Name ) ? $p->Name : '',
-			'from' => isset( $p->Version ) ? $p->Version : '',
-			'to'   => isset( $p->update->new_version ) ? $p->update->new_version : '',
-		);
-	};
-	$map_theme = function ( $t ) {
-		return array(
-			'name' => $t->get( 'Name' ),
-			'from' => $t->get( 'Version' ),
-			'to'   => isset( $t->update['new_version'] ) ? $t->update['new_version'] : '',
-		);
-	};
+	$plugins_pending = array();
+	if ( is_array( $plugins ) ) {
+		foreach ( $plugins as $file => $p ) {
+			$plugins_pending[] = array(
+				'file' => (string) $file,
+				'name' => isset( $p->Name ) && '' !== $p->Name ? (string) $p->Name : (string) $file,
+				'from' => isset( $p->Version ) ? (string) $p->Version : '',
+				'to'   => isset( $p->update->new_version ) ? (string) $p->update->new_version : '',
+			);
+		}
+	}
+
+	$themes_pending = array();
+	if ( is_array( $themes ) ) {
+		foreach ( $themes as $stylesheet => $t ) {
+			$themes_pending[] = array(
+				'file' => (string) $stylesheet,
+				'name' => is_object( $t ) && method_exists( $t, 'get' ) ? (string) $t->get( 'Name' ) : (string) $stylesheet,
+				'from' => is_object( $t ) && method_exists( $t, 'get' ) ? (string) $t->get( 'Version' ) : '',
+				'to'   => isset( $t->update['new_version'] ) ? (string) $t->update['new_version'] : '',
+			);
+		}
+	}
 
 	return array(
 		'policy'          => cb_update_policy(),
 		'wp_version'      => get_bloginfo( 'version' ),
 		'wp_latest'       => '' !== $core_new ? $core_new : get_bloginfo( 'version' ),
 		'core_outdated'   => '' !== $core_new,
-		'plugins_pending' => array_values( array_map( $map_plugin, $plugins ) ),
-		'themes_pending'  => array_values( array_map( $map_theme, $themes ) ),
+		'plugins_pending' => $plugins_pending,
+		'themes_pending'  => $themes_pending,
 		'php_version'     => PHP_VERSION,
 		'checked_at'      => time(),
 	);

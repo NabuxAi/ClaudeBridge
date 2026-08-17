@@ -6,3 +6,5 @@ export { SidebarItem, Tabs } from './nav.jsx'
 export { AuthorityBadge, ActivityRow } from './domain.jsx'
 export { default as Icon } from '../lib/icons.jsx'
 export { NotMeasured, Provenance } from './notmeasured.jsx'
+export { Skeleton, SkeletonCard, SkeletonTable, SkeletonStats } from './Skeleton.jsx'
+

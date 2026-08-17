@@ -177,6 +177,25 @@ export function site(siteId) {
     ),
     // Backups. Both writes are queued on the site — a dump or a replay inside
     // a request would hold a PHP worker for minutes.
+    backupPreflight: call(
+      () => Promise.resolve({
+        ok: true,
+        free_disk_bytes: 4 * 1024 * 1024 * 1024,
+        free_disk_formatted: '۴.۰ GB',
+        total_full_bytes: 250 * 1024 * 1024,
+        total_full_formatted: '۲۵۰.۰ MB',
+        total_full_duration: 30,
+        can_full_backup: true,
+        can_db_backup: true,
+        sections: {
+          db: { key: 'db', title: 'پایگاه داده (SQL)', description: 'جداول و رکوردهای دیتابیس', bytes: 35 * 1024 * 1024, formatted: '۳۵.۰ MB', duration_sec: 5, required: true },
+          plugins: { key: 'plugins', title: 'افزونه‌ها (Plugins)', description: 'پوشه wp-content/plugins', bytes: 85 * 1024 * 1024, formatted: '۸۵.۰ MB', duration_sec: 10, required: false },
+          themes: { key: 'themes', title: 'قالب‌ها (Themes)', description: 'پوشه wp-content/themes', bytes: 20 * 1024 * 1024, formatted: '۲۰.۰ MB', duration_sec: 4, required: false },
+          uploads: { key: 'uploads', title: 'رسانه‌ها و آپلودها (Uploads)', description: 'پوشه wp-content/uploads', bytes: 110 * 1024 * 1024, formatted: '۱۱۰.۰ MB', duration_sec: 14, required: false },
+        },
+      }),
+      () => http(p('/backups/preflight'))
+    ),
     runBackup: call(
       (body) => mock.runBackup(siteId, body),
       (body) => http(p('/backups'), { method: 'POST', body: body || {} })

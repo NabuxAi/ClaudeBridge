@@ -31,6 +31,7 @@ export const READ_TOOLS = Object.freeze([
   'site_info',
   'update_status',
   'backup_list',
+  'backup_preflight',
   'backup_read',
   'list_plugins',
   'list_themes',

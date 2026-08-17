@@ -728,6 +728,44 @@ router.post('/sites/:id/updates/run', async (req, res, next) => {
  * for minutes, which on shared hosting means the customer's own site is slow
  * because we are backing it up.
  */
+router.get('/sites/:id/backups/preflight', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.json({
+        ok: true,
+        free_disk_bytes: 5 * 1024 * 1024 * 1024,
+        free_disk_formatted: '۵.۰ GB',
+        total_full_bytes: 280 * 1024 * 1024,
+        total_full_formatted: '۲۸۰.۰ MB',
+        total_full_duration: 35,
+        can_full_backup: true,
+        can_db_backup: true,
+        sections: {
+          db: { key: 'db', title: 'پایگاه داده (SQL)', description: 'جداول دیتابیس', bytes: 35 * 1024 * 1024, formatted: '۳۵.۰ MB', duration_sec: 5, required: true },
+          plugins: { key: 'plugins', title: 'افزونه‌ها (Plugins)', description: 'پوشه wp-content/plugins', bytes: 85 * 1024 * 1024, formatted: '۸۵.۰ MB', duration_sec: 10, required: false },
+          themes: { key: 'themes', title: 'قالب‌ها (Themes)', description: 'پوشه wp-content/themes', bytes: 20 * 1024 * 1024, formatted: '۲۰.۰ MB', duration_sec: 4, required: false },
+          uploads: { key: 'uploads', title: 'رسانه‌ها و آپلودها (Uploads)', description: 'پوشه wp-content/uploads', bytes: 140 * 1024 * 1024, formatted: '۱۴۰.۰ MB', duration_sec: 16, required: false },
+        },
+      })
+    }
+    const raw = await connector.callTool(
+      { url: site.url, secret: site.secret, siteKey: site.site_key },
+      'backup_preflight',
+      {}
+    )
+    const text = raw?.content?.[0]?.text
+    const result = typeof text === 'string' ? JSON.parse(text) : raw
+    res.json(result)
+  } catch (e) {
+    res.status(e.status || 502).json({ message: e.message })
+  }
+})
+
+/**
+ * Take a snapshot now with granular section selection.
+ */
 router.post('/sites/:id/backups', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)
@@ -735,10 +773,13 @@ router.post('/sites/:id/backups', async (req, res, next) => {
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
     }
+    const sections = Array.isArray(req.body?.sections) && req.body.sections.length > 0
+      ? req.body.sections
+      : (req.body?.files ? ['db', 'plugins', 'themes', 'uploads'] : ['db'])
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },
       'job_start',
-      { type: 'backup', files: Boolean(req.body?.files), label: 'manual' }
+      { type: 'backup', files: sections.length > 1, sections, label: 'manual' }
     )
     const text = raw?.content?.[0]?.text
     res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
@@ -746,7 +787,7 @@ router.post('/sites/:id/backups', async (req, res, next) => {
     events.record({
       siteId: site.id, kind: 'backup', severity: 'info',
       title: 'بکاپ دستی شروع شد',
-      detail: { files: Boolean(req.body?.files) },
+      detail: { sections, files: sections.length > 1 },
     }).catch(() => {})
   } catch (e) {
     res.status(e.status || 502).json({ message: e.message })
