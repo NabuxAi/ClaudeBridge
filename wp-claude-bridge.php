@@ -2927,6 +2927,7 @@ function cb_job_update_apply( $job ) {
 	$item = $state['queue'][ $state['i'] ];
 	$skin = cb_upgrader_skin();
 	try {
+		ob_start();
 		if ( 'core' === $item['type'] ) {
 			$up = new Core_Upgrader( $skin );
 			$core_updates = get_core_updates();
@@ -2967,6 +2968,7 @@ function cb_job_update_apply( $job ) {
 			$up  = new Plugin_Upgrader( $skin );
 			$res = $up->upgrade( $target );
 		}
+		$captured_output = ob_get_clean();
 
 		if ( is_wp_error( $res ) ) {
 			$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => $res->get_error_message() );
@@ -2976,6 +2978,9 @@ function cb_job_update_apply( $job ) {
 			$state['applied'][] = array( 'name' => $item['name'], 'type' => $item['type'] );
 		}
 	} catch ( Throwable $e ) {
+		if ( ob_get_level() ) {
+			ob_end_clean();
+		}
 		$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => $e->getMessage() );
 	}
 
@@ -3591,11 +3596,13 @@ function cb_op_install_plugin( $args ) {
 		return new WP_Error( 'cb_need', 'Provide slug (wp.org) or zip_url.' );
 	}
 	$upgrader = new Plugin_Upgrader( $skin );
+	ob_start();
 	$res      = $upgrader->install( $source );
+	$captured = ob_get_clean();
 	if ( is_wp_error( $res ) ) {
 		return $res;
 	}
-	$out = array( 'installed' => (bool) $res, 'plugin' => $upgrader->plugin_info() );
+	$out = array( 'installed' => (bool) $res, 'plugin' => $upgrader->plugin_info(), 'output' => $captured );
 	if ( ! empty( $args['activate'] ) && $out['plugin'] ) {
 		$act = activate_plugin( $out['plugin'] );
 		$out['activated'] = is_wp_error( $act ) ? $act->get_error_message() : true;
@@ -3620,11 +3627,13 @@ function cb_op_install_theme( $args ) {
 		return new WP_Error( 'cb_need', 'Provide slug (wp.org) or zip_url.' );
 	}
 	$upgrader = new Theme_Upgrader( $skin );
+	ob_start();
 	$res      = $upgrader->install( $source );
+	$captured = ob_get_clean();
 	if ( is_wp_error( $res ) ) {
 		return $res;
 	}
-	$out = array( 'installed' => (bool) $res, 'theme' => $upgrader->theme_info() ? $upgrader->theme_info()->get_stylesheet() : null );
+	$out = array( 'installed' => (bool) $res, 'theme' => $upgrader->theme_info() ? $upgrader->theme_info()->get_stylesheet() : null, 'output' => $captured );
 	if ( ! empty( $args['activate'] ) && $out['theme'] ) {
 		switch_theme( $out['theme'] );
 		$out['activated'] = true;
