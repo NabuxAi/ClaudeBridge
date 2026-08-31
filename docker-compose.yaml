@@ -34,7 +34,8 @@ services:
   # ---- the واسط server (only backend the hub talks to) ----
   server:
     build:
-      context: ./server
+      context: .
+      dockerfile: server/Dockerfile
     restart: unless-stopped
     environment:
       # Coolify: give the واسط API its own public domain, routed to port 8787.

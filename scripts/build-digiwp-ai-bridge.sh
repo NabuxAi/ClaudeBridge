@@ -48,8 +48,9 @@ The server URL is pre-filled. From then on the site only accepts signed commands
 from your DigiWP server.
 
 Development playbooks are intentionally not stored in the site's webroot. The
-built-in cookbook remains available, and connected clients can supply their own
-engineering guidance.
+same 18 playbooks remain available through list_wp_skills/get_wp_skill and are
+loaded as read-only text from the configured DigiWP server only when requested.
+The built-in cookbook and all site-management tools remain available offline.
 TXT
 
 # 3) Zip it (top-level folder = the slug, as WordPress expects).

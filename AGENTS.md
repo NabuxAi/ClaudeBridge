@@ -43,7 +43,8 @@ AI/MCP client --------------------------------> WordPress plugin directly
      Connector Mode.
    - PHP 7.4+ / WordPress 5.6+ target.
    - Version at baseline: `3.7.4`.
-   - Current release after the 2026-08-31 archive-scanner remediation: `3.7.5`.
+   - Current release after the 2026-08-31 archive-scanner remediation and
+     on-demand playbook restoration: `3.7.6`.
    - 6,121 lines and approximately 142 advertised tools at baseline: 16 initial
      tools, 79 generated CRUD tools, and 47 appended tools.
 
@@ -70,7 +71,8 @@ Support**. Keep these roles explicit instead of mixing the names casually.
 - `skills/` — repository-side WordPress engineering playbooks. As of `3.7.5`
   they are not copied into either WordPress release archive; security-review
   documents contain literal vulnerable-code examples that do not belong in a
-  site's executable webroot.
+  site's executable webroot. As of `3.7.6`, the DigiWP server exposes them as
+  read-only, path-validated JSON and the plugin loads requested files on demand.
 - `server/src/index.js` — Express composition, middleware, protected routes, and
   scheduler startup.
 - `server/src/config.js` — all server environment configuration.
@@ -85,7 +87,8 @@ Support**. Keep these roles explicit instead of mixing the names casually.
   and terminal outcomes.
 - `server/src/intel/` — NVD, WordPress.org matching, YARA/signature feeds, and
   hash-only threat intelligence.
-- `server/src/routes/` — auth, account, site, connector, and cookbook APIs.
+- `server/src/routes/` — auth, account, site, connector, cookbook, and on-demand
+  playbook APIs.
 - `server/test/` — Node test suite, including database-dependent integration
   tests.
 - `hub/src/lib/api.js` — the only hub API client; real/mock routing happens here.
@@ -481,7 +484,7 @@ external-services/privacy disclosure. Optional external calls are acceptable;
 hidden external calls are not.
 
 **Status: resolved (counts aligned).** `PRODUCT_SPEC.md` now says "more than 130
-tools" instead of 58. README badges track `CB_VERSION` (currently 3.7.5). The
+tools" instead of 58. README badges track `CB_VERSION` (currently 3.7.6). The
 "100+ tools" copy in every translated README is updated to "130+ tools". The
 external-services/privacy disclosure remains in the roadmap.
 
@@ -500,13 +503,16 @@ hosting notice did not include the scanner product, signature id, or matched
 inner file, so this evidence supports a false-positive explanation but does not
 prove the host's exact detection rule.
 
-**Status: resolved in 3.7.5.** The self-hosted release now contains only its PHP
-runtime and readme. Development playbooks remain in the repository, outside the
-site webroot. Skill tools are advertised only if an operator separately installs
-local playbooks, cookbook prompts no longer depend on them, and release tests pin
-the self-hosted payload to the two intended runtime files. The release was also
-rebuilt from current source; the blocked ZIP predated the latest canonical PHP
-change even though it carried the same 3.7.4 version.
+**Status: resolved in 3.7.5 and compatibility-restored in 3.7.6.** The self-hosted
+release contains only its PHP runtime and readme. Development playbooks remain
+outside the site webroot. The DigiWP server exposes their catalog and individual
+files through read-only, path-validated endpoints; the plugin fetches and caches
+only requested text. This restores `list_wp_skills`, `get_wp_skill`, MCP resources,
+MCP prompts, and playbook-assisted cookbook recipes without returning scanner
+signatures to the upload archive. Operator-provided local playbooks remain a
+fallback. Release tests pin the self-hosted payload to the two intended runtime
+files. The blocked ZIP predated the latest canonical PHP change even though it
+carried the same 3.7.4 version.
 
 ## Product truth rules
 

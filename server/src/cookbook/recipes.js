@@ -22,12 +22,14 @@ export const RECIPES = [
       "Code review"
     ],
     "tools": [
+      "list_wp_skills",
+      "get_wp_skill",
       "list_plugins",
       "list_files",
       "read_file",
       "edit_file"
     ],
-    "prompt": "Audit this WordPress site for security problems in the code we control.\n\n1. Scope: the active theme plus these custom plugins: [plugin folder names, or \"every plugin not from wordpress.org\"]. Skip well-known third-party plugins.\n2. Look for missing capability checks, missing nonces on form/AJAX/REST handlers, unescaped output, unsanitized input, direct SQL without $wpdb->prepare, unrestricted file uploads, and dynamic code execution or unsafe deserialization on user input.\n3. Report findings first, ranked by how exploitable they are, with file:line and a one-line proof of how it would be abused. Do not change anything yet.\n4. Then fix them one file at a time, showing me the diff before each edit, starting with the worst.\n\nDo not touch wp-config.php or core files."
+    "prompt": "Audit this WordPress site for security problems in the code we control.\n\n1. Load the on-demand wp-security-review playbook (list_wp_skills, then get_wp_skill) and follow it.\n2. Scope: the active theme plus these custom plugins: [plugin folder names, or \"every plugin not from wordpress.org\"]. Skip well-known third-party plugins.\n3. Look for missing capability checks, missing nonces on form/AJAX/REST handlers, unescaped output, unsanitized input, direct SQL without $wpdb->prepare, unrestricted file uploads, and anything using eval/unserialize on user input.\n4. Report findings first, ranked by how exploitable they are, with file:line and a one-line proof of how it would be abused. Do not change anything yet.\n5. Then fix them one file at a time, showing me the diff before each edit, starting with the worst.\n\nDo not touch wp-config.php or core files."
   },
   {
     "id": "white-screen",
@@ -55,13 +57,14 @@ export const RECIPES = [
       "Performance"
     ],
     "tools": [
+      "get_wp_skill",
       "db_query",
       "read_file",
       "edit_file",
       "render_page",
       "flush_cache"
     ],
-    "prompt": "Find out why [page URL, e.g. the shop or homepage] is slow, and fix the top three causes.\n\n1. Check the size of autoloaded options with db_query (sum of option data where autoload = yes, plus the ten biggest rows) and tell me what is bloating it.\n2. Read the active theme and our custom plugins for the classic offenders: queries inside loops, posts_per_page => -1, meta_query without an index, uncached remote requests, get_option in a loop, missing transients.\n3. Render the page and list render-blocking scripts and styles that are loaded site-wide but only used on one template.\n4. Report findings ranked by expected impact, then fix the top three, showing me each diff first. Flush caches when done."
+    "prompt": "Find out why [page URL, e.g. the shop or homepage] is slow, and fix the top three causes.\n\n1. Load the on-demand wp-performance-review playbook and follow it.\n2. Check the size of autoloaded options with db_query (sum of option data where autoload = yes, plus the ten biggest rows) and tell me what is bloating it.\n3. Read the active theme and our custom plugins for the classic offenders: queries inside loops, posts_per_page => -1, meta_query without an index, uncached remote requests, get_option in a loop, missing transients.\n4. Render the page and list render-blocking scripts and styles that are loaded site-wide but only used on one template.\n5. Report findings ranked by expected impact, then fix the top three, showing me each diff first. Flush caches when done."
   },
   {
     "id": "plugin-bloat",
@@ -126,12 +129,13 @@ export const RECIPES = [
       "Plugins"
     ],
     "tools": [
+      "get_wp_skill",
       "create_plugin",
       "write_file",
       "edit_file",
       "set_plugin_state"
     ],
-    "prompt": "Build me a small WordPress plugin on this site.\n\nWhat it should do: [describe the behaviour in plain language — e.g. \"add a Delivery Date field to the checkout, store it on the order, show it in the admin order screen and in the order confirmation email\"].\n\nRules:\n- Follow WordPress plugin structure and naming conventions; keep bootstrap, hooks, and business logic separated where the size warrants it.\n- Prefix everything with [your prefix], text domain [your-text-domain].\n- Escape all output, sanitize all input, check capabilities and nonces on every write path.\n- Scaffold with create_plugin, then write the real files. Show me the plan and the file list before you write code.\n- Activate it when it is done and tell me exactly how to test it."
+    "prompt": "Build me a small WordPress plugin on this site.\n\nWhat it should do: [describe the behaviour in plain language — e.g. \"add a Delivery Date field to the checkout, store it on the order, show it in the admin order screen and in the order confirmation email\"].\n\nRules:\n- Load the on-demand wp-plugin-development playbook first and follow its structure and naming conventions.\n- Prefix everything with [your prefix], text domain [your-text-domain].\n- Escape all output, sanitize all input, check capabilities and nonces on every write path.\n- Scaffold with create_plugin, then write the real files. Show me the plan and the file list before you write code.\n- Activate it when it is done and tell me exactly how to test it."
   },
   {
     "id": "rest-endpoint",
@@ -143,11 +147,12 @@ export const RECIPES = [
       "REST API"
     ],
     "tools": [
+      "get_wp_skill",
       "write_file",
       "edit_file",
       "wp_rest"
     ],
-    "prompt": "Add a REST endpoint to this site.\n\nRoute: [namespace/v1/thing]. It should [what it returns or accepts]. Who may call it: [logged-out / logged-in / a specific capability].\n\nUse a real permission_callback (never __return_true unless the data is genuinely public and you say so out loud), an args schema with sanitize and validate callbacks, and a documented response shape.\n\nPut it in [existing plugin folder, or scaffold a new one]. When it is live, call it through the bridge and show me the actual response."
+    "prompt": "Add a REST endpoint to this site.\n\nRoute: [namespace/v1/thing]. It should [what it returns or accepts]. Who may call it: [logged-out / logged-in / a specific capability].\n\nLoad the on-demand wp-rest-api-development playbook first and follow it. I want a real permission_callback (never __return_true unless the data is genuinely public and you say so out loud), an args schema with sanitize and validate callbacks, and a documented response shape.\n\nPut it in [existing plugin folder, or scaffold a new one]. When it is live, call it through the bridge and show me the actual response."
   },
   {
     "id": "child-theme",
@@ -327,11 +332,12 @@ export const RECIPES = [
       "Theme"
     ],
     "tools": [
+      "get_wp_skill",
       "render_page",
       "read_file",
       "edit_file"
     ],
-    "prompt": "Do an accessibility pass on this site.\n\nTemplates to review: [homepage, single post, the main archive, checkout — adjust to this site].\n\nRender each one and check the real markup: heading order, landmarks, form labels, alt text, focus styles, keyboard operability of menus and modals, ARIA that contradicts the element it sits on, and controls that are only reachable with a mouse.\n\nReport issues grouped by template with the offending markup, then fix them in the theme files, showing me each diff. Do not add an accessibility overlay."
+    "prompt": "Do an accessibility pass on this site.\n\nLoad the on-demand wp-accessibility-review playbook and follow it. Templates to review: [homepage, single post, the main archive, checkout — adjust to this site].\n\nRender each one and check the real markup: heading order, landmarks, form labels, alt text, focus styles, keyboard operability of menus and modals, ARIA that contradicts the element it sits on, and controls that are only reachable with a mouse.\n\nReport issues grouped by template with the offending markup, then fix them in the theme files, showing me each diff. Do not add an accessibility overlay."
   },
   {
     "id": "theme-json-rebrand",
@@ -343,12 +349,13 @@ export const RECIPES = [
       "Design"
     ],
     "tools": [
+      "get_wp_skill",
       "read_file",
       "write_file",
       "edit_file",
       "render_page"
     ],
-    "prompt": "Rebrand this block theme through theme.json instead of custom CSS.\n\nBrand colors: [hex codes and what each is for]. Heading font: [font]. Body font: [font]. Feel: [tight and technical / soft and editorial / …].\n\nRead the current theme.json, then set the palette, gradients, font families and sizes, and spacing scale as proper presets. Replace hardcoded colors and font sizes in templates and CSS with the presets you just defined.\n\nWork in a child theme if the active theme is from wordpress.org. Render the homepage and a single post before and after, and tell me what still needs manual attention."
+    "prompt": "Rebrand this block theme through theme.json instead of custom CSS.\n\nBrand colors: [hex codes and what each is for]. Heading font: [font]. Body font: [font]. Feel: [tight and technical / soft and editorial / …].\n\nLoad the on-demand wp-theme-development playbook first. Read the current theme.json, then set the palette, gradients, font families and sizes, and spacing scale as proper presets. Replace hardcoded colors and font sizes in templates and CSS with the presets you just defined.\n\nWork in a child theme if the active theme is from wordpress.org. Render the homepage and a single post before and after, and tell me what still needs manual attention."
   },
   {
     "id": "reusable-pattern",
@@ -378,12 +385,13 @@ export const RECIPES = [
       "Migration"
     ],
     "tools": [
+      "get_wp_skill",
       "list_themes",
       "list_files",
       "read_file",
       "site_info"
     ],
-    "prompt": "Tell me what it would really take to move this site from its classic theme to a block theme.\n\nInventory the active theme: template files and what each does, custom template tags, widget areas, menus, customizer settings, shortcodes, custom post types tied to templates, and anything that depends on the loop being classic.\n\nGive me a migration plan in phases with an effort estimate per phase, what breaks if we do nothing, and what could move to a hybrid setup first. Be blunt about the parts that are not worth migrating. Do not change anything yet."
+    "prompt": "Tell me what it would really take to move this site from its classic theme to a block theme.\n\nLoad the on-demand wp-theme-development playbook. Then inventory the active theme: template files and what each does, custom template tags, widget areas, menus, customizer settings, shortcodes, custom post types tied to templates, and anything that depends on the loop being classic.\n\nGive me a migration plan in phases with an effort estimate per phase, what breaks if we do nothing, and what could move to a hybrid setup first. Be blunt about the parts that are not worth migrating. Do not change anything yet."
   },
   {
     "id": "woo-noindex-categories",
@@ -485,12 +493,13 @@ export const RECIPES = [
       "Code review"
     ],
     "tools": [
+      "get_wp_skill",
       "list_plugins",
       "list_files",
       "read_file",
       "edit_file"
     ],
-    "prompt": "Review every customization we have made to the WooCommerce checkout and cart.\n\nLook in the active theme (including any woocommerce/ template overrides) and in our custom plugins.\n\nI want to know: which template overrides are outdated compared to the plugin's current versions, any direct post-meta access that breaks under HPOS, missing nonce or capability checks on checkout hooks, anything doing remote requests during checkout, and cart fragment abuse.\n\nReport first, with file:line and impact. Then fix in order of risk, one diff at a time."
+    "prompt": "Review every customization we have made to the WooCommerce checkout and cart.\n\nLoad the on-demand wp-woocommerce-dev playbook and follow it. Look in the active theme (including any woocommerce/ template overrides) and in our custom plugins.\n\nI want to know: which template overrides are outdated compared to the plugin's current versions, any direct post-meta access that breaks under HPOS, missing nonce or capability checks on checkout hooks, anything doing remote requests during checkout, and cart fragment abuse.\n\nReport first, with file:line and impact. Then fix in order of risk, one diff at a time."
   },
   {
     "id": "elementor-header-footer",
@@ -557,12 +566,13 @@ export const RECIPES = [
       "Development"
     ],
     "tools": [
+      "get_wp_skill",
       "list_post_types",
       "write_file",
       "read_file",
       "list_files"
     ],
-    "prompt": "Design and build a content type on this site: [e.g. \"case studies\", \"team members\", \"properties\"].\n\nLook at how existing post types and field groups are defined here and stay consistent.\n\nGive me the model first: post type, taxonomies, every field with its type, name, and why it exists — plus what should NOT be a field. Point out anything that will be slow to query later.\n\nAfter I approve the model: register the post type in a plugin (not the theme), create the field group, save it as ACF JSON in the repo, and build the template that renders it."
+    "prompt": "Design and build a content type on this site: [e.g. \"case studies\", \"team members\", \"properties\"].\n\nLoad the on-demand wp-acf-and-content-modeling playbook and follow it. Look at how existing post types and field groups are defined here and stay consistent.\n\nGive me the model first: post type, taxonomies, every field with its type, name, and why it exists — plus what should NOT be a field. Point out anything that will be slow to query later.\n\nAfter I approve the model: register the post type in a plugin (not the theme), create the field group, save it as ACF JSON in the repo, and build the template that renders it."
   },
   {
     "id": "forms-review",
@@ -609,6 +619,7 @@ export const RECIPES = [
       "Reporting"
     ],
     "tools": [
+      "get_wp_skill",
       "site_info",
       "list_plugins",
       "list_themes",
@@ -616,6 +627,6 @@ export const RECIPES = [
       "count_posts",
       "db_query"
     ],
-    "prompt": "I just inherited this WordPress site and know nothing about it. Orient me.\n\nTell me: what the site is for, what stack it runs (page builder, shop, headless, multisite, custom plugins), which code is custom and therefore ours to maintain, where the customizations live, what looks abandoned, and what would scare you if you had to deploy a change tomorrow.\n\nFinish with the three things I should look at first, and which of this cookbook's recipes fit this site."
+    "prompt": "I just inherited this WordPress site and know nothing about it. Orient me.\n\nLoad the on-demand wp-site-audit-and-onboarding playbook and follow it.\n\nTell me: what the site is for, what stack it runs (page builder, shop, headless, multisite, custom plugins), which code is custom and therefore ours to maintain, where the customizations live, what looks abandoned, and what would scare you if you had to deploy a change tomorrow.\n\nFinish with the three things I should look at first, and which of this cookbook's recipes fit this site."
   }
 ]

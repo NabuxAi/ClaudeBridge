@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.7.5
+ * Version: 3.7.6
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.7.5' );
+define( 'CB_VERSION', '3.7.6' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -1491,7 +1491,7 @@ function cb_fetch_signatures() {
 	if ( is_array( $t ) && ! empty( $t['signatures'] ) ) {
 		return $cache = $t['signatures'];
 	}
-	$base = function_exists( 'cb_update_server_base' ) ? cb_update_server_base() : '';
+	$base = cb_service_base();
 	if ( '' !== $base ) {
 		$resp = wp_remote_get( $base . '/security/signatures', array( 'timeout' => 12 ) );
 		if ( ! is_wp_error( $resp ) && 200 === (int) wp_remote_retrieve_response_code( $resp ) ) {
@@ -1573,7 +1573,7 @@ function cb_fetch_signature_rules() {
 	if ( is_array( $t ) ) {
 		return $cache = $t;
 	}
-	$base = function_exists( 'cb_update_server_base' ) ? cb_update_server_base() : '';
+	$base = cb_service_base();
 	$rules = array();
 	if ( '' !== $base ) {
 		$resp = wp_remote_get( rtrim( $base, '/' ) . '/signatures', array( 'timeout' => 15 ) );
@@ -1865,12 +1865,12 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'update_meta', 'description' => 'Set a metadata value.', 'inputSchema' => array( 'type' => 'object', 'properties' => $meta_props + array( 'value' => array( 'description' => 'Any JSON value.' ) ), 'required' => array( 'object_id', 'key', 'value' ) ), 'op' => 'cb_op_update_meta' );
 	$tools[] = array( 'name' => 'delete_meta', 'description' => 'Delete a metadata key.', 'inputSchema' => array( 'type' => 'object', 'properties' => $meta_props, 'required' => array( 'object_id', 'key' ) ), 'op' => 'cb_op_delete_meta' );
 
-	// Optional local WordPress playbooks. Release packages intentionally omit
-	// development documents from the site's executable webroot, so advertise
-	// these tools only when an operator has installed a skills directory.
+	// WordPress playbooks are loaded on demand from the configured DigiWP server,
+	// or from an operator-provided local directory. Release packages intentionally
+	// keep the source documents out of the site's executable webroot.
 	if ( cb_skill_list() ) {
-		$tools[] = array( 'name' => 'list_wp_skills', 'description' => 'List locally installed WordPress engineering playbooks. Call this first, then get_wp_skill to load the matching one before doing WordPress work.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_list_wp_skills', 'noargs' => true );
-		$tools[] = array( 'name' => 'get_wp_skill', 'description' => 'Load a locally installed WordPress playbook or one of its reference files.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Playbook name.' ), 'file' => array( 'type' => 'string', 'description' => 'Optional file within the playbook. Defaults to SKILL.md.' ) ), 'required' => array( 'name' ) ), 'op' => 'cb_op_get_wp_skill' );
+		$tools[] = array( 'name' => 'list_wp_skills', 'description' => 'List the available WordPress engineering playbooks (security, performance, blocks, themes, WooCommerce, REST, testing, operations, and more). Call this first, then get_wp_skill to load the matching one before doing WordPress work.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_list_wp_skills', 'noargs' => true );
+		$tools[] = array( 'name' => 'get_wp_skill', 'description' => 'Load an available WordPress playbook or one of its reference files on demand.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Playbook name, e.g. "wp-security-review".' ), 'file' => array( 'type' => 'string', 'description' => 'Optional file within the playbook, e.g. "references/escaping-guide.md". Defaults to SKILL.md.' ) ), 'required' => array( 'name' ) ), 'op' => 'cb_op_get_wp_skill' );
 	}
 
 	$tools[] = array( 'name' => 'core_integrity', 'description' => 'Verify every WordPress core file against the official md5 manifest from api.wordpress.org for this exact version and locale. Reports modified core files, missing ones, and — the finding that actually catches backdoors — files sitting inside wp-admin/ or wp-includes/ that WordPress never shipped. Read-only. A clean core has all three lists empty.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_core_integrity', 'noargs' => true );
@@ -3815,21 +3815,28 @@ function cb_mcp_altroute() {
 }
 
 /* ============================================================================
- * 5b. OPTIONAL LOCAL WORDPRESS PLAYBOOKS
- * Development checklists may be installed alongside the plugin by an operator.
- * Public release archives keep them out of the executable webroot because
- * security playbooks necessarily contain examples of vulnerable code. When
- * present, they are exposed as tools, MCP resources, and MCP prompts.
+ * 5b. ON-DEMAND WORDPRESS PLAYBOOKS
+ * Public release archives keep development documents out of the executable
+ * webroot because security playbooks necessarily contain examples of vulnerable
+ * code. The DigiWP build fetches one requested text file at a time from its
+ * configured server. An operator-provided local directory remains supported.
+ * Both sources are exposed as tools, MCP resources, and MCP prompts.
  * ========================================================================== */
+
+/** Base URL for centrally served read-only data such as recipes and playbooks. */
+function cb_service_base() {
+	$c = cb_connector();
+	return ! empty( $c['server_url'] ) ? rtrim( (string) $c['server_url'], '/' ) : '';
+}
 
 function cb_skills_dir() {
 	return untrailingslashit( plugin_dir_path( __FILE__ ) ) . '/skills';
 }
 
-/** Resolve & sandbox a relative path inside a single bundled skill directory. */
+/** Resolve and sandbox a relative path inside one operator-provided skill. */
 function cb_skill_path( $slug, $rel = '' ) {
 	$slug = trim( (string) $slug );
-	if ( $slug === '' || strpos( $slug, '..' ) !== false || strpos( $slug, '/' ) !== false || strpos( $slug, '\\' ) !== false ) {
+	if ( ! cb_skill_name_valid( $slug ) ) {
 		return new WP_Error( 'cb_bad_skill', 'Invalid skill name.' );
 	}
 	$root = realpath( cb_skills_dir() . '/' . $slug );
@@ -3846,7 +3853,7 @@ function cb_skill_path( $slug, $rel = '' ) {
 		}
 	}
 	$real = realpath( $root . '/' . $rel );
-	if ( $real === false || strpos( $real, $root ) !== 0 || ! is_file( $real ) ) {
+	if ( $real === false || strpos( $real, $root . DIRECTORY_SEPARATOR ) !== 0 || ! is_file( $real ) ) {
 		return new WP_Error( 'cb_no_file', "File '$rel' not found in skill '$slug'." );
 	}
 	return $real;
@@ -3867,7 +3874,25 @@ function cb_skill_frontmatter( $md ) {
 	return $out;
 }
 
-/** List every bundled skill with its metadata and available files. Cached per-request. */
+/** Is a playbook slug safe to use in a local path or remote URL? */
+function cb_skill_name_valid( $slug ) {
+	return is_string( $slug ) && (bool) preg_match( '/^[a-z0-9][a-z0-9-]{0,79}$/', $slug );
+}
+
+/** Is a playbook-relative path traversal-free? */
+function cb_skill_file_valid( $file ) {
+	if ( ! is_string( $file ) || '' === $file || '/' === substr( $file, 0, 1 ) || false !== strpos( $file, '\\' ) ) {
+		return false;
+	}
+	foreach ( explode( '/', $file ) as $segment ) {
+		if ( '' === $segment || '.' === $segment || '..' === $segment ) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/** List local playbooks, or the DigiWP catalog when none are installed locally. */
 function cb_skill_list() {
 	static $cache = null;
 	if ( $cache !== null ) {
@@ -3905,11 +3930,104 @@ function cb_skill_list() {
 	usort( $skills, function ( $a, $b ) {
 		return strcmp( $a['name'], $b['name'] );
 	} );
-	$cache = $skills;
-	return $skills;
+	if ( $skills ) {
+		return $cache = $skills;
+	}
+
+	$stored = get_transient( 'cb_skills_catalog' );
+	if ( is_array( $stored ) ) {
+		return $cache = $stored;
+	}
+	$base = cb_service_base();
+	if ( '' === $base ) {
+		return $cache = array();
+	}
+
+	$resp = wp_remote_get( $base . '/skills', array( 'timeout' => 12, 'limit_response_size' => 1024 * 1024 ) );
+	if ( ! is_wp_error( $resp ) && 200 === (int) wp_remote_retrieve_response_code( $resp ) ) {
+		$data   = json_decode( (string) wp_remote_retrieve_body( $resp ), true );
+		$remote = array();
+		foreach ( isset( $data['skills'] ) && is_array( $data['skills'] ) ? $data['skills'] : array() as $skill ) {
+			$name = isset( $skill['name'] ) ? (string) $skill['name'] : '';
+			if ( ! cb_skill_name_valid( $name ) || empty( $skill['files'] ) || ! is_array( $skill['files'] ) ) {
+				continue;
+			}
+			$files = array_values( array_filter( array_map( 'strval', $skill['files'] ), 'cb_skill_file_valid' ) );
+			if ( ! in_array( 'SKILL.md', $files, true ) ) {
+				continue;
+			}
+			$remote[] = array(
+				'name'        => $name,
+				'title'       => isset( $skill['title'] ) ? sanitize_text_field( $skill['title'] ) : $name,
+				'description' => isset( $skill['description'] ) ? sanitize_text_field( $skill['description'] ) : '',
+				'files'       => $files,
+			);
+		}
+		usort( $remote, function ( $a, $b ) {
+			return strcmp( $a['name'], $b['name'] );
+		} );
+		if ( $remote ) {
+			set_transient( 'cb_skills_catalog', $remote, DAY_IN_SECONDS );
+			return $cache = $remote;
+		}
+	}
+
+	// Avoid repeating a failed remote request on every MCP operation.
+	set_transient( 'cb_skills_catalog', array(), 5 * MINUTE_IN_SECONDS );
+	return $cache = array();
 }
 
-/** Tool op: list all bundled skills. */
+/** Read one validated playbook file locally or from the configured server. */
+function cb_skill_content( $slug, $file = 'SKILL.md' ) {
+	$slug = (string) $slug;
+	$file = ltrim( str_replace( '\\', '/', (string) $file ), '/' );
+	if ( ! cb_skill_name_valid( $slug ) ) {
+		return new WP_Error( 'cb_bad_skill', 'Invalid skill name.' );
+	}
+	if ( ! cb_skill_file_valid( $file ) ) {
+		return new WP_Error( 'cb_traversal', 'Invalid skill file.' );
+	}
+
+	$path = cb_skill_path( $slug, $file );
+	if ( ! is_wp_error( $path ) ) {
+		$content = cb_get_contents( $path );
+		return false === $content ? new WP_Error( 'cb_read_fail', 'Could not read skill file.' ) : (string) $content;
+	}
+
+	$allowed = false;
+	foreach ( cb_skill_list() as $skill ) {
+		if ( $skill['name'] === $slug && in_array( $file, $skill['files'], true ) ) {
+			$allowed = true;
+			break;
+		}
+	}
+	if ( ! $allowed ) {
+		return new WP_Error( 'cb_no_file', "File '$file' not found in skill '$slug'." );
+	}
+
+	$key    = 'cb_skill_' . md5( $slug . "\n" . $file );
+	$stored = get_transient( $key );
+	if ( is_string( $stored ) ) {
+		return $stored;
+	}
+	$base = cb_service_base();
+	if ( '' === $base ) {
+		return new WP_Error( 'cb_no_skill_source', 'The playbook service is not configured.' );
+	}
+	$url  = add_query_arg( 'file', $file, $base . '/skills/' . rawurlencode( $slug ) );
+	$resp = wp_remote_get( $url, array( 'timeout' => 15, 'limit_response_size' => 512 * 1024 ) );
+	if ( is_wp_error( $resp ) || 200 !== (int) wp_remote_retrieve_response_code( $resp ) ) {
+		return new WP_Error( 'cb_skill_fetch', 'Could not load the requested playbook.' );
+	}
+	$data = json_decode( (string) wp_remote_retrieve_body( $resp ), true );
+	if ( ! is_array( $data ) || ! isset( $data['content'] ) || ! is_string( $data['content'] ) || ! isset( $data['skill'], $data['file'] ) || $data['skill'] !== $slug || $data['file'] !== $file ) {
+		return new WP_Error( 'cb_skill_response', 'The playbook service returned an invalid response.' );
+	}
+	set_transient( $key, $data['content'], DAY_IN_SECONDS );
+	return $data['content'];
+}
+
+/** Tool op: list all available playbooks. */
 function cb_op_list_wp_skills() {
 	$skills = cb_skill_list();
 	return array(
@@ -3919,17 +4037,13 @@ function cb_op_list_wp_skills() {
 	);
 }
 
-/** Tool op: return the contents of a bundled skill file (SKILL.md by default). */
+/** Tool op: return one available playbook file (SKILL.md by default). */
 function cb_op_get_wp_skill( $args ) {
 	$slug = isset( $args['name'] ) ? $args['name'] : ( isset( $args['skill'] ) ? $args['skill'] : '' );
 	$file = ( isset( $args['file'] ) && $args['file'] !== '' ) ? $args['file'] : 'SKILL.md';
-	$path = cb_skill_path( $slug, $file );
-	if ( is_wp_error( $path ) ) {
-		return $path;
-	}
-	$content = cb_get_contents( $path );
-	if ( $content === false ) {
-		return new WP_Error( 'cb_read_fail', 'Could not read skill file.' );
+	$content = cb_skill_content( $slug, $file );
+	if ( is_wp_error( $content ) ) {
+		return $content;
 	}
 	return array(
 		'skill'   => (string) $slug,
@@ -3938,7 +4052,7 @@ function cb_op_get_wp_skill( $args ) {
 	);
 }
 
-/** Every bundled skill file as an MCP resource descriptor. */
+/** Every available playbook file as an MCP resource descriptor. */
 function cb_skill_resources() {
 	$res = array();
 	foreach ( cb_skill_list() as $s ) {
@@ -3966,11 +4080,7 @@ function cb_skill_resource_read( $uri ) {
 	if ( strpos( $rest, '/' ) !== false ) {
 		list( $slug, $rel ) = explode( '/', $rest, 2 );
 	}
-	$path = cb_skill_path( $slug, $rel );
-	if ( is_wp_error( $path ) ) {
-		return $path;
-	}
-	return (string) cb_get_contents( $path );
+	return cb_skill_content( $slug, $rel );
 }
 
 /* ============================================================================
@@ -4175,15 +4285,15 @@ function cb_mcp_dispatch( $body ) {
 
 		case 'prompts/get':
 			$pname = isset( $params['name'] ) ? $params['name'] : '';
-			$path  = cb_skill_path( $pname, 'SKILL.md' );
-			if ( is_wp_error( $path ) ) {
-				return array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32602, 'message' => $path->get_error_message() ) );
+			$text  = cb_skill_content( $pname, 'SKILL.md' );
+			if ( is_wp_error( $text ) ) {
+				return array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32602, 'message' => $text->get_error_message() ) );
 			}
 			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array(
 				'description' => 'WordPress skill: ' . (string) $pname,
 				'messages'    => array( array(
 					'role'    => 'user',
-					'content' => array( 'type' => 'text', 'text' => (string) cb_get_contents( $path ) ),
+					'content' => array( 'type' => 'text', 'text' => (string) $text ),
 				) ),
 			) );
 	}
@@ -4263,12 +4373,11 @@ function cb_mcp_authorized_any() {
  * with no server URL are unaffected.
  * ---------------------------------------------------------------------- */
 function cb_update_server_base() {
-	$c = cb_connector();
-	return ! empty( $c['server_url'] ) ? rtrim( (string) $c['server_url'], '/' ) : '';
+	return cb_service_base();
 }
 
 function cb_update_manifest() {
-	$base = cb_update_server_base();
+	$base = cb_service_base();
 	if ( '' === $base ) {
 		return null;
 	}
@@ -5113,14 +5222,14 @@ function cb_settings_page() {
 			<tr><th>URL</th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
 			<tr><th>Header</th><td><code>Authorization: Bearer <?php echo esc_html( $token ); ?></code></td></tr>
 		</table>
-		<?php $local_skills = cb_skill_list(); ?>
-		<?php if ( $local_skills ) : ?>
-			<h2 style="margin-top:24px">Local WordPress playbooks</h2>
-			<p>This installation has <b><?php echo count( $local_skills ); ?></b> operator-provided WordPress engineering playbooks. The connected model can list and load them as tools, MCP resources, and prompts.</p>
-			<p class="description"><?php echo esc_html( implode( ', ', wp_list_pluck( $local_skills, 'name' ) ) ); ?></p>
+		<?php $available_skills = cb_skill_list(); ?>
+		<?php if ( $available_skills ) : ?>
+			<h2 style="margin-top:24px">WordPress engineering playbooks</h2>
+			<p><b><?php echo count( $available_skills ); ?></b> playbooks are available to the connected model as tools, MCP resources, and prompts. DigiWP installations load requested text on demand; the documents are not stored in this site's webroot.</p>
+			<p class="description"><?php echo esc_html( implode( ', ', wp_list_pluck( $available_skills, 'name' ) ) ); ?></p>
 		<?php else : ?>
 			<h2 style="margin-top:24px">Engineering guidance</h2>
-			<p>Development playbooks are not stored in this site's executable webroot. The built-in cookbook remains available, and connected clients may provide their own review guidance.</p>
+			<p>The playbook service is not configured or is temporarily unavailable. The built-in cookbook and all site-management tools remain available.</p>
 		<?php endif; ?>
 
 		<h2 style="margin-top:24px">📕 Cookbook</h2>
@@ -5385,7 +5494,7 @@ function cb_cookbook_recipes() {
 	if ( is_array( $cached ) && $cached ) {
 		return $cached;
 	}
-	$base = cb_update_server_base();
+	$base = cb_service_base();
 	if ( $base ) {
 		$res = wp_remote_get( rtrim( $base, '/' ) . '/cookbook', array( 'timeout' => 15 ) );
 		if ( ! is_wp_error( $res ) && 200 === wp_remote_retrieve_response_code( $res ) ) {
@@ -5412,8 +5521,10 @@ function cb_cookbook_bundled() {
 		'requires' => array(),
 		'time'     => '20–40 min',
 		'summary'  => 'Review every custom theme and plugin file for the vulnerabilities that actually get sites hacked, then patch them one at a time.',
-		'tools'    => array( 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
+		'tools'    => array( 'list_wp_skills', 'get_wp_skill', 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
 		'prompt'   => 'Audit this WordPress site for security problems in the code we control.
+
+Before the numbered steps, load the on-demand wp-security-review playbook (list_wp_skills, then get_wp_skill) and follow it.
 
 1. Scope: the active theme plus these custom plugins: [plugin folder names, or "every plugin not from wordpress.org"]. Skip well-known third-party plugins.
 2. Look for missing capability checks, missing nonces on form/AJAX/REST handlers, unescaped output, unsanitized input, direct SQL without $wpdb->prepare, unrestricted file uploads, and dynamic code execution or unsafe deserialization on user input.
@@ -5445,8 +5556,10 @@ When you have the culprit: explain what it collides with, check the debug log if
 		'requires' => array(),
 		'time'     => '20–40 min',
 		'summary'  => 'Hunt down slow queries, uncached loops, autoloaded option bloat and render-blocking assets — then fix the top offenders.',
-		'tools'    => array( 'db_query', 'read_file', 'edit_file', 'render_page', 'flush_cache' ),
+		'tools'    => array( 'get_wp_skill', 'db_query', 'read_file', 'edit_file', 'render_page', 'flush_cache' ),
 		'prompt'   => 'Find out why [page URL, e.g. the shop or homepage] is slow, and fix the top three causes.
+
+Before the numbered steps, load the on-demand wp-performance-review playbook and follow it.
 
 1. Check the size of autoloaded options with db_query (sum of option data where autoload = yes, plus the ten biggest rows) and tell me what is bloating it.
 2. Read the active theme and our custom plugins for the classic offenders: queries inside loops, posts_per_page => -1, meta_query without an index, uncached remote requests, get_option in a loop, missing transients.
@@ -5508,12 +5621,13 @@ End with a "what I would do this week" section: at most five concrete items, ord
 		'requires' => array(),
 		'time'     => '30–60 min',
 		'summary'  => 'Describe the behaviour you want; get a properly structured, escaped, nonce-checked plugin scaffolded and activated on the site.',
-		'tools'    => array( 'create_plugin', 'write_file', 'edit_file', 'set_plugin_state' ),
+		'tools'    => array( 'get_wp_skill', 'create_plugin', 'write_file', 'edit_file', 'set_plugin_state' ),
 		'prompt'   => 'Build me a small WordPress plugin on this site.
 
 What it should do: [describe the behaviour in plain language — e.g. "add a Delivery Date field to the checkout, store it on the order, show it in the admin order screen and in the order confirmation email"].
 
 Rules:
+- Load the on-demand wp-plugin-development playbook first and follow it.
 - Follow WordPress plugin structure and naming conventions; keep bootstrap, hooks, and business logic separated where the size warrants it.
 - Prefix everything with [your prefix], text domain [your-text-domain].
 - Escape all output, sanitize all input, check capabilities and nonces on every write path.
@@ -5528,12 +5642,12 @@ Rules:
 		'requires' => array(),
 		'time'     => '20–40 min',
 		'summary'  => 'A registered route with a real permission callback, an argument schema, and a response shape that will not drift.',
-		'tools'    => array( 'write_file', 'edit_file', 'wp_rest' ),
+		'tools'    => array( 'get_wp_skill', 'write_file', 'edit_file', 'wp_rest' ),
 		'prompt'   => 'Add a REST endpoint to this site.
 
 Route: [namespace/v1/thing]. It should [what it returns or accepts]. Who may call it: [logged-out / logged-in / a specific capability].
 
-Use a real permission_callback (never __return_true unless the data is genuinely public and you say so out loud), an args schema with sanitize and validate callbacks, and a documented response shape.
+Load the on-demand wp-rest-api-development playbook first and follow it. Use a real permission_callback (never __return_true unless the data is genuinely public and you say so out loud), an args schema with sanitize and validate callbacks, and a documented response shape.
 
 Put it in [existing plugin folder, or scaffold a new one]. When it is live, call it through the bridge and show me the actual response.',
 	);
@@ -5687,10 +5801,10 @@ For each broken link, propose the fix: the correct current URL, a redirect, or r
 		'requires' => array(),
 		'time'     => '30–60 min',
 		'summary'  => 'Keyboard traps, unlabelled controls, heading order and focus states — reviewed in the markup and fixed at the source.',
-		'tools'    => array( 'render_page', 'read_file', 'edit_file' ),
+		'tools'    => array( 'get_wp_skill', 'render_page', 'read_file', 'edit_file' ),
 		'prompt'   => 'Do an accessibility pass on this site.
 
-Templates to review: [homepage, single post, the main archive, checkout — adjust to this site].
+Load the on-demand wp-accessibility-review playbook and follow it. Templates to review: [homepage, single post, the main archive, checkout — adjust to this site].
 
 Render each one and check the real markup: heading order, landmarks, form labels, alt text, focus styles, keyboard operability of menus and modals, ARIA that contradicts the element it sits on, and controls that are only reachable with a mouse.
 
@@ -5706,12 +5820,12 @@ Report issues grouped by template with the offending markup, then fix them in th
 		'requires' => array( 'block-theme' ),
 		'time'     => '20–40 min',
 		'summary'  => 'Set real design tokens once — palette, type scale, spacing — instead of sprinkling CSS overrides everywhere.',
-		'tools'    => array( 'read_file', 'write_file', 'edit_file', 'render_page' ),
+		'tools'    => array( 'get_wp_skill', 'read_file', 'write_file', 'edit_file', 'render_page' ),
 		'prompt'   => 'Rebrand this block theme through theme.json instead of custom CSS.
 
 Brand colors: [hex codes and what each is for]. Heading font: [font]. Body font: [font]. Feel: [tight and technical / soft and editorial / …].
 
-Read the current theme.json, then set the palette, gradients, font families and sizes, and spacing scale as proper presets. Replace hardcoded colors and font sizes in templates and CSS with the presets you just defined.
+Load the on-demand wp-theme-development playbook first. Read the current theme.json, then set the palette, gradients, font families and sizes, and spacing scale as proper presets. Replace hardcoded colors and font sizes in templates and CSS with the presets you just defined.
 
 Work in a child theme if the active theme is from wordpress.org. Render the homepage and a single post before and after, and tell me what still needs manual attention.',
 	);
@@ -5740,10 +5854,10 @@ Then show me which existing pages contain a hand-built copy of that section, so 
 		'requires' => array( 'classic-theme' ),
 		'time'     => '30–60 min',
 		'summary'  => 'An honest inventory of what a full-site-editing migration would cost here, before anyone commits to it.',
-		'tools'    => array( 'list_themes', 'list_files', 'read_file', 'site_info' ),
+		'tools'    => array( 'get_wp_skill', 'list_themes', 'list_files', 'read_file', 'site_info' ),
 		'prompt'   => 'Tell me what it would really take to move this site from its classic theme to a block theme.
 
-Inventory the active theme: template files and what each does, custom template tags, widget areas, menus, customizer settings, shortcodes, custom post types tied to templates, and anything that depends on the loop being classic.
+Load the on-demand wp-theme-development playbook. Then inventory the active theme: template files and what each does, custom template tags, widget areas, menus, customizer settings, shortcodes, custom post types tied to templates, and anything that depends on the loop being classic.
 
 Give me a migration plan in phases with an effort estimate per phase, what breaks if we do nothing, and what could move to a hybrid setup first. Be blunt about the parts that are not worth migrating. Do not change anything yet.',
 	);
@@ -5837,10 +5951,10 @@ Show me the first five before continuing, then update the products.',
 		'requires' => array( 'woocommerce' ),
 		'time'     => '30–60 min',
 		'summary'  => 'Custom checkout code is where HPOS breakage, security holes and silent order failures hide.',
-		'tools'    => array( 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
+		'tools'    => array( 'get_wp_skill', 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
 		'prompt'   => 'Review every customization we have made to the WooCommerce checkout and cart.
 
-Look in the active theme (including any woocommerce/ template overrides) and in our custom plugins.
+Load the on-demand wp-woocommerce-dev playbook and follow it. Look in the active theme (including any woocommerce/ template overrides) and in our custom plugins.
 
 I want to know: which template overrides are outdated compared to the plugin\'s current versions, any direct post-meta access that breaks under HPOS, missing nonce or capability checks on checkout hooks, anything doing remote requests during checkout, and cart fragment abuse.
 
@@ -5907,10 +6021,10 @@ Show me the first ten as a table, then write the rest after I approve the style.
 		'requires' => array( 'acf' ),
 		'time'     => '30–60 min',
 		'summary'  => 'Design the fields before building the templates, and keep the definitions in version control where they belong.',
-		'tools'    => array( 'list_post_types', 'write_file', 'read_file', 'list_files' ),
+		'tools'    => array( 'get_wp_skill', 'list_post_types', 'write_file', 'read_file', 'list_files' ),
 		'prompt'   => 'Design and build a content type on this site: [e.g. "case studies", "team members", "properties"].
 
-Look at how existing post types and field groups are defined here and stay consistent.
+Load the on-demand wp-acf-and-content-modeling playbook and follow it. Look at how existing post types and field groups are defined here and stay consistent.
 
 Give me the model first: post type, taxonomies, every field with its type, name, and why it exists — plus what should NOT be a field. Point out anything that will be slow to query later.
 
@@ -5958,8 +6072,10 @@ Then recommend what to network-activate, what to remove, and what needs a per-si
 		'requires' => array(),
 		'time'     => '10–20 min',
 		'summary'  => 'You just inherited a WordPress site. Get an orientation before you touch anything.',
-		'tools'    => array( 'site_info', 'list_plugins', 'list_themes', 'list_files', 'count_posts', 'db_query' ),
+		'tools'    => array( 'get_wp_skill', 'site_info', 'list_plugins', 'list_themes', 'list_files', 'count_posts', 'db_query' ),
 		'prompt'   => 'I just inherited this WordPress site and know nothing about it. Orient me.
+
+Load the on-demand wp-site-audit-and-onboarding playbook and follow it.
 
 Tell me: what the site is for, what stack it runs (page builder, shop, headless, multisite, custom plugins), which code is custom and therefore ours to maintain, where the customizations live, what looks abandoned, and what would scare you if you had to deploy a change tomorrow.
 

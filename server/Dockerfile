@@ -6,7 +6,7 @@ WORKDIR /app
 ARG HTTP_PROXY=
 ARG HTTPS_PROXY=
 ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} NO_PROXY=localhost,127.0.0.1
-COPY package.json package-lock.json ./
+COPY server/package.json server/package-lock.json ./
 RUN --mount=type=secret,id=ca_bundle,target=/tmp/ca.crt \
     { [ -s /tmp/ca.crt ] && export NODE_EXTRA_CA_CERTS=/tmp/ca.crt; }; \
     npm ci --omit=dev --no-audit --no-fund
@@ -16,9 +16,10 @@ FROM node:20-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
-COPY src ./src
-COPY plugin-manifest.json security-signatures.json ./
+COPY server/package.json ./
+COPY server/src ./src
+COPY server/plugin-manifest.json server/security-signatures.json ./
+COPY skills ./skills
 ENV PORT=8787
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \

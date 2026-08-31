@@ -8,7 +8,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-3.7.5-6c47ff?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/version-3.7.6-6c47ff?style=for-the-badge)](https://github.com/)
 [![License](https://img.shields.io/badge/license-GPLv2-blue?style=for-the-badge)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-5.6%2B-21759B?style=for-the-badge&logo=wordpress&logoColor=white)](https://wordpress.org)
@@ -67,6 +67,7 @@ No SaaS. No monthly fee. No external proxy. **Your server, your data, your rules
 | 🗄️ **Read-only DB query** | Safe `SELECT` access with `{prefix}` table substitution. |
 | 🔐 **3 auth modes** | Token-in-URL (simplest), Bearer header, or OAuth via native WordPress **Application Passwords** (revocable). |
 | 📡 **Streaming (SSE)** | MCP responses can stream over Server-Sent Events for long-running tools. |
+| 🧠 **18 WP playbooks** | Security, performance, blocks, themes, WooCommerce, testing and operations guidance is loaded on demand from the configured DigiWP server, never stored in the site's webroot. |
 | 📕 **34-recipe cookbook** | Ready-to-paste prompts for real jobs, browsable at **Tools → Claude Cookbook** and surfaced on the **WP Dashboard** — the ones that match this site's stack. |
 | 📓 **Activity log** | Every tool call (name, transport, result, duration) in a capped ring buffer, shown on the dashboard widget. |
 | 📦 **Zero dependencies** | One `.php` runtime file. No composer, no build step, no npm. Development playbooks stay out of the site's webroot. |
@@ -120,6 +121,7 @@ No SaaS. No monthly fee. No external proxy. **Your server, your data, your rules
 `get_meta` · `update_meta` · `delete_meta` · `list_revisions` · `restore_revision`
 `get_option` · `update_option` · `db_query` *(read-only SELECT)*
 `render_page` · `screenshot` · `conflict_scan` *(health/plugin-conflict scan)*
+`list_wp_skills` · `get_wp_skill` *(18 WordPress playbooks, loaded on demand)*
 `list_recipes` · `get_recipe` *(the bundled cookbook — filter by tag or by what this site runs)*
 `wp_rest` — **call any REST route, the do-anything tool**
 </details>

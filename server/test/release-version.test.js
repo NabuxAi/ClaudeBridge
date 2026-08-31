@@ -81,7 +81,7 @@ test('the self-hosted release contains runtime files, not development playbooks'
   assert.match(readme, /playbooks are intentionally not stored/i)
 })
 
-test('optional skill tools are advertised only when local playbooks exist', { skip: needsBuild }, () => {
+test('skill tools use a validated on-demand source without entering the release archive', { skip: needsBuild }, () => {
   for (const rel of [
     'wp-claude-bridge.php',
     'dist/digiwp-ai-bridge/digiwp-ai-bridge.php',
@@ -91,8 +91,12 @@ test('optional skill tools are advertised only when local playbooks exist', { sk
     assert.match(
       src,
       /if \( cb_skill_list\(\) \) \{[\s\S]*?'name' => 'list_wp_skills'[\s\S]*?'name' => 'get_wp_skill'[\s\S]*?\n\t\}/,
-      `${rel} advertises local playbooks unconditionally`,
+      `${rel} does not gate playbook tools on an available catalog`,
     )
+    assert.match(src, /function cb_skill_content[\s\S]*?cb_service_base\(\)[\s\S]*?'limit_response_size'\s*=>\s*512 \* 1024/,
+      `${rel} does not load individual playbook files through the bounded service path`)
+    assert.match(src, /function cb_skill_file_valid[\s\S]*?'\.\.'/,
+      `${rel} is missing playbook path validation`)
   }
 })
 

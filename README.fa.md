@@ -8,7 +8,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-3.7.5-6c47ff?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/version-3.7.6-6c47ff?style=for-the-badge)](https://github.com/)
 [![License](https://img.shields.io/badge/license-GPLv2-blue?style=for-the-badge)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-5.6%2B-21759B?style=for-the-badge&logo=wordpress&logoColor=white)](https://wordpress.org)
@@ -59,6 +59,7 @@
 | 🧰 **پراکسی همه‌کاره** | `wp_rest` هر مسیر REST وردپرس یا ووکامرس را با دسترسی کامل مدیر صدا می‌زند. |
 | 🗄️ **کوئری فقط‌خواندنی دیتابیس** | دسترسی امن `SELECT` با جایگزینی `{prefix}`. |
 | 🔐 **۳ حالت احراز هویت** | توکن در URL (ساده‌ترین)، هدر Bearer، یا OAuth کامل (PKCE + Dynamic Client Registration). |
+| 🧠 **۱۸ راهنمای مهندسی وردپرس** | راهنماهای امنیت، کارایی، قالب، بلوک، ووکامرس، تست و عملیات فقط هنگام نیاز از سرور تنظیم‌شدهٔ DigiWP خوانده می‌شوند و داخل webroot سایت ذخیره نمی‌شوند. |
 | 📕 **کوک‌بوک ۳۴ رسپی** | پرامپت‌های آمادهٔ کپی برای کارهای واقعی — در **Tools → Claude Cookbook** و روی **پیشخوان وردپرس**؛ آن‌هایی که به استک همین سایت می‌خورند. |
 | 📓 **گزارش فعالیت** | هر فراخوانی ابزار (نام، ترنسپورت، نتیجه، مدت) در یک بافر حلقوی محدود، روی ویجت پیشخوان. |
 | 📦 **بدون وابستگی** | یک فایل `.php`. بدون composer، بدون build، بدون npm. |
@@ -131,6 +132,7 @@
 `search` · `count_posts` · `count_terms` · `upload_media_from_url`
 `get_meta` · `update_meta` · `delete_meta` · `list_revisions` · `restore_revision`
 `get_option` · `update_option` · `db_query` *(read-only SELECT)*
+`list_wp_skills` · `get_wp_skill` *(۱۸ راهنمای وردپرس، دریافت هنگام نیاز)*
 `list_recipes` · `get_recipe` *(کوک‌بوک — فیلتر بر اساس برچسب یا استک همین سایت)*
 `wp_rest` — **صدا زدن هر مسیر REST، ابزار همه‌کاره**
 </details>

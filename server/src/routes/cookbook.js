@@ -2,6 +2,7 @@ import { Router } from 'express'
 import crypto from 'node:crypto'
 import { RECIPES } from '../cookbook/recipes.js'
 import { pack as signaturePack } from '../intel/signatures.js'
+import { playbookCatalog, readPlaybook } from '../playbooks.js'
 
 // ============================================================
 // The cookbook, served from here instead of shipped inside every site.
@@ -38,6 +39,55 @@ router.get('/cookbook/:id', (req, res) => {
   if (!recipe) return res.status(404).json({ message: 'recipe not found' })
   res.set('Cache-Control', 'public, max-age=3600')
   res.json(recipe)
+})
+
+// Engineering playbooks stay on the DigiWP server rather than inside the
+// WordPress plugin ZIP. Archive scanners therefore never see their deliberately
+// vulnerable examples, while connected sites retain the same MCP tools,
+// resources and prompts by loading one requested text file at a time.
+router.get('/skills', (req, res, next) => {
+  try {
+    const skills = playbookCatalog()
+    const body = JSON.stringify({ version: 1, count: skills.length, skills })
+    const skillsEtag = '"' + crypto.createHash('sha256').update(body).digest('hex').slice(0, 32) + '"'
+    res.set('Cache-Control', 'public, max-age=3600')
+    res.set('ETag', skillsEtag)
+    if (req.headers['if-none-match'] === skillsEtag) return res.status(304).end()
+    res.type('application/json').send(body)
+  } catch (error) {
+    if (error.code === 'PLAYBOOKS_UNAVAILABLE') {
+      return res.status(503).json({ message: 'playbooks unavailable' })
+    }
+    next(error)
+  }
+})
+
+router.get('/skills/:name', (req, res, next) => {
+  try {
+    const file = req.query.file === undefined ? 'SKILL.md' : req.query.file
+    if (typeof file !== 'string') return res.status(400).json({ message: 'invalid playbook file' })
+    const content = readPlaybook(req.params.name, file)
+    const body = JSON.stringify({ skill: req.params.name, file, content })
+    const fileEtag = '"' + crypto.createHash('sha256').update(body).digest('hex').slice(0, 32) + '"'
+    res.set('Cache-Control', 'public, max-age=3600')
+    res.set('ETag', fileEtag)
+    if (req.headers['if-none-match'] === fileEtag) return res.status(304).end()
+    res.type('application/json').send(body)
+  } catch (error) {
+    if (error.code === 'INVALID_PLAYBOOK' || error.code === 'INVALID_PLAYBOOK_FILE') {
+      return res.status(400).json({ message: error.message })
+    }
+    if (error.code === 'PLAYBOOK_NOT_FOUND') {
+      return res.status(404).json({ message: error.message })
+    }
+    if (error.code === 'PLAYBOOK_TOO_LARGE') {
+      return res.status(413).json({ message: error.message })
+    }
+    if (error.code === 'PLAYBOOKS_UNAVAILABLE') {
+      return res.status(503).json({ message: 'playbooks unavailable' })
+    }
+    next(error)
+  }
 })
 
 /**
