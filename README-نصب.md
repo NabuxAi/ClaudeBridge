@@ -67,18 +67,11 @@ curl -sS -X POST "https://YOURSITE/wp-json/claude-bridge/v1/mcp?token=XXXX" \
 
 ---
 
-## تازه در نسخه ۳.۵ — اسکیل‌های وردپرس + حالت‌های اتصال چندگانه
+## حالت‌های اتصال چندگانه و مرز امن بستهٔ نصب
 
-### ۱۸ اسکیل وردپرس داخل خودِ افزونه
-حالا ۱۸ اسکیل مهندسی وردپرس داخل خودِ افزونه بسته‌بندی شده‌اند (پوشه‌ی `skills/`). وقتی افزونه روی سایت نصب و به Claude وصل باشد، مدل می‌تواند این اسکیل‌ها را «بگیرد» و پیش از بازبینی یا ساختِ کد وردپرس/ووکامرس از آن‌ها استفاده کند. سه مسیر دسترسی (برای سازگاری با هر کلاینت):
+از نسخهٔ ۳.۷.۵، فایل‌های آموزشی توسعه داخل ZIP نصب وردپرس قرار نمی‌گیرند. بعضی راهنماهای امنیتی برای آموزش، نمونه‌های صریحِ کد آسیب‌پذیر و امضای وب‌شل دارند؛ این فایل‌ها اجرایی نیستند، اما اسکنر آرشیوِ هاست نمی‌تواند قصد آموزشی آن‌ها را تشخیص دهد. نگه‌داشتن چنین مستنداتی در webroot سایت نیز لازم نیست.
 
-- **به‌صورت Tool:** `list_wp_skills` (فهرست همه) و `get_wp_skill` با `{"name":"wp-security-review"}` — یا `{"file":"references/escaping-guide.md"}` برای یک فایل مرجعِ مشخص.
-- **به‌صورت MCP Resource:** با URI مثل `cbskill://wp-security-review/SKILL.md`.
-- **به‌صورت MCP Prompt:** هر اسکیل یک prompt با نام خودش.
-
-اسکیل‌ها: `wp-security-review`، `wp-performance-review`، `wp-block-development`، `wp-theme-development`، `wp-woocommerce-dev`، `wp-rest-api-development`، `wp-acf-and-content-modeling`، `wp-headless-and-wpgraphql`، `wp-migration-upgrade-review`، `wp-accessibility-review`، `wp-test-strategy`، `wp-ci-cd-and-release-engineering`، `wp-wpcli-and-ops`، `wp-phpstan-review`، `wp-playground-development`، `wp-admin-ui-development`، `wp-plugin-development`، `wp-site-audit-and-onboarding`.
-
-هیچ تنظیمی لازم نیست؛ لیست کامل در **ابزارها → Claude Bridge** هم نمایش داده می‌شود.
+کوک‌بوک داخلی افزونه و ابزارهای اجرایی آن همچنان در دسترس‌اند. کلاینت متصل هم می‌تواند راهنماهای مهندسی خودش را بیرون از webroot ارائه کند. اگر مدیر سرور عمداً یک پوشهٔ محلی `skills/` کنار فایل افزونه نصب کند، ابزارهای مربوط به آن فقط در همان حالت نمایش داده می‌شوند.
 
 ### حالت‌های اتصال با fallback خودکار
 اگر از یک مسیر وصل نشد، از مسیر دیگرْ همان توکن را بده — همه یک پروتکل MCP یکسان دارند:
@@ -93,13 +86,8 @@ curl -sS -X POST "https://YOURSITE/wp-json/claude-bridge/v1/mcp?token=XXXX" \
 - فرمت پاسخ پیش‌فرض **JSON** است؛ برای **SSE** به انتهای آدرس `?transport=sse` (یا `&transport=sse`) اضافه کن.
 - احراز هویت هم چندحالته: `Authorization: Bearer <token>`، یا `?token=<token>` داخل URL (اگر هاست هدر Authorization را حذف می‌کند)، یا OAuth با Application Password، یا کوکیِ ادمینِ لاگین‌شده.
 
-### تست سریع endpointهای جدید
+### تست سریع endpoint جایگزین
 ```bash
-# اسکیل‌ها را از طریق fallbackِ admin-ajax بگیر
-curl -sS -X POST "https://YOURSITE/wp-admin/admin-ajax.php?action=cb_mcp&token=XXXX" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_wp_skills","arguments":{}}}'
-
 # fallbackِ query-var (وقتی REST کاملاً خاموش است)
 curl -sS -X POST "https://YOURSITE/?cb_mcp=1&token=XXXX" \
   -H "Content-Type: application/json" \

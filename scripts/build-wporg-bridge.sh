@@ -13,15 +13,15 @@
 #
 #   2. No bundled skills/. Plugin Check rejects the package outright —
 #      "Application files are not permitted" — because 75 markdown documents
-#      and sample config files are payload, not plugin code. The skills are
-#      still available to a connected model from the server side.
+#      and sample config files are payload, not plugin code. The playbooks stay
+#      in the source repository and may be supplied by the connected client.
 #
 #   3. A name and slug with no "wp" in them. Plugin Check: "the restricted
 #      term 'wp' ... cannot be used at all in your plugin name" — and the
 #      slug is permanent once approved, so it is worth getting right.
 #
-# The self-hosted build is unaffected: scripts/build-digiwp-ai-bridge.sh
-# still produces it, updater and skills included.
+# The self-hosted build follows the same webroot boundary. Its updater remains;
+# repository development playbooks do not ship in either public archive.
 # ============================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -43,6 +43,7 @@ AI/MCP client --------------------------------> WordPress plugin directly
      Connector Mode.
    - PHP 7.4+ / WordPress 5.6+ target.
    - Version at baseline: `3.7.4`.
+   - Current release after the 2026-08-31 archive-scanner remediation: `3.7.5`.
    - 6,121 lines and approximately 142 advertised tools at baseline: 16 initial
      tools, 79 generated CRUD tools, and 47 appended tools.
 
@@ -66,7 +67,10 @@ Support**. Keep these roles explicit instead of mixing the names casually.
 ## Repository map
 
 - `wp-claude-bridge.php` — canonical plugin source and WordPress admin UI.
-- `skills/` — WordPress engineering playbooks bundled with the self-hosted build.
+- `skills/` — repository-side WordPress engineering playbooks. As of `3.7.5`
+  they are not copied into either WordPress release archive; security-review
+  documents contain literal vulnerable-code examples that do not belong in a
+  site's executable webroot.
 - `server/src/index.js` — Express composition, middleware, protected routes, and
   scheduler startup.
 - `server/src/config.js` — all server environment configuration.
@@ -94,7 +98,8 @@ Support**. Keep these roles explicit instead of mixing the names casually.
   fall back to it.
 - `hub/src/styles/app.css` — layout and responsive rules.
 - `hub/nginx.conf` — same-origin API proxy and static caching policy.
-- `scripts/build-digiwp-ai-bridge.sh` — branded self-hosted artifact.
+- `scripts/build-digiwp-ai-bridge.sh` — branded self-hosted runtime artifact;
+  deliberately excludes repository development playbooks.
 - `scripts/build-wporg-bridge.sh` — WordPress.org artifact with updater and
   bundled skills stripped.
 - `PRODUCT_SPEC.md` — reconstructed product specification; some counts are stale.
@@ -476,9 +481,32 @@ external-services/privacy disclosure. Optional external calls are acceptable;
 hidden external calls are not.
 
 **Status: resolved (counts aligned).** `PRODUCT_SPEC.md` now says "more than 130
-tools" instead of 58. All README badges now show version 3.7.4, matching
-`CB_VERSION`. The "100+ tools" copy in every translated README is updated to
-"130+ tools". The external-services/privacy disclosure remains in the roadmap.
+tools" instead of 58. README badges track `CB_VERSION` (currently 3.7.5). The
+"100+ tools" copy in every translated README is updated to "130+ tools". The
+external-services/privacy disclosure remains in the roadmap.
+
+### P1.7 — release archive can trigger malware-upload scanners
+
+The self-hosted ZIP used to copy the entire repository `skills/` tree into the
+WordPress plugin directory. The security-review playbooks include deliberately
+unsafe examples and literal web-shell indicators, including direct request-data
+execution examples. They are documentation, not code reached by WordPress, but
+an archive scanner sees the same byte patterns it is designed to block.
+
+The ZIP reported by a host on 2026-08-31 was byte-identical to the then-committed
+`hub/public/digiwp-ai-bridge.zip` (SHA-256
+`A88B3FFCCFB4189D7BF454F97741E30B2491DE0BF9B01683EF98A5287A831399`). The
+hosting notice did not include the scanner product, signature id, or matched
+inner file, so this evidence supports a false-positive explanation but does not
+prove the host's exact detection rule.
+
+**Status: resolved in 3.7.5.** The self-hosted release now contains only its PHP
+runtime and readme. Development playbooks remain in the repository, outside the
+site webroot. Skill tools are advertised only if an operator separately installs
+local playbooks, cookbook prompts no longer depend on them, and release tests pin
+the self-hosted payload to the two intended runtime files. The release was also
+rebuilt from current source; the blocked ZIP predated the latest canonical PHP
+change even though it carried the same 3.7.4 version.
 
 ## Product truth rules
 

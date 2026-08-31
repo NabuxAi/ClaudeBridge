@@ -10,7 +10,7 @@
 // cannot quietly advertise one number while shipping another.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -62,6 +62,37 @@ test('the built distributables carry the same version', { skip: needsBuild }, ()
     const built = readFileSync(join(root, rel), 'utf8')
     const v = /define\(\s*'CB_VERSION',\s*'([0-9.]+)'\s*\)/.exec(built)?.[1]
     assert.equal(v, constVersion, `${rel} was not rebuilt`)
+  }
+})
+
+test('the self-hosted release contains runtime files, not development playbooks', { skip: needsBuild }, () => {
+  // Security-review playbooks contain literal examples of vulnerable PHP and
+  // web-shell indicators. They are useful source material, but putting those
+  // bytes in a ZIP uploaded through wp-admin makes an archive scanner see the
+  // exact signatures it is meant to block. The build directory is what the
+  // release script zips, so pin its complete top-level payload.
+  const releaseDir = join(root, 'dist', 'digiwp-ai-bridge')
+  assert.deepEqual(
+    readdirSync(releaseDir).sort(),
+    ['digiwp-ai-bridge.php', 'readme.txt'],
+  )
+
+  const readme = readFileSync(join(releaseDir, 'readme.txt'), 'utf8')
+  assert.match(readme, /playbooks are intentionally not stored/i)
+})
+
+test('optional skill tools are advertised only when local playbooks exist', { skip: needsBuild }, () => {
+  for (const rel of [
+    'wp-claude-bridge.php',
+    'dist/digiwp-ai-bridge/digiwp-ai-bridge.php',
+    'dist/digi-ai-bridge/digi-ai-bridge.php',
+  ]) {
+    const src = readFileSync(join(root, rel), 'utf8')
+    assert.match(
+      src,
+      /if \( cb_skill_list\(\) \) \{[\s\S]*?'name' => 'list_wp_skills'[\s\S]*?'name' => 'get_wp_skill'[\s\S]*?\n\t\}/,
+      `${rel} advertises local playbooks unconditionally`,
+    )
   }
 })
 

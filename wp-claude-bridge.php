@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: WP Claude Bridge
- * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Bundles WordPress engineering skills the connected model can load on demand (as tools, MCP resources, and prompts), ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.7.4
+ * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
+ * Version: 3.7.5
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.7.4' );
+define( 'CB_VERSION', '3.7.5' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -1865,9 +1865,13 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'update_meta', 'description' => 'Set a metadata value.', 'inputSchema' => array( 'type' => 'object', 'properties' => $meta_props + array( 'value' => array( 'description' => 'Any JSON value.' ) ), 'required' => array( 'object_id', 'key', 'value' ) ), 'op' => 'cb_op_update_meta' );
 	$tools[] = array( 'name' => 'delete_meta', 'description' => 'Delete a metadata key.', 'inputSchema' => array( 'type' => 'object', 'properties' => $meta_props, 'required' => array( 'object_id', 'key' ) ), 'op' => 'cb_op_delete_meta' );
 
-	// Bundled WordPress skills (shipped inside this plugin).
-	$tools[] = array( 'name' => 'list_wp_skills', 'description' => 'List the WordPress engineering skills bundled in this plugin (security review, performance, blocks, themes, WooCommerce, REST API, ACF/content modeling, headless/WPGraphQL, migrations, accessibility, testing, CI/CD, WP-CLI/ops, PHPStan, Playground, admin UI, plugin development, site audit/onboarding). Each is a focused review or build playbook. Call this first, then get_wp_skill to load the matching one before doing WordPress work.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_list_wp_skills', 'noargs' => true );
-	$tools[] = array( 'name' => 'get_wp_skill', 'description' => 'Load a bundled WordPress skill. Returns the skill\'s SKILL.md instructions, or a named reference file within it. Call list_wp_skills first to see available skill names and their files. Use the matching skill before reviewing, auditing, or building WordPress/WooCommerce code.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Skill name, e.g. "wp-security-review".' ), 'file' => array( 'type' => 'string', 'description' => 'Optional file within the skill, e.g. "references/escaping-guide.md". Defaults to SKILL.md.' ) ), 'required' => array( 'name' ) ), 'op' => 'cb_op_get_wp_skill' );
+	// Optional local WordPress playbooks. Release packages intentionally omit
+	// development documents from the site's executable webroot, so advertise
+	// these tools only when an operator has installed a skills directory.
+	if ( cb_skill_list() ) {
+		$tools[] = array( 'name' => 'list_wp_skills', 'description' => 'List locally installed WordPress engineering playbooks. Call this first, then get_wp_skill to load the matching one before doing WordPress work.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_list_wp_skills', 'noargs' => true );
+		$tools[] = array( 'name' => 'get_wp_skill', 'description' => 'Load a locally installed WordPress playbook or one of its reference files.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Playbook name.' ), 'file' => array( 'type' => 'string', 'description' => 'Optional file within the playbook. Defaults to SKILL.md.' ) ), 'required' => array( 'name' ) ), 'op' => 'cb_op_get_wp_skill' );
+	}
 
 	$tools[] = array( 'name' => 'core_integrity', 'description' => 'Verify every WordPress core file against the official md5 manifest from api.wordpress.org for this exact version and locale. Reports modified core files, missing ones, and — the finding that actually catches backdoors — files sitting inside wp-admin/ or wp-includes/ that WordPress never shipped. Read-only. A clean core has all three lists empty.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_core_integrity', 'noargs' => true );
 
@@ -3811,11 +3815,11 @@ function cb_mcp_altroute() {
 }
 
 /* ============================================================================
- * 5b. BUNDLED WORDPRESS SKILLS
- * Ships a library of WordPress engineering skills inside the plugin so the
- * connected model can pull them on demand. Exposed three ways for maximum
- * client compatibility: as tools (list_wp_skills / get_wp_skill), as MCP
- * resources (cbskill:// URIs), and as MCP prompts.
+ * 5b. OPTIONAL LOCAL WORDPRESS PLAYBOOKS
+ * Development checklists may be installed alongside the plugin by an operator.
+ * Public release archives keep them out of the executable webroot because
+ * security playbooks necessarily contain examples of vulnerable code. When
+ * present, they are exposed as tools, MCP resources, and MCP prompts.
  * ========================================================================== */
 
 function cb_skills_dir() {
@@ -5109,9 +5113,15 @@ function cb_settings_page() {
 			<tr><th>URL</th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
 			<tr><th>Header</th><td><code>Authorization: Bearer <?php echo esc_html( $token ); ?></code></td></tr>
 		</table>
-		<h2 style="margin-top:24px">Bundled WordPress skills</h2>
-		<p>This plugin ships <b><?php echo count( cb_skill_list() ); ?></b> WordPress engineering skills. The connected model lists them with the <code>list_wp_skills</code> tool and loads any one with <code>get_wp_skill</code> — also exposed as MCP <b>resources</b> and <b>prompts</b>. No setup required.</p>
-		<p class="description"><?php echo esc_html( implode( ', ', wp_list_pluck( cb_skill_list(), 'name' ) ) ); ?></p>
+		<?php $local_skills = cb_skill_list(); ?>
+		<?php if ( $local_skills ) : ?>
+			<h2 style="margin-top:24px">Local WordPress playbooks</h2>
+			<p>This installation has <b><?php echo count( $local_skills ); ?></b> operator-provided WordPress engineering playbooks. The connected model can list and load them as tools, MCP resources, and prompts.</p>
+			<p class="description"><?php echo esc_html( implode( ', ', wp_list_pluck( $local_skills, 'name' ) ) ); ?></p>
+		<?php else : ?>
+			<h2 style="margin-top:24px">Engineering guidance</h2>
+			<p>Development playbooks are not stored in this site's executable webroot. The built-in cookbook remains available, and connected clients may provide their own review guidance.</p>
+		<?php endif; ?>
 
 		<h2 style="margin-top:24px">📕 Cookbook</h2>
 		<p>The plugin ships <b><?php echo count( cb_cookbook_recipes() ); ?></b> ready-to-paste recipes — the jobs people actually hand to an AI on a WordPress site, each written for the tools above. The ones that fit this site's stack also show on your <b>Dashboard</b>. The connected model can read them itself with <code>list_recipes</code> and <code>get_recipe</code>.</p>
@@ -5402,14 +5412,13 @@ function cb_cookbook_bundled() {
 		'requires' => array(),
 		'time'     => '20–40 min',
 		'summary'  => 'Review every custom theme and plugin file for the vulnerabilities that actually get sites hacked, then patch them one at a time.',
-		'tools'    => array( 'list_wp_skills', 'get_wp_skill', 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
+		'tools'    => array( 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
 		'prompt'   => 'Audit this WordPress site for security problems in the code we control.
 
-1. Load the bundled wp-security-review skill (list_wp_skills, then get_wp_skill) and follow it.
-2. Scope: the active theme plus these custom plugins: [plugin folder names, or "every plugin not from wordpress.org"]. Skip well-known third-party plugins.
-3. Look for missing capability checks, missing nonces on form/AJAX/REST handlers, unescaped output, unsanitized input, direct SQL without $wpdb->prepare, unrestricted file uploads, and anything using eval/unserialize on user input.
-4. Report findings first, ranked by how exploitable they are, with file:line and a one-line proof of how it would be abused. Do not change anything yet.
-5. Then fix them one file at a time, showing me the diff before each edit, starting with the worst.
+1. Scope: the active theme plus these custom plugins: [plugin folder names, or "every plugin not from wordpress.org"]. Skip well-known third-party plugins.
+2. Look for missing capability checks, missing nonces on form/AJAX/REST handlers, unescaped output, unsanitized input, direct SQL without $wpdb->prepare, unrestricted file uploads, and dynamic code execution or unsafe deserialization on user input.
+3. Report findings first, ranked by how exploitable they are, with file:line and a one-line proof of how it would be abused. Do not change anything yet.
+4. Then fix them one file at a time, showing me the diff before each edit, starting with the worst.
 
 Do not touch wp-config.php or core files.',
 	);
@@ -5436,14 +5445,13 @@ When you have the culprit: explain what it collides with, check the debug log if
 		'requires' => array(),
 		'time'     => '20–40 min',
 		'summary'  => 'Hunt down slow queries, uncached loops, autoloaded option bloat and render-blocking assets — then fix the top offenders.',
-		'tools'    => array( 'get_wp_skill', 'db_query', 'read_file', 'edit_file', 'render_page', 'flush_cache' ),
+		'tools'    => array( 'db_query', 'read_file', 'edit_file', 'render_page', 'flush_cache' ),
 		'prompt'   => 'Find out why [page URL, e.g. the shop or homepage] is slow, and fix the top three causes.
 
-1. Load the bundled wp-performance-review skill and follow it.
-2. Check the size of autoloaded options with db_query (sum of option data where autoload = yes, plus the ten biggest rows) and tell me what is bloating it.
-3. Read the active theme and our custom plugins for the classic offenders: queries inside loops, posts_per_page => -1, meta_query without an index, uncached remote requests, get_option in a loop, missing transients.
-4. Render the page and list render-blocking scripts and styles that are loaded site-wide but only used on one template.
-5. Report findings ranked by expected impact, then fix the top three, showing me each diff first. Flush caches when done.',
+1. Check the size of autoloaded options with db_query (sum of option data where autoload = yes, plus the ten biggest rows) and tell me what is bloating it.
+2. Read the active theme and our custom plugins for the classic offenders: queries inside loops, posts_per_page => -1, meta_query without an index, uncached remote requests, get_option in a loop, missing transients.
+3. Render the page and list render-blocking scripts and styles that are loaded site-wide but only used on one template.
+4. Report findings ranked by expected impact, then fix the top three, showing me each diff first. Flush caches when done.',
 	);
 
 	$r[] = array(
@@ -5500,13 +5508,13 @@ End with a "what I would do this week" section: at most five concrete items, ord
 		'requires' => array(),
 		'time'     => '30–60 min',
 		'summary'  => 'Describe the behaviour you want; get a properly structured, escaped, nonce-checked plugin scaffolded and activated on the site.',
-		'tools'    => array( 'get_wp_skill', 'create_plugin', 'write_file', 'edit_file', 'set_plugin_state' ),
+		'tools'    => array( 'create_plugin', 'write_file', 'edit_file', 'set_plugin_state' ),
 		'prompt'   => 'Build me a small WordPress plugin on this site.
 
 What it should do: [describe the behaviour in plain language — e.g. "add a Delivery Date field to the checkout, store it on the order, show it in the admin order screen and in the order confirmation email"].
 
 Rules:
-- Load the bundled wp-plugin-development skill first and follow its structure and naming conventions.
+- Follow WordPress plugin structure and naming conventions; keep bootstrap, hooks, and business logic separated where the size warrants it.
 - Prefix everything with [your prefix], text domain [your-text-domain].
 - Escape all output, sanitize all input, check capabilities and nonces on every write path.
 - Scaffold with create_plugin, then write the real files. Show me the plan and the file list before you write code.
@@ -5520,12 +5528,12 @@ Rules:
 		'requires' => array(),
 		'time'     => '20–40 min',
 		'summary'  => 'A registered route with a real permission callback, an argument schema, and a response shape that will not drift.',
-		'tools'    => array( 'get_wp_skill', 'write_file', 'edit_file', 'wp_rest' ),
+		'tools'    => array( 'write_file', 'edit_file', 'wp_rest' ),
 		'prompt'   => 'Add a REST endpoint to this site.
 
 Route: [namespace/v1/thing]. It should [what it returns or accepts]. Who may call it: [logged-out / logged-in / a specific capability].
 
-Load the bundled wp-rest-api-development skill first and follow it. I want a real permission_callback (never __return_true unless the data is genuinely public and you say so out loud), an args schema with sanitize and validate callbacks, and a documented response shape.
+Use a real permission_callback (never __return_true unless the data is genuinely public and you say so out loud), an args schema with sanitize and validate callbacks, and a documented response shape.
 
 Put it in [existing plugin folder, or scaffold a new one]. When it is live, call it through the bridge and show me the actual response.',
 	);
@@ -5679,10 +5687,10 @@ For each broken link, propose the fix: the correct current URL, a redirect, or r
 		'requires' => array(),
 		'time'     => '30–60 min',
 		'summary'  => 'Keyboard traps, unlabelled controls, heading order and focus states — reviewed in the markup and fixed at the source.',
-		'tools'    => array( 'get_wp_skill', 'render_page', 'read_file', 'edit_file' ),
+		'tools'    => array( 'render_page', 'read_file', 'edit_file' ),
 		'prompt'   => 'Do an accessibility pass on this site.
 
-Load the bundled wp-accessibility-review skill and follow it. Templates to review: [homepage, single post, the main archive, checkout — adjust to this site].
+Templates to review: [homepage, single post, the main archive, checkout — adjust to this site].
 
 Render each one and check the real markup: heading order, landmarks, form labels, alt text, focus styles, keyboard operability of menus and modals, ARIA that contradicts the element it sits on, and controls that are only reachable with a mouse.
 
@@ -5698,12 +5706,12 @@ Report issues grouped by template with the offending markup, then fix them in th
 		'requires' => array( 'block-theme' ),
 		'time'     => '20–40 min',
 		'summary'  => 'Set real design tokens once — palette, type scale, spacing — instead of sprinkling CSS overrides everywhere.',
-		'tools'    => array( 'get_wp_skill', 'read_file', 'write_file', 'edit_file', 'render_page' ),
+		'tools'    => array( 'read_file', 'write_file', 'edit_file', 'render_page' ),
 		'prompt'   => 'Rebrand this block theme through theme.json instead of custom CSS.
 
 Brand colors: [hex codes and what each is for]. Heading font: [font]. Body font: [font]. Feel: [tight and technical / soft and editorial / …].
 
-Load the bundled wp-theme-development skill first. Read the current theme.json, then set the palette, gradients, font families and sizes, and spacing scale as proper presets. Replace hardcoded colors and font sizes in templates and CSS with the presets you just defined.
+Read the current theme.json, then set the palette, gradients, font families and sizes, and spacing scale as proper presets. Replace hardcoded colors and font sizes in templates and CSS with the presets you just defined.
 
 Work in a child theme if the active theme is from wordpress.org. Render the homepage and a single post before and after, and tell me what still needs manual attention.',
 	);
@@ -5732,10 +5740,10 @@ Then show me which existing pages contain a hand-built copy of that section, so 
 		'requires' => array( 'classic-theme' ),
 		'time'     => '30–60 min',
 		'summary'  => 'An honest inventory of what a full-site-editing migration would cost here, before anyone commits to it.',
-		'tools'    => array( 'get_wp_skill', 'list_themes', 'list_files', 'read_file', 'site_info' ),
+		'tools'    => array( 'list_themes', 'list_files', 'read_file', 'site_info' ),
 		'prompt'   => 'Tell me what it would really take to move this site from its classic theme to a block theme.
 
-Load the bundled wp-theme-development skill. Then inventory the active theme: template files and what each does, custom template tags, widget areas, menus, customizer settings, shortcodes, custom post types tied to templates, and anything that depends on the loop being classic.
+Inventory the active theme: template files and what each does, custom template tags, widget areas, menus, customizer settings, shortcodes, custom post types tied to templates, and anything that depends on the loop being classic.
 
 Give me a migration plan in phases with an effort estimate per phase, what breaks if we do nothing, and what could move to a hybrid setup first. Be blunt about the parts that are not worth migrating. Do not change anything yet.',
 	);
@@ -5829,10 +5837,10 @@ Show me the first five before continuing, then update the products.',
 		'requires' => array( 'woocommerce' ),
 		'time'     => '30–60 min',
 		'summary'  => 'Custom checkout code is where HPOS breakage, security holes and silent order failures hide.',
-		'tools'    => array( 'get_wp_skill', 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
+		'tools'    => array( 'list_plugins', 'list_files', 'read_file', 'edit_file' ),
 		'prompt'   => 'Review every customization we have made to the WooCommerce checkout and cart.
 
-Load the bundled wp-woocommerce-dev skill and follow it. Look in the active theme (including any woocommerce/ template overrides) and in our custom plugins.
+Look in the active theme (including any woocommerce/ template overrides) and in our custom plugins.
 
 I want to know: which template overrides are outdated compared to the plugin\'s current versions, any direct post-meta access that breaks under HPOS, missing nonce or capability checks on checkout hooks, anything doing remote requests during checkout, and cart fragment abuse.
 
@@ -5899,10 +5907,10 @@ Show me the first ten as a table, then write the rest after I approve the style.
 		'requires' => array( 'acf' ),
 		'time'     => '30–60 min',
 		'summary'  => 'Design the fields before building the templates, and keep the definitions in version control where they belong.',
-		'tools'    => array( 'get_wp_skill', 'list_post_types', 'write_file', 'read_file', 'list_files' ),
+		'tools'    => array( 'list_post_types', 'write_file', 'read_file', 'list_files' ),
 		'prompt'   => 'Design and build a content type on this site: [e.g. "case studies", "team members", "properties"].
 
-Load the bundled wp-acf-and-content-modeling skill and follow it. Look at how existing post types and field groups are defined here and stay consistent.
+Look at how existing post types and field groups are defined here and stay consistent.
 
 Give me the model first: post type, taxonomies, every field with its type, name, and why it exists — plus what should NOT be a field. Point out anything that will be slow to query later.
 
@@ -5950,10 +5958,8 @@ Then recommend what to network-activate, what to remove, and what needs a per-si
 		'requires' => array(),
 		'time'     => '10–20 min',
 		'summary'  => 'You just inherited a WordPress site. Get an orientation before you touch anything.',
-		'tools'    => array( 'get_wp_skill', 'site_info', 'list_plugins', 'list_themes', 'list_files', 'count_posts', 'db_query' ),
+		'tools'    => array( 'site_info', 'list_plugins', 'list_themes', 'list_files', 'count_posts', 'db_query' ),
 		'prompt'   => 'I just inherited this WordPress site and know nothing about it. Orient me.
-
-Load the bundled wp-site-audit-and-onboarding skill and follow it.
 
 Tell me: what the site is for, what stack it runs (page builder, shop, headless, multisite, custom plugins), which code is custom and therefore ours to maintain, where the customizations live, what looks abandoned, and what would scare you if you had to deploy a change tomorrow.
 
