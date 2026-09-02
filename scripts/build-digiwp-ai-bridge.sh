@@ -11,6 +11,12 @@
 # Output:
 #   dist/digiwp-ai-bridge/            (the plugin folder)
 #   hub/public/digiwp-ai-bridge.zip   (served at ai.digiwp.com/digiwp-ai-bridge.zip)
+#
+# The repository's engineering playbooks are deliberately not copied into the
+# WordPress package. Security-review documents contain literal vulnerable-code
+# examples and web-shell indicators; archive scanners can correctly match those
+# bytes without knowing that they are documentation. Development material also
+# does not belong in a site's executable webroot.
 # ============================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -32,12 +38,7 @@ SERVER_URL="$SERVER_URL" perl -pe '
   s/\x27enabled\x27 => false, \x27server_url\x27 => \x27\x27/\x27enabled\x27 => false, \x27server_url\x27 => \x27$ENV{SERVER_URL}\x27/;
 ' "$SRC" > "$OUT/$SLUG.php"
 
-# 2) Ship the bundled skills (same as the source plugin).
-if [ -d "$ROOT/skills" ]; then
-  cp -R "$ROOT/skills" "$OUT/skills"
-fi
-
-# 3) A short readme so the zip is self-describing.
+# 2) A short readme so the zip is self-describing.
 cat > "$OUT/readme.txt" <<'TXT'
 === DigiWp Ai Bridge ===
 Connects this WordPress site to the DigiWP panel (ai.digiwp.com) through the
@@ -45,12 +46,17 @@ DigiWP server (api.digiwp.com). Install, activate, then Tools → DigiWp Ai Brid
 Hub Connector Mode: turn it on and paste the shared secret from your panel.
 The server URL is pre-filled. From then on the site only accepts signed commands
 from your DigiWP server.
+
+Development playbooks are intentionally not stored in the site's webroot. The
+same 18 playbooks remain available through list_wp_skills/get_wp_skill and are
+loaded as read-only text from the configured DigiWP server only when requested.
+The built-in cookbook and all site-management tools remain available offline.
 TXT
 
-# 4) Zip it (top-level folder = the slug, as WordPress expects).
-( cd "$ROOT/dist" && zip -qr "$ZIP" "$SLUG" )
+# 3) Zip it (top-level folder = the slug, as WordPress expects).
+( cd "$ROOT/dist" && zip -qr "$ZIP" "$SLUG" -x '*.DS_Store' )
 
-# 5) Emit the update manifest the server serves at /v1/plugin/manifest.
+# 4) Emit the update manifest the server serves at /v1/plugin/manifest.
 #    Version is read from the canonical plugin so it is always in sync with the zip.
 VER=$(grep -oE "CB_VERSION', '[0-9.]+'" "$SRC" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
 cat > "$ROOT/server/plugin-manifest.json" <<JSON

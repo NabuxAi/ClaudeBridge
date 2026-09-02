@@ -14,7 +14,6 @@
 FROM wordpress:6.6-php8.2-apache
 
 COPY wp-claude-bridge.php /usr/src/plugin/wp-claude-bridge.php
-COPY skills /usr/src/plugin/skills
 
 # /var/www/html is a named volume, so anything written into it at build time is
 # hidden the moment the volume mounts. The plugin is therefore staged outside
