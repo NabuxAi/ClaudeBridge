@@ -2,12 +2,12 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, IconButton, MetricCard, Badge, Switch, NotMeasured, SkeletonStats, SkeletonTable, Dialog } from '../../components/index.js'
+import { Button, MetricCard, Badge, Switch, NotMeasured, SkeletonStats, SkeletonTable, Dialog } from '../../components/index.js'
 import { site as siteApi } from '../../lib/api.js'
 import { useTask } from '../../lib/tasks.jsx'
 import { faNum } from '../../lib/format.js'
 
-const COLS = '1.6fr 1fr 0.8fr 1fr 1.4fr'
+const COLS = '1.4fr 1.1fr 1fr 0.8fr 1fr 1.5fr'
 
 export default function Backups() {
   const { siteId } = useOutletContext()
@@ -16,11 +16,25 @@ export default function Backups() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
+
+  // Policy state
+  const [policy, setPolicy] = useState({
+    destination: 'local',
+    maxDaily: 5,
+    retentionDays: 30,
+    maxStorageMb: 2048,
+    autoPruneOnFull: true,
+  })
+  const [backupsToday, setBackupsToday] = useState(0)
+  const [policyModal, setPolicyModal] = useState(false)
+  const [savingPolicy, setSavingPolicy] = useState(false)
 
   // Preflight and section selection modal
   const [preflightModal, setPreflightModal] = useState(false)
   const [preflightLoading, setPreflightLoading] = useState(false)
   const [preflightData, setPreflightData] = useState(null)
+  const [selectedDestination, setSelectedDestination] = useState('local')
   const [selectedSections, setSelectedSections] = useState({
     db: true,
     plugins: false,
@@ -36,7 +50,6 @@ export default function Backups() {
   // Off-site S3 Cloud Backups
   const [offsiteTargets, setOffsiteTargets] = useState([])
   const [offsiteJobs, setOffsiteJobs] = useState([])
-  const [offsiteLoading, setOffsiteLoading] = useState(false)
   const [targetModal, setTargetModal] = useState(false)
   const [newTarget, setNewTarget] = useState({
     type: 's3',
@@ -49,38 +62,78 @@ export default function Backups() {
     retentionDays: 30,
   })
 
+  const aliveRef = useRef(true)
+
+  const loadPolicy = useCallback(() => {
+    siteApi(siteId)
+      .backupPolicy()
+      .then((res) => {
+        if (!aliveRef.current) return
+        if (res?.policy) {
+          setPolicy({
+            destination: res.policy.destination || 'local',
+            maxDaily: Number(res.policy.maxDaily || res.policy.max_daily_backups) || 5,
+            retentionDays: Number(res.policy.retentionDays || res.policy.retention_days) || 30,
+            maxStorageMb: Number(res.policy.maxStorageMb || res.policy.max_storage_mb) || 2048,
+            autoPruneOnFull: res.policy.autoPruneOnFull ?? res.policy.auto_prune_on_full ?? true,
+          })
+        }
+        if (res?.live?.backups_today != null) {
+          setBackupsToday(Number(res.live.backups_today))
+        }
+      })
+      .catch(() => {})
+  }, [siteId])
+
   const loadOffsite = useCallback(() => {
-    setOffsiteLoading(true)
     Promise.allSettled([
       siteApi(siteId).listOffsiteTargets(),
       siteApi(siteId).listOffsiteJobs(),
     ]).then(([tRes, jRes]) => {
+      if (!aliveRef.current) return
       if (tRes.status === 'fulfilled') setOffsiteTargets(tRes.value?.targets || [])
       if (jRes.status === 'fulfilled') setOffsiteJobs(jRes.value?.jobs || [])
-    }).finally(() => setOffsiteLoading(false))
+    })
   }, [siteId])
 
   const load = useCallback(() => {
     setLoading(true)
     return siteApi(siteId)
       .backups()
-      .then((d) => setData(d))
-      .catch((e) => setError(e?.message || 'خطا در دریافت لیست بکاپ‌ها'))
-      .finally(() => setLoading(false))
+      .then((d) => {
+        if (aliveRef.current) {
+          setData(d)
+          if (d?.list && Array.isArray(d.list)) {
+            const todayStart = new Date().setHours(0, 0, 0, 0)
+            const countToday = d.list.filter((b) => {
+              const t = b.created_at ? (b.created_at * 1000) : (b.timestamp || 0)
+              return t >= todayStart
+            }).length
+            setBackupsToday((prev) => (countToday > 0 ? countToday : prev))
+          }
+        }
+      })
+      .catch((e) => { if (aliveRef.current) setError(e?.message || 'خطا در دریافت لیست بکاپ‌ها') })
+      .finally(() => { if (aliveRef.current) setLoading(false) })
   }, [siteId])
 
   useEffect(() => {
-    let alive = true
+    aliveRef.current = true
+    const timerId = timer.current
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load()
+    loadPolicy()
     loadOffsite()
-    return () => { alive = false; clearTimeout(timer.current) }
-  }, [load, loadOffsite])
+    return () => { aliveRef.current = false; clearTimeout(timerId) }
+  }, [load, loadPolicy, loadOffsite])
 
   // Open preflight modal and calculate sizes
   const openPreflightModal = async () => {
     setPreflightModal(true)
     setPreflightLoading(true)
+    setSelectedDestination(policy.destination || 'local')
     setError('')
+    setSuccessMsg('')
     try {
       const res = await siteApi(siteId).backupPreflight()
       setPreflightData(res)
@@ -104,30 +157,71 @@ export default function Backups() {
   const totalSelectedDuration = Math.max(4, selectedKeys.reduce((acc, k) => acc + (sectionsInfo[k]?.duration_sec || 0), 0))
 
   const freeDiskBytes = preflightData?.free_disk_bytes != null ? preflightData.free_disk_bytes : 5 * 1024 * 1024 * 1024
-  const isSpaceInsufficient = freeDiskBytes < (totalSelectedBytes * 1.2) || freeDiskBytes < (50 * 1024 * 1024)
+  const isSpaceInsufficient = selectedDestination === 'local' && (freeDiskBytes < (totalSelectedBytes * 1.2) || freeDiskBytes < (50 * 1024 * 1024))
 
   async function takeBackup() {
     if (isSpaceInsufficient) return
     setBusy('run')
     setError('')
+    setSuccessMsg('')
     setPreflightModal(false)
 
     try {
       const res = await siteApi(siteId).runBackup({
         sections: selectedKeys,
         files: selectedKeys.length > 1,
+        destination: selectedDestination,
       })
       const started = res.job || res
       if (started?.id) {
         startTask({
           id: started.id,
-          title: `تهیه بکاپ دستی (${selectedKeys.map((k) => sectionsInfo[k]?.title.split(' ')[0]).join('، ')})`,
+          title: `تهیه بکاپ (${selectedDestination === 'hub' ? 'سرور دیجی‌دبلیوپی' : 'سرور محلی'})`,
           type: 'backup',
         })
       }
       load()
+      loadPolicy()
     } catch (e) {
       setError(e?.message || 'شروع تهیه بکاپ با خطا مواجه شد.')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function handleSavePolicy() {
+    setSavingPolicy(true)
+    setError('')
+    setSuccessMsg('')
+    try {
+      await siteApi(siteId).setBackupPolicy(policy)
+      setSuccessMsg('تنظیمات نگهداری و ذخیره‌سازی بکاپ با موفقیت ذخیره شد.')
+      setPolicyModal(false)
+      loadPolicy()
+    } catch (e) {
+      setError(e?.message || 'خطا در ذخیره تنظیمات نگهداری بکاپ')
+    } finally {
+      setSavingPolicy(false)
+    }
+  }
+
+  async function handleManualPrune() {
+    if (!window.confirm('آیا مایلید فایل‌های بکاپ قدیمی‌تر از سقف نگهداری برای آزادسازی فضای هاست حذف شوند؟')) return
+    setBusy('pruning')
+    setError('')
+    setSuccessMsg('')
+    try {
+      const res = await siteApi(siteId).pruneBackups({
+        keep: 10,
+        days: policy.retentionDays,
+        max_mb: policy.maxStorageMb,
+      })
+      const freedMb = res?.freed_bytes ? (res.freed_bytes / (1024 * 1024)).toFixed(1) : '۰'
+      setSuccessMsg(`پاک‌سازی انجام شد: ${faNum(res?.pruned || 0)} نسخه حذف و ${faNum(freedMb)} مگابایت حافظه آزاد شد.`)
+      load()
+      loadPolicy()
+    } catch (e) {
+      setError(e?.message || 'خطا در اجرای پاک‌سازی بکاپ‌ها')
     } finally {
       setBusy('')
     }
@@ -136,6 +230,7 @@ export default function Backups() {
   async function doRestore(id) {
     setBusy(id)
     setError('')
+    setSuccessMsg('')
     setConfirming(null)
     setTyped('')
     try {
@@ -156,11 +251,12 @@ export default function Backups() {
     }
   }
 
-  async function download(id) {
+  async function download(id, what = 'db') {
     setBusy(`dl-${id}`)
     setError('')
+    setSuccessMsg('')
     try {
-      const r = await siteApi(siteId).downloadBackup(id, 'db')
+      const r = await siteApi(siteId).downloadBackup(id, what)
       if (r && r.ok === false && r.message) setError(r.message)
     } catch (e) {
       setError(e?.message || 'دانلود انجام نشد.')
@@ -221,16 +317,25 @@ export default function Backups() {
   const head = (
     <PageHead
       title="بکاپ‌ها و بازیابی"
-      subtitle="نسخه‌های پشتیبان تفکیک‌شده، فضای ذخیره‌سازی ابری S3 و بازگردانی مطمئن"
+      subtitle="مدیریت محل ذخیره (سرور ما / سرور شما)، سقف روزانه، حذف خودکار و دانلود فوق‌سریع"
       action={(
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Button
             variant="subtle"
             size="sm"
-            leftIcon="cloud"
-            onClick={() => setTargetModal(true)}
+            leftIcon="settings"
+            onClick={() => setPolicyModal(true)}
           >
-            پیکربندی مقصد ابری (S3)
+            تنظیمات نگهداری و ذخیره
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            leftIcon="trash-2"
+            disabled={busy === 'pruning'}
+            onClick={handleManualPrune}
+          >
+            {busy === 'pruning' ? 'در حال پاک‌سازی…' : 'پاک‌سازی نسخه‌های قدیمی'}
           </Button>
           <Button
             variant="primary"
@@ -252,7 +357,7 @@ export default function Backups() {
         {head}
         <SkeletonStats count={4} />
         <div style={{ marginTop: 24 }}>
-          <SkeletonTable rows={4} cols={5} />
+          <SkeletonTable rows={4} cols={6} />
         </div>
       </>
     )
@@ -277,46 +382,83 @@ export default function Backups() {
       {/* Summary metrics */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 18 }}>
         <MetricCard icon="clock" iconTone="success" label="آخرین بکاپ" value={data?.lastBackup || 'ثبت نشده'} hint="تأییدشده و سالم" />
-        <MetricCard icon="database" iconTone="primary" label="حجم آخرین نسخه" value={list[0]?.size || '—'} hint="فشرده‌شده" />
-        <MetricCard icon="history" iconTone="neutral" label="نسخه‌های نگهداری" value={faNum(list.length)} hint="در دسترس روی هاست" />
-        <MetricCard icon="hard-drive" iconTone="accent" label="فضای آزاد دیسک" value={preflightData?.free_disk_formatted || 'سالم'} hint="بررسی زنده هاست" />
+        <MetricCard
+          icon="hard-drive"
+          iconTone="primary"
+          label="مقصد پیش‌فرض ذخیره"
+          value={policy.destination === 'hub' ? 'سرور ابری ما' : 'سرور وردپرس (هاست)'}
+          hint={`سقف نگهداری: ${faNum(policy.retentionDays)} روز`}
+        />
+        <MetricCard
+          icon="history"
+          iconTone="neutral"
+          label="بکاپ‌های امروز"
+          value={`${faNum(backupsToday)} از ${faNum(policy.maxDaily)}`}
+          hint={backupsToday >= policy.maxDaily ? 'سقف روزانه تکمیل است' : 'مجاز برای تهیه نسخه جدید'}
+        />
+        <MetricCard
+          icon="database"
+          iconTone="accent"
+          label="فضای آزاد دیسک"
+          value={preflightData?.free_disk_formatted || 'بررسی زنده'}
+          hint={`سقف حجم پوشه: ${faNum(policy.maxStorageMb)} MB`}
+        />
       </div>
 
-      {/* Schedule banner */}
+      {/* Notifications / Alerts */}
+      {successMsg && (
+        <div style={{ padding: '11px 16px', background: 'var(--gd-success-subtle)', border: '1px solid var(--gd-success-border)', borderRadius: 'var(--gd-radius-md)', color: 'var(--gd-success)', fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
+          {successMsg}
+        </div>
+      )}
+      {error && (
+        <div style={{ padding: '11px 16px', background: 'var(--gd-danger-bg)', border: '1px solid var(--gd-danger)', borderRadius: 'var(--gd-radius-md)', color: 'var(--gd-danger-text)', fontSize: 13, marginBottom: 16 }}>
+          {error}
+        </div>
+      )}
+
+      {/* Schedule & Destination Quick Banner */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, borderRadius: 'var(--gd-radius-lg)', border: '1px solid var(--gd-border)', background: 'var(--gd-bg-subtle)', padding: '16px 20px', marginBottom: 22 }}>
         <span style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--gd-primary-subtle)', color: 'var(--gd-primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
           <Icon name="calendar-clock" size={21} />
         </span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>زمان‌بندی و بکاپ خودکار</div>
-          <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 2 }}>روزانه ساعت ۰۳:۰۰ + اسنپ‌شات پیش از هر به‌روزرسانی یا اقدام حساس</div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>سیاست نگهداری و ذخیره‌سازی خودکار</div>
+          <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 2 }}>
+            ذخیره روی {policy.destination === 'hub' ? 'سرور ابری دیجی‌دبلیوپی (بدون اشغال هاست)' : 'سرور وردپرس شما'} · حذف خودکار نسخه‌های قدیمی‌تر از {faNum(policy.retentionDays)} روز یا پس از پر شدن {faNum(policy.maxStorageMb)} مگابایت
+          </div>
         </div>
-        <span className="dwp-mono" style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 999, padding: '4px 10px', flex: '0 0 auto' }}>
-          بکاپ بعدی · {data?.nextBackup || 'فردا ۰۳:۰۰'}
-        </span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
-          <span style={{ fontSize: 12.5, color: 'var(--gd-text-secondary)', fontWeight: 600 }}>اسنپ‌شات پیش از تغییرات</span>
-          <Switch defaultChecked />
-        </span>
+        <Button size="sm" variant="subtle" onClick={() => setPolicyModal(true)}>
+          تغییر سیاست
+        </Button>
       </div>
 
       {/* Backups table */}
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>نسخه‌های پشتیبان ذخیره‌شده</div>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span>نسخه‌های پشتیبان موجود</span>
+        <span style={{ fontSize: 12, color: 'var(--gd-text-muted)', fontWeight: 400 }}>
+          {faNum(list.length)} نسخه ذخیره‌شده
+        </span>
+      </div>
+
       <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden' }}>
         <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '11px 20px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', fontSize: 12, fontWeight: 700, color: 'var(--gd-text-muted)' }}>
           <span>تاریخ و ساعت</span>
           <span>نوع و بخش‌ها</span>
+          <span>محل ذخیره</span>
           <span>حجم</span>
-          <span>وضعیت فایل</span>
+          <span>وضعیت سلامت</span>
           <span />
         </div>
 
         {list.length === 0 ? (
-          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--gd-text-muted)', fontSize: 13.5 }}>
+          <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--gd-text-muted)', fontSize: 13.5 }}>
             هیچ نسخه‌ای ذخیره نشده است. با دکمهٔ «تهیه بکاپ دستی» اولین بکاپ را ایجاد کنید.
           </div>
         ) : list.map((b, i) => {
           const preAction = b.type?.includes('پیش از اقدام') || b.type?.includes('pre-update')
+          const isFilesZip = Boolean(b.files_file || b.files_bytes > 0)
+          const targetLoc = b.destination === 'hub' ? 'سرور دیجی‌دبلیوپی' : b.destination === 's3' ? 'ابری S3' : 'سرور وردپرس'
           return (
             <div key={b.id || i} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, alignItems: 'center', padding: '14px 20px', borderBottom: i < list.length - 1 ? '1px solid var(--gd-border-subtle)' : 'none', fontSize: 13.5 }}>
               <div>
@@ -328,6 +470,12 @@ export default function Backups() {
                 <Badge variant={preAction ? 'warning' : 'info'} appearance="soft">{b.type || 'دستی'}</Badge>
               </span>
 
+              <span>
+                <Badge variant={b.destination === 'hub' ? 'primary' : 'neutral'} appearance="soft">
+                  {targetLoc}
+                </Badge>
+              </span>
+
               <span className="dwp-mono" style={{ color: 'var(--gd-text-secondary)' }}>{b.size || '—'}</span>
 
               <span>
@@ -337,9 +485,28 @@ export default function Backups() {
               </span>
 
               <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                <Button size="sm" variant="ghost" leftIcon="download" onClick={() => download(b.id)} disabled={busy === `dl-${b.id}`}>
-                  دانلود SQL
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  leftIcon="download"
+                  onClick={() => download(b.id, 'db')}
+                  disabled={busy === `dl-${b.id}`}
+                  title="دانلود مستقیم و سریع استریم SQL"
+                >
+                  {busy === `dl-${b.id}` ? 'دریافت…' : 'دانلود SQL'}
                 </Button>
+                {isFilesZip && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    leftIcon="file-archive"
+                    onClick={() => download(b.id, 'files')}
+                    disabled={busy === `dl-${b.id}`}
+                    title="دانلود فایل فشرده رسانه‌ها و افزونه‌ها"
+                  >
+                    دانلود ZIP
+                  </Button>
+                )}
                 <Button size="sm" variant="subtle" leftIcon="rotate-ccw" onClick={() => setConfirming(b.id)} disabled={Boolean(busy) || activeTask?.state === 'running'}>
                   بازگردانی
                 </Button>
@@ -349,13 +516,152 @@ export default function Backups() {
         })}
       </div>
 
+      {/* Policy & Storage Settings Modal */}
+      {policyModal && (
+        <Dialog
+          title="تنظیمات ذخیره‌سازی، سقف روزانه و نگهداری بکاپ"
+          isOpen={policyModal}
+          onClose={() => setPolicyModal(false)}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Storage Destination Selection */}
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, display: 'block', marginBottom: 8 }}>
+                محل ذخیره‌سازی فایل‌های پشتیبان:
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div
+                  onClick={() => setPolicy({ ...policy, destination: 'local' })}
+                  style={{
+                    padding: '12px 14px',
+                    border: `1.5px solid ${policy.destination === 'local' ? 'var(--gd-primary)' : 'var(--gd-border)'}`,
+                    borderRadius: 'var(--gd-radius-md)',
+                    background: policy.destination === 'local' ? 'var(--gd-primary-subtle)' : 'var(--gd-bg-surface)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 13, color: policy.destination === 'local' ? 'var(--gd-primary)' : 'var(--gd-text)' }}>
+                    <input type="radio" checked={policy.destination === 'local'} onChange={() => {}} />
+                    <span>روی سرور وردپرس (هاست خودتان)</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                    بکاپ‌ها در پوشه امن خارج از وب ذخیره می‌شوند و مستقیماً روی هاست سایت قرار دارند.
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setPolicy({ ...policy, destination: 'hub' })}
+                  style={{
+                    padding: '12px 14px',
+                    border: `1.5px solid ${policy.destination === 'hub' ? 'var(--gd-primary)' : 'var(--gd-border)'}`,
+                    borderRadius: 'var(--gd-radius-md)',
+                    background: policy.destination === 'hub' ? 'var(--gd-primary-subtle)' : 'var(--gd-bg-surface)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 13, color: policy.destination === 'hub' ? 'var(--gd-primary)' : 'var(--gd-text)' }}>
+                    <input type="radio" checked={policy.destination === 'hub'} onChange={() => {}} />
+                    <span>روی سرور ابری دیجی‌دبلیوپی (سرور ما)</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                    بدون اشغال فضای دیسک هاست شما؛ فایل‌ها روی سرور ابری ما به صورت ایزوله نگهداری می‌شوند.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Daily limit */}
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                حداکثر تعداد بکاپ در طول روز (سقف روزانه):
+              </label>
+              <select
+                value={policy.maxDaily}
+                onChange={(e) => setPolicy({ ...policy, maxDaily: Number(e.target.value) })}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--gd-radius-md)', border: '1px solid var(--gd-border)', fontSize: 13 }}
+              >
+                <option value={1}>۱ بار در روز</option>
+                <option value={2}>۲ بار در روز</option>
+                <option value={3}>۳ بار در روز</option>
+                <option value={5}>۵ بار در روز (پیش‌فرض)</option>
+                <option value={10}>۱۰ بار در روز</option>
+                <option value={20}>۲۰ بار در روز</option>
+              </select>
+              <span style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', display: 'block', marginTop: 4 }}>
+                برای جلوگیری از بار اضافی و مصرف مکرر منابع هاست در طول ۲۴ ساعت.
+              </span>
+            </div>
+
+            {/* Retention Days */}
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                دوره نگهداری نسخه‌ها (حذف خودکار قدیمی‌تر از چند روز):
+              </label>
+              <select
+                value={policy.retentionDays}
+                onChange={(e) => setPolicy({ ...policy, retentionDays: Number(e.target.value) })}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--gd-radius-md)', border: '1px solid var(--gd-border)', fontSize: 13 }}
+              >
+                <option value={7}>۷ روز (۱ هفته)</option>
+                <option value={14}>۱۴ روز (۲ هفته)</option>
+                <option value={30}>۳۰ روز (۱ ماه - پیشنهادی)</option>
+                <option value={60}>۶۰ روز (۲ ماه)</option>
+                <option value={90}>۹۰ روز (۳ ماه)</option>
+                <option value={180}>۱۸۰ روز (۶ ماه)</option>
+              </select>
+            </div>
+
+            {/* Storage Quota & Auto Prune */}
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                سقف حجم کل پوشه بکاپ (حذف نسخه‌های قدیمی در صورت پر شدن):
+              </label>
+              <select
+                value={policy.maxStorageMb}
+                onChange={(e) => setPolicy({ ...policy, maxStorageMb: Number(e.target.value) })}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--gd-radius-md)', border: '1px solid var(--gd-border)', fontSize: 13 }}
+              >
+                <option value={500}>۵۰۰ مگابایت</option>
+                <option value={1024}>۱ گیگابایت (۱۰۲۴ MB)</option>
+                <option value={2048}>۲ گیگابایت (۲۰۴۸ MB - استاندارد)</option>
+                <option value={5120}>۵ گیگابایت (۵۱۲۰ MB)</option>
+                <option value={10240}>۱۰ گیگابایت (۱۰۲۴۰ MB)</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--gd-bg-subtle)', borderRadius: 'var(--gd-radius-md)' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>پاک‌سازی خودکار در زمان پر شدن سقف حجم</div>
+                <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)' }}>قدیمی‌ترین نسخه‌ها به طور هوشمند حذف می‌شوند تا هاست پر نشود.</div>
+              </div>
+              <Switch
+                checked={policy.autoPruneOnFull}
+                onChange={(e) => setPolicy({ ...policy, autoPruneOnFull: e.target.checked })}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+              <Button variant="subtle" onClick={() => setPolicyModal(false)}>انصراف</Button>
+              <Button
+                variant="primary"
+                leftIcon="save"
+                disabled={savingPolicy}
+                onClick={handleSavePolicy}
+              >
+                {savingPolicy ? 'در حال ذخیره…' : 'ذخیره تنظیمات'}
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
       {/* Off-site S3 Storage Card & Section */}
       <div style={{ marginTop: 32, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', overflow: 'hidden' }}>
         <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--gd-border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Icon name="cloud" size={20} style={{ color: 'var(--gd-primary)' }} />
-              <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>پشتیبان‌گیری ابری و آف‌سایت (Off-site Cloud Storage)</h3>
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>پشتیبان‌گیری ابری اختصاصی (S3 Storage)</h3>
               <Badge variant="primary" appearance="soft">رمزنگاری AES-256</Badge>
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '4px 0 0 0' }}>
@@ -375,19 +681,19 @@ export default function Backups() {
         {offsiteTargets.length === 0 ? (
           <div style={{ padding: '32px 20px', textAlign: 'center' }}>
             <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--gd-bg-subtle)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gd-text-muted)', marginBottom: 12 }}>
-              <Icon name="cloud" size={24} />
+              <Icon name="cloud-off" size={22} />
             </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gd-text)' }}>هیچ مقصد ابری تنظیم نشده است</div>
-            <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', maxWidth: 450, margin: '6px auto 16px auto', lineHeight: 1.6 }}>
-              پشتیبان‌های محلی در صورت بروز اختلال در سرور یا هاست ممکن است از دست بروند. با اتصال فضای S3، نسخه‌های بکاپ به صورت خودکار و امن در مکانی مجزا نگهداری می‌شوند.
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--gd-text)' }}>هنوز مقصد ابری S3 اضافه نشده است</div>
+            <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', maxWidth: 440, margin: '6px auto 16px auto', lineHeight: 1.6 }}>
+              می‌توانید باکت‌های اختصاصی خود در ابر آروان، لیارا، یا آمازون را برای پشتیبان‌گیری ثانویه و ایزوله متصل کنید.
             </p>
-            <Button size="sm" variant="primary" leftIcon="plus" onClick={() => setTargetModal(true)}>
-              پیکربندی اولین مقصد ابری
+            <Button size="sm" variant="subtle" leftIcon="plus" onClick={() => setTargetModal(true)}>
+              پیکربندی باکت S3
             </Button>
           </div>
         ) : (
           <div style={{ padding: '16px 20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
               {offsiteTargets.map((target) => (
                 <div
                   key={target.id}
@@ -399,32 +705,30 @@ export default function Backups() {
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
-                    gap: 12,
                   }}
                 >
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Icon name="database" size={16} style={{ color: 'var(--gd-primary)' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--gd-text)' }} className="dwp-mono">
                         {target.bucket}
-                      </div>
-                      <Badge variant="success" appearance="soft">فعال</Badge>
+                      </span>
+                      <Badge variant={target.status === 'active' ? 'success' : 'neutral'} appearance="soft" dot>
+                        {target.status === 'active' ? 'فعال' : 'غیرفعال'}
+                      </Badge>
                     </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 4, fontFamily: 'var(--gd-font-mono)', wordBreak: 'break-all' }}>
+                    <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginBottom: 4 }} className="dwp-mono">
                       {target.endpoint}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--gd-text-secondary)', marginTop: 8, display: 'flex', gap: 14 }}>
-                      <span>پیشوند: <code style={{ fontFamily: 'var(--gd-font-mono)' }}>{target.pathPrefix || '—'}</code></span>
-                      <span>ماندگاری: {faNum(target.retentionDays)} روز</span>
+                    <div style={{ fontSize: 11.5, color: 'var(--gd-text-secondary)' }}>
+                      منطقه: <span className="dwp-mono">{target.region}</span> · نگهداری: {faNum(target.retentionDays)} روز
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border-subtle)', paddingTop: 10 }}>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--gd-border-subtle)' }}>
                     <Button
                       size="sm"
                       variant="ghost"
-                      leftIcon="trash"
-                      style={{ color: 'var(--gd-danger-text)' }}
+                      leftIcon="trash-2"
                       onClick={() => deleteTarget(target.id)}
                       disabled={busy === `del-${target.id}`}
                     >
@@ -432,12 +736,12 @@ export default function Backups() {
                     </Button>
                     <Button
                       size="sm"
-                      variant="primary"
-                      leftIcon="cloud"
-                      disabled={busy === 'offsite-sync' || activeTask?.state === 'running'}
+                      variant="subtle"
+                      leftIcon="cloud-upload"
                       onClick={() => syncOffsiteNow(target.id)}
+                      disabled={busy === 'offsite-sync' || activeTask?.state === 'running'}
                     >
-                      همگام‌سازی ابری الان
+                      همگام‌سازی فوری
                     </Button>
                   </div>
                 </div>
@@ -496,12 +800,6 @@ export default function Backups() {
           </div>
         )}
       </div>
-
-      {error && (
-        <p style={{ fontSize: 13, color: 'var(--gd-danger-text)', background: 'var(--gd-danger-bg)', border: '1px solid var(--gd-danger)', borderRadius: 'var(--gd-radius-md)', padding: '11px 14px', marginTop: 16 }}>
-          {error}
-        </p>
-      )}
 
       {/* Off-site S3 Target Configuration Modal */}
       {targetModal && (
@@ -618,26 +916,68 @@ export default function Backups() {
           onClose={() => setPreflightModal(false)}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Host Disk Space Card */}
-            <div style={{
-              background: isSpaceInsufficient ? 'var(--gd-danger-bg)' : 'var(--gd-bg-subtle)',
-              border: `1px solid ${isSpaceInsufficient ? 'var(--gd-danger-border)' : 'var(--gd-border)'}`,
-              borderRadius: 'var(--gd-radius-lg)', padding: '14px 16px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: isSpaceInsufficient ? 'var(--gd-danger-text)' : 'var(--gd-text)' }}>
-                  فضای آزاد دیسک هاست: {preflightData?.free_disk_formatted || 'در حال محاسبه…'}
-                </span>
-                <Badge variant={isSpaceInsufficient ? 'danger' : 'success'} appearance="soft">
-                  {isSpaceInsufficient ? 'فضای ناکافی' : 'فضای کافی'}
-                </Badge>
+            {/* Storage Destination Selection */}
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                محل ذخیره این نسخه پشتیبان:
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div
+                  onClick={() => setSelectedDestination('local')}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 'var(--gd-radius-md)',
+                    border: `1.5px solid ${selectedDestination === 'local' ? 'var(--gd-primary)' : 'var(--gd-border)'}`,
+                    background: selectedDestination === 'local' ? 'var(--gd-primary-subtle)' : 'var(--gd-bg-surface)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: selectedDestination === 'local' ? 'var(--gd-primary)' : 'var(--gd-text)' }}>
+                    سرور وردپرس (هاست محلی)
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--gd-text-muted)', marginTop: 2 }}>ذخیره روی فضای هاست سایت</div>
+                </div>
+
+                <div
+                  onClick={() => setSelectedDestination('hub')}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 'var(--gd-radius-md)',
+                    border: `1.5px solid ${selectedDestination === 'hub' ? 'var(--gd-primary)' : 'var(--gd-border)'}`,
+                    background: selectedDestination === 'hub' ? 'var(--gd-primary-subtle)' : 'var(--gd-bg-surface)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: selectedDestination === 'hub' ? 'var(--gd-primary)' : 'var(--gd-text)' }}>
+                    سرور ابری دیجی‌دبلیوپی
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--gd-text-muted)', marginTop: 2 }}>بدون اشغال فضای هاست شما</div>
+                </div>
               </div>
-              <p style={{ fontSize: 12, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.6 }}>
-                {isSpaceInsufficient
-                  ? 'فضای خالی دیسک هاست شما برای این حجم از بکاپ کافی نیست. برای جلوگیری از پر شدن هاست، حجم کمتری انتخاب کنید.'
-                  : 'فضای هاست به صورت زنده بررسی شد و برای ایجاد بکاپ انتخابی کاملاً مناسب است.'}
-              </p>
             </div>
+
+            {/* Host Disk Space Card */}
+            {selectedDestination === 'local' && (
+              <div style={{
+                background: isSpaceInsufficient ? 'var(--gd-danger-bg)' : 'var(--gd-bg-subtle)',
+                border: `1px solid ${isSpaceInsufficient ? 'var(--gd-danger-border)' : 'var(--gd-border)'}`,
+                borderRadius: 'var(--gd-radius-lg)', padding: '14px 16px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: isSpaceInsufficient ? 'var(--gd-danger-text)' : 'var(--gd-text)' }}>
+                    فضای آزاد دیسک هاست: {preflightData?.free_disk_formatted || 'در حال محاسبه…'}
+                  </span>
+                  <Badge variant={isSpaceInsufficient ? 'danger' : 'success'} appearance="soft">
+                    {isSpaceInsufficient ? 'فضای ناکافی' : 'فضای کافی'}
+                  </Badge>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.6 }}>
+                  {isSpaceInsufficient
+                    ? 'فضای خالی دیسک هاست شما برای این حجم از بکاپ کافی نیست. پیشنهاد می‌شود مقصد ذخیره را «سرور ابری دیجی‌دبلیوپی» انتخاب نمایید.'
+                    : 'فضای هاست به صورت زنده بررسی شد و برای ایجاد بکاپ انتخابی کاملاً مناسب است.'}
+                </p>
+              </div>
+            )}
 
             {/* Selectable Sections */}
             <div style={{ fontSize: 13.5, fontWeight: 700 }}>بخش‌های مورد نظر برای بکاپ:</div>

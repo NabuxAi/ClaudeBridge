@@ -108,6 +108,8 @@ export const invoice = (id) => delay({
   subtotal: 490000, tax: 44100, total: 534100,
 })
 
+export const activity = () => delay({ events: [] })
+
 // ---- Team --------------------------------------------------
 export const team = () => delay({
   provenance: { live: [], unavailable: 'دعوت هم‌تیمی و دسترسی چندکاربره هنوز ساخته نشده. فقط حساب خودتان وجود دارد.' },

@@ -18,7 +18,7 @@ const RISK = {
 
 export default function Speed() {
   const { siteId } = useOutletContext()
-  const { startTask, activeTask } = useTask()
+  const { startTask } = useTask()
   const [url, setUrl] = useState('')
   const [job, setJob] = useState(null)
   const [report, setReport] = useState(null)

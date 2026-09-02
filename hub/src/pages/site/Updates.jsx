@@ -33,19 +33,23 @@ export default function Updates() {
   const [error, setError] = useState('')
   const timer = useRef(null)
 
+  const aliveRef = useRef(true)
+
   const load = useCallback(() => {
     setLoading(true)
     return siteApi(siteId)
       .updates()
-      .then((d) => setData(d))
-      .catch((e) => setError(e?.message || 'خطا در دریافت وضعیت آپدیت‌ها'))
-      .finally(() => setLoading(false))
+      .then((d) => { if (aliveRef.current) setData(d) })
+      .catch((e) => { if (aliveRef.current) setError(e?.message || 'خطا در دریافت وضعیت آپدیت‌ها') })
+      .finally(() => { if (aliveRef.current) setLoading(false) })
   }, [siteId])
 
   useEffect(() => {
-    let alive = true
+    aliveRef.current = true
+    const timerId = timer.current
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load()
-    return () => { alive = false; clearTimeout(timer.current) }
+    return () => { aliveRef.current = false; clearTimeout(timerId) }
   }, [load])
 
   async function apply(items) {

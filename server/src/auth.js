@@ -101,8 +101,17 @@ export function assertSecretIsReal() {
 export function requireAuth(req, res, next) {
   const auth = req.get('authorization') || ''
   const m = auth.match(/Bearer\s+(.+)/i)
-  const payload = m ? verifyToken(m[1].trim()) : null
+  const token = m ? m[1].trim() : (typeof req.query?.token === 'string' ? req.query.token.trim() : null)
+  const payload = token ? verifyToken(token) : null
   if (!payload) return res.status(401).json({ message: 'Unauthorized' })
   req.user = payload
+  next()
+}
+
+/** Express middleware: require an authenticated admin user. */
+export function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ message: 'Forbidden' })
+  }
   next()
 }

@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url'
 import express from 'express'
 import cors from 'cors'
 import { config } from './config.js'
-import { requireAuth, assertSecretIsReal } from './auth.js'
+import { requireAuth, requireAdmin, assertSecretIsReal } from './auth.js'
 import { init as initDb } from './db.js'
 import authRouter from './routes/auth.js'
 import accountRouter from './routes/account.js'
@@ -17,6 +17,8 @@ import cookbookRouter from './routes/cookbook.js'
 import sitesRouter from './routes/sites.js'
 import connectorRouter from './routes/connector.js'
 import offsiteBackupsRouter from './routes/offsite-backups.js'
+import adminRouter from './routes/admin.js'
+import { plans } from './seed.js'
 import { runDailyDigest, scheduleDailyDigest } from './digest.js'
 import { initIntel, scheduleIntel, refresh as refreshIntel } from './intel/index.js'
 import { runSweep, scheduleSweep } from './sweep.js'
@@ -87,10 +89,13 @@ export function createApp() {
   // pairing still needs its playbooks — that is precisely when someone is
   // trying to fix it.
   app.use('/v1', cookbookRouter)
+  // Public: the price list is shown to anonymous visitors on /pricing.
+  app.get('/v1/billing/plans', (_req, res) => res.json(plans))
   // Protected: everything the hub reads after login.
   app.use('/v1', requireAuth, accountRouter)
   app.use('/v1', requireAuth, sitesRouter)
   app.use('/v1', requireAuth, offsiteBackupsRouter)
+  app.use('/v1/admin', requireAuth, requireAdmin, adminRouter)
 
   // Run the daily security digest on demand (scan all paired sites + send to Telegram).
   app.post('/v1/digest/run', requireAuth, async (_req, res, next) => {

@@ -33,6 +33,7 @@ export const READ_TOOLS = Object.freeze([
   'backup_list',
   'backup_preflight',
   'backup_read',
+  'backup_policy_get',
   'list_plugins',
   'list_themes',
   'list_files',
@@ -67,6 +68,8 @@ export const READ_TOOLS = Object.freeze([
 /** Tools that change the site, recoverably. */
 export const MUTATING_TOOLS = Object.freeze([
   'backup_run',
+  'backup_policy_set',
+  'backup_prune',
   'flush_cache',
   'perf_clean_transients',
   'set_plugin_state',

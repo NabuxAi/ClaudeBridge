@@ -1,3 +1,8 @@
 /dist/
 .DS_Store
 dist/
+
+# Local agent tooling: symlink farms pointing at skills/. Not source.
+.agents/
+.claude/
+.kimi-code/

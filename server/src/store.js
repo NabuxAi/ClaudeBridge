@@ -17,6 +17,7 @@ const publicSite = (s) => s && ({
   url: s.url, paired: !!s.paired, hasSecret: !!s.secret,
   connector: s.connector || null, // JSONB → already an object
   policy: readPolicy(s.policy),
+  backupPolicy: s.backup_policy || { destination: 'local', maxDaily: 5, retentionDays: 30, maxStorageMb: 2048, autoPruneOnFull: true },
   updateState: s.update_state || null,
   hosting: describeHosting(s.hosting),
   // No invented metrics here. This object feeds the sites list, where an
@@ -75,6 +76,52 @@ export const users = {
   async updatePassword(id, password) {
     if (!password || String(password).length < 8) throw httpError(400, 'رمز عبور باید حداقل ۸ نویسه باشد.')
     const row = await one('UPDATE users SET pass_hash = $2 WHERE id = $1 RETURNING *', [id, await hashPassword(password)])
+    if (!row) throw httpError(404, 'کاربر پیدا نشد.')
+    return publicUser(row)
+  },
+
+  async list({ limit = 50, offset = 0, search = '' } = {}) {
+    const q = String(search || '').trim().toLowerCase()
+    const where = q ? 'WHERE LOWER(email) LIKE $3 OR LOWER(name) LIKE $3' : ''
+    const params = q ? [limit, offset, `%${q}%`] : [limit, offset]
+    return (await all(
+      `SELECT * FROM users ${where} ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      params
+    )).map(publicUser)
+  },
+
+  async listWithSiteCounts({ limit = 50, offset = 0, search = '' } = {}) {
+    const q = String(search || '').trim().toLowerCase()
+    const where = q ? 'WHERE LOWER(u.email) LIKE $3 OR LOWER(u.name) LIKE $3' : ''
+    const params = q ? [limit, offset, `%${q}%`] : [limit, offset]
+    return await all(
+      `SELECT u.*, COUNT(s.id) AS site_count
+         FROM users u
+         LEFT JOIN sites s ON s.user_id = u.id
+         ${where}
+         GROUP BY u.id
+         ORDER BY u.created_at DESC
+         LIMIT $1 OFFSET $2`,
+      params
+    )
+  },
+
+  async count({ search = '' } = {}) {
+    const q = String(search || '').trim().toLowerCase()
+    if (!q) {
+      const row = await one('SELECT COUNT(*)::int AS n FROM users')
+      return row.n
+    }
+    const row = await one(
+      'SELECT COUNT(*)::int AS n FROM users WHERE LOWER(email) LIKE $1 OR LOWER(name) LIKE $1',
+      [`%${q}%`]
+    )
+    return row.n
+  },
+
+  async setRole(id, role) {
+    if (!['admin', 'مدیر حساب'].includes(role)) throw httpError(400, 'نقش نامعتبر است.')
+    const row = await one('UPDATE users SET role = $2 WHERE id = $1 RETURNING *', [id, role])
     if (!row) throw httpError(404, 'کاربر پیدا نشد.')
     return publicUser(row)
   },
@@ -281,6 +328,18 @@ export const sites = {
       [id, JSON.stringify({ ...state, at: Date.now() })]
     )
     return publicSite(row)
+  },
+
+  /** Storage destination, daily limits, and retention policy for backups. */
+  async setBackupPolicy(id, userId, patch) {
+    const row = await one('SELECT backup_policy FROM sites WHERE id = $1 AND user_id = $2', [id, userId])
+    if (!row) throw httpError(404, 'سایت پیدا نشد.')
+    const merged = { ...(row.backup_policy || {}), ...(patch || {}) }
+    const updated = await one(
+      'UPDATE sites SET backup_policy = $3 WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, userId, JSON.stringify(merged)]
+    )
+    return publicSite(updated)
   },
 }
 
@@ -493,11 +552,15 @@ export const team = {
     if (!VALID_ROLES.includes(role) || role === 'owner') {
       throw httpError(400, 'نقش باید مدیر یا فقط مشاهده باشد.')
     }
+    // Four values were bound for three placeholders: a Date.now() sat at $3 for
+    // an updated_at column team_members does not have. PostgreSQL cannot infer a
+    // type for a parameter the statement never references, so it rejected the
+    // whole UPDATE and every role change returned 500.
     const row = await one(
-      `UPDATE team_members SET role = $4
+      `UPDATE team_members SET role = $3
         WHERE id = $1 AND site_id = $2 AND status = 'active' AND role <> 'owner'
        RETURNING *`,
-      [memberId, siteId, Date.now(), role]
+      [memberId, siteId, role]
     )
     if (!row) throw httpError(404, 'عضوی با این شناسه پیدا نشد.')
     const user = await one('SELECT name, email FROM users WHERE id = $1', [row.user_id])

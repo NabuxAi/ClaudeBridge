@@ -12,7 +12,7 @@ if (!dsn) {
     dsn + (dsn.includes('?') ? '&' : '?') +
     'options=' + encodeURIComponent(`-c search_path=${TEST_SCHEMA}`)
 
-  const { query, init } = await import('../src/db.js')
+  const { pool, query, init } = await import('../src/db.js')
   await query(`CREATE SCHEMA IF NOT EXISTS ${TEST_SCHEMA}`)
   await init()
 
@@ -21,8 +21,8 @@ if (!dsn) {
 
   test('creates, appends messages, updates and deletes persistent conversations', async () => {
     // 1. Create a user and site for relational integrity
-    const user = await users.create('conv-test@example.com', 'Test Conv User', 'StrongPass123!@#')
-    const site = await sites.create(user.id, 'myshop.ir', 'https://myshop.ir')
+    const user = await users.create({ email: 'conv-test@example.com', name: 'Test Conv User', password: 'StrongPass123!@#' })
+    const site = await sites.add(user.id, { name: 'myshop.ir', title: 'My Shop' })
 
     // 2. Create conversation
     const conv = await conversations.create(site.id, user.id, 'بررسی پایگاه داده')
@@ -70,5 +70,13 @@ if (!dsn) {
 
     const afterDelete = await conversations.get(site.id, conv.id)
     assert.equal(afterDelete, null)
+  })
+
+  // Without this the schema survived the run, and because the user email and
+  // the site id are both fixed, the second run collided on the unique email and
+  // the suite failed for a reason that had nothing to do with conversations.
+  test.after(async () => {
+    await query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`)
+    await pool.end()
   })
 }

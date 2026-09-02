@@ -105,6 +105,86 @@ export async function list(siteId, limit = 60) {
   )
 }
 
+export async function listByUser(userId, limit = 20) {
+  return all(
+    `SELECT e.*, s.name AS site_name, s.title AS site_title
+       FROM events e
+       JOIN sites s ON s.id = e.site_id
+      WHERE s.user_id = $1
+      ORDER BY e.created_at DESC
+      LIMIT $2`,
+    [userId, limit]
+  )
+}
+
+function buildEventFilters(filters = {}) {
+  const where = []
+  const params = []
+  let idx = 1
+  if (filters.userId) {
+    where.push(`s.user_id = $${idx++}`)
+    params.push(filters.userId)
+  }
+  if (filters.siteId) {
+    where.push(`e.site_id = $${idx++}`)
+    params.push(filters.siteId)
+  }
+  if (filters.kind) {
+    where.push(`e.kind = $${idx++}`)
+    params.push(filters.kind)
+  }
+  if (filters.severity) {
+    where.push(`e.severity = $${idx++}`)
+    params.push(filters.severity)
+  }
+  if (filters.from) {
+    where.push(`e.created_at >= $${idx++}`)
+    params.push(Number(filters.from))
+  }
+  if (filters.to) {
+    where.push(`e.created_at <= $${idx++}`)
+    params.push(Number(filters.to))
+  }
+  return { clause: where.length ? `WHERE ${where.join(' AND ')}` : '', params, nextIdx: idx }
+}
+
+export async function listAll(filters = {}, limit = 50, offset = 0) {
+  const f = buildEventFilters(filters)
+  return all(
+    `SELECT e.*, s.name AS site_name, s.title AS site_title, u.email AS user_email, u.name AS user_name
+       FROM events e
+       JOIN sites s ON s.id = e.site_id
+       JOIN users u ON u.id = s.user_id
+       ${f.clause}
+       ORDER BY e.created_at DESC
+       LIMIT $${f.nextIdx} OFFSET $${f.nextIdx + 1}`,
+    [...f.params, limit, offset]
+  )
+}
+
+export async function countAll(filters = {}) {
+  const f = buildEventFilters(filters)
+  const row = await one(
+    `SELECT COUNT(*)::int AS n
+       FROM events e
+       JOIN sites s ON s.id = e.site_id
+       ${f.clause}`,
+    f.params
+  )
+  return row?.n || 0
+}
+
+export async function byId(id) {
+  return one(
+    `SELECT e.*, s.name AS site_name, s.title AS site_title, u.email AS user_email, u.name AS user_name
+       FROM events e
+       JOIN sites s ON s.id = e.site_id
+       JOIN users u ON u.id = s.user_id
+      WHERE e.id = $1`,
+    [id]
+  )
+}
+
 /** Every event sharing a fingerprint, oldest first — the history of one problem. */
 export async function history(siteId, fingerprint) {
   return all(

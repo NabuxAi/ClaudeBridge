@@ -27,7 +27,7 @@ export function TaskProvider({ children, siteId }) {
         const s = await siteApi(siteId).job(jobId)
         if (!s) return
 
-        setActiveTask((prev) => ({
+        setActiveTask(() => ({
           id: jobId,
           title: taskMeta.title || s.message || 'در حال پردازش…',
           type: taskMeta.type || s.type || 'job',
@@ -90,6 +90,7 @@ export function TaskProvider({ children, siteId }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTask() {
   return useContext(TaskContext)
 }

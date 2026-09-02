@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.7.6
+ * Version: 3.7.7
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.7.6' );
+define( 'CB_VERSION', '3.7.7' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -869,7 +869,14 @@ function cb_backup_run( $args = array() ) {
 	);
 	cb_put_contents( $dir . "/meta-{$id}.json", wp_json_encode( $meta ) );
 
-	cb_backup_prune( isset( $args['keep'] ) ? (int) $args['keep'] : 7 );
+	$policy_info = cb_backup_policy_get();
+	$policy = $policy_info['policy'];
+	$prune_result = cb_backup_prune( array(
+		'keep'    => isset( $args['keep'] ) ? (int) $args['keep'] : 10,
+		'days'    => (int) ( isset( $policy['retention_days'] ) ? $policy['retention_days'] : 30 ),
+		'max_mb'  => (int) ( isset( $policy['max_storage_mb'] ) ? $policy['max_storage_mb'] : 2048 ),
+	) );
+	$meta['pruned'] = $prune_result;
 	return array( 'ok' => true, 'backup' => $meta );
 }
 
@@ -893,6 +900,57 @@ function cb_backup_verify_file( $path ) {
 	fclose( $fh );
 	// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets
 	return false !== strpos( $tail, 'FOREIGN_KEY_CHECKS=1' );
+}
+
+function cb_backup_policy_get() {
+	$policy = get_option( 'cb_backup_policy', array() );
+	if ( ! is_array( $policy ) ) {
+		$policy = array();
+	}
+	$defaults = array(
+		'destination'        => 'local', // 'local' (host) or 'hub' (our server)
+		'max_daily_backups'  => 5,
+		'retention_days'     => 30,
+		'max_storage_mb'     => 2048,
+		'auto_prune_on_full' => true,
+		'scheduled_enabled'  => true,
+	);
+	$policy = array_merge( $defaults, $policy );
+
+	$list = cb_backup_list();
+	$today_start = strtotime( 'today midnight' );
+	$today_count = 0;
+	foreach ( (array) $list['backups'] as $b ) {
+		if ( isset( $b['created_at'] ) && $b['created_at'] >= $today_start ) {
+			$today_count++;
+		}
+	}
+
+	return array(
+		'policy'             => $policy,
+		'backups_today'      => $today_count,
+		'storage_used_bytes' => isset( $list['bytes'] ) ? (int) $list['bytes'] : 0,
+		'total_backups'      => isset( $list['total'] ) ? (int) $list['total'] : 0,
+		'free_disk_bytes'    => (int) @disk_free_space( cb_backup_dir() ),
+	);
+}
+
+function cb_backup_policy_set( $args ) {
+	if ( ! is_array( $args ) ) {
+		return new WP_Error( 'cb_invalid_args', 'تنظیمات نامعتبر است.' );
+	}
+	$cur_info = cb_backup_policy_get();
+	$current = $cur_info['policy'];
+	$updated = array(
+		'destination'        => isset( $args['destination'] ) && in_array( $args['destination'], array( 'local', 'hub', 's3' ), true ) ? $args['destination'] : $current['destination'],
+		'max_daily_backups'  => isset( $args['max_daily_backups'] ) ? max( 1, min( 50, (int) $args['max_daily_backups'] ) ) : $current['max_daily_backups'],
+		'retention_days'     => isset( $args['retention_days'] ) ? max( 1, min( 365, (int) $args['retention_days'] ) ) : $current['retention_days'],
+		'max_storage_mb'     => isset( $args['max_storage_mb'] ) ? max( 100, (int) $args['max_storage_mb'] ) : $current['max_storage_mb'],
+		'auto_prune_on_full' => isset( $args['auto_prune_on_full'] ) ? (bool) $args['auto_prune_on_full'] : $current['auto_prune_on_full'],
+		'scheduled_enabled'  => isset( $args['scheduled_enabled'] ) ? (bool) $args['scheduled_enabled'] : $current['scheduled_enabled'],
+	);
+	update_option( 'cb_backup_policy', $updated );
+	return cb_backup_policy_get();
 }
 
 function cb_backup_list() {
@@ -920,36 +978,83 @@ function cb_backup_list() {
 		'backups'  => $out,
 		'dir'      => $dir_label,
 		'total'    => count( $out ),
-		'bytes'    => array_sum( array_map( function ( $b ) { return $b['db_bytes'] + $b['files_bytes']; }, $out ) ),
+		'bytes'    => array_sum( array_map( function ( $b ) { return ( isset( $b['db_bytes'] ) ? $b['db_bytes'] : 0 ) + ( isset( $b['files_bytes'] ) ? $b['files_bytes'] : 0 ); }, $out ) ),
 	);
 }
 
-/** Keep the newest N per directory; a backup directory that grows forever fills the host. */
-function cb_backup_prune( $keep = 7 ) {
-	$keep = max( 1, (int) $keep );
+/** Keep newest backups; delete older than retention days or when storage limit is exceeded. */
+function cb_backup_prune( $args = 7 ) {
+	$keep   = is_array( $args ) && isset( $args['keep'] ) ? (int) $args['keep'] : ( is_numeric( $args ) ? (int) $args : 10 );
+	$days   = is_array( $args ) && isset( $args['days'] ) ? (int) $args['days'] : 30;
+	$max_mb = is_array( $args ) && isset( $args['max_mb'] ) ? (int) $args['max_mb'] : 2048;
+	$keep   = max( 1, $keep );
+	$max_bytes = $max_mb > 0 ? ( $max_mb * 1024 * 1024 ) : 0;
+	$now    = time();
+	$cutoff = $days > 0 ? ( $now - ( $days * 86400 ) ) : 0;
+
+	$pruned_count = 0;
+	$freed_bytes  = 0;
+
 	foreach ( cb_backup_dirs() as $dir ) {
 		$metas = (array) glob( $dir . '/meta-*.json' );
 		$backups = array();
 		foreach ( $metas as $m ) {
 			$meta = json_decode( (string) cb_get_contents( $m ), true );
 			if ( is_array( $meta ) && ! empty( $meta['id'] ) && isset( $meta['created_at'] ) ) {
-				$meta['_path'] = $m;
-				$backups[] = $meta;
+				$meta['_path']  = $m;
+				$meta['_bytes'] = ( isset( $meta['db_bytes'] ) ? (int) $meta['db_bytes'] : 0 ) + ( isset( $meta['files_bytes'] ) ? (int) $meta['files_bytes'] : 0 );
+				$backups[]      = $meta;
 			}
 		}
 		usort( $backups, function ( $a, $b ) { return $b['created_at'] <=> $a['created_at']; } );
+
+		$total_size = 0;
 		$i = 0;
 		foreach ( $backups as $b ) {
-			if ( ++$i <= $keep ) {
+			$i++;
+			// Never prune the newest single backup
+			if ( 1 === $i ) {
+				$total_size += $b['_bytes'];
 				continue;
 			}
-			cb_delete_file( $dir . '/' . $b['db_file'] );
-			if ( ! empty( $b['files_file'] ) ) {
-				cb_delete_file( $dir . '/' . $b['files_file'] );
+
+			$should_delete = false;
+			if ( $i > $keep ) {
+				$should_delete = true;
+			} elseif ( $cutoff > 0 && $b['created_at'] < $cutoff ) {
+				$should_delete = true;
+			} elseif ( $max_bytes > 0 && ( $total_size + $b['_bytes'] ) > $max_bytes ) {
+				$should_delete = true;
 			}
-			cb_delete_file( $b['_path'] );
+
+			if ( $should_delete ) {
+				if ( ! empty( $b['db_file'] ) ) {
+					$f = $dir . '/' . $b['db_file'];
+					if ( file_exists( $f ) ) {
+						$freed_bytes += (int) @filesize( $f );
+						cb_delete_file( $f );
+					}
+				}
+				if ( ! empty( $b['files_file'] ) ) {
+					$f = $dir . '/' . $b['files_file'];
+					if ( file_exists( $f ) ) {
+						$freed_bytes += (int) @filesize( $f );
+						cb_delete_file( $f );
+					}
+				}
+				cb_delete_file( $b['_path'] );
+				$pruned_count++;
+			} else {
+				$total_size += $b['_bytes'];
+			}
 		}
 	}
+
+	return array(
+		'ok'          => true,
+		'pruned'      => $pruned_count,
+		'freed_bytes' => $freed_bytes,
+	);
 }
 
 // Nightly snapshot, so the history the panel shows is one the site really has.
@@ -963,9 +1068,12 @@ add_action( 'init', function () {
 	}
 } );
 
-function cb_op_backup_run( $args )  { return cb_backup_run( is_array( $args ) ? $args : array() ); }
-function cb_op_backup_list()        { return cb_backup_list(); }
-function cb_op_backup_preflight()   { return cb_backup_preflight(); }
+function cb_op_backup_run( $args )        { return cb_backup_run( is_array( $args ) ? $args : array() ); }
+function cb_op_backup_list()              { return cb_backup_list(); }
+function cb_op_backup_preflight()         { return cb_backup_preflight(); }
+function cb_op_backup_policy_get()        { return cb_backup_policy_get(); }
+function cb_op_backup_policy_set( $args ) { return cb_backup_policy_set( is_array( $args ) ? $args : array() ); }
+function cb_op_backup_prune( $args )      { return cb_backup_prune( is_array( $args ) ? $args : array() ); }
 
 function cb_dir_size_quick( $dir ) {
 	if ( ! is_dir( $dir ) ) {
@@ -1121,10 +1229,9 @@ function cb_op_backup_read( $args ) {
 
 	$size   = (int) filesize( $real );
 	$offset = isset( $args['offset'] ) ? max( 0, (int) $args['offset'] ) : 0;
-	// 1MB raw ≈ 1.37MB base64. Small enough to survive any sane memory limit
-	// and any proxy body cap, large enough that a 200MB dump is not 200k calls.
-	$length = isset( $args['length'] ) ? (int) $args['length'] : 1048576;
-	$length = max( 65536, min( 4194304, $length ) );
+	// 2MB raw ≈ 2.7MB base64. Fast throughput while remaining well below PHP memory limits.
+	$length = isset( $args['length'] ) ? (int) $args['length'] : 2097152;
+	$length = max( 65536, min( 8388608, $length ) );
 
 	if ( $offset >= $size ) {
 		return array( 'id' => $id, 'what' => $what, 'offset' => $offset, 'size' => $size,
@@ -1879,6 +1986,9 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'backup_run', 'description' => 'Take a snapshot of this site now: full database dump always, and optionally a zip of wp-content or selected sections. The dump is written in pure PHP so it works on hosts where exec() is disabled, and is verified complete before being recorded. Old snapshots beyond `keep` are pruned.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'files' => array( 'type' => 'boolean', 'description' => 'Also archive wp-content. Slow and large on media-heavy sites.' ), 'sections' => array( 'type' => 'array', 'items' => array( 'type' => 'string' ), 'description' => 'Selectable sections: db, plugins, themes, uploads.' ), 'label' => array( 'type' => 'string' ), 'keep' => array( 'type' => 'integer', 'description' => 'How many snapshots to retain (default 7).' ) ) ), 'op' => 'cb_op_backup_run' );
 	$tools[] = array( 'name' => 'backup_list', 'description' => 'Every snapshot this site actually holds, with size, table and row counts, and whether the dump was verified complete. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_list', 'noargs' => true );
 	$tools[] = array( 'name' => 'backup_preflight', 'description' => 'Check free host disk space and estimate backup size and duration per section (db, plugins, themes, uploads). Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_preflight', 'noargs' => true );
+	$tools[] = array( 'name' => 'backup_policy_get', 'description' => 'Get current backup configuration policy: storage destination (local host or hub server), retention days, max daily backups limit, and storage capacity limit in MB. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_policy_get', 'noargs' => true );
+	$tools[] = array( 'name' => 'backup_policy_set', 'description' => 'Update backup policy: destination (local, hub), max_daily_backups, retention_days, max_storage_mb, auto_prune_on_full.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'destination' => array( 'type' => 'string', 'enum' => array( 'local', 'hub', 's3' ) ), 'max_daily_backups' => array( 'type' => 'integer' ), 'retention_days' => array( 'type' => 'integer' ), 'max_storage_mb' => array( 'type' => 'integer' ), 'auto_prune_on_full' => array( 'type' => 'boolean' ) ) ), 'op' => 'cb_op_backup_policy_set' );
+	$tools[] = array( 'name' => 'backup_prune', 'description' => 'Prune old backups according to retention days, max storage capacity, or minimum count to retain. Frees host disk space immediately.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'keep' => array( 'type' => 'integer' ), 'days' => array( 'type' => 'integer' ), 'max_mb' => array( 'type' => 'integer' ) ) ), 'op' => 'cb_op_backup_prune' );
 	// Performance. perf_report measures; perf_clean_transients is the only fix
 	// here safe enough to run without a human deciding.
 	$tools[] = array( 'name' => 'perf_clean_transients', 'description' => 'Delete transients that have already expired. Safe: nothing relies on an expired transient, and anything that needs one rebuilds it. Batched, so run again while `remaining` is above zero.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'limit' => array( 'type' => 'integer' ) ) ), 'op' => 'cb_op_perf_clean_transients' );

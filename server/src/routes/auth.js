@@ -56,7 +56,7 @@ router.post('/auth/register', registerLimit, async (req, res, next) => {
     if (!c.ok) return res.status(400).json({ message: captcha.MESSAGES[c.reason], captchaRequired: true })
 
     const user = await users.create({ name, email, password })
-    res.status(201).json({ token: signToken({ sub: user.id, name: user.name }), user })
+    res.status(201).json({ token: signToken({ sub: user.id, name: user.name, role: user.role }), user })
   } catch (e) { next(e) }
 })
 
@@ -125,7 +125,7 @@ router.post('/auth/login', loginLimit, async (req, res, next) => {
     clear(`login-acct:${emailOf(req)}`)
 
     const user = await users.byId(row.id)
-    res.json({ token: signToken({ sub: user.id, name: user.name }), user })
+    res.json({ token: signToken({ sub: user.id, name: user.name, role: user.role }), user })
   } catch (e) { next(e) }
 })
 

@@ -41,18 +41,41 @@ if (!dsn) {
 
   const { hashPassword } = await import('../src/auth.js')
 
-  async function post(path, body, headers = {}) {
+  // Accepts either the bearer string or the whole registerUser() result. It
+  // used to take a headers object, and every caller that destructured the
+  // string spread it character by character — `{0:'B',1:'e',...}` carries no
+  // authorization header at all, so those requests arrived anonymous and the
+  // assertions blamed the route for a 401 the test had caused.
+  function authHeaders(auth) {
+    if (!auth) return {}
+    if (typeof auth === 'string') return { authorization: auth }
+    return auth.authorization ? { authorization: auth.authorization } : {}
+  }
+
+  async function post(path, body, auth) {
     const res = await fetch(API + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(auth) },
       body: JSON.stringify(body),
     })
     const data = await res.json().catch(() => ({}))
     return { status: res.status, body: data }
   }
 
-  async function http(method, path, headers = {}) {
-    const res = await fetch(API + path, { method, headers })
+  async function http(method, path, auth) {
+    const res = await fetch(API + path, { method, headers: authHeaders(auth) })
+    const data = await res.json().catch(() => ({}))
+    return { status: res.status, body: data }
+  }
+
+  // The role change is registered as PATCH. Posting to it matched no route, so
+  // the test read the resulting 404 as "the owner may not change a role".
+  async function patch(path, body, auth) {
+    const res = await fetch(API + path, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(auth) },
+      body: JSON.stringify(body),
+    })
     const data = await res.json().catch(() => ({}))
     return { status: res.status, body: data }
   }
@@ -70,6 +93,11 @@ if (!dsn) {
   async function registerUser(email) {
     const name = 'Team Test'
     const password = 'a-strong-password-123'
+    // Registration is capped at 5 per hour per IP and invites at 10, and this
+    // file signs up roughly fifteen accounts from 127.0.0.1. Those limits are
+    // covered by their own tests; here they are only a way for a later test to
+    // fail on a 429 that has nothing to do with team permissions.
+    resetRateLimit()
     const { status, body } = await post('/auth/register', {
       name, email, password,
       ...(await solveCaptcha()),
@@ -77,7 +105,7 @@ if (!dsn) {
     if (status !== 201) {
       console.log('register failed', status, email, JSON.stringify(body))
     }
-    return { authorization: `Bearer ${body.token}`, userId: body.user.id }
+    return { authorization: `Bearer ${body.token}`, userId: body.user.id, email }
   }
 
   async function createSite(auth, name) {
@@ -86,7 +114,7 @@ if (!dsn) {
     return body
   }
 
-  test.before(() => {
+  test.beforeEach(() => {
     resetRateLimit()
   })
 
@@ -201,7 +229,7 @@ if (!dsn) {
     const before = await http('GET', `/sites/${site.id}/team`, owner)
     const memberId = before.body.members[0].id
 
-    const updated = await post(`/sites/${site.id}/team/members/${memberId}`, { role: 'admin' }, auth)
+    const updated = await patch(`/sites/${site.id}/team/members/${memberId}`, { role: 'admin' }, owner)
     assert.equal(updated.status, 200, JSON.stringify(updated.body))
     assert.equal(updated.body.role, 'admin')
 
@@ -220,7 +248,7 @@ if (!dsn) {
     const before = await http('GET', `/sites/${site.id}/team`, owner)
     const memberId = before.body.members[0].id
 
-    const removed = await http('DELETE', `/sites/${site.id}/team/members/${memberId}`, auth)
+    const removed = await http('DELETE', `/sites/${site.id}/team/members/${memberId}`, owner)
     assert.equal(removed.status, 200)
 
     const after = await http('GET', `/sites/${site.id}/team`, owner)

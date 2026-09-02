@@ -85,6 +85,10 @@ const SCHEMA = `
   -- acting on a wrong guess here means requests that silently never arrive.
   ALTER TABLE sites ADD COLUMN IF NOT EXISTS hosting JSONB
     NOT NULL DEFAULT '{"region":"unknown","provider":"other","providerName":null,"egress":"auto","callbackUrl":null}'::jsonb;
+
+  -- Backup storage and retention policy per site.
+  ALTER TABLE sites ADD COLUMN IF NOT EXISTS backup_policy JSONB
+    NOT NULL DEFAULT '{"destination":"local","maxDaily":5,"retentionDays":30,"maxStorageMb":2048,"autoPruneOnFull":true}'::jsonb;
 ` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA + CONVERSATIONS_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */

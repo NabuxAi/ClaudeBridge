@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Input, Badge, SkeletonCard, SkeletonStats } from '../../components/index.js'
+import { Button, Input, Badge } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
 import { useTask } from '../../lib/tasks.jsx'
@@ -12,7 +12,7 @@ import { useTask } from '../../lib/tasks.jsx'
  */
 export default function Conflict() {
   const { siteId } = useOutletContext()
-  const { startTask, activeTask } = useTask()
+  const { startTask } = useTask()
   const [url, setUrl] = useState('')
   const [expect, setExpect] = useState('')
   const [forbid, setForbid] = useState('')
