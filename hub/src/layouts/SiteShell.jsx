@@ -79,7 +79,6 @@ export default function SiteShell() {
             <StatusPill status={site?.status || 'healthy'} />
             <span className="dwp-spacer" />
             <Button as={Link} to={`${base}/assistant`} variant="subtle" size="sm" leftIcon="sparkles" className="dwp-desktop-only">از پشتیبان بپرسید</Button>
-            <IconButton icon="bell" label="اعلان‌ها" />
             <span className="dwp-avatar">{user?.initials || '؟'}</span>
           </header>
           <TaskNotificationBar />

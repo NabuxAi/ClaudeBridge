@@ -60,15 +60,15 @@ export default function Landing() {
           <div>
             <div style={{ borderRadius: 'var(--gd-radius-2xl)', padding: 20, boxShadow: 'var(--gd-shadow-xl)', border: '1px solid var(--gd-border)', background: 'var(--gd-bg-subtle)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                <span className="dwp-mono" style={{ fontSize: 13, color: 'var(--gd-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 7 }}><Icon name="globe" size={15} /> mystore.ir</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-text-muted)', background: 'var(--gd-bg-inset)', border: '1px solid var(--gd-border)', borderRadius: 999, padding: '3px 10px' }}>پیش‌نمایش پنل</span>
                 <span className="dwp-spacer" /><StatusPill status="healthy" />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: 15, borderRadius: 'var(--gd-radius-lg)', background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)' }}>
                 <span style={{ width: 46, height: 46, borderRadius: '50%', background: 'var(--gd-success-bg)', color: 'var(--gd-success-text)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}><Icon name="shield-check" size={23} /></span>
-                <div><div style={{ fontWeight: 800, fontSize: 16 }}>همه‌چیز سالم است</div><div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 3 }}>آخرین بررسی: ۲ دقیقه پیش · ۹ سرویس</div></div>
+                <div><div style={{ fontWeight: 800, fontSize: 16 }}>وضعیت سایت شما</div><div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 3 }}>پس از اتصال، اینجا نمایش داده می‌شود</div></div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
-                {['پرداخت سالم', 'SSL معتبر'].map((t) => (
+                {['بررسی SSL', 'آپدیت‌ها'].map((t) => (
                   <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--gd-text-secondary)', background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', padding: '8px 11px' }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--gd-success)' }} /> {t}
                   </span>
@@ -126,18 +126,21 @@ export default function Landing() {
           <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: '10px 0 12px' }}>به زبان ساده به شما می‌گوید چه شد</h2>
           <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: 0 }}>هر رخداد را با همین ترتیب گزارش می‌کند: وضعیت، علت، اقدام انجام‌شده و نتیجه — بدون اصطلاحات فنی گیج‌کننده.</p>
         </div>
-        <div style={{ display: 'flex', gap: 12, borderRadius: 'var(--gd-radius-lg)', border: '1px solid var(--gd-danger-border)', background: 'var(--gd-danger-bg)', padding: '18px 22px', boxShadow: 'var(--gd-shadow-sm)' }}>
-          <span style={{ width: 40, height: 40, borderRadius: 'var(--gd-radius-md)', background: 'var(--gd-danger)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}><Icon name="alert-octagon" size={22} /></span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--gd-danger-text)' }}>هشدار مهم</span>
-              <span className="dwp-mono" style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginInlineStart: 'auto' }}>۱۴:۳۲</span>
-            </div>
-            <div style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--gd-text-secondary)', marginTop: 6 }}>صفحهٔ پرداخت از ۱۲ دقیقه قبل خطای ۵۰۰ داشت.</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 9, fontSize: 13 }}>
-              <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>علت:</b> آپدیت افزونهٔ درگاه پرداخت</span>
-              <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>اقدام:</b> نسخهٔ قبلی افزونه بازیابی شد</span>
-              <span style={{ color: 'var(--gd-success-text)', fontWeight: 600 }}><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>وضعیت فعلی:</b> سایت سالم است</span>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-text-muted)', marginBottom: 8 }}>نمونه گزارش</div>
+          <div style={{ display: 'flex', gap: 12, borderRadius: 'var(--gd-radius-lg)', border: '1px solid var(--gd-danger-border)', background: 'var(--gd-danger-bg)', padding: '18px 22px', boxShadow: 'var(--gd-shadow-sm)' }}>
+            <span style={{ width: 40, height: 40, borderRadius: 'var(--gd-radius-md)', background: 'var(--gd-danger)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}><Icon name="alert-octagon" size={22} /></span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--gd-danger-text)' }}>هشدار مهم</span>
+                <span className="dwp-mono" style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginInlineStart: 'auto' }}>۱۴:۳۲</span>
+              </div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--gd-text-secondary)', marginTop: 6 }}>صفحهٔ پرداخت از ۱۲ دقیقه قبل خطای ۵۰۰ داشت.</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 9, fontSize: 13 }}>
+                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>علت:</b> آپدیت افزونهٔ درگاه پرداخت</span>
+                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>اقدام:</b> نسخهٔ قبلی افزونه بازیابی شد</span>
+                <span style={{ color: 'var(--gd-success-text)', fontWeight: 600 }}><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>وضعیت فعلی:</b> سایت سالم است</span>
+              </div>
             </div>
           </div>
         </div>
@@ -161,7 +164,7 @@ export default function Landing() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13.5, color: 'var(--gd-text-secondary)', marginBottom: 20 }}>
                   {p.feats.map((f) => <span key={f} style={{ display: 'flex', gap: 9 }}><Icon name="check" size={17} style={{ color: 'var(--gd-success)' }} /> {f}</span>)}
                 </div>
-                <Button as={Link} to="/checkout" variant={p.variant} size="md" fullWidth>{p.cta}</Button>
+                <Button as={Link} to="/pricing" variant={p.variant} size="md" fullWidth rightIcon="arrow-left">{p.cta}</Button>
               </div>
             ))}
           </div>

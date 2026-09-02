@@ -117,6 +117,7 @@ export const account = {
     (body) => http('/contact', { method: 'PATCH', body })
   ),
   alertReadiness: call(mock.alertReadiness, () => http('/alerts/readiness')),
+  activity: call(() => Promise.resolve({ events: [] }), () => http('/account/activity')),
 }
 
 // ---- Per-site management (all proxied through YOUR server) ------
@@ -204,13 +205,36 @@ export function site(siteId) {
       (backupId, body) => mock.restoreBackup(siteId, backupId, body),
       (backupId, body) => http(p(`/backups/${backupId}/restore`), { method: 'POST', body: body || {} })
     ),
-    // Fetched rather than linked, because the API is Bearer-authenticated and
-    // an <a href> carries no header. The response is buffered into a Blob,
-    // which does mean a large dump briefly sits in browser memory — acceptable
-    // for a deliberate download, and the alternative (a URL that works without
-    // the header) would be a link to a database dump that anyone can replay.
+    backupPolicy: call(
+      () => Promise.resolve({ policy: { destination: 'local', maxDaily: 5, retentionDays: 30, maxStorageMb: 2048, autoPruneOnFull: true } }),
+      () => http(p('/backup-policy'))
+    ),
+    setBackupPolicy: call(
+      (body) => Promise.resolve(body),
+      (body) => http(p('/backup-policy'), { method: 'PUT', body: body || {} })
+    ),
+    pruneBackups: call(
+      (_body) => Promise.resolve({ ok: true, pruned: 0, freed_bytes: 0 }),
+      (body) => http(p('/backups/prune'), { method: 'POST', body: body || {} })
+    ),
+    // Direct stream download using short-lived signed tokens for native browser
+    // downloads directly to disk, avoiding client-side RAM buffering for large archives.
     downloadBackup: async (backupId, what = 'db') => {
       if (USE_MOCK) return mock.downloadBackup(siteId, backupId, what)
+      try {
+        const tokenRes = await http(p(`/backups/${backupId}/token?what=${what}`))
+        if (tokenRes?.downloadUrl) {
+          const a = document.createElement('a')
+          a.href = tokenRes.downloadUrl
+          a.setAttribute('download', '')
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+          return { ok: true }
+        }
+      } catch {
+        // fall back to stream fetch
+      }
       const res = await fetch(`${BASE}/sites/${siteId}/backups/${backupId}/download?what=${what}`, {
         headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
       })
@@ -228,26 +252,6 @@ export function site(siteId) {
       URL.revokeObjectURL(url)
       return { ok: true, name }
     },
-    listOffsiteTargets: call(
-      () => Promise.resolve({ targets: [] }),
-      () => http(p('/offsite-backups/targets'))
-    ),
-    createOffsiteTarget: call(
-      (body) => Promise.resolve({ id: 'mock-target', ...body }),
-      (body) => http(p('/offsite-backups/targets'), { method: 'POST', body })
-    ),
-    deleteOffsiteTarget: call(
-      (targetId) => Promise.resolve({ ok: true }),
-      (targetId) => http(p(`/offsite-backups/targets/${targetId}`), { method: 'DELETE' })
-    ),
-    listOffsiteJobs: call(
-      (params) => Promise.resolve({ jobs: [] }),
-      (params) => http(p(`/offsite-backups/jobs${params ? '?' + new URLSearchParams(params) : ''}`))
-    ),
-    syncOffsite: call(
-      (body) => Promise.resolve({ queued: true, job: { id: 'mock-job', status: 'queued' } }),
-      (body) => http(p('/offsite-backups/jobs'), { method: 'POST', body: body || {} })
-    ),
     // Conflict hunt. Queued on the site, so this returns a job id in
     // milliseconds rather than holding a connection open while plugins are
     // flipped one group at a time.
@@ -339,6 +343,10 @@ export function site(siteId) {
       (proposalId) => http(p(`/proposals/${proposalId}/reject`), { method: 'POST' })
     ),
     // Off-site (S3-compatible) backup targets and upload jobs.
+    listOffsiteTargets: call(
+      () => mock.offsiteTargets(siteId),
+      () => http(p('/offsite-backups/targets'))
+    ),
     offsiteTargets: call(
       () => mock.offsiteTargets(siteId),
       () => http(p('/offsite-backups/targets'))
@@ -355,15 +363,48 @@ export function site(siteId) {
       (targetId) => mock.deleteOffsiteTarget(siteId, targetId),
       (targetId) => http(p(`/offsite-backups/targets/${targetId}`), { method: 'DELETE' })
     ),
+    listOffsiteJobs: call(
+      (params) => mock.offsiteJobs(siteId, typeof params === 'string' ? params : params?.targetId),
+      (params) => http(p(`/offsite-backups/jobs${params ? (typeof params === 'string' ? `?targetId=${encodeURIComponent(params)}` : '?' + new URLSearchParams(params)) : ''}`))
+    ),
     offsiteJobs: call(
       (targetId) => mock.offsiteJobs(siteId, targetId),
       (targetId) => http(p(`/offsite-backups/jobs${targetId ? `?targetId=${encodeURIComponent(targetId)}` : ''}`))
+    ),
+    syncOffsite: call(
+      (body) => mock.runOffsiteBackup(siteId, body?.targetId),
+      (body) => http(p('/offsite-backups/jobs'), { method: 'POST', body: body || {} })
     ),
     runOffsiteBackup: call(
       (targetId) => mock.runOffsiteBackup(siteId, targetId),
       (targetId) => http(p('/offsite-backups/jobs'), { method: 'POST', body: { targetId } })
     ),
   }
+}
+
+// ---- Admin panel (operator only) --------------------------------
+export const admin = {
+  stats: call(() => Promise.resolve({ users: 0, sites: 0, pairedSites: 0, openIncidents: 0, events24h: 0, events7d: 0 }), () => http('/admin/stats')),
+  users: call(
+    () => Promise.resolve({ users: [], total: 0, limit: 50, offset: 0 }),
+    (params) => http(`/admin/users?${params ? new URLSearchParams(params) : ''}`)
+  ),
+  user: call(
+    () => Promise.resolve({ user: null, sites: [] }),
+    (id) => http(`/admin/users/${id}`)
+  ),
+  setUserRole: call(
+    (id, role) => Promise.resolve({ id, role }),
+    (id, role) => http(`/admin/users/${id}/role`, { method: 'PATCH', body: { role } })
+  ),
+  events: call(
+    () => Promise.resolve({ events: [], total: 0, limit: 50, offset: 0 }),
+    (params) => http(`/admin/events?${params ? new URLSearchParams(params) : ''}`)
+  ),
+  event: call(
+    () => Promise.resolve({}),
+    (id) => http(`/admin/events/${id}`)
+  ),
 }
 
 export const isMock = USE_MOCK

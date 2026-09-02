@@ -26,20 +26,34 @@ function Stat({ label, value, color }) {
   )
 }
 
-// Cross-site event feed (design copy — no account-level events endpoint yet).
-const EVENTS = [
-  { tone: 'done', icon: 'check-circle-2', meta: 'mystore.ir', time: '۱۴:۳۲', label: 'خطای ۵۰۰ صفحهٔ پرداخت به‌صورت خودکار برطرف شد' },
-  { tone: 'warning', icon: 'alert-triangle', meta: 'shop2.ir', time: '۱۲:۱۰', label: 'فضای هاست به ۹۱٪ رسید — نیازمند بررسی' },
-  { tone: 'done', icon: 'refresh-cw', meta: 'blog.digiwp.com', time: '۰۹:۰۰', label: '۳ آپدیت امن نصب و تست شد' },
-  { tone: 'info', icon: 'database', meta: 'همه سایت‌ها', time: '۰۳:۰۰', label: 'بکاپ روزانه گرفته و تأیید شد' },
-]
+function eventIcon(kind, severity) {
+  if (severity === 'critical') return 'alert-octagon'
+  if (severity === 'warning') return 'alert-triangle'
+  if (kind === 'update' || kind === 'policy') return 'refresh-cw'
+  if (kind === 'backup') return 'database'
+  if (kind === 'malware' || kind === 'rescue') return 'shield-alert'
+  return 'info'
+}
+
+function eventTone(severity, resolved) {
+  if (resolved) return 'done'
+  if (severity === 'critical') return 'danger'
+  if (severity === 'warning') return 'warning'
+  return 'info'
+}
 
 export default function Dashboard() {
   const [sites, setSites] = useState(null)
+  const [activity, setActivity] = useState(null)
 
   useEffect(() => {
     let alive = true
-    account.sites().then((d) => alive && setSites(d))
+    Promise.all([account.sites(), account.activity()])
+      .then(([s, a]) => {
+        if (!alive) return
+        setSites(s)
+        setActivity(a?.events || [])
+      })
     return () => { alive = false }
   }, [])
 
@@ -119,8 +133,20 @@ export default function Dashboard() {
       {/* Cross-site activity */}
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>آخرین رویدادها در همهٔ سایت‌ها</div>
       <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '6px 20px' }}>
-        {EVENTS.map((e, i) => (
-          <ActivityRow key={i} icon={e.icon} tone={e.tone} label={e.label} meta={e.meta} time={e.time} divided={i < EVENTS.length - 1} />
+        {activity == null ? (
+          <ActivityRow icon="loader" tone="neutral" label="در حال بارگذاری رویدادها…" meta="" time="" divided={false} />
+        ) : activity.length === 0 ? (
+          <ActivityRow icon="info" tone="neutral" label="هنوز رویدادی ثبت نشده است." meta="" time="" divided={false} />
+        ) : activity.map((e, i) => (
+          <ActivityRow
+            key={e.id || i}
+            icon={eventIcon(e.kind, e.severity)}
+            tone={eventTone(e.severity, e.resolved_at)}
+            label={e.title}
+            meta={e.site_name || e.site_id}
+            time={new Date(Number(e.created_at)).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+            divided={i < activity.length - 1}
+          />
         ))}
       </div>
     </>

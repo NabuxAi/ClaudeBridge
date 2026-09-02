@@ -842,7 +842,29 @@ router.post('/sites/:id/backups/:backupId/restore', async (req, res, next) => {
  * whole dump in memory — the file can be larger than either process's limit.
  * Nothing is cached on disk here either: a database dump at rest on the hub is
  * a liability that outlives the download.
+/**
+ * Short-lived single-use download token for direct browser downloading.
+ * Lets the browser download large archives directly via native stream to disk
+ * without holding entire files in JavaScript/browser memory.
  */
+router.get('/sites/:id/backups/:backupId/token', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const what = req.query.what === 'files' ? 'files' : 'db'
+    const token = signToken({
+      sub: req.user.sub,
+      siteId: site.id,
+      backupId: req.params.backupId,
+      what,
+      kind: 'backup_download',
+    }, 300) // 5 minutes
+    const base = config.publicBaseUrl || `${req.protocol}://${req.get('host')}/v1`
+    const downloadUrl = `${base}/sites/${site.id}/backups/${req.params.backupId}/download?token=${encodeURIComponent(token)}&what=${what}`
+    res.json({ token, downloadUrl })
+  } catch (e) { next(e) }
+})
+
 router.get('/sites/:id/backups/:backupId/download', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)
@@ -855,9 +877,10 @@ router.get('/sites/:id/backups/:backupId/download', async (req, res, next) => {
 
     let offset = 0
     let headersSent = false
+    const chunkSize = 2097152 // 2MB chunk per roundtrip
     for (let guard = 0; guard < 20000; guard++) {
       const raw = await connector.callTool(target, 'backup_read', {
-        id: req.params.backupId, what, offset,
+        id: req.params.backupId, what, offset, length: chunkSize,
       })
       const text = raw?.content?.[0]?.text
       const part = typeof text === 'string' ? JSON.parse(text) : raw
@@ -882,6 +905,70 @@ router.get('/sites/:id/backups/:backupId/download', async (req, res, next) => {
     if (res.headersSent) return res.destroy()
     res.status(e.status || 502).json({ message: e.message })
   }
+})
+
+/** Backup policy: destination (local host vs hub server), daily limits, retention, auto-prune */
+router.get('/sites/:id/backup-policy', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    let livePolicy = null
+    if (site.paired && site.url && site.secret) {
+      try {
+        const raw = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'backup_policy_get', {})
+        const text = raw?.content?.[0]?.text
+        livePolicy = typeof text === 'string' ? JSON.parse(text) : raw
+      } catch {
+        // live read failed, fall back to db
+      }
+    }
+    res.json({
+      policy: site.backup_policy || { destination: 'local', maxDaily: 5, retentionDays: 30, maxStorageMb: 2048, autoPruneOnFull: true },
+      live: livePolicy,
+    })
+  } catch (e) { next(e) }
+})
+
+router.put('/sites/:id/backup-policy', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    const patch = req.body || {}
+    const updated = await sites.setBackupPolicy(site.id, req.user.sub, patch)
+    if (site.paired && site.url && site.secret) {
+      try {
+        await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'backup_policy_set', {
+          destination: patch.destination,
+          max_daily_backups: patch.maxDaily,
+          retention_days: patch.retentionDays,
+          max_storage_mb: patch.maxStorageMb,
+          auto_prune_on_full: patch.autoPruneOnFull,
+        })
+      } catch {
+        // logged
+      }
+    }
+    res.json(updated.backupPolicy)
+  } catch (e) { next(e) }
+})
+
+router.post('/sites/:id/backups/prune', async (req, res, next) => {
+  try {
+    const site = await loadSite(req, res)
+    if (!site) return
+    if (!site.paired || !site.url || !site.secret) {
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
+    }
+    const raw = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'backup_prune', req.body || {})
+    const text = raw?.content?.[0]?.text
+    const result = typeof text === 'string' ? JSON.parse(text) : raw
+    events.record({
+      siteId: site.id, kind: 'backup', severity: 'info',
+      title: 'پاک‌سازی بکاپ‌های قدیمی اجرا شد',
+      detail: result,
+    }).catch(() => {})
+    res.json(result)
+  } catch (e) { next(e) }
 })
 
 /**

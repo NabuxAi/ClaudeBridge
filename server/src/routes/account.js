@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { config, publicApiBase } from '../config.js'
 import { sites, users } from '../store.js'
+import * as events from '../events.js'
 import * as seed from '../seed.js'
 
 const router = Router()
@@ -119,6 +120,13 @@ router.get('/alerts/readiness', async (req, res, next) => {
           ? `فقط یک راه فعال است (${ready[0].label}). اگر همان یکی کار نکند، هشداری به شما نمی‌رسد.`
           : `${ready.length} راه فعال است؛ اگر یکی کار نکند، بعدی امتحان می‌شود.`,
     })
+  } catch (e) { next(e) }
+})
+
+router.get('/account/activity', async (req, res, next) => {
+  try {
+    const rows = await events.listByUser(req.user.sub, 20)
+    res.json({ events: rows })
   } catch (e) { next(e) }
 })
 

@@ -6,6 +6,7 @@ import AuthLayout from './layouts/AuthLayout.jsx'
 import AccountShell from './layouts/AccountShell.jsx'
 import SiteShell from './layouts/SiteShell.jsx'
 import ProtectedRoute from './lib/ProtectedRoute.jsx'
+import AdminRoute from './lib/AdminRoute.jsx'
 
 // A · marketing
 const Landing = lazy(() => import('./pages/marketing/Landing.jsx'))
@@ -38,6 +39,13 @@ const Settings = lazy(() => import('./pages/site/Settings.jsx'))
 const Pricing = lazy(() => import('./pages/billing/Pricing.jsx'))
 const Checkout = lazy(() => import('./pages/billing/Checkout.jsx'))
 const Invoice = lazy(() => import('./pages/billing/Invoice.jsx'))
+// F · admin
+const AdminShell = lazy(() => import('./layouts/AdminShell.jsx'))
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard.jsx'))
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers.jsx'))
+const AdminUserDetail = lazy(() => import('./pages/admin/AdminUserDetail.jsx'))
+const AdminEvents = lazy(() => import('./pages/admin/AdminEvents.jsx'))
+const AdminEventDetail = lazy(() => import('./pages/admin/AdminEventDetail.jsx'))
 
 function PageLoader() {
   return (
@@ -97,6 +105,15 @@ export default function App() {
       {/* E · payment */}
       <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
       <Route path="/invoice/:id" element={<ProtectedRoute><Invoice /></ProtectedRoute>} />
+
+      {/* F · admin */}
+      <Route path="/admin" element={<AdminRoute><AdminShell /></AdminRoute>}>
+        <Route index element={<AdminDashboard />} />
+        <Route path="users" element={<AdminUsers />} />
+        <Route path="users/:id" element={<AdminUserDetail />} />
+        <Route path="events" element={<AdminEvents />} />
+        <Route path="events/:id" element={<AdminEventDetail />} />
+      </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -70,7 +70,7 @@ const STEPS = [
 
 export default function Rescue() {
   const { siteId } = useOutletContext()
-  const { startTask, activeTask } = useTask()
+  const { startTask } = useTask()
   const [results, setResults] = useState({})
   const [busy, setBusy] = useState('')
   const [errors, setErrors] = useState({})
