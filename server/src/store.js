@@ -552,11 +552,15 @@ export const team = {
     if (!VALID_ROLES.includes(role) || role === 'owner') {
       throw httpError(400, 'نقش باید مدیر یا فقط مشاهده باشد.')
     }
+    // Four values were bound for three placeholders: a Date.now() sat at $3 for
+    // an updated_at column team_members does not have. PostgreSQL cannot infer a
+    // type for a parameter the statement never references, so it rejected the
+    // whole UPDATE and every role change returned 500.
     const row = await one(
-      `UPDATE team_members SET role = $4
+      `UPDATE team_members SET role = $3
         WHERE id = $1 AND site_id = $2 AND status = 'active' AND role <> 'owner'
        RETURNING *`,
-      [memberId, siteId, Date.now(), role]
+      [memberId, siteId, role]
     )
     if (!row) throw httpError(404, 'عضوی با این شناسه پیدا نشد.')
     const user = await one('SELECT name, email FROM users WHERE id = $1', [row.user_id])
