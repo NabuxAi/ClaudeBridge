@@ -1,172 +1,213 @@
 /* ============================================================
    DigiWP Ai Support — Design System (bundled)
-   Faithfully assembled from the WP Guardian design tokens +
-   the 20 component style blocks shipped in the handoff bundle.
+   WP Guardian component language re-based onto the NabuxUi
+   token values (design mapping: hub/docs/nabuxui-design-mapping.md).
+   Rule of the mapping: `--gd-*` token NAMES are frozen — only
+   their VALUES move to the NabuxUi language, so every page that
+   consumes the tokens re-colours without a single markup change.
+   Values are the resolved NabuxUi tokens (nabuxui.css is not
+   loaded by the hub; `var(--nx-*)` here would resolve to nothing).
    ============================================================ */
 
 /* ============================================================
-   WP Guardian — Web fonts
+   Web fonts
    ------------------------------------------------------------
-   Primary UI + Persian/Latin : Vazirmatn (variable 300–900)
-   Technical / code / metrics  : JetBrains Mono (400–700)
+   Persian/UI text           : Vazirmatn (variable 300–800)
+   Latin display + numerals  : Bricolage Grotesque (NabuxUi
+                               display face — Latin glyphs only;
+                               Persian falls back to Vazirmatn
+                               per-glyph, so the joining script is
+                               never set in Bricolage)
+   Technical / code / metrics: JetBrains Mono (400–700)
 
-   Loaded from Google Fonts CDN. Vazirmatn is a purpose-built
-   modern Persian/Arabic + Latin typeface, so ONE family covers
-   both scripts and keeps the bilingual (RTL + LTR) product
-   visually consistent.
-
+   Weight 900 is no longer imported: no token consumes it.
    To self-host: replace the @import below with local @font-face
    rules that point at woff2 files under /assets/fonts/.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Vazirmatn:wght@300..800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 /* ============================================================
-   WP Guardian — Color system
+   Color system (NabuxUi values)
    ------------------------------------------------------------
-   Layer 1: raw palette  (--gd-<hue>-<step>)
+   Layer 1: raw palette  (--gd-<hue>-<step>) — remapped 1:1 onto
+            the NabuxUi ramps (ink / lapis / cyan / green / amber /
+            red). Pages that reference a raw step directly
+            (Settings, Landing, Billing, Team) re-color for free.
    Layer 2: semantic aliases on :root (light UI, the default)
    Layer 3: [data-theme="ink"] — the "night watch" dark surface
             used for hero / marketing / focus states.
 
-   Philosophy: the brand colour is a calm, trustworthy blue.
-   The STATUS colours (healthy / warning / critical) do the
-   emotional work — this is a monitoring product, so semantic
-   colour is a first-class citizen, not an afterthought.
+   Philosophy unchanged: the STATUS colours (healthy / warning /
+   critical) do the emotional work — green = healthy, amber =
+   needs attention, red = critical, cyan = checking, gray =
+   offline. Only the values moved; the roles did not.
    ============================================================ */
 
 :root {
-  /* ---- Neutrals — cool, faintly navy-tinted -------------- */
+  /* ---- Neutrals — NabuxUi "ink" ramp ---------------------- */
   --gd-gray-0:   #ffffff;
-  --gd-gray-25:  #fafbfc;
-  --gd-gray-50:  #f4f6f9;
-  --gd-gray-100: #eaeef4;
-  --gd-gray-150: #e2e7ef;
-  --gd-gray-200: #d5dde8;
-  --gd-gray-300: #bcc7d6;
-  --gd-gray-400: #9aa7bb;
-  --gd-gray-500: #75839a;
-  --gd-gray-600: #586579;
-  --gd-gray-700: #3f4a5b;
-  --gd-gray-800: #28303e;
-  --gd-gray-900: #151b27;
-  --gd-gray-950: #0b1120;
+  --gd-gray-25:  #fafbfc;   /* legacy tint (unused after remap) */
+  --gd-gray-50:  #f7f7fa;   /* nx ink-50 */
+  --gd-gray-100: #eeeff4;   /* nx ink-100 */
+  --gd-gray-150: #dfe0e8;   /* legacy step → nx ink-200 */
+  --gd-gray-200: #e7e4dc;   /* nx border (warm hairline) */
+  --gd-gray-300: #c3c5d3;   /* nx ink-300 */
+  --gd-gray-400: #9a9db3;   /* nx ink-400 */
+  --gd-gray-500: #6c7088;   /* nx ink-500 / text-subtle */
+  --gd-gray-600: #555a70;   /* nx ink-600 / text-muted */
+  --gd-gray-700: #3f4258;   /* nx ink-700 */
+  --gd-gray-800: #2a2d40;   /* nx ink-800 */
+  --gd-gray-900: #141726;   /* nx ink-900 */
+  --gd-gray-950: #0a0c17;   /* nx ink-950 */
 
-  /* ---- Guardian Blue — primary / interactive ------------- */
-  --gd-blue-50:  #eef2fe;
-  --gd-blue-100: #dde5fd;
-  --gd-blue-200: #bccbfb;
-  --gd-blue-300: #93a9f6;
-  --gd-blue-400: #6685ef;
-  --gd-blue-500: #3f60e3;
-  --gd-blue-600: #2f49cb;
-  --gd-blue-700: #2839a6;
-  --gd-blue-800: #243286;
-  --gd-blue-900: #212d69;
+  /* ---- Lapis — primary / interactive (nx lapis ramp) ------ */
+  --gd-blue-50:  #eef0ff;
+  --gd-blue-100: #e0e3ff;
+  --gd-blue-200: #c6cbff;
+  --gd-blue-300: #a3a8ff;
+  --gd-blue-400: #8482fb;
+  --gd-blue-500: #6a63f4;
+  --gd-blue-600: #5647e6;   /* nx accent */
+  --gd-blue-700: #4739ca;   /* nx accent-hover */
+  --gd-blue-800: #3b31a3;
+  --gd-blue-900: #322d80;
 
-  /* ---- Signal Cyan — the "AI / live monitoring" accent --- */
-  --gd-cyan-50:  #e6fafd;
-  --gd-cyan-100: #c4f2f8;
-  --gd-cyan-200: #93e6f0;
-  --gd-cyan-400: #22cfe0;
-  --gd-cyan-500: #0bb1c4;
-  --gd-cyan-600: #0a8ea0;
-  --gd-cyan-700: #0b7180;
+  /* ---- Signal Cyan — the "AI / live monitoring" accent (nx cyan) */
+  --gd-cyan-50:  #e6fafd;   /* legacy tint (unused after remap) */
+  --gd-cyan-100: #c4f2f8;   /* legacy tint (unused after remap) */
+  --gd-cyan-200: #7df3ff;   /* nx cyan-300 — checking-badge border */
+  --gd-cyan-400: #2ee6fb;   /* nx cyan-400 (dark accent) */
+  --gd-cyan-500: #06c7e3;   /* nx glow */
+  --gd-cyan-600: #0aa0bb;   /* nx cyan-600 / info */
+  --gd-cyan-700: #0b7288;   /* nx cyan-700 / info-text */
 
-  /* ---- Healthy Green — success / uptime ------------------ */
-  --gd-green-50:  #e7f8ef;
-  --gd-green-100: #c6efd8;
-  --gd-green-200: #98e2ba;
-  --gd-green-400: #34c06f;
-  --gd-green-500: #17a34a;
-  --gd-green-600: #128040;
-  --gd-green-700: #0e6633;
+  /* ---- Healthy Green — success / uptime (nx green) -------- */
+  --gd-green-50:  #e7f8ef;  /* legacy tint (unused after remap) */
+  --gd-green-100: #c6efd8;  /* legacy tint (unused after remap) */
+  --gd-green-200: #98e2ba;  /* legacy tint (unused after remap) */
+  --gd-green-400: #3ddc97;  /* nx green-400 (dark text step) */
+  --gd-green-500: #10b981;  /* nx green-500 */
+  --gd-green-600: #059669;  /* nx success */
+  --gd-green-700: #047857;  /* nx success-text */
 
-  /* ---- Warning Amber — needs attention / confirm --------- */
-  --gd-amber-50:  #fef5e7;
-  --gd-amber-100: #fce8c2;
-  --gd-amber-200: #f8d38a;
-  --gd-amber-400: #f0a921;
-  --gd-amber-500: #e2900d;
-  --gd-amber-600: #c0760a;
-  --gd-amber-700: #985c08;
+  /* ---- Warning Amber — needs attention / confirm (nx amber) */
+  --gd-amber-50:  #fef5e7;  /* legacy tint (unused after remap) */
+  --gd-amber-100: #fce8c2;  /* legacy tint (unused after remap) */
+  --gd-amber-200: #f8d38a;  /* legacy tint (unused after remap) */
+  --gd-amber-400: #fbbf24;  /* nx amber-400 (dark text step) */
+  --gd-amber-500: #f59e0b;  /* nx warning */
+  --gd-amber-600: #d97706;  /* nx amber-600 */
+  --gd-amber-700: #a45207;  /* nx warning-text */
 
-  /* ---- Critical Red — danger / incident ------------------ */
-  --gd-red-50:  #fdecec;
-  --gd-red-100: #fad4d4;
-  --gd-red-200: #f4adad;
-  --gd-red-400: #ec6161;
-  --gd-red-500: #df3f3f;
-  --gd-red-600: #c22b2b;
-  --gd-red-700: #9e2020;
+  /* ---- Critical Red — danger / incident (nx red) ---------- */
+  --gd-red-50:  #fdecec;    /* legacy tint (unused after remap) */
+  --gd-red-100: #fad4d4;    /* legacy tint (unused after remap) */
+  --gd-red-200: #f4adad;    /* legacy tint (unused after remap) */
+  --gd-red-400: #ff7a7a;    /* nx red-400 (dark text step) */
+  --gd-red-500: #ef4444;    /* nx red-500 / dark danger-hover */
+  --gd-red-600: #dc2626;    /* nx danger */
+  --gd-red-700: #c02424;    /* nx red-700 / danger-text / danger-hover */
 
   /* ========================================================
-     SEMANTIC ALIASES  (light UI — default)
+     SEMANTIC ALIASES  (light UI — default, NabuxUi values)
      ======================================================== */
 
-  /* Surfaces */
-  --gd-bg-app:      var(--gd-gray-50);
+  /* Surfaces — warm "clay" paper instead of cool gray */
+  --gd-bg-app:      #fcfbf8;   /* nx --nx-bg (clay-50) */
   --gd-bg-surface:  var(--gd-gray-0);
-  --gd-bg-subtle:   var(--gd-gray-25);
-  --gd-bg-inset:    var(--gd-gray-100);
-  --gd-bg-hover:    var(--gd-gray-50);
+  --gd-bg-subtle:   #f7f5ef;   /* nx --nx-bg-subtle (clay-100) */
+  --gd-bg-inset:    #f4f3ef;   /* nx --nx-surface-2 */
+  --gd-bg-hover:    #f4f3ef;   /* nx hover sits on surface-2 */
   --gd-ink:         var(--gd-gray-950);
 
   /* Borders */
-  --gd-border:        var(--gd-gray-200);
-  --gd-border-subtle: var(--gd-gray-150);
-  --gd-border-strong: var(--gd-gray-300);
+  --gd-border:        var(--gd-gray-200);   /* #e7e4dc */
+  --gd-border-subtle: color-mix(in oklab, var(--gd-border) 60%, transparent);
+  --gd-border-strong: #8f93a9;   /* nx --nx-border-strong */
 
   /* Text */
-  --gd-text:           var(--gd-gray-900);
-  --gd-text-secondary: var(--gd-gray-600);
-  --gd-text-muted:     var(--gd-gray-500);
-  --gd-text-disabled:  var(--gd-gray-400);
-  --gd-text-inverse:   var(--gd-gray-0);
+  --gd-text:           #12141f;   /* nx --nx-text */
+  --gd-text-secondary: var(--gd-gray-600);   /* nx text-muted */
+  --gd-text-muted:     var(--gd-gray-500);   /* nx text-subtle */
+  --gd-text-disabled:  var(--gd-gray-400);   /* nx ink-400 */
+  --gd-text-inverse:   #f5f6fb;   /* nx --nx-text-inverse */
 
-  /* Primary */
-  --gd-primary:        var(--gd-blue-600);
-  --gd-primary-hover:  var(--gd-blue-700);
-  --gd-primary-active: var(--gd-blue-800);
-  --gd-primary-subtle: var(--gd-blue-50);
-  --gd-primary-border: var(--gd-blue-200);
+  /* Primary — lapis */
+  --gd-primary:        var(--gd-blue-600);   /* #5647e6 */
+  --gd-primary-hover:  var(--gd-blue-700);   /* #4739ca */
+  --gd-primary-active: var(--gd-blue-800);   /* #3b31a3 */
+  --gd-primary-subtle: color-mix(in oklab, var(--gd-primary) 12%, transparent);
+  --gd-primary-border: color-mix(in oklab, var(--gd-primary) 35%, transparent);
   --gd-on-primary:     var(--gd-gray-0);
 
   /* Accent (use sparingly — AI / live) */
-  --gd-accent:         var(--gd-cyan-500);
-  --gd-accent-subtle:  var(--gd-cyan-50);
+  --gd-accent:         var(--gd-cyan-500);   /* #06c7e3 */
+  --gd-accent-subtle:  color-mix(in oklab, var(--gd-accent) 14%, transparent);
 
   /* Status — Success / Healthy */
-  --gd-success:        var(--gd-green-600);
-  --gd-success-text:   var(--gd-green-700);
-  --gd-success-bg:     var(--gd-green-50);
-  --gd-success-border: var(--gd-green-200);
+  --gd-success:        var(--gd-green-600);   /* #059669 */
+  --gd-success-text:   var(--gd-green-700);   /* #047857 */
+  --gd-success-bg:     color-mix(in oklab, var(--gd-green-500) 14%, transparent);
+  --gd-success-border: color-mix(in oklab, var(--gd-success) 28%, transparent);
 
   /* Status — Warning */
-  --gd-warning:        var(--gd-amber-600);
-  --gd-warning-text:   var(--gd-amber-700);
-  --gd-warning-bg:     var(--gd-amber-50);
-  --gd-warning-border: var(--gd-amber-200);
+  --gd-warning:        var(--gd-amber-500);   /* #f59e0b */
+  --gd-warning-text:   var(--gd-amber-700);   /* #a45207 */
+  --gd-warning-bg:     color-mix(in oklab, var(--gd-amber-500) 16%, transparent);
+  --gd-warning-border: color-mix(in oklab, var(--gd-warning) 28%, transparent);
 
   /* Status — Danger / Critical */
-  --gd-danger:         var(--gd-red-600);
-  --gd-danger-text:    var(--gd-red-700);
-  --gd-danger-bg:      var(--gd-red-50);
-  --gd-danger-border:  var(--gd-red-200);
+  --gd-danger:         var(--gd-red-600);   /* #dc2626 */
+  --gd-danger-hover:   var(--gd-red-700);   /* #c02424 — nx danger-hover */
+  --gd-danger-text:    var(--gd-red-700);   /* #c02424 */
+  --gd-danger-bg:      color-mix(in oklab, var(--gd-red-500) 12%, transparent);
+  --gd-danger-border:  color-mix(in oklab, var(--gd-danger) 28%, transparent);
 
-  /* Status — Info */
-  --gd-info:           var(--gd-blue-600);
-  --gd-info-text:      var(--gd-blue-700);
-  --gd-info-bg:        var(--gd-blue-50);
-  --gd-info-border:    var(--gd-blue-200);
+  /* Status — Info (teal in NabuxUi — separated from primary) */
+  --gd-info:           var(--gd-cyan-600);   /* #0aa0bb */
+  --gd-info-text:      var(--gd-cyan-700);   /* #0b7288 */
+  --gd-info-bg:        color-mix(in oklab, var(--gd-accent) 14%, transparent);
+  --gd-info-border:    color-mix(in oklab, var(--gd-info) 28%, transparent);
 
   /* Authority levels — the product's signature 3-tier model.
-     Report only = passive slate, Ask first = amber, Auto = green */
+     Report only = passive slate, Ask first = amber, Auto = green.
+     Roles are frozen (AGENTS.md product truth); values follow nx. */
   --gd-authority-report:  var(--gd-gray-500);
-  --gd-authority-confirm: var(--gd-amber-600);
+  --gd-authority-confirm: var(--gd-amber-500);
   --gd-authority-auto:    var(--gd-green-600);
 
   /* Focus ring */
-  --gd-focus-ring: var(--gd-blue-500);
+  --gd-focus-ring: var(--gd-blue-600);   /* #5647e6 */
+}
+
+/* ==========================================================
+   GLASS / GRADIENT / SKELETON tokens — light
+   NabuxUi "liquid glass" material (tokens.css:161-173).
+   Glass is invisible on a flat white page: always lay it on a
+   coloured backdrop (aurora hero, gradient panel).
+   Declared BEFORE the ink theme so an `html[data-theme="ink"]`
+   (same specificity as :root) would still win by source order.
+   ========================================================== */
+:root {
+  --gd-glass:           rgb(255 255 255 / 0.72);
+  --gd-glass-border:    rgb(255 255 255 / 0.6);
+  --gd-glass-tint:      rgb(255 255 255 / 0.26);
+  --gd-glass-tint-hover: rgb(255 255 255 / 0.4);
+  --gd-glass-rim:       rgb(255 255 255 / 0.95);
+  --gd-glass-rim-soft:  rgb(255 255 255 / 0.5);
+  --gd-glass-edge:      rgb(17 19 31 / 0.1);
+  --gd-glass-shade:     rgb(17 19 31 / 0.16);
+  --gd-glass-sheen:     rgb(255 255 255 / 0.5);
+  --gd-highlight:       rgb(255 255 255 / 0.9);
+
+  --gd-skeleton:        #ebe9e2;
+  --gd-skeleton-shine:  rgb(255 255 255 / 0.75);
+
+  /* Official NabuxUi gradients (tokens.css:189-192) */
+  --gd-gradient-brand:  linear-gradient(135deg, #6a63f4, #7c3aed);
+  --gd-gradient-text:   linear-gradient(100deg, #4739ca, #7c3aed 45%, #0aa0bb);
+  --gd-gradient-gold:   linear-gradient(100deg, #f4a93c, #d98a1c);
+  --gd-gradient-aurora: conic-gradient(from 210deg, #6a63f4, #8b5cf6, #2ee6fb, #ffc462, #6a63f4);
 }
 
 /* ==========================================================
@@ -175,50 +216,81 @@
    command panel) and its children pick up dark semantics.
    ========================================================== */
 [data-theme="ink"] {
-  --gd-bg-app:      var(--gd-gray-950);
-  --gd-bg-surface:  #111a2e;
-  --gd-bg-subtle:   #0e1626;
-  --gd-bg-inset:    #0a101d;
-  --gd-bg-hover:    #16223a;
+  /* Surfaces — NabuxUi pinned-dark (nx tokens.css:274-278) */
+  --gd-bg-app:      #070812;
+  --gd-bg-surface:  #0f1120;
+  --gd-bg-subtle:   #0b0d19;
+  --gd-bg-inset:    #161a2c;   /* nx dark surface-2 */
+  --gd-bg-hover:    #161a2c;
   --gd-ink:         var(--gd-gray-950);
 
-  --gd-border:        rgba(255,255,255,0.10);
+  --gd-border:        #23273f;
   --gd-border-subtle: rgba(255,255,255,0.06);
-  --gd-border-strong: rgba(255,255,255,0.18);
+  --gd-border-strong: #5b6083;
 
-  --gd-text:           #eef2f8;
-  --gd-text-secondary: #aab6ca;
-  --gd-text-muted:     #7c89a0;
+  --gd-text:           #eef0f8;
+  --gd-text-secondary: #a4a8bf;
+  --gd-text-muted:     #80859e;
   --gd-text-disabled:  #56637a;
   --gd-text-inverse:   var(--gd-gray-950);
 
-  --gd-primary:        var(--gd-blue-400);
-  --gd-primary-hover:  var(--gd-blue-300);
-  --gd-primary-active: var(--gd-blue-200);
-  --gd-primary-subtle: rgba(102,133,239,0.14);
-  --gd-primary-border: rgba(102,133,239,0.34);
-  --gd-on-primary:     var(--gd-gray-950);
+  --gd-primary:        #6259f0;   /* nx dark accent */
+  --gd-primary-hover:  var(--gd-blue-400);   /* #8482fb */
+  --gd-primary-active: var(--gd-blue-300);   /* #aeb1ff */
+  --gd-primary-subtle: color-mix(in oklab, #6a63f4 20%, transparent);
+  --gd-primary-border: color-mix(in oklab, #8482fb 40%, transparent);
+  --gd-on-primary:     #ffffff;   /* nx dark accent-contrast: white wins on #6259f0 (5.0:1 vs 3.8:1) */
 
-  --gd-accent:         var(--gd-cyan-400);
-  --gd-accent-subtle:  rgba(34,207,224,0.12);
+  --gd-accent:         #2ee6fb;   /* nx dark glow */
+  --gd-accent-subtle:  color-mix(in oklab, #2ee6fb 16%, transparent);
 
-  --gd-success-text:   var(--gd-green-400);
-  --gd-success-bg:     rgba(23,163,74,0.14);
-  --gd-success-border: rgba(52,192,111,0.34);
+  --gd-success-text:   var(--gd-green-400);   /* #3ddc97 */
+  --gd-success-bg:     color-mix(in oklab, #10b981 18%, transparent);
+  --gd-success-border: color-mix(in oklab, var(--gd-success-text) 34%, transparent);
 
-  --gd-warning-text:   var(--gd-amber-400);
-  --gd-warning-bg:     rgba(226,144,13,0.14);
-  --gd-warning-border: rgba(240,169,33,0.34);
+  --gd-warning-text:   var(--gd-amber-400);   /* #fbbf24 */
+  --gd-warning-bg:     color-mix(in oklab, #fbbf24 16%, transparent);
+  --gd-warning-border: color-mix(in oklab, var(--gd-warning-text) 34%, transparent);
 
-  --gd-danger-text:    var(--gd-red-400);
-  --gd-danger-bg:      rgba(223,63,63,0.15);
-  --gd-danger-border:  rgba(236,97,97,0.36);
+  --gd-danger-text:    var(--gd-red-400);   /* #ff7a7a */
+  --gd-danger-hover:   var(--gd-red-500);   /* #ef4444 — nx dark danger-hover */
+  --gd-danger-bg:      color-mix(in oklab, #ef4444 18%, transparent);
+  --gd-danger-border:  color-mix(in oklab, var(--gd-danger-text) 34%, transparent);
 
-  --gd-info-text:      var(--gd-blue-300);
-  --gd-info-bg:        rgba(63,96,227,0.16);
-  --gd-info-border:    rgba(102,133,239,0.34);
+  --gd-info-text:      #40e0f5;
+  --gd-info-bg:        color-mix(in oklab, #2ee6fb 16%, transparent);
+  --gd-info-border:    color-mix(in oklab, var(--gd-info-text) 34%, transparent);
 
-  --gd-focus-ring:     var(--gd-blue-300);
+  --gd-focus-ring:     var(--gd-blue-300);   /* #aeb1ff */
+
+  /* Glass on dark (nx tokens.css:236-247) */
+  --gd-glass:           rgb(18 21 36 / 0.62);
+  --gd-glass-border:    rgb(255 255 255 / 0.08);
+  --gd-glass-tint:      rgb(255 255 255 / 0.06);
+  --gd-glass-tint-hover: rgb(255 255 255 / 0.11);
+  --gd-glass-rim:       rgb(255 255 255 / 0.62);
+  --gd-glass-rim-soft:  rgb(255 255 255 / 0.14);
+  --gd-glass-edge:      rgb(0 0 0 / 0.55);
+  --gd-glass-shade:     rgb(0 0 0 / 0.5);
+  --gd-glass-sheen:     rgb(255 255 255 / 0.12);
+  --gd-highlight:       rgb(255 255 255 / 0.07);
+
+  /* Skeleton on dark */
+  --gd-skeleton:        #191c2e;
+  --gd-skeleton-shine:  rgb(255 255 255 / 0.06);
+
+  /* Text gradients flip to the bright steps (nx tokens.css:341-342) */
+  --gd-gradient-text: linear-gradient(100deg, #a3a8ff, #c4b5fd 45%, #7df3ff);
+  --gd-gradient-gold: linear-gradient(100deg, #ffd68a, #f4a93c);
+
+  /* Elevation — nx pinned-dark shadows (tokens.css:326-331) */
+  --gd-shadow-xs: 0 1px 2px rgb(0 0 0 / 0.4);
+  --gd-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 8px -2px rgb(0 0 0 / 0.45);
+  --gd-shadow-md: 0 2px 4px rgb(0 0 0 / 0.35), 0 12px 28px -6px rgb(0 0 0 / 0.55);
+  --gd-shadow-lg: 0 4px 8px rgb(0 0 0 / 0.35), 0 28px 56px -12px rgb(0 0 0 / 0.65);
+  --gd-shadow-xl: 0 8px 16px rgb(0 0 0 / 0.4), 0 44px 88px -20px rgb(0 0 0 / 0.75);
+  --gd-glow-accent: 0 0 0 1px color-mix(in oklab, #8482fb 30%, transparent),
+                    0 12px 40px -8px color-mix(in oklab, #6a63f4 70%, transparent);
 }
 /* ============================================================
    WP Guardian — Typography tokens
@@ -235,11 +307,19 @@
    ============================================================ */
 
 :root {
-  /* Families */
-  --gd-font-sans: 'Vazirmatn', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  /* Families
+     Persian-first order (nx base.css): Vazirmatn carries Persian
+     AND the Latin micro-text; Bricolage Grotesque is the NabuxUi
+     display face for Latin headings/numerals and falls back to
+     Vazirmatn per-glyph for Persian (its Persian glyphs don't
+     exist, so the joined script is never set in Bricolage). */
+  --gd-font-sans: 'Vazirmatn', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --gd-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  --gd-font-display-family: 'Bricolage Grotesque', 'Vazirmatn', ui-sans-serif, sans-serif;
 
-  /* Type scale (rem @ 16px root) */
+  /* Type scale (rem @ 16px root) — the dashboard steps are
+     deliberately denser than nx and stay untouched; the three
+     display steps adopt nx fluid clamps. */
   --gd-text-xs:   0.75rem;    /* 12 — micro labels, captions       */
   --gd-text-sm:   0.8125rem;  /* 13 — dense UI, table cells        */
   --gd-text-md:   0.875rem;   /* 14 — default control / UI text    */
@@ -248,9 +328,9 @@
   --gd-text-xl:   1.25rem;    /* 20 — section heading              */
   --gd-text-2xl:  1.5rem;     /* 24 — h3                           */
   --gd-text-3xl:  1.875rem;   /* 30 — h2                           */
-  --gd-text-4xl:  2.375rem;   /* 38 — h1                           */
-  --gd-text-5xl:  3rem;       /* 48 — display                      */
-  --gd-text-6xl:  3.75rem;    /* 60 — hero display                 */
+  --gd-text-4xl:  clamp(1.875rem, 1.4rem + 1.6vw, 2.5rem);   /* nx text-4xl */
+  --gd-text-5xl:  clamp(2.25rem, 1.5rem + 3vw, 3.5rem);      /* nx text-5xl */
+  --gd-text-6xl:  clamp(2.6rem, 1.4rem + 5vw, 5rem);         /* nx text-display */
 
   /* Weights (Vazirmatn is variable) */
   --gd-weight-light:     300;
@@ -274,7 +354,10 @@
   --gd-tracking-caps:   0.06em;  /* small-caps eyebrows */
 
   /* ---- Composite semantic roles ------------------------- */
-  --gd-font-display: var(--gd-weight-extrabold) var(--gd-text-5xl)/var(--gd-leading-tight) var(--gd-font-sans);
+  /* Display: Bricolage for Latin/numerals, Vazirmatn for Persian;
+     line-height 1.3 — Persian display type needs ascender+dot room
+     (nx hero.css:82). */
+  --gd-font-display: var(--gd-weight-extrabold) var(--gd-text-5xl)/1.3 var(--gd-font-display-family);
   --gd-font-h1:      var(--gd-weight-bold) var(--gd-text-4xl)/var(--gd-leading-tight) var(--gd-font-sans);
   --gd-font-h2:      var(--gd-weight-bold) var(--gd-text-3xl)/var(--gd-leading-snug) var(--gd-font-sans);
   --gd-font-h3:      var(--gd-weight-semibold) var(--gd-text-2xl)/var(--gd-leading-snug) var(--gd-font-sans);
@@ -319,48 +402,49 @@
   --gd-page-gutter:      var(--gd-space-6);
 }
 /* ============================================================
-   WP Guardian — Radius & border tokens
-   Soft but not bubbly. Controls ~8px, cards ~12–16px, pills full.
+   Radius & border tokens (NabuxUi scale — one step larger).
+   Soft but not bubbly. Controls ~12px, cards ~16–22px, pills full.
+   Fallback lever from the mapping: if buttons ever feel too round,
+   pin ONLY --gd-radius-md back to 8px — nothing else changes.
    ============================================================ */
 
 :root {
-  --gd-radius-xs:   4px;
-  --gd-radius-sm:   6px;
-  --gd-radius-md:   8px;    /* buttons, inputs        */
-  --gd-radius-lg:   12px;   /* cards, menus           */
-  --gd-radius-xl:   16px;   /* large cards, dialogs   */
-  --gd-radius-2xl:  22px;   /* hero / feature panels  */
-  --gd-radius-pill: 999px;  /* status pills, chips    */
-  --gd-radius-full: 9999px;
+  --gd-radius-xs:   6px;    /* nx radius-xs */
+  --gd-radius-sm:   8px;    /* nx radius-sm */
+  --gd-radius-md:   12px;   /* nx radius-md — buttons, inputs */
+  --gd-radius-lg:   16px;   /* nx radius-lg — cards, menus */
+  --gd-radius-xl:   22px;   /* nx radius-xl — large cards, dialogs */
+  --gd-radius-2xl:  28px;   /* nx radius-2xl — hero / glass panels */
+  --gd-radius-pill: 999px;  /* nx radius-full — status pills, chips */
+  --gd-radius-full: 999px;  /* nx radius-full */
 
   --gd-border-width:      1px;
   --gd-border-width-thick: 1.5px;
 }
 /* ============================================================
-   WP Guardian — Elevation & ring tokens
-   Shadows are tinted with the ink navy (#0b1120), never pure
-   black, so they sit calmly on the cool neutral surfaces.
+   Elevation & ring tokens (NabuxUi values)
+   Shadows are tinted with nx ink (#0a0c17 / rgb(17 19 31)), never
+   pure black, so they sit calmly on the warm clay surfaces.
+   The nx companion on every raised surface is a 1px top highlight:
+   compose `var(--gd-shadow-…), inset 0 1px 0 var(--gd-highlight)`.
    ============================================================ */
 
 :root {
-  --gd-shadow-xs: 0 1px 2px rgba(11,17,32,0.06);
-  --gd-shadow-sm: 0 1px 2px rgba(11,17,32,0.06),
-                  0 1px 3px rgba(11,17,32,0.09);
-  --gd-shadow-md: 0 2px 4px rgba(11,17,32,0.05),
-                  0 6px 16px -4px rgba(11,17,32,0.12);
-  --gd-shadow-lg: 0 4px 8px rgba(11,17,32,0.06),
-                  0 16px 32px -8px rgba(11,17,32,0.16);
-  --gd-shadow-xl: 0 8px 16px rgba(11,17,32,0.08),
-                  0 28px 56px -12px rgba(11,17,32,0.22);
+  --gd-shadow-xs: 0 1px 2px rgb(17 19 31 / 0.06);
+  --gd-shadow-sm: 0 1px 2px rgb(17 19 31 / 0.06), 0 2px 8px -2px rgb(17 19 31 / 0.08);
+  --gd-shadow-md: 0 2px 4px rgb(17 19 31 / 0.04), 0 10px 24px -6px rgb(17 19 31 / 0.12);
+  --gd-shadow-lg: 0 4px 8px rgb(17 19 31 / 0.04), 0 24px 48px -12px rgb(17 19 31 / 0.2);
+  --gd-shadow-xl: 0 8px 16px rgb(17 19 31 / 0.05), 0 40px 80px -20px rgb(17 19 31 / 0.3);
 
-  /* Focus & status rings (compose with box-shadow) */
+  /* Focus & status rings (compose with box-shadow) — the formula
+     stays, the values now come from the nx-mapped colours */
   --gd-ring:         0 0 0 3px color-mix(in srgb, var(--gd-focus-ring) 40%, transparent);
   --gd-ring-danger:  0 0 0 3px color-mix(in srgb, var(--gd-danger) 32%, transparent);
   --gd-ring-success: 0 0 0 3px color-mix(in srgb, var(--gd-success) 30%, transparent);
 
-  /* Glow for the "live" accent (monitoring pulse, AI moments) */
-  --gd-glow-accent: 0 0 0 1px color-mix(in srgb, var(--gd-accent) 40%, transparent),
-                    0 0 20px -4px color-mix(in srgb, var(--gd-accent) 55%, transparent);
+  /* Glow for AI/live moments — nx shadow-glow (ring + accent halo) */
+  --gd-glow-accent: 0 0 0 1px color-mix(in oklab, #5647e6 25%, transparent),
+                    0 10px 32px -8px color-mix(in oklab, #5647e6 55%, transparent);
 }
 /* ============================================================
    WP Guardian — Motion tokens
