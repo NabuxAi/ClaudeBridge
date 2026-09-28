@@ -1,0 +1,132 @@
+/* ============================================================
+   DigiWP hub — polish layer: site pages — batch C
+   Pages: Speed / Assistant / Rescue / Conflict (under SiteShell).
+
+   NabuxUi language (hub/docs/nabuxui-design-mapping.md):
+   only --gd-* tokens, logical properties for RTL (§5.3), status
+   colour roles untouched (§5.1 — AGENTS.md product truth), rows
+   answer with colour only (§4.4), visible focus comes from the
+   global :focus-visible rule in digiwp.css (§5.5), the glow token
+   marks the live/AI moment (§3.7.3), and raised surfaces carry
+   the inset highlight (§3.7.1).
+   ============================================================ */
+
+/* ---- Assistant two-pane workspace -------------------------------
+   Layout had to leave inline styles: an inline gridTemplateColumns
+   cannot be overridden by any media query. Column sizes, height and
+   the mobile collapse live here (site-c-7). */
+.dwp-assist {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  height: 660px;
+  background: var(--gd-bg-surface);
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-xl);
+  box-shadow: var(--gd-shadow-sm), inset 0 1px 0 var(--gd-highlight);
+  overflow: hidden;
+}
+
+.dwp-assist__side {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--gd-bg-surface);
+  border-inline-end: 1px solid var(--gd-border);
+}
+
+.dwp-assist__chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+/* Fixed 860px breakpoint — the one app.css already collapses
+   .dwp-grid-* / .dwp-hero / .dwp-report at. */
+@media (max-width: 860px) {
+  .dwp-assist {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .dwp-assist__side {
+    height: 232px;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--gd-border);
+  }
+  .dwp-assist__chat {
+    height: 560px;
+  }
+}
+
+/* ---- Conversation rows — a real control, keyboard-reachable
+   (site-c-8). A row answers with colour only; the active one keeps
+   the primary tint. */
+.dwp-assist__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: var(--gd-radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--gd-duration) var(--gd-ease-standard);
+}
+.dwp-assist__item:hover {
+  background: var(--gd-bg-hover);
+}
+.dwp-assist__item--active,
+.dwp-assist__item--active:hover {
+  background: var(--gd-primary-subtle);
+  border-color: var(--gd-primary-border);
+}
+
+/* ---- Send control — a real button; the disabled state is carried
+   by [disabled] so assistive tech sees it, not just opacity
+   (site-c-9). Filled-button shadow per mapping §3.7.2. */
+.dwp-assist__send {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border: none;
+  padding: 0;
+  border-radius: var(--gd-radius-full);
+  background: var(--gd-primary);
+  color: var(--gd-on-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 1px 2px rgb(0 0 0 / 0.12),
+    0 6px 16px -6px color-mix(in oklab, var(--gd-primary) 70%, transparent);
+  transition: opacity var(--gd-duration-fast) var(--gd-ease-standard),
+    translate var(--gd-duration-fast) var(--gd-ease-standard);
+}
+.dwp-assist__send:hover:not([disabled]) {
+  translate: 0 -1px;
+}
+.dwp-assist__send[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ---- AI avatar — the live/AI moment carries the accent glow
+   (mapping §3.7.3, --gd-glow-accent). */
+.dwp-assist__avatar {
+  box-shadow: var(--gd-glow-accent);
+}
+
+/* ---- Honest failure boxes — list/message load errors must be
+   readable, never styled as healthy state (AGENTS.md truth rules). */
+.dwp-assist__err {
+  margin: 12px;
+  padding: 12px 14px;
+  border-radius: var(--gd-radius-md);
+  background: var(--gd-danger-bg);
+  border: 1px solid var(--gd-danger-border);
+  color: var(--gd-danger-text);
+  font-size: 12.5px;
+  line-height: 1.8;
+  text-align: center;
+}

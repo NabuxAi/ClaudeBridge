@@ -87,8 +87,8 @@ Support**. Keep these roles explicit instead of mixing the names casually.
   and terminal outcomes.
 - `server/src/intel/` — NVD, WordPress.org matching, YARA/signature feeds, and
   hash-only threat intelligence.
-- `server/src/routes/` — auth, account, site, connector, cookbook, and on-demand
-  playbook APIs.
+- `server/src/routes/` — auth, account, site, connector, cookbook, on-demand
+  playbook, admin, billing, team, notifications, and offsite-backup APIs.
 - `server/test/` — Node test suite, including database-dependent integration
   tests.
 - `hub/src/lib/api.js` — the only hub API client; real/mock routing happens here.
@@ -183,16 +183,28 @@ for UI convenience.
   beyond deterministic readings and must say so.
 - Owner-alert machinery exists, but a deployment with no configured owner
   channel reaches only the operator or nobody. Check `/alerts/readiness`.
+- Subscription/trial record: PostgreSQL-backed, with a 14-day default trial
+  materialised on first billing read and a no-payment pilot request
+  (`server/src/billing.store.js`, `server/src/routes/billing.js`), rendered in
+  `hub/src/pages/account/Billing.jsx`. No gateway is connected, no invoice is
+  issued, and adding sites is not limited by the plan.
+- Per-site team management: invitations with hashed single-use tokens and
+  7-day expiry, role changes, and member removal (`server/src/store.js`,
+  `server/src/routes/team.js`), rendered in `hub/src/pages/account/Team.jsx`.
+  Owner-only; accepting an invite requires an existing account; member roles
+  are stored but not yet enforced on site endpoints.
 
 ### Not built at baseline
 
-- Real billing, subscriptions, payment gateways, invoices, trial expiry, plan
-  entitlements, or site-count enforcement.
+- Payment gateways, invoices, and plan entitlement/site-count/trial-expiry
+  enforcement.
 - Password-reset email/token flow.
 - Two-factor authentication, passkeys, session/device management, token
   revocation before expiry, or "log out all devices".
 - Account deletion workflow.
-- Team invitations, multi-user RBAC, or per-site member permissions.
+- Account-level multi-user RBAC, invitation acceptance for users who do not
+  yet have an account, and enforcement of per-site member roles on site
+  endpoints.
 - Browser push subscription enrollment from the hub.
 - Off-site encrypted backups and automated restore drills.
 - Staging/canary update execution and automatic file rollback.
@@ -238,15 +250,19 @@ database was not inspected or modified here.
 
 ### P0.2 — customer purchase/trial flows are simulations
 
-The public site advertises a 14-day trial, paid plans, and checkout. The server
-explicitly returns `NOT_BUILT` for billing and invoices.
+The public site advertises a 14-day trial, paid plans, and checkout. At finding
+time the server returned `NOT_BUILT` for billing and invoices; that honest stub
+still exists in `server/src/routes/account.js:51-52`, but a real billing router
+is now mounted before it and shadows it (see status).
 
 - `hub/src/pages/billing/Checkout.jsx` defines three Iranian gateways but
   `pay()` only navigates to the fixed route `/invoice/INV-1403-014`.
 - `server/src/routes/account.js` says no gateway is connected, no card is stored,
   and no invoices are issued.
-- Every new user currently gets the database default plan (`حرفه‌ای`); there is
-  no trial clock or entitlement enforcement.
+- A user's subscription row (materialised on first billing read) still
+  defaults to the legacy `users.plan` value or `pro` (`حرفه‌ای`), and
+  entitlement is not enforced — though the row now carries a real 14-day
+  trial window (see status).
 
 Until implemented, replace purchase actions with an honest pilot/waitlist/demo
 state. Never leave a control labeled "پرداخت امن" that performs no payment.
@@ -254,12 +270,21 @@ state. Never leave a control labeled "پرداخت امن" that performs no paym
 Relevant lines: `hub/src/pages/billing/Checkout.jsx:20-23`,
 `server/src/routes/account.js:44-56`, `server/src/db.js:31`.
 
-**Status: resolved (pilot state).** `hub/src/pages/billing/Checkout.jsx`,
+**Status: resolved (pilot state, real subscription record).** `hub/src/pages/billing/Checkout.jsx`,
 `hub/src/pages/billing/Invoice.jsx`, and `hub/src/pages/billing/Pricing.jsx`
 now state that payment and invoicing are not yet active. The "پرداخت امن" button
 and fake invoice sheet are removed. Plan CTAs read "درخواست دسترسی آزمایشی" and
-navigate to the honest checkout screen. `hub/src/pages/account/Billing.jsx`
-already rendered the server's `NOT_BUILT` response.
+navigate to the honest checkout screen. `hub/src/pages/account/Billing.jsx` no
+longer renders a `NOT_BUILT` response: `server/src/billing.store.js`
+materialises a 14-day trial per user (PostgreSQL `subscriptions`/`plans`) and
+`server/src/routes/billing.js` serves `/billing`, `/billing/plans`,
+`/billing/trial`, and a rate-limited `/billing/request-pilot` that records a
+pilot request without payment. That router is mounted before the account
+router (`server/src/index.js:101-102`), so the real subscription row wins over
+the `NOT_BUILT` stub still kept in `server/src/routes/account.js:51-52`; the
+page renders plan, trial days left, and sites used versus plan limit, and
+keeps payment/invoices in explicit unavailable states. Plan entitlement and
+site-count enforcement remain unbuilt.
 
 ### P0.3 — password reset reports a false success
 
@@ -442,12 +467,16 @@ Relevant files: `hub/src/pages/account/Team.jsx`,
 `hub/src/pages/account/Notifications.jsx`,
 `server/src/routes/account.js:38-69`.
 
-**Status: resolved.** `hub/src/pages/account/Team.jsx` removes the invite form,
-the fake pending invitation for `sara@digiwp.com`, and the role cards that
-imply multi-user permissions exist. It now shows an explanatory banner and the
-one real member (the signed-in owner). `hub/src/pages/account/Notifications.jsx`
-is reduced to a `NotMeasured` screen because the notification preference
-endpoint returns `NOT_BUILT`.
+**Status: resolved, and now backed by real endpoints.** The invented pending
+invitation for `sara@digiwp.com` and the inert controls are gone. Team
+management is real: `server/src/routes/team.js` and the PostgreSQL
+`team_members`/`invitations` stores (`server/src/store.js:384-582`) back the
+invite form, pending-invitation list, role change, and member removal in
+`hub/src/pages/account/Team.jsx`; invitations carry hashed single-use tokens
+with 7-day expiry and every management action is owner-only.
+`hub/src/pages/account/Notifications.jsx` persists channels and contacts
+through the real `/notifications/*` endpoints
+(`server/src/routes/notifications.js`) instead of rendering `NotMeasured`.
 
 ### P1.5 — frontend quality gate is incomplete
 

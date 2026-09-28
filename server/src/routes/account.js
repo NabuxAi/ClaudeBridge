@@ -131,7 +131,12 @@ router.get('/account/activity', async (req, res, next) => {
 })
 
 router.get('/profile', async (req, res, next) => {
-  try { res.json(await users.byId(req.user.sub)) } catch (e) { next(e) }
+  try {
+    const me = await users.byId(req.user.sub)
+    // The enrolled emergency contact rides along so the alerts screen can
+    // prefill what this user already gave us — their own data, behind auth.
+    res.json({ ...me, contact: await users.contact(req.user.sub) })
+  } catch (e) { next(e) }
 })
 router.patch('/profile', async (req, res, next) => {
   try {

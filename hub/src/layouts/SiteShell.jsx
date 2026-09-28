@@ -9,11 +9,36 @@ import { account } from '../lib/api.js'
 import { faNum } from '../lib/format.js'
 import { useAuth } from '../lib/auth.jsx'
 
+// Full-content states the shell itself can be in while it does not know the
+// site. None of them may borrow a status or an authority level: a missing
+// reading never renders as "healthy", and a missing permission never renders
+// as "auto".
+//   loading  → shell renders, status pill says "در حال بررسی"
+//   ready    → normal shell
+//   error    → the sites list could not be loaded; retry
+//   notfound → the URL's siteId matches no site of this account
+//   empty    → the account has no sites at all
+
+function ShellState({ icon, tone = 'muted', title, text, children }) {
+  return (
+    <div className="dwp-shellstate">
+      <span className={['dwp-shellstate__ic', tone !== 'muted' && `dwp-shellstate__ic--${tone}`].filter(Boolean).join(' ')}>
+        <Icon name={icon} size={24} />
+      </span>
+      <h2 className="dwp-shellstate__title">{title}</h2>
+      <p className="dwp-shellstate__text">{text}</p>
+      {children && <div className="dwp-shellstate__actions">{children}</div>}
+    </div>
+  )
+}
+
 export default function SiteShell() {
   const { siteId } = useParams()
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [site, setSite] = useState(null)
+  const [siteState, setSiteState] = useState('loading')
+  const [attempt, setAttempt] = useState(0)
 
   const base = `/site/${siteId}`
   // Real open-alert count from the event log; null means unknown, and unknown
@@ -42,9 +67,32 @@ export default function SiteShell() {
 
   useEffect(() => {
     let alive = true
-    account.sites().then((list) => { if (alive) setSite(list.find((s) => s.id === siteId) || list[0]) })
+    // The reset is the point: the previous site's name/status must never
+    // render under this site's URL while the fresh list loads. The fetch
+    // below re-fills both.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSite(null)
+    setSiteState('loading')
+    account.sites().then((list) => {
+      if (!alive) return
+      // Exact match only. Substituting the first site of the list would show
+      // one site's name and status under another site's URL.
+      const found = (Array.isArray(list) ? list : []).find((s) => s.id === siteId)
+      if (found) {
+        setSite(found)
+        setSiteState('ready')
+      } else {
+        setSiteState(list?.length ? 'notfound' : 'empty')
+      }
+    }).catch(() => {
+      if (alive) setSiteState('error')
+    })
     return () => { alive = false }
-  }, [siteId])
+  }, [siteId, attempt])
+
+  // checking (cyan) while loading, unknown (gray) after a failure, the real
+  // status once loaded — and no pill at all when there is no site to describe.
+  const status = siteState === 'loading' ? 'checking' : siteState === 'error' ? 'unknown' : site?.status
 
   return (
     <TaskProvider siteId={siteId}>
@@ -61,7 +109,7 @@ export default function SiteShell() {
           <div style={{ marginTop: 14, background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gd-text-secondary)' }}>حالت اختیار</span>
-              <AuthorityBadge level={site?.authority || 'auto'} size="sm" />
+              <AuthorityBadge level={site?.authority} size="sm" />
             </div>
             <p style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--gd-text-muted)', margin: 0 }}>
               کارهای کم‌ریسک خودکار انجام می‌شوند؛ موارد حساس نیازمند تأیید شماست.
@@ -76,13 +124,46 @@ export default function SiteShell() {
               <Icon name="globe" size={16} /><span className="dwp-mono">{site?.name || siteId}</span>
               <Icon name="chevron-down" size={15} style={{ color: 'var(--gd-text-muted)' }} />
             </span>
-            <StatusPill status={site?.status || 'healthy'} />
+            <StatusPill status={status} />
             <span className="dwp-spacer" />
             <Button as={Link} to={`${base}/assistant`} variant="subtle" size="sm" leftIcon="sparkles" className="dwp-desktop-only">از پشتیبان بپرسید</Button>
             <span className="dwp-avatar">{user?.initials || '؟'}</span>
           </header>
           <TaskNotificationBar />
-          <main className="dwp-content"><Outlet context={{ siteId, site }} /></main>
+          {siteState === 'ready' || siteState === 'loading' ? (
+            <main className="dwp-content">
+              {/* Keyed by siteId: switching sites remounts the page instead of
+                  letting it keep the previous site's fetched state. */}
+              <Outlet key={siteId} context={{ siteId, site }} />
+            </main>
+          ) : (
+            <main className="dwp-content">
+              {siteState === 'error' && (
+                <ShellState icon="alert-circle" tone="warning" title="فهرست سایت‌ها بارگذاری نشد"
+                  text="وضعیت این سایت را نمی‌دانیم — نه سالم و نه در مشکل. تا وقتی اتصال برقرار نشود، هیچ عددی از سایت خوانده نمی‌شود.">
+                  <Button variant="secondary" size="md" leftIcon="refresh-cw" onClick={() => setAttempt((a) => a + 1)}>
+                    تلاش دوباره
+                  </Button>
+                </ShellState>
+              )}
+              {siteState === 'notfound' && (
+                <ShellState icon="search" title="سایتی با این نشانی پیدا نشد"
+                  text={<>شناسهٔ <span className="dwp-mono">{siteId}</span> به هیچ‌یک از سایت‌های شما تعلق ندارد؛ بنابراین این صفحه وضعیت و اختیار هیچ سایتی را نشان نمی‌دهد.</>}>
+                  <Button as={Link} to="/app/sites" variant="secondary" size="md" leftIcon="arrow-right">
+                    بازگشت به همه سایت‌ها
+                  </Button>
+                </ShellState>
+              )}
+              {siteState === 'empty' && (
+                <ShellState icon="globe" title="هنوز سایتی ثبت نکرده‌اید"
+                  text="برای دیدن وضعیت، بکاپ‌ها و امنیت، اول سایت خود را اضافه کنید.">
+                  <Button as={Link} to="/onboarding" variant="primary" size="md" leftIcon="plus">
+                    افزودن سایت
+                  </Button>
+                </ShellState>
+              )}
+            </main>
+          )}
         </div>
       </div>
     </TaskProvider>

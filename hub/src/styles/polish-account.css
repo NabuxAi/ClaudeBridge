@@ -1,0 +1,93 @@
+/* ============================================================
+   DigiWP hub — polish layer: account (صفحات حساب کاربری)
+   Scope: داشبورد، سایت‌ها، صورت‌حساب، پروفایل، تیم، اعلان‌ها —
+   صفحات زیر AccountShell. بعد از digiwp.css و app.css بارگذاری
+   می‌شود؛ فقط قواعد خاص همین حوزه را اضافه می‌کند. همهٔ جهت‌ها
+   با ویژگی‌های منطقی‌اند تا RTL نشکند.
+   ============================================================ */
+
+/* --- بنرهای هشدار صفحات حساب (AlertCard کلاس style ندارد) --- */
+.dwp-acc-alert {
+  margin-block-end: 18px;
+}
+
+/* --- اعلان‌ها: فیلد «مقدار» مخاطب روی wrapper فیلد کشیده می‌شود
+   (style روی Input به تگ input داخلی می‌چسبد، نه به .gd-field) --- */
+.dwp-contact-value-field {
+  flex: 1 1 240px;
+}
+
+/* --- اعلان‌ها: گرید مقصد + ساعات خاموشی؛ در موبایل تک‌ستون --- */
+.dwp-acc-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+/* --- تیم: فرم دعوت عضو --- */
+.dwp-acc-invite-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+/* --- پروفایل: گرید فرم (نام/ایمیل/زبان/منطقهٔ زمانی) --- */
+.dwp-acc-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* --- تیم: جدول‌های گریدی عضو و دعوت‌نامه؛ در صفحهٔ باریک داخل
+   کارت اسکرول افقی می‌شوند به‌جای فشردگی و سرریز صفحه --- */
+.dwp-acc-tablewrap {
+  overflow-x: auto;
+}
+
+.dwp-acc-tablewrap > * {
+  min-width: 640px;
+}
+
+/* --- صورت‌حساب: چیدمان دو ناحیهٔ اصلی و ردیف پلن‌ها --- */
+.dwp-billing-top {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 18px;
+}
+
+.dwp-billing-plans {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+/* --- پروفایل: ستون کارت پروفایل + ستون امنیت --- */
+.dwp-profile-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 18px;
+}
+
+/* --- نقاط شکست، هم‌راستا با app.css (1024 / 860) --- */
+@media (max-width: 1024px) {
+  .dwp-billing-plans {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .dwp-billing-top,
+  .dwp-billing-plans,
+  .dwp-acc-channel-grid,
+  .dwp-acc-invite-grid,
+  .dwp-profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .dwp-acc-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

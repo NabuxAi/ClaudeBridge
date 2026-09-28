@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Badge, AlertCard, Tabs, Provenance, SkeletonTable, SkeletonCard } from '../../components/index.js'
+import { Button, Badge, AlertCard, Tabs, Provenance, SkeletonTable, SkeletonCard, NotMeasured } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
 
@@ -26,26 +26,52 @@ export default function Incidents() {
   const [data, setData] = useState(null)
   const [tab, setTab] = useState('all')
   const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
 
-  const load = () => siteApi(siteId).incidents().then(setData)
+  // Soft refresh while the page is shown: on failure the already-loaded data
+  // stays and the error surfaces in the banner below — a failed refresh never
+  // silently leaves a critical alert looking handled.
+  const load = () => siteApi(siteId).incidents()
+    .then((d) => { setData(d); setError('') })
+    .catch((e) => setError(e?.message || 'هشدارها خوانده نشد.'))
 
   useEffect(() => {
     let alive = true
-    siteApi(siteId).incidents().then((d) => alive && setData(d))
+    siteApi(siteId).incidents()
+      .then((d) => { if (alive) { setData(d); setError('') } })
+      // Without this catch a failed first load left data null forever and the
+      // gate below spun the skeleton with no message at all.
+      .catch((e) => { if (alive) setError(e?.message || 'هشدارها خوانده نشد.') })
     return () => { alive = false }
-  }, [siteId])
+  }, [siteId, attempt])
 
   // Dismissing closes our record of the alert. It does not touch the site, and
   // the next scan that still sees the problem will open it again — so the
   // button is worded as ignoring, never as resolving.
   async function dismiss(id) {
     setBusy(id)
-    try { await siteApi(siteId).dismissIncident(id); await load() } finally { setBusy('') }
+    try { await siteApi(siteId).dismissIncident(id); await load() }
+    catch (e) { setError(e?.message || 'نادیده گرفتن هشدار انجام نشد.') }
+    finally { setBusy('') }
   }
 
   const head = <PageHead title="هشدارها" subtitle="رخدادها و اقدام‌های خودکار پشتیبان" />
 
   if (!data) {
+    if (error) {
+      return (
+        <>
+          {head}
+          <NotMeasured title="هشدارها خوانده نشد" reason={error} icon="alert-triangle" />
+          <div style={{ textAlign: 'center', marginTop: 14 }}>
+            <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => { setError(''); setAttempt((a) => a + 1) }}>
+              تلاش دوباره
+            </Button>
+          </div>
+        </>
+      )
+    }
     return (
       <>
         {head}
@@ -84,6 +110,11 @@ export default function Incidents() {
         )}
       />
 
+      {/* Failed dismiss/refresh — visible, with the loaded data kept below */}
+      {error && (
+        <div className="pbk-note pbk-note--danger">{error}</div>
+      )}
+
       {/* Severity filter */}
       <div style={{ marginBottom: 20 }}>
         <Tabs items={tabs} value={tab} onChange={setTab} variant="underline" />
@@ -115,7 +146,7 @@ export default function Incidents() {
       {timeline.length > 0 && (
         <div style={{ marginBottom: 22 }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>خط زمانی رسیدگی</div>
-          <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '20px 22px' }}>
+          <div className="pbk-panel" style={{ padding: '20px 22px' }}>
             {timeline.map((ev, i) => {
               const t = TONE[ev.tone] || TONE.info
               const last = i === timeline.length - 1
@@ -140,7 +171,7 @@ export default function Incidents() {
 
       {/* Past incidents */}
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>رخدادهای اخیر</div>
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '4px 20px' }}>
+      <div className="pbk-panel" style={{ padding: '4px 20px' }}>
         {filtered.length === 0 && (
           <div style={{ padding: '28px 0', textAlign: 'center', fontSize: 13.5, color: 'var(--gd-text-muted)', lineHeight: 1.9 }}>
             {data.empty ? (data.emptyNote || 'هنوز رخدادی ثبت نشده.') : 'موردی در این دسته یافت نشد'}

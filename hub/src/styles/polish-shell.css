@@ -1,0 +1,105 @@
+/* ============================================================
+   DigiWP hub — polish layer: shell (پوسته‌ی پنل)
+   Scope: AccountShell / SiteShell — نوار کناری، نوار بالا، اسکریم
+   موبایل، وضعیت‌های تمام‌صفحهٔ پوسته، و حالت‌های «نامشخص»
+   کامپوننت‌هایی که پوسته مصرف می‌کند. بعد از digiwp.css و
+   app.css بارگذاری می‌شود تا لایه‌های پایه را refined کند، نه بشکند.
+   قواعد NabuxUi (hub/docs/nabuxui-design-mapping.md §۵): رنگ وضعیت
+   فقط از توکن، RTL فقط با ویژگی‌های منطقی، حرکت زیر reduced-motion.
+   ============================================================ */
+
+/* ---- حالت «نامشخص» — خاکستری بی‌طرف ------------------------ */
+/* سبز/کهربایی/قرمز هرکدام یک ادعا هستند؛ داده‌ای که خوانده نشده
+   حق قرض گرفتن هیچ‌کدام را ندارد. همان نقش offline/report: خاکستری. */
+.gd-status--unknown {
+  color: var(--gd-text-secondary);
+  background: var(--gd-bg-inset);
+  border-color: var(--gd-border);
+}
+.gd-status--unknown .gd-status__dot {
+  background: var(--gd-gray-400);
+  color: var(--gd-gray-400);
+}
+.gd-authority--unknown {
+  background: var(--gd-bg-inset);
+  color: var(--gd-gray-600);
+  border-color: var(--gd-border-strong);
+}
+
+/* ---- وضعیت‌های تمام‌صفحهٔ پوسته (خطا / ناموجود / خالی) ----- */
+.dwp-shellstate {
+  max-width: 520px;
+  margin: clamp(40px, 10vh, 88px) auto 0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: dwp-shellstate-in var(--gd-duration) var(--gd-ease-standard) both;
+}
+.dwp-shellstate__ic {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--gd-radius-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gd-bg-inset);
+  color: var(--gd-text-secondary);
+  border: 1px solid var(--gd-border);
+  box-shadow: var(--gd-shadow-sm), inset 0 1px 0 var(--gd-highlight);
+}
+.dwp-shellstate__ic--warning {
+  background: var(--gd-warning-bg);
+  color: var(--gd-warning-text);
+  border-color: var(--gd-warning-border);
+}
+.dwp-shellstate__title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 12px 0 0;
+}
+.dwp-shellstate__text {
+  font-size: 13px;
+  color: var(--gd-text-secondary);
+  line-height: 1.9;
+  margin: 4px 0 0;
+  max-width: 440px;
+}
+.dwp-shellstate__actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+@keyframes dwp-shellstate-in {
+  from { opacity: 0; translate: 0 6px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dwp-shellstate { animation: none; }
+}
+
+/* ---- صیقل پوسته (نگاشت NabuxUi §3.4 و §3.7) ---------------- */
+/* نوار بالا: مادهٔ هدر nx — محتوای زیر آن اسکرول می‌کند و شیشه
+   همیشه فعال است؛ نیازی به flag اسکرول ندارد. توکن --gd-glass
+   در تم ink خودش تیره می‌شود. */
+.dwp-topbar {
+  background: var(--gd-glass);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+}
+/* نوار کناری و آواتار: هایلایت یک‌پیکسلی لبهٔ بالا و سایهٔ رنگی از
+   خود رنگ — همان فرمول دکمهٔ پر nx (mapping §3.7 بند ۲). */
+.dwp-aside { box-shadow: inset 0 1px 0 var(--gd-highlight); }
+.dwp-avatar {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 2px 8px -2px color-mix(in oklab, var(--gd-primary) 55%, transparent);
+}
+/* اسکریم موبایل: محوِ ملایم پشت کشو، بدون دست زدن به چیدمان. */
+@media (max-width: 860px) {
+  .dwp-shell.is-open .dwp-scrim {
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+  }
+}

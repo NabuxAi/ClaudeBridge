@@ -1,0 +1,55 @@
+/* ============================================================
+   DigiWP hub — polish layer: marketing (صفحات عمومی)
+   Scope: Landing / Pricing و کروم مارکتینگ (MarketingLayout).
+   الگوها از نقشهٔ NabuxUi (hub/docs/nabuxui-design-mapping.md)
+   §3.5 می‌آیند و فقط با توکن‌های --gd-* نوشته شده‌اند تا تم
+   روشن و ink هر دو درست بمانند. RTL: ویژگی‌های منطقی/تزئینی
+   بی‌جهت (§5.3). نقش رنگ‌های وضعیت دست‌نخورده (§5.1).
+   ============================================================ */
+
+/* ---- Hero shell — the aurora blobs are z-index:-1 children, so
+   the ink wrapper must be its own stacking context to keep them
+   behind the hero content but above its own dark background. */
+.dwp-hero-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+/* ---- Aurora backdrop (mapping §3.5 — hero.css:140-161).
+   Glass material is invisible on a flat surface (§3.2): these
+   three drifting lights are the coloured bed the hero glass
+   panel sits on. Decorative only: aria-hidden in markup,
+   pointer-events none here, overflow clipped so no horizontal
+   scroll can ever come from the blobs. */
+.dwp-hero-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: clip;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, #000 30%, transparent 75%);
+}
+.dwp-hero-backdrop > i {
+  position: absolute;
+  inline-size: 55vmax;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  filter: blur(70px);
+  /* Ink hero → --nx-backdrop-intensity dark (mapping §3.5) */
+  opacity: 0.45;
+  animation: dwp-drift 22s ease-in-out infinite alternate;
+}
+.dwp-hero-backdrop > i:nth-child(1) { inset: -30% auto auto -10%; background: radial-gradient(circle, #6a63f4, transparent 65%); }
+.dwp-hero-backdrop > i:nth-child(2) { inset: -25% -15% auto auto; background: radial-gradient(circle, #8b5cf6, transparent 65%); animation-duration: 28s; animation-delay: -8s; }
+.dwp-hero-backdrop > i:nth-child(3) { inset: 10% auto auto 25%; background: radial-gradient(circle, #2ee6fb, transparent 60%); opacity: 0.24; animation-duration: 34s; animation-delay: -16s; }
+
+@keyframes dwp-drift {
+  33%  { translate: 8vmax 4vmax; scale: 1.08; }
+  66%  { translate: -6vmax 6vmax; scale: 0.94; }
+  100% { translate: 4vmax -3vmax; scale: 1.04; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dwp-hero-backdrop > i { animation: none; }
+}

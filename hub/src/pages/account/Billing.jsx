@@ -4,7 +4,7 @@ import Icon from '../../lib/icons.jsx'
 import PageHead from '../../layouts/PageHead.jsx'
 import { Button, Badge, NotMeasured } from '../../components/index.js'
 import { faMoney, faNum } from '../../lib/format.js'
-import { account } from '../../lib/api.js'
+import { account, ApiError } from '../../lib/api.js'
 
 const HEAD = { title: 'اشتراک و صورت‌حساب', subtitle: 'پلن، روش پرداخت و فاکتورها' }
 
@@ -59,7 +59,14 @@ export default function Billing() {
         }))
       }
     } catch (e) {
-      setRequestOk({ planId, error: e?.message || 'ثبت درخواست انجام نشد.' })
+      setRequestOk({
+        planId,
+        // A raw English «Not Found» from an unmounted endpoint tells the user
+        // nothing; name what is actually missing instead.
+        error: e instanceof ApiError && e.status === 404 && (!e.message || e.message === 'Not Found')
+          ? 'ثبت درخواست آزمایشی هنوز روی سرور فعال نشده است.'
+          : (e?.message || 'ثبت درخواست انجام نشد.'),
+      })
     } finally {
       setRequesting(null)
     }
@@ -83,6 +90,7 @@ export default function Billing() {
 
   const { billing, plans } = data
   const subscription = billing?.subscription
+  const billingUnavailable = billing?.provenance?.unavailable
   const paymentUnavailable = billing?.payment?.provenance?.unavailable
   const invoicesUnavailable = billing?.invoices?.provenance?.unavailable
 
@@ -94,47 +102,56 @@ export default function Billing() {
       <PageHead {...HEAD} />
 
       {/* Current plan + payment method */}
-      <div
-        className="dwp-billing-top"
-        style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 18, marginBottom: 24 }}
-      >
-        {/* Current plan */}
-        <div style={{ borderRadius: 'var(--gd-radius-xl)', border: '1px solid var(--gd-primary-border)', background: 'var(--gd-primary-subtle)', padding: '22px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--gd-primary)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="crown" size={19} />
-                </span>
-                <span style={{ fontSize: 19, fontWeight: 800 }}>پلن {currentPlan?.name || '—'}</span>
-                <Badge variant="primary" appearance="solid">{subscription?.status === 'trialing' ? 'دسترسی آزمایشی' : 'فعال'}</Badge>
+      <div className="dwp-billing-top" style={{ marginBottom: 24 }}>
+        {/* Current plan — or the honest NOT_BUILT state. The server answers
+            GET /billing without a subscription while billing is not active;
+            rendering «پلن —», a green «فعال» badge and «۰ از نامحدود» there
+            fabricated a contract the product does not have. */}
+        {!subscription ? (
+          <NotMeasured
+            title="اشتراک و پرداخت هنوز فعال نیست"
+            reason={billingUnavailable || 'سیستم اشتراک و پرداخت هنوز ساخته نشده است.'}
+          />
+        ) : (
+          <div style={{ borderRadius: 'var(--gd-radius-xl)', border: '1px solid var(--gd-primary-border)', background: 'var(--gd-primary-subtle)', padding: '22px 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                  <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--gd-primary)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="crown" size={19} />
+                  </span>
+                  <span style={{ fontSize: 19, fontWeight: 800 }}>پلن {currentPlan?.name || '—'}</span>
+                  {/* Same source as the trial line below: a raw `status` can
+                      still read «trialing» after the trial window has passed. */}
+                  <Badge variant="primary" appearance="solid">{subscription.isTrialing ? 'دسترسی آزمایشی' : 'فعال'}</Badge>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--gd-text-secondary)', marginTop: 10 }}>
+                  {subscription.isTrialing ? (
+                    <><Icon name="sparkles" size={14} /> {formatTrial(subscription.daysLeftInTrial)}</>
+                  ) : (
+                    <>تمدید بعدی: <b style={{ fontFamily: 'var(--gd-font-mono)' }}>{formatDate(subscription?.currentPeriodEnd)}</b></>
+                  )}
+                </div>
               </div>
-              <div style={{ fontSize: 13, color: 'var(--gd-text-secondary)', marginTop: 10 }}>
-                {subscription?.isTrialing ? (
-                  <><Icon name="sparkles" size={14} /> {formatTrial(subscription.daysLeftInTrial)}</>
-                ) : (
-                  <>تمدید بعدی: <b style={{ fontFamily: 'var(--gd-font-mono)' }}>{formatDate(subscription?.currentPeriodEnd)}</b></>
-                )}
+              <div style={{ textAlign: 'left', flex: '0 0 auto' }}>
+                <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)' }}>{currentPlan?.price == null ? '—' : faMoney(currentPlan.price)}</div>
+                <div style={{ fontSize: 12, color: 'var(--gd-text-muted)' }}>تومان / ماه</div>
               </div>
             </div>
-            <div style={{ textAlign: 'left', flex: '0 0 auto' }}>
-              <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)' }}>{faMoney(currentPlan?.price || 0)}</div>
-              <div style={{ fontSize: 12, color: 'var(--gd-text-muted)' }}>تومان / ماه</div>
+            <div style={{ marginTop: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 6 }}>
+                <span style={{ color: 'var(--gd-text-secondary)', fontWeight: 600 }}>سایت‌های استفاده‌شده</span>
+                <span style={{ fontFamily: 'var(--gd-font-mono)', fontWeight: 700 }}>{faNum(subscription?.sitesUsed || 0)} از {currentPlan?.siteLimit ? faNum(currentPlan.siteLimit) : 'نامحدود'}</span>
+              </div>
+              <div style={{ height: 9, borderRadius: 999, background: 'var(--gd-blue-100)', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min(usagePct, 100)}%`, height: '100%', background: 'var(--gd-primary)', borderRadius: 999 }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 9, marginTop: 18 }}>
+              <Button as={Link} to="/pricing" variant="primary" size="sm" leftIcon="arrow-up-circle">تغییر پلن</Button>
             </div>
           </div>
-          <div style={{ marginTop: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 6 }}>
-              <span style={{ color: 'var(--gd-text-secondary)', fontWeight: 600 }}>سایت‌های استفاده‌شده</span>
-              <span style={{ fontFamily: 'var(--gd-font-mono)', fontWeight: 700 }}>{faNum(subscription?.sitesUsed || 0)} از {currentPlan?.siteLimit ? faNum(currentPlan.siteLimit) : 'نامحدود'}</span>
-            </div>
-            <div style={{ height: 9, borderRadius: 999, background: 'var(--gd-blue-100)', overflow: 'hidden' }}>
-              <div style={{ width: `${Math.min(usagePct, 100)}%`, height: '100%', background: 'var(--gd-primary)', borderRadius: 999 }} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 9, marginTop: 18 }}>
-            <Button as={Link} to="/pricing" variant="primary" size="sm" leftIcon="arrow-up-circle">تغییر پلن</Button>
-          </div>
-        </div>
+        )}
 
         {/* Payment method */}
         <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-sm)', padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -158,11 +175,8 @@ export default function Billing() {
       </div>
 
       {/* Change plan */}
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>تغییر پلن</div>
-      <div
-        className="dwp-billing-plans"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}
-      >
+      <div className="dwp-sec-title">{currentPlan ? 'تغییر پلن' : 'پلن‌ها'}</div>
+      <div className="dwp-billing-plans" style={{ marginBottom: 24 }}>
         {plans.map((plan) => {
           const isCurrent = plan.id === currentPlan?.id
           const isDowngrade = plan.price < (currentPlan?.price || 0)
@@ -209,7 +223,9 @@ export default function Billing() {
                   leftIcon={busy ? 'loader' : undefined}
                   onClick={() => requestPilot(plan.id)}
                 >
-                  {busy ? 'در حال ثبت…' : isDowngrade ? `تنزل به ${plan.name}` : `ارتقا به ${plan.name}`}
+                  {busy ? 'در حال ثبت…'
+                    : !currentPlan ? 'درخواست دسترسی آزمایشی'
+                      : isDowngrade ? `تنزل به ${plan.name}` : `ارتقا به ${plan.name}`}
                 </Button>
               )}
               {requested && (
@@ -223,7 +239,7 @@ export default function Billing() {
       </div>
 
       {/* Invoices */}
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>فاکتورها</div>
+      <div className="dwp-sec-title">فاکتورها</div>
       {invoicesUnavailable ? (
         <NotMeasured title="فاکتورها" reason={invoicesUnavailable} />
       ) : (

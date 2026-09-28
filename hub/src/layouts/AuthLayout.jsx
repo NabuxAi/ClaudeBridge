@@ -36,7 +36,7 @@ export default function AuthLayout() {
             </span>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 15 }}>همه‌چیز سالم است</div>
-              <div className="dwp-mono" style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 2 }}>mystore.ir · ۹ سرویس</div>
+              <div className="dwp-mono" style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 2 }}>example.ir · ۹ سرویس</div>
             </div>
             <StatusPill status="healthy" size="sm" />
           </div>

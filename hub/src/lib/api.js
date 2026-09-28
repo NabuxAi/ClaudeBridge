@@ -36,7 +36,11 @@ async function http(path, { method = 'GET', body, signal } = {}) {
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    if (res.status === 401) {
+    // A 401 from an /auth/* call is an application answer — "wrong password",
+    // an unknown reset token — and must reach the form as a thrown error so
+    // its message and captcha flag are shown. Everywhere else a 401 means the
+    // session itself is gone, and the honest move is the hard reset to /login.
+    if (res.status === 401 && !path.startsWith('/auth/')) {
       setToken('')
       sessionStorage.setItem('loginReturnTo', window.location.pathname + window.location.search)
       window.location.replace('/login')
@@ -85,7 +89,6 @@ export const account = {
   invoices: call(mock.invoices, () => http('/billing/invoices')),
   invoice: call(mock.invoice, (id) => http(`/billing/invoices/${id}`)),
   team: call(mock.team, () => http('/team')),
-  notifications: call(mock.notifications, () => http('/notifications')),
   notificationPreferences: call(mock.notificationPreferences, () => http('/notifications/preferences')),
   saveNotificationPreference: call(
     mock.saveNotificationPreference,
@@ -111,7 +114,13 @@ export const account = {
   ),
   plans: call(mock.plans, () => http('/billing/plans')),
   hostingOptions: call(mock.hostingOptions, () => http('/hosting/options')),
-  contact: call(mock.contact, () => http('/profile').then((p) => p.contact || {})),
+  // /profile does not carry the enrolled contact yet, so this resolves {}
+  // instead of rejecting: the emergency-alerts screen uses it only to prefill
+  // a form, and one missing field must not blank the whole page.
+  contact: call(
+    mock.contact,
+    () => http('/profile').then((p) => p.contact || {}).catch(() => ({}))
+  ),
   setContact: call(
     (body) => mock.setContact(body),
     (body) => http('/contact', { method: 'PATCH', body })

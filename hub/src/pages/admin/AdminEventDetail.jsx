@@ -27,7 +27,7 @@ export default function AdminEventDetail() {
         subtitle={`${event.site_name || event.site_id} · ${new Date(Number(event.created_at)).toLocaleString('fa-IR')}`}
         action={<Button as={Link} to="/admin/events" variant="secondary" size="sm" rightIcon="arrow-right">بازگشت</Button>}
       />
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: 20, marginBottom: 16 }}>
+      <div className="gd-card gd-card--e-sm gd-card--p-md" style={{ marginBottom: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)' }}>نوع</div>

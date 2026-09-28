@@ -10,6 +10,9 @@ import { sendMail } from './mailer.js'
 const publicUser = (u) => u && ({
   id: u.id, email: u.email, name: u.name, role: u.role, plan: u.plan,
   initials: (u.name || '?').trim().charAt(0), twoFactor: !!u.two_factor, lang: u.lang, timezone: u.timezone,
+  // Registration timestamp (epoch ms) as stored; the admin panel renders it.
+  // Never include pass_hash or other raw columns here.
+  created_at: u.created_at === undefined ? null : Number(u.created_at),
 })
 
 const publicSite = (s) => s && ({
@@ -94,7 +97,7 @@ export const users = {
     const q = String(search || '').trim().toLowerCase()
     const where = q ? 'WHERE LOWER(u.email) LIKE $3 OR LOWER(u.name) LIKE $3' : ''
     const params = q ? [limit, offset, `%${q}%`] : [limit, offset]
-    return await all(
+    const rows = await all(
       `SELECT u.*, COUNT(s.id) AS site_count
          FROM users u
          LEFT JOIN sites s ON s.user_id = u.id
@@ -104,6 +107,8 @@ export const users = {
          LIMIT $1 OFFSET $2`,
       params
     )
+    // Strip pass_hash via publicUser; only site_count is appended on top.
+    return rows.map((r) => ({ ...publicUser(r), site_count: Number(r.site_count) }))
   },
 
   async count({ search = '' } = {}) {
@@ -475,7 +480,9 @@ export const team = {
     }
 
     const publicPanelUrl = config.publicPanelUrl || 'http://localhost:8080'
-    const acceptUrl = `${publicPanelUrl}/app/team?accept=${raw}`
+    // The hub accept flow reads ?accept=<token> and ?site=<siteId>; the accept
+    // endpoint itself requires both (team.accept queries token_hash AND site_id).
+    const acceptUrl = `${publicPanelUrl}/app/team?accept=${raw}&site=${siteId}`
     const mailResult = await sendMail({
       to: normalized,
       subject: `دعوت به همکاری در مدیریت سایت ${site.name}`,

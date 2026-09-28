@@ -14,9 +14,20 @@ const SUGGESTIONS = [
 
 const mono = { fontFamily: 'var(--gd-font-mono)' }
 
+// Deterministic JSON string: the server stores args as jsonb, which does not
+// preserve key order, so comparing persisted args with in-message args must
+// not depend on it.
+function stableJson(value) {
+  return JSON.stringify(value, (_k, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]]))
+      : v
+  )
+}
+
 function AiAvatar() {
   return (
-    <span style={{
+    <span className="dwp-assist__avatar" style={{
       width: 36, height: 36, borderRadius: '50%',
       background: 'var(--gd-accent-subtle)', color: 'var(--gd-accent)',
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -29,13 +40,19 @@ function AiAvatar() {
 
 export default function Assistant() {
   const { siteId, site } = useOutletContext()
-  const siteName = site?.name || 'mystore.ir'
+  // No invented domain: while the site record is loading — and permanently if
+  // its fetch fails — the intro speaks of "your site" instead of a fictional
+  // name the user never registered.
+  const siteName = site?.name || null
 
   const [conversations, setConversations] = useState([])
   const [activeConvId, setActiveConvId] = useState(null)
   const [activeConv, setActiveConv] = useState(null)
   const [loadingList, setLoadingList] = useState(true)
   const [loadingConv, setLoadingConv] = useState(false)
+  const [listError, setListError] = useState('')
+  const [convError, setConvError] = useState('')
+  const [sendNotice, setSendNotice] = useState('')
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
@@ -44,6 +61,7 @@ export default function Assistant() {
 
   const scrollRef = useRef(null)
   const pollingRef = useRef(null)
+  const bannerTimerRef = useRef(null)
   const activeIdRef = useRef(null)
   activeIdRef.current = activeConvId
 
@@ -69,14 +87,21 @@ export default function Assistant() {
       }
     }
     setNotificationBanner({ title, text })
-    setTimeout(() => setNotificationBanner(null), 7000)
+    // A new reply must restart the 7s window: an untracked first timer would
+    // close this fresh banner early.
+    clearTimeout(bannerTimerRef.current)
+    bannerTimerRef.current = setTimeout(() => setNotificationBanner(null), 7000)
   }, [])
+
+  // The auto-close timer must not outlive the component either.
+  useEffect(() => () => clearTimeout(bannerTimerRef.current), [])
 
   // 1. Fetch conversations list
   const loadConversations = useCallback(async (selectId = null) => {
     try {
       const res = await siteApi(siteId).listConversations()
       const list = res?.conversations || []
+      setListError('')
       setConversations(list)
 
       if (list.length > 0) {
@@ -84,14 +109,20 @@ export default function Assistant() {
         setActiveConvId(targetId)
       } else {
         // Create initial default conversation
-        const created = await siteApi(siteId).createConversation('گفتگوی اصلی')
-        if (created?.id) {
-          setConversations([created])
-          setActiveConvId(created.id)
+        try {
+          const created = await siteApi(siteId).createConversation('گفتگوی اصلی')
+          if (created?.id) {
+            setConversations([created])
+            setActiveConvId(created.id)
+          }
+        } catch (e) {
+          setListError(e?.message || 'ایجاد گفتگوی نخست ناموفق بود.')
         }
       }
-    } catch {
-      // Fallback
+    } catch (e) {
+      // An unreadable list must say so — "no conversations yet" would be a
+      // claim about data this page never received.
+      setListError(e?.message || 'بارگذاری گفتگوها ناموفق بود.')
     } finally {
       setLoadingList(false)
     }
@@ -104,6 +135,7 @@ export default function Assistant() {
     try {
       const conv = await siteApi(siteId).getConversation(convId)
       if (conv) {
+        setConvError('')
         // If it was processing and now ready, notify!
         if (activeConv?.status === 'processing' && conv.status === 'ready' && isPoll) {
           const lastAiMsg = [...(conv.messages || [])].reverse().find((m) => m.sender === 'ai')
@@ -111,8 +143,13 @@ export default function Assistant() {
         }
         setActiveConv(conv)
       }
-    } catch {
-      // Fallback
+    } catch (e) {
+      // Background polls retry on their next tick and stay quiet; a real load
+      // failure must be visible instead of rendering an empty chat.
+      if (!isPoll) {
+        setActiveConv(null)
+        setConvError(e?.message || 'بارگذاری پیام‌ها ناموفق بود.')
+      }
     } finally {
       if (!isPoll) setLoadingConv(false)
     }
@@ -129,6 +166,12 @@ export default function Assistant() {
       loadActiveConversation(activeConvId)
     }
   }, [activeConvId, loadActiveConversation])
+
+  // A "no open conversation" notice is tied to the previous state; a new or
+  // reloaded conversation makes it stale.
+  useEffect(() => {
+    setSendNotice('')
+  }, [activeConvId])
 
   // Polling when active conversation is processing in background
   useEffect(() => {
@@ -196,18 +239,25 @@ export default function Assistant() {
       if (updated) {
         setActiveConv((prev) => ({ ...prev, title: updated.title }))
         setConversations((prev) => prev.map((c) => c.id === activeConvId ? { ...c, title: updated.title } : c))
+        setEditingTitle(false)
       }
-    } catch {
-      // error
-    } finally {
-      setEditingTitle(false)
+    } catch (e) {
+      // A failed rename stays open with its reason visible — closing silently
+      // would present the old title as if it had been saved.
+      alert(e?.message || 'ذخیرهٔ عنوان ناموفق بود.')
     }
   }
 
   // Send message
   const handleSend = async (textToSend) => {
     const q = (textToSend ?? input).trim()
-    if (!q || sending || !activeConvId) return
+    if (!q || sending) return
+    if (!activeConvId) {
+      // Sending into a closed conversation must say so, not vanish on Enter.
+      setSendNotice('گفتگویی باز نیست — یک گفتگو بسازید یا بارگذاری را دوباره تلاش کنید.')
+      return
+    }
+    setSendNotice('')
 
     requestNotificationPermission()
     setInput('')
@@ -264,10 +314,30 @@ export default function Assistant() {
         ),
       }))
 
+      // Proposals carried inside a message have no server id. Finding the
+      // matching pending row and sending its id is what arms claim-once: the
+      // server claims the row before the tool runs, and the proposals queue
+      // cannot approve and run the same action a second time.
+      let proposalId = proposal.id || null
+      if (!proposalId) {
+        try {
+          const pend = await siteApi(siteId).pendingProposals()
+          const rows = (pend?.proposals || []).filter((p) => p.tool === proposal.tool)
+          if (rows.length === 1) {
+            proposalId = rows[0].id
+          } else if (rows.length > 1) {
+            proposalId = (rows.find((p) => stableJson(p.args) === stableJson(proposal.args)) || {}).id || null
+          }
+        } catch {
+          // Queue unreadable: run without a claim, as before, rather than
+          // blocking an explicitly approved action.
+        }
+      }
+
       const res = await siteApi(siteId).runAction(proposal.tool, {
         args: proposal.args,
         approved: true,
-        ...(proposal.id ? { proposalId: proposal.id } : {}),
+        ...(proposalId ? { proposalId } : {}),
       })
 
       const outcome = res?.ok === false ? (res.message || 'اجرا نشد.') : 'با موفقیت انجام شد.'
@@ -328,17 +398,11 @@ export default function Assistant() {
         </div>
       )}
 
-      {/* Main 2-Pane Container */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '270px 1fr', height: 660,
-        background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)',
-        borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden',
-      }}>
+      {/* Main 2-Pane Container — layout lives in polish-site-c.css so the
+          mobile breakpoint can collapse it (inline styles cannot). */}
+      <div className="dwp-assist">
         {/* Sidebar: Conversations List */}
-        <div style={{
-          borderInlineEnd: '1px solid var(--gd-border)', background: 'var(--gd-bg-surface)',
-          display: 'flex', flexDirection: 'column', height: '100%',
-        }}>
+        <div className="dwp-assist__side">
           <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid var(--gd-border-subtle)' }}>
             <Button
               variant="primary"
@@ -356,6 +420,13 @@ export default function Assistant() {
               <div style={{ padding: 20, textAlign: 'center', fontSize: 12.5, color: 'var(--gd-text-muted)' }}>
                 در حال بارگذاری گفتگوها…
               </div>
+            ) : listError ? (
+              <div className="dwp-assist__err" role="alert">
+                <div>{listError}</div>
+                <Button size="sm" variant="secondary" style={{ marginTop: 8 }} onClick={() => loadConversations()}>
+                  تلاش دوباره
+                </Button>
+              </div>
             ) : conversations.length === 0 ? (
               <div style={{ padding: 20, textAlign: 'center', fontSize: 12.5, color: 'var(--gd-text-muted)' }}>
                 گفتگویی ثبت نشده است.
@@ -368,13 +439,19 @@ export default function Assistant() {
                   return (
                     <div
                       key={conv.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-current={isActive ? 'true' : undefined}
+                      className={`dwp-assist__item${isActive ? ' dwp-assist__item--active' : ''}`}
                       onClick={() => setActiveConvId(conv.id)}
-                      style={{
-                        padding: '10px 12px', borderRadius: 'var(--gd-radius-md)',
-                        background: isActive ? 'var(--gd-primary-subtle)' : 'transparent',
-                        border: isActive ? '1px solid var(--gd-primary-border)' : '1px solid transparent',
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9,
-                        transition: 'background var(--gd-duration)',
+                      onKeyDown={(e) => {
+                        // The delete icon is its own button; key activation of
+                        // the row must not fire from inside it.
+                        if (e.target !== e.currentTarget) return
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setActiveConvId(conv.id)
+                        }
                       }}
                     >
                       <span style={{
@@ -419,7 +496,7 @@ export default function Assistant() {
         </div>
 
         {/* Main Chat Pane */}
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0 }}>
+        <div className="dwp-assist__chat">
           {/* Conversation Header */}
           <div style={{
             padding: '12px 20px', borderBottom: '1px solid var(--gd-border)',
@@ -482,13 +559,24 @@ export default function Assistant() {
                 borderRadius: 16, padding: '14px 17px', fontSize: 13.5, lineHeight: 1.85,
                 color: 'var(--gd-text)', boxShadow: 'var(--gd-shadow-xs)',
               }}>
-                من دستیار هوشمند و متصل به موتور چندعامله سایت <span style={mono}>{siteName}</span> هستم. هر سوال یا بررسی امنیتی، سرعت، آپدیت و رفع تداخل دارید بفرمایید تا مستقیماً با بررسی لاگ‌های زنده سایت پاسخ دهم.
+                من دستیار هوشمند و متصل به موتور چندعامله {siteName
+                  ? <>سایت <span style={mono}>{siteName}</span></>
+                  : 'سایت شما'} هستم. هر سوال یا بررسی امنیتی، سرعت، آپدیت و رفع تداخل دارید بفرمایید تا مستقیماً با بررسی لاگ‌های زنده سایت پاسخ دهم.
               </div>
             </div>
 
             {loadingConv && (
               <div style={{ textAlign: 'center', padding: 20, color: 'var(--gd-text-muted)', fontSize: 13 }}>
                 در حال بارگذاری پیام‌ها…
+              </div>
+            )}
+
+            {!loadingConv && convError && (
+              <div className="dwp-assist__err" role="alert">
+                <div>{convError}</div>
+                <Button size="sm" variant="secondary" style={{ marginTop: 8 }} onClick={() => loadActiveConversation(activeConvId)}>
+                  تلاش دوباره
+                </Button>
               </div>
             )}
 
@@ -600,6 +688,11 @@ export default function Assistant() {
 
           {/* Suggestions & Input Area */}
           <div style={{ borderTop: '1px solid var(--gd-border)', padding: '12px 18px', background: 'var(--gd-bg-surface)' }}>
+            {sendNotice && (
+              <p role="alert" style={{ fontSize: 12, color: 'var(--gd-danger-text)', margin: '0 0 8px', lineHeight: 1.8 }}>
+                {sendNotice}
+              </p>
+            )}
             <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
               {SUGGESTIONS.map((s) => (
                 <button
@@ -634,18 +727,15 @@ export default function Assistant() {
                   fontFamily: 'var(--gd-font-sans)', fontSize: 13.5, color: 'var(--gd-text)',
                 }}
               />
-              <span
+              <button
+                type="button"
+                className="dwp-assist__send"
+                aria-label="ارسال پیام"
+                disabled={sending || activeConv?.status === 'processing'}
                 onClick={() => handleSend(input)}
-                role="button"
-                tabIndex={0}
-                style={{
-                  width: 36, height: 36, borderRadius: '50%', background: 'var(--gd-primary)',
-                  color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  flex: '0 0 auto', cursor: 'pointer', opacity: (sending || activeConv?.status === 'processing') ? 0.6 : 1,
-                }}
               >
                 <Icon name="send" size={16} />
-              </span>
+              </button>
             </div>
           </div>
         </div>

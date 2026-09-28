@@ -1,0 +1,154 @@
+/* ============================================================
+   DigiWP hub — polish layer: site pages — batch B
+   Scope: Backups.jsx / OffsiteBackups.jsx / Incidents.jsx
+   NabuxUi polish per hub/docs/nabuxui-design-mapping.md:
+   only --gd-* tokens, logical properties for RTL, status colour
+   roles untouched (mapping §5). Class prefix: .pbk-
+   ============================================================ */
+
+/* ---- metric strip (was a 4-col inline grid, no breakpoints) */
+.pbk-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-block-end: 18px;
+}
+@media (max-width: 1024px) {
+  .pbk-metrics { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 860px) {
+  .pbk-metrics { grid-template-columns: 1fr; }
+}
+
+/* ---- panel shell — nx raised surface (mapping §3.7, §4.4):
+   shadow + 1px top highlight. overflow-x:auto instead of the
+   old overflow:hidden so wide grids scroll on mobile instead
+   of being clipped without recourse. */
+.pbk-panel {
+  background: var(--gd-bg-surface);
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-lg);
+  box-shadow: var(--gd-shadow-sm), inset 0 1px 0 var(--gd-highlight);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* ---- div-table rows. Column templates are byte-identical to
+   the previous inline grids; on mobile the rows keep a usable
+   min-width and the panel scrolls. */
+.pbk-trow {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 20px;
+  font-size: 13.5px;
+}
+.pbk-trow--head {
+  padding-block: 11px;
+  background: var(--gd-bg-subtle);
+  border-block-end: 1px solid var(--gd-border);
+  font-size: var(--gd-text-xs);
+  font-weight: var(--gd-weight-bold);
+  color: var(--gd-text-muted);
+  white-space: nowrap;
+}
+.pbk-trow--body { border-block-end: 1px solid var(--gd-border-subtle); }
+.pbk-trow--body:last-child { border-block-end: none; }
+
+.pbk-cols-backups { grid-template-columns: 1.4fr 1.1fr 1fr 0.8fr 1fr 1.5fr; }
+.pbk-cols-target  { grid-template-columns: 1.4fr 1fr 0.8fr 1fr 0.7fr 1.3fr; }
+.pbk-cols-jobs    { grid-template-columns: 1fr 1.2fr 0.9fr 0.9fr 1fr; }
+
+@media (max-width: 860px) {
+  .pbk-cols-backups,
+  .pbk-cols-target { min-width: 780px; }
+  .pbk-cols-jobs { min-width: 620px; }
+}
+
+/* ---- row action cluster ------------------------------------ */
+.pbk-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.pbk-actions--start { justify-content: flex-start; gap: 7px; }
+
+/* ---- inline notes. The success note previously used the
+   undefined --gd-success-subtle token (transparent render);
+   it now sits on --gd-success-bg / --gd-success-border. */
+.pbk-note {
+  padding: 11px 16px;
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-md);
+  font-size: 13px;
+  margin-block-end: 16px;
+}
+.pbk-note--flat { margin-block-end: 0; }
+.pbk-note--success {
+  background: var(--gd-success-bg);
+  border-color: var(--gd-success-border);
+  color: var(--gd-success-text);
+  font-weight: var(--gd-weight-semibold);
+}
+.pbk-note--danger {
+  background: var(--gd-danger-bg);
+  border-color: var(--gd-danger-border);
+  color: var(--gd-danger-text);
+}
+.pbk-note--info {
+  background: var(--gd-bg-subtle);
+  border-color: var(--gd-border);
+  color: var(--gd-text-secondary);
+  line-height: 1.7;
+}
+
+/* ---- schedule / policy banner -------------------------------- */
+.pbk-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  border: 1px solid var(--gd-border);
+  background: var(--gd-bg-subtle);
+  border-radius: var(--gd-radius-lg);
+  padding: 16px 20px;
+  margin-block-end: 22px;
+}
+.pbk-banner__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--gd-primary-subtle);
+  color: var(--gd-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.pbk-banner__grow { flex: 1 1 220px; min-width: 0; }
+
+/* ---- selectable option rows: real <label> + wired input, so
+   keyboard users can toggle (focus ring comes from the global
+   :focus-visible rule in digiwp.css). ------------------------- */
+.pbk-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--gd-bg-surface);
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-md);
+  cursor: pointer;
+  transition:
+    background var(--gd-duration-fast) var(--gd-ease-standard),
+    border-color var(--gd-duration-fast) var(--gd-ease-standard);
+}
+.pbk-opt--selected {
+  background: var(--gd-primary-subtle);
+  border-color: var(--gd-primary-border);
+}
+.pbk-opt--disabled { cursor: default; }
+.pbk-opt__input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: var(--gd-primary);
+  cursor: pointer;
+}
+.pbk-opt--disabled .pbk-opt__input { cursor: not-allowed; }

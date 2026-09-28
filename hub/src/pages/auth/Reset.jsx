@@ -49,7 +49,7 @@ function ForgotForm() {
     return (
       <>
         <IconBadge name="mail-check" />
-        <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.01em', margin: 0 }}>لینک ارسال شد</h2>
+        <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>لینک ارسال شد</h2>
         <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px', lineHeight: 1.8 }}>
           اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی رمز عبور برای آن ارسال شده است.
         </p>
@@ -65,16 +65,20 @@ function ForgotForm() {
   return (
     <>
       <IconBadge name="key-round" />
-      <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.01em', margin: 0 }}>بازنشانی رمز عبور</h2>
+      <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>بازنشانی رمز عبور</h2>
       <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px', lineHeight: 1.8 }}>
         ایمیل خود را وارد کنید؛ اگر حسابی با این ایمیل داشته باشید، لینک بازنشانی برای آن ارسال می‌شود.
       </p>
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Input passes the native event straight through (forms.jsx spreads
+            {...rest} onto <input>) — the handler must read e.target.value,
+            exactly like Login. Storing the event itself would stringify as
+            "[object Object]" / crash JSON serialization downstream. */}
         <Input
           type="email"
           label="ایمیل"
           value={email}
-          onChange={(v) => setEmail(v)}
+          onChange={(e) => setEmail(e.target.value)}
           required
           autoFocus
         />
@@ -86,7 +90,7 @@ function ForgotForm() {
             <Input
               type="text"
               value={captcha.answer}
-              onChange={(v) => setCaptcha((c) => ({ ...c, answer: v }))}
+              onChange={(e) => setCaptcha((c) => ({ ...c, answer: e.target.value }))}
               required
               placeholder="پاسخ عددی"
             />
@@ -143,8 +147,8 @@ function ResetForm({ token }) {
   if (done) {
     return (
       <>
-        <IconBadge name="check-circle" />
-        <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.01em', margin: 0 }}>رمز عبور بازنشانی شد</h2>
+        <IconBadge name="check-circle" tone="success" />
+        <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>رمز عبور بازنشانی شد</h2>
         <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px', lineHeight: 1.8 }}>
           رمز عبور جدید ذخیره شد. اکنون می‌توانید وارد شوید.
         </p>
@@ -158,7 +162,7 @@ function ResetForm({ token }) {
   return (
     <>
       <IconBadge name="lock" />
-      <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.01em', margin: 0 }}>رمز عبور جدید</h2>
+      <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>رمز عبور جدید</h2>
       <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px', lineHeight: 1.8 }}>
         لینک بازنشانی یک ساعت معتبر و یک‌بار مصرف است. رمز جدید خود را وارد کنید.
       </p>
@@ -167,7 +171,7 @@ function ResetForm({ token }) {
           type="password"
           label="رمز عبور جدید"
           value={password}
-          onChange={(v) => setPassword(v)}
+          onChange={(e) => setPassword(e.target.value)}
           required
           autoFocus
         />
@@ -175,7 +179,7 @@ function ResetForm({ token }) {
           type="password"
           label="تکرار رمز عبور"
           value={confirm}
-          onChange={(v) => setConfirm(v)}
+          onChange={(e) => setConfirm(e.target.value)}
           required
         />
         {error && (
@@ -192,13 +196,19 @@ function ResetForm({ token }) {
   )
 }
 
-function IconBadge({ name }) {
+function IconBadge({ name, tone = 'primary' }) {
+  // The soft primary surface + hairline is the same badge language the auth
+  // layout's aside uses. Green is reserved for an action that truly completed
+  // (a saved password) — the "if this email exists" screen must stay neutral,
+  // because it deliberately does not confirm anything.
+  const success = tone === 'success'
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      width: 52, height: 52, borderRadius: 14,
-      background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border)',
-      color: 'var(--gd-text-secondary)', marginBottom: 18,
+      width: 52, height: 52, borderRadius: 'var(--gd-radius-lg)',
+      background: success ? 'var(--gd-success-bg)' : 'var(--gd-primary-subtle)',
+      border: `1px solid ${success ? 'var(--gd-success-border)' : 'var(--gd-primary-border)'}`,
+      color: success ? 'var(--gd-success-text)' : 'var(--gd-primary)', marginBottom: 18,
     }}>
       <Icon name={name} size={26} />
     </span>

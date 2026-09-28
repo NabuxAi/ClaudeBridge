@@ -1,11 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import { Button, Input, IconButton, Badge, MetricCard, NotMeasured } from '../../components/index.js'
 import { site as siteApi } from '../../lib/api.js'
-
-const TARGET_COLS = '1.4fr 1fr 0.8fr 1fr 0.7fr 1.3fr'
-const JOB_COLS = '1fr 1.2fr 0.9fr 0.9fr 1fr'
 
 export default function OffsiteBackups() {
   const { siteId, site } = useOutletContext()
@@ -14,6 +11,7 @@ export default function OffsiteBackups() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(emptyForm())
@@ -31,25 +29,53 @@ export default function OffsiteBackups() {
     setJobs(data?.jobs || [])
   }
 
-  useEffect(() => {
-    let alive = true
-    Promise.all([
-      api.offsiteTargets().then((d) => alive && setTargets(d?.targets || [])),
-      api.offsiteJobs().then((d) => alive && setJobs(d?.jobs || [])),
-    ]).then(() => alive && setLoading(false)).catch((e) => alive && setError(e?.message || 'بارگذاری انجام نشد.'))
-    return () => { alive = false; clearTimeout(timer.current) }
-  }, [api])
+  const hasActiveJob = (list) => (list || []).some((j) => j.status === 'queued' || j.status === 'running')
 
-  function poll() {
+  // Re-check job status every 2.5s while something is queued/running, so the
+  // history updates without a manual refresh. The reschedule goes through a
+  // ref because the timer callback must reach the latest poll, and poll cannot
+  // reference itself while it is being declared.
+  const pollRef = useRef(null)
+  const poll = useCallback(() => {
     clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       try {
         const data = await api.offsiteJobs()
         setJobs(data?.jobs || [])
-        const active = (data?.jobs || []).some((j) => j.status === 'queued' || j.status === 'running')
-        if (active) poll()
+        if (hasActiveJob(data?.jobs)) pollRef.current?.()
       } catch { /* ignore polling errors */ }
     }, 2500)
+  }, [api])
+
+  useEffect(() => { pollRef.current = poll }, [poll])
+
+  useEffect(() => {
+    let alive = true
+    Promise.all([
+      api.offsiteTargets().then((d) => alive && setTargets(d?.targets || [])),
+      api.offsiteJobs().then((d) => {
+        if (!alive) return
+        const list = d?.jobs || []
+        setJobs(list)
+        // Arriving back on this page with a job still in flight must keep
+        // updating — not freeze on the loaded snapshot.
+        if (hasActiveJob(list)) poll()
+      }),
+    ])
+      .catch((e) => alive && setError(e?.message || 'بارگذاری انجام نشد.'))
+      // The finally belongs here: in the reject path the .then above is
+      // skipped, and without this the page stayed on the skeleton forever
+      // with the error message rendered behind the early return.
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false; clearTimeout(timer.current) }
+  }, [api, poll, attempt])
+
+  // Failed first load with nothing read: an explicit error state with a
+  // retry, not the «هنوز هدفی افزوده نشده» empty state.
+  function retryLoad() {
+    setError('')
+    setLoading(true)
+    setAttempt((a) => a + 1)
   }
 
   function emptyForm() {
@@ -102,7 +128,7 @@ export default function OffsiteBackups() {
   }
 
   async function runBackup(targetId) {
-    if (!site?.paired) {
+    if (site?.paired === false) {
       setError('سایت هنوز به سرور ما وصل نشده — افزونهٔ واسط را نصب و جفت کنید.')
       return
     }
@@ -128,7 +154,24 @@ export default function OffsiteBackups() {
 
   if (loading) return head
 
-  const unavailable = !site?.paired
+  if (error && targets == null && jobs == null) {
+    return (
+      <>
+        {head}
+        <NotMeasured title="بکاپ خارجی خوانده نشد" reason={error} icon="alert-triangle" />
+        <div style={{ textAlign: 'center', marginTop: 14 }}>
+          <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={retryLoad}>
+            تلاش دوباره
+          </Button>
+        </div>
+      </>
+    )
+  }
+
+  // paired is a real boolean once the shell's site list lands; site === null
+  // only means it has not arrived yet. Treating null as «جفت‌نشده» showed a
+  // paired site a false «سایت هنوز به سرور ما وصل نشده» during that window.
+  const unavailable = site?.paired === false
     ? 'سایت هنوز به سرور ما وصل نشده — افزونهٔ واسط را نصب و جفت کنید.'
     : null
 
@@ -165,17 +208,17 @@ export default function OffsiteBackups() {
       {formCard}
 
       {/* Targets summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 18 }}>
+      <div className="pbk-metrics">
         <MetricCard icon="cloud" iconTone="accent" label="اهداف فعال" value={String(targets?.length || 0)} hint="S3-compatible" />
         <MetricCard icon="check-circle-2" iconTone="success" label="آخرین بکاپ موفق" value={lastSuccess(jobs)} hint="براساس تاریخچه" />
-        <MetricCard icon="database" iconTone="primary" label="حجم آخرین بکاپ" value={lastSuccessSize(jobs)} hint="بایت" />
+        <MetricCard icon="database" iconTone="primary" label="حجم آخرین بکاپ" value={lastSuccessSize(jobs)} />
         <MetricCard icon="shield-check" iconTone="neutral" label="رمزنگاری" value="AES-256-GCM" hint="در حالت استراحت" />
       </div>
 
       {/* Targets table */}
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>اهداف ذخیره‌سازی</div>
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden', marginBottom: 24 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: TARGET_COLS, gap: 12, padding: '11px 20px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', fontSize: 12, fontWeight: 700, color: 'var(--gd-text-muted)' }}>
+      <div className="pbk-panel" style={{ marginBottom: 24 }}>
+        <div className="pbk-trow pbk-trow--head pbk-cols-target">
           <span>نشانی / باکت</span>
           <span>Region</span>
           <span>مسیر</span>
@@ -188,14 +231,10 @@ export default function OffsiteBackups() {
             هنوز هدفی افزوده نشده.
           </div>
         )}
-        {targets?.map((t, i) => (
+        {targets?.map((t) => (
           <div
             key={t.id}
-            style={{
-              display: 'grid', gridTemplateColumns: TARGET_COLS, gap: 12, alignItems: 'center',
-              padding: '13px 20px', fontSize: 13.5,
-              borderBottom: i < targets.length - 1 ? '1px solid var(--gd-border-subtle)' : 'none',
-            }}
+            className="pbk-trow pbk-trow--body pbk-cols-target"
           >
             <span style={{ minWidth: 0 }}>
               <div className="dwp-mono" style={{ fontWeight: 600 }}>{t.endpoint}</div>
@@ -204,12 +243,12 @@ export default function OffsiteBackups() {
             <span style={{ color: 'var(--gd-text-secondary)' }}>{t.region || '—'}</span>
             <span className="dwp-mono" style={{ color: 'var(--gd-text-secondary)' }}>{t.pathPrefix || '/'}</span>
             <span>{t.retentionDays} روز</span>
-            <span><Badge variant="success" appearance="soft">فعال</Badge></span>
-            <span style={{ display: 'flex', gap: 7, justifyContent: 'flex-start' }}>
-              <Button variant="secondary" size="sm" leftIcon="play" disabled={busy === `run-${t.id}` || !site?.paired} onClick={() => runBackup(t.id)}>
+            <span><Badge variant="neutral" appearance="soft">پیکربندی‌شده</Badge></span>
+            <span className="pbk-actions pbk-actions--start">
+              <Button variant="secondary" size="sm" leftIcon="play" disabled={busy === `run-${t.id}` || site?.paired === false} onClick={() => runBackup(t.id)}>
                 {busy === `run-${t.id}` ? 'در حال شروع…' : 'بکاپ بگیر'}
               </Button>
-              <Button variant="ghost" size="sm" leftIcon="pencil" onClick={() => startEdit(t)}>ویرایش</Button>
+              <Button variant="ghost" size="sm" leftIcon="settings" onClick={() => startEdit(t)}>ویرایش</Button>
               <IconButton icon="trash-2" label="حذف" size="sm" disabled={busy === `del-${t.id}`} onClick={() => removeTarget(t.id)} />
             </span>
           </div>
@@ -218,8 +257,8 @@ export default function OffsiteBackups() {
 
       {/* Jobs table */}
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>تاریخچهٔ ارسال</div>
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: JOB_COLS, gap: 12, padding: '11px 20px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', fontSize: 12, fontWeight: 700, color: 'var(--gd-text-muted)' }}>
+      <div className="pbk-panel">
+        <div className="pbk-trow pbk-trow--head pbk-cols-jobs">
           <span>زمان</span>
           <span>هدف</span>
           <span>حجم</span>
@@ -231,17 +270,13 @@ export default function OffsiteBackups() {
             هنوز هیچ بکاپ خارجی ارسال نشده.
           </div>
         )}
-        {jobs?.map((j, i) => (
+        {jobs?.map((j) => (
           <div
             key={j.id}
-            style={{
-              display: 'grid', gridTemplateColumns: JOB_COLS, gap: 12, alignItems: 'center',
-              padding: '13px 20px', fontSize: 13.5,
-              borderBottom: i < jobs.length - 1 ? '1px solid var(--gd-border-subtle)' : 'none',
-            }}
+            className="pbk-trow pbk-trow--body pbk-cols-jobs"
           >
             <span style={{ color: 'var(--gd-text-secondary)' }}>{j.createdAt ? new Date(j.createdAt).toLocaleString('fa-IR') : '—'}</span>
-            <span className="dwp-mono" style={{ color: 'var(--gd-text-muted)' }}>{j.targetId.slice(-8)}</span>
+            <span className="dwp-mono" style={{ color: 'var(--gd-text-muted)' }}>{targetLabel(targets, j.targetId)}</span>
             <span className="dwp-mono">{j.sizeBytes != null ? humanBytes(j.sizeBytes) : '—'}</span>
             <span><Badge variant={jobTone(j.status)} appearance="soft">{jobLabel(j.status)}</Badge></span>
             <span style={{ color: 'var(--gd-text-muted)', fontSize: 12 }}>{j.error || '—'}</span>
@@ -261,6 +296,13 @@ export default function OffsiteBackups() {
 function lastSuccess(jobs) {
   const j = (jobs || []).find((x) => x.status === 'done')
   return j && j.completedAt ? new Date(j.completedAt).toLocaleString('fa-IR') : '—'
+}
+
+// Human-readable target for the history rows: the bucket name while the
+// target exists, otherwise the id suffix of a since-deleted target.
+function targetLabel(targets, targetId) {
+  const t = (targets || []).find((x) => x.id === targetId)
+  return t?.bucket || (targetId ? String(targetId).slice(-8) : '—')
 }
 
 function lastSuccessSize(jobs) {

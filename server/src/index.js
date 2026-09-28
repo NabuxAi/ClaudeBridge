@@ -18,6 +18,9 @@ import sitesRouter from './routes/sites.js'
 import connectorRouter from './routes/connector.js'
 import offsiteBackupsRouter from './routes/offsite-backups.js'
 import adminRouter from './routes/admin.js'
+import billingRouter from './routes/billing.js'
+import notificationsRouter from './routes/notifications.js'
+import teamRouter from './routes/team.js'
 import { plans } from './seed.js'
 import { runDailyDigest, scheduleDailyDigest } from './digest.js'
 import { initIntel, scheduleIntel, refresh as refreshIntel } from './intel/index.js'
@@ -92,9 +95,18 @@ export function createApp() {
   // Public: the price list is shown to anonymous visitors on /pricing.
   app.get('/v1/billing/plans', (_req, res) => res.json(plans))
   // Protected: everything the hub reads after login.
+  // The real billing router must be mounted before the account router:
+  // account.js keeps an honest NOT_BUILT stub for GET /billing, and Express
+  // matches in registration order — the real subscription row has to win.
+  app.use('/v1', requireAuth, billingRouter)
   app.use('/v1', requireAuth, accountRouter)
   app.use('/v1', requireAuth, sitesRouter)
   app.use('/v1', requireAuth, offsiteBackupsRouter)
+  // Team and notification routers. team.js has no per-route requireAuth of its
+  // own, so it is only safe behind the mount-level gate; notifications.js also
+  // applies requireAuth per route.
+  app.use('/v1', requireAuth, notificationsRouter)
+  app.use('/v1', requireAuth, teamRouter)
   app.use('/v1/admin', requireAuth, requireAdmin, adminRouter)
 
   // Run the daily security digest on demand (scan all paired sites + send to Telegram).

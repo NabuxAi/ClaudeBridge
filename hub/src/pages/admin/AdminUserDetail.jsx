@@ -5,6 +5,14 @@ import { Button, Badge, StatusPill } from '../../components/index.js'
 import { admin } from '../../lib/api.js'
 import { faNum } from '../../lib/format.js'
 
+// /admin/users/:id serves the public user shape (users.byId → publicUser in
+// server/src/store.js), which carries no created_at — Number(undefined) used
+// to render «Invalid Date». Until the API returns the field, missing stays «—».
+const registeredAt = (v) => {
+  const t = Number(v)
+  return Number.isFinite(t) && t > 0 ? new Date(t).toLocaleString('fa-IR') : '—'
+}
+
 export default function AdminUserDetail() {
   const { id } = useParams()
   const [data, setData] = useState(null)
@@ -30,17 +38,19 @@ export default function AdminUserDetail() {
         subtitle={`${user.email} · ${user.role}`}
         action={<Button as={Link} to="/admin/users" variant="secondary" size="sm" rightIcon="arrow-right">بازگشت</Button>}
       />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 18, marginBottom: 22 }}>
-        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: 20 }}>
+      {/* Column split lives in polish-site-d.css so mobile can fold it to one
+          column — an inline `1fr 2fr` cannot be overridden by a media query. */}
+      <div className="dwp-detail-grid">
+        <div className="gd-card gd-card--e-sm gd-card--p-md">
           <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 12 }}>اطلاعات حساب</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
-            <div><span style={{ color: 'var(--gd-text-muted)' }}>ایمیل:</span> {user.email}</div>
+            <div style={{ wordBreak: 'break-all' }}><span style={{ color: 'var(--gd-text-muted)' }}>ایمیل:</span> {user.email}</div>
             <div><span style={{ color: 'var(--gd-text-muted)' }}>نقش:</span> <Badge variant={user.role === 'admin' ? 'primary' : 'neutral'} appearance="soft">{user.role}</Badge></div>
             <div><span style={{ color: 'var(--gd-text-muted)' }}>پلن:</span> {user.plan}</div>
-            <div><span style={{ color: 'var(--gd-text-muted)' }}>تاریخ ثبت‌نام:</span> {new Date(Number(user.created_at)).toLocaleString('fa-IR')}</div>
+            <div><span style={{ color: 'var(--gd-text-muted)' }}>تاریخ ثبت‌نام:</span> {registeredAt(user.created_at)}</div>
           </div>
         </div>
-        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: 20 }}>
+        <div className="gd-card gd-card--e-sm gd-card--p-md">
           <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 12 }}>سایت‌ها ({faNum(sites.length)})</div>
           {sites.length === 0 ? (
             <p style={{ color: 'var(--gd-text-muted)', fontSize: 13 }}>هیچ سایتی ثبت نشده.</p>

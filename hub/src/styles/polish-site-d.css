@@ -1,0 +1,84 @@
+/* ============================================================
+   DigiWP hub — polish layer: site pages — batch D
+   Scope: Hosting/Settings (زیر SiteShell) + صفحات ادمین
+   (داشبورد، کاربران، رویدادها). کلاس‌های آمادهٔ NabuxUi از
+   digiwp.css می‌آیند (gd-card، gd-table، …)؛ این فایل فقط
+   چیدمان‌هایی را دارد که مقدار inlineشان مانع واکنش‌گرایی بود،
+   با ویژگی‌های منطقی برای RTL (نقشهٔ نگاشت §5.3).
+   ============================================================ */
+
+/* ---- error row — صفحه در شکستِ لود اولیه پیام + تلاش دوباره ---- */
+.dwp-error-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ---- Settings: سطح اختیار — گروه رادیوی واقعی (WCAG 2.1.1).
+   ورودی رادیو پنهان می‌ماند ولی فوکوس‌پذیر است؛ انتخاب با
+   جهت‌نما و برای صفحه‌خوان دیده می‌شود. حلقهٔ فوکوس روی خودِ
+   کارت می‌نشیند (الگوی §5.5 نقشهٔ نگاشت). */
+.dwp-tiers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.dwp-tier { position: relative; }
+.dwp-tier__radio {
+  position: absolute;
+  opacity: 0;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+.dwp-tier:has(.dwp-tier__radio:focus-visible) {
+  outline: 2px solid var(--gd-focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---- Settings: گریدهای دوستونه — قبلاً inline style بودند و
+   هیچ media query نمی‌توانستشان را بشکند ---- */
+.dwp-settings-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.dwp-chip-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.dwp-switch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 18px;
+}
+
+/* ---- Admin: جزئیات کاربر — همان داستان گرید 1fr 2fr ---- */
+.dwp-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+/* ---- responsive fold — هم‌راستا با شکست 860px پوسته (app.css) ---- */
+@media (max-width: 860px) {
+  .dwp-tiers,
+  .dwp-settings-grid,
+  .dwp-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* چیپ‌ها و سوییچ‌ها در عرض میانی دو ستون می‌مانند؛ زیر 640px که
+   هر خانه به کمتر از ~160px می‌رسد، تک‌ستون می‌شوند. */
+@media (max-width: 640px) {
+  .dwp-chip-grid,
+  .dwp-switch-grid {
+    grid-template-columns: 1fr;
+  }
+}

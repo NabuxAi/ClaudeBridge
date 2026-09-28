@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, MetricCard, Badge, ActivityRow, SkeletonStats, SkeletonCard } from '../../components/index.js'
+import { Button, MetricCard, Badge, ActivityRow, NotMeasured, SkeletonStats, SkeletonCard } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
 import { useTask } from '../../lib/tasks.jsx'
@@ -15,7 +15,7 @@ import { useTask } from '../../lib/tasks.jsx'
  * "—" is a question the customer can ask us; an invented figure is one they
  * never think to.
  */
-function SecurityBanner({ data }) {
+function SecurityBanner({ data, ssl, sslTone }) {
   const integrity = data.integrity
   const scan = data.scan
   const measured = Boolean(integrity?.ok || scan)
@@ -24,47 +24,68 @@ function SecurityBanner({ data }) {
   const strays = integrity?.unexpected?.length ?? null
   const coreClean = integrity?.ok ? integrity.clean : null
 
-  // Only claim clean when both checks ran AND both came back empty. Unknown is
-  // its own state, distinct from good.
-  const verdict = !measured
-    ? { text: 'هنوز اسکن نشده', tone: 'neutral', icon: 'shield-alert' }
-    : coreClean && hits === 0
-      ? { text: 'وضعیت امنیتی: سالم', tone: 'success', icon: 'shield-check' }
-      : { text: 'موارد نیازمند بررسی پیدا شد', tone: 'danger', icon: 'shield-alert' }
+  // A finding in either check is danger. "Clean" requires BOTH checks to have
+  // run AND both to have come back empty. Everything else — never scanned,
+  // scan still running, one check failed — is unknown, and unknown is its own
+  // state, distinct from good and from danger. The old expression collapsed
+  // every unknown into the red branch, so a fresh site with a clean integrity
+  // read as "موارد نیازمند بررسی پیدا شد".
+  const danger = coreClean === false || (hits != null && hits > 0)
+  const clean = coreClean === true && hits === 0
 
-  const bg = verdict.tone === 'success' ? 'var(--gd-success-bg)'
-    : verdict.tone === 'danger' ? 'var(--gd-danger-bg)' : 'var(--gd-bg-inset)'
-  const fg = verdict.tone === 'success' ? 'var(--gd-success)'
-    : verdict.tone === 'danger' ? 'var(--gd-danger)' : 'var(--gd-text-muted)'
+  let verdict
+  if (danger) {
+    verdict = { text: 'موارد نیازمند بررسی پیدا شد', tone: 'danger', icon: 'shield-alert' }
+  } else if (clean) {
+    verdict = { text: 'وضعیت امنیتی: سالم', tone: 'success', icon: 'shield-check' }
+  } else if (measured) {
+    const missing = [coreClean == null && 'یکپارچگی هسته', hits == null && 'اسکن بدافزار'].filter(Boolean)
+    verdict = {
+      text: 'بررسی ناتمام است',
+      tone: 'neutral',
+      icon: 'shield-alert',
+      note: data.scanJob
+        ? 'اسکن در جریان است؛ تا پایان آن این نتیجه قطعی نیست.'
+        : `${missing.join(' و ')} هنوز اندازه‌گیری نشده؛ این نتیجه قطعی نیست.`,
+    }
+  } else {
+    verdict = { text: 'هنوز اسکن نشده', tone: 'neutral', icon: 'shield-alert', note: 'برای دیدن وضعیت واقعی، سایت باید متصل باشد.' }
+  }
 
+  // Same tone classes as the Overview health banner: success/danger/neutral.
+  const icVariant = verdict.tone === 'success' ? 'ok' : verdict.tone === 'danger' ? 'down' : 'unknown'
+
+  // Unknown (null) renders a muted dash, never the green of a measured zero —
+  // gray is the colour of "not measured" (mapping §5.2), green only answers
+  // for a zero the site actually reported.
   const stat = (value, label, tone) => (
     <div>
-      <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: tone }}>
-        {value === null || value === undefined ? '—' : faNum(value)}
+      <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: value == null ? 'var(--gd-text-muted)' : tone }}>
+        {value == null ? '—' : faNum(value)}
       </div>
       <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2 }}>{label}</div>
     </div>
   )
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 24, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-sm)', padding: '22px 26px', marginBottom: 18, flexWrap: 'wrap' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: '0 0 auto' }}>
-        <span style={{ width: 64, height: 64, borderRadius: '50%', background: bg, color: fg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="psa-banner">
+      <div className="psa-banner__main">
+        <span className={`psa-banner__ic psa-banner__ic--${icVariant}`}>
           <Icon name={verdict.icon} size={34} />
         </span>
         <div>
           <div style={{ fontSize: 22, fontWeight: 800 }}>{verdict.text}</div>
           <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 9 }}>
-            {measured
-              ? `آخرین بررسی: ${integrity?.checked_at ? new Date(integrity.checked_at * 1000).toLocaleString('fa-IR') : 'هم‌اکنون'}`
-              : 'برای دیدن وضعیت واقعی، سایت باید متصل باشد.'}
+            {verdict.note || (integrity?.checked_at
+              ? `آخرین بررسی: ${new Date(integrity.checked_at * 1000).toLocaleString('fa-IR')}`
+              : 'آخرین بررسی: هم‌اکنون')}
           </div>
         </div>
       </div>
-      <div style={{ flex: 1, minWidth: 280, display: 'flex', gap: 34, paddingInlineStart: 26, borderInlineStart: '1px solid var(--gd-border-subtle)' }}>
+      <div className="psa-banner__stats">
         {stat(strays, 'فایل ناشناخته در هسته', strays ? 'var(--gd-danger-text)' : 'var(--gd-success)')}
         {stat(hits, 'یافتهٔ بدافزار', hits ? 'var(--gd-danger-text)' : 'var(--gd-success)')}
-        {stat(data.ssl?.days, 'روز تا انقضای SSL')}
+        {stat(ssl?.days ?? null, 'روز تا انقضای SSL', sslTone)}
       </div>
     </div>
   )
@@ -75,13 +96,24 @@ export default function Security() {
   const { startTask, activeTask } = useTask()
   const [data, setData] = useState(null)
   const [scanning, setScanning] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const aliveRef = useRef(true)
   const timer = useRef(null)
 
-  useEffect(() => {
-    let alive = true
-    siteApi(siteId).security().then((d) => alive && setData(d))
-    return () => { alive = false; clearTimeout(timer.current) }
+  const fetchSecurity = useCallback(() => {
+    setLoadError('')
+    return siteApi(siteId)
+      .security()
+      .then((d) => { if (aliveRef.current) setData(d) })
+      .catch((e) => { if (aliveRef.current) setLoadError(e?.message || 'دریافت وضعیت امنیتی ممکن نشد.') })
   }, [siteId])
+
+  useEffect(() => {
+    aliveRef.current = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchSecurity()
+    return () => { aliveRef.current = false; clearTimeout(timer.current) }
+  }, [fetchSecurity])
 
   async function rescan() {
     setScanning(true)
@@ -96,19 +128,32 @@ export default function Security() {
         })
       }
       poll()
-    } catch {
-      setScanning(false)
-      setData(await siteApi(siteId).security())
+    } catch (e) {
+      // A failed start used to refresh unguarded and could leave the button
+      // spinning forever; now the failure surfaces and the button frees up.
+      if (aliveRef.current) {
+        setScanning(false)
+        setLoadError(e?.message || 'شروع اسکن ممکن نشد.')
+      }
     }
   }
 
   function poll() {
     clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
-      const d = await siteApi(siteId).security()
-      setData(d)
-      if (d.scanJob) poll()
-      else setScanning(false)
+      try {
+        const d = await siteApi(siteId).security()
+        if (!aliveRef.current) return
+        setData(d)
+        if (d.scanJob) poll()
+        else setScanning(false)
+      } catch (e) {
+        // One dropped request used to kill the polling chain and leave the
+        // scan button disabled forever with no message. Stop, say so, retry.
+        if (!aliveRef.current) return
+        setScanning(false)
+        setLoadError(e?.message || 'دریافت نتیجهٔ اسکن ممکن نشد؛ دوباره تلاش کنید.')
+      }
     }, 3000)
   }
 
@@ -133,6 +178,19 @@ export default function Security() {
   )
 
   if (!data) {
+    if (loadError) {
+      return (
+        <>
+          {head}
+          <NotMeasured title="وضعیت امنیتی خوانده نشد" reason={loadError} icon="alert-triangle" />
+          <div style={{ textAlign: 'center', marginTop: 14 }}>
+            <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => fetchSecurity()}>
+              تلاش دوباره
+            </Button>
+          </div>
+        </>
+      )
+    }
     return (
       <>
         {head}
@@ -144,9 +202,27 @@ export default function Security() {
     )
   }
 
+  // The certificate block. The server sends no validity flag — what it sends
+  // is the result of a real, chain-verified TLS handshake. A certificate we
+  // could read is currently valid; one we could not read is unknown, and the
+  // old `data.ssl.valid` read crashed the whole page on unpaired sites.
+  const ssl = data.ssl || null
+  const sslTone = !ssl ? 'var(--gd-text-muted)'
+    : ssl.days < 14 ? 'var(--gd-danger-text)'
+      : ssl.days < 30 ? 'var(--gd-warning-text)'
+        : 'var(--gd-success-text)'
+
   return (
     <>
       {head}
+
+      {loadError && (
+        <div className="psa-err" role="alert">
+          <Icon name="alert-triangle" size={17} style={{ flex: '0 0 auto', marginTop: 2 }} />
+          <div style={{ flex: 1 }}>{loadError}</div>
+          <Button variant="ghost" size="sm" onClick={() => fetchSecurity()}>تلاش دوباره</Button>
+        </div>
+      )}
 
       {/* Core integrity — measured against WordPress's own manifest. This card
           only appears when the site actually answered; there is no placeholder
@@ -167,7 +243,7 @@ export default function Security() {
           look identical otherwise, and one of those reads as a clean bill of
           health when it is nothing of the sort. */}
       {(data.scanJob || data.scanPending) && (
-        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: '15px 20px', marginBottom: 18 }}>
+        <div className="psa-card" style={{ padding: '15px 20px', marginBottom: 18 }}>
           <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>
             {data.scanJob ? 'اسکن بدافزار در حال اجراست' : 'هنوز اسکن بدافزاری اجرا نشده'}
           </div>
@@ -186,7 +262,7 @@ export default function Security() {
           nobody verified is the most damaging thing this screen can show,
           because it is exactly what a compromised site looks like to its owner
           right up until it does not. */}
-      <SecurityBanner data={data} />
+      <SecurityBanner data={data} ssl={ssl} sslTone={sslTone} />
 
       {/* Cards, one per figure the site actually returned. Empty when nothing
           has been measured — which is a truthful screen, not a broken one. */}
@@ -200,13 +276,13 @@ export default function Security() {
       </div>
 
       {/* SSL card + security events */}
-      <div className="dwp-ov-cols" style={{ display: 'grid', gridTemplateColumns: '1.55fr 1fr', gap: 18, marginTop: 20 }}>
+      <div className="psa-cols">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 15, fontWeight: 700, marginBottom: 12 }}>
             <span>رویدادهای امنیتی</span>
             <Badge variant="info" appearance="soft" icon="history">{faNum((data.events || []).length)} رویداد</Badge>
           </div>
-          <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '6px 20px' }}>
+          <div className="psa-card psa-card--list">
             {(data.events || []).length === 0 ? (
               <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', padding: '14px 0', margin: 0, lineHeight: 1.8 }}>
 هنوز رویداد امنیتی‌ای ثبت نشده. سایت هنگام اسکن یا اقدام دیده می‌شود، نه به‌صورت پیوسته.
@@ -219,21 +295,28 @@ export default function Security() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 15, fontWeight: 700, marginBottom: 12 }}>
             <span>گواهی SSL</span>
-            <Badge variant="success" appearance="soft" dot>{data.ssl.valid ? 'معتبر' : 'نامعتبر'}</Badge>
+            {/* The server never sends `valid` — the badge read "نامعتبر" on
+                every real certificate. Readable ⇒ the verified handshake
+                succeeded; unreadable ⇒ unknown, in neutral gray. */}
+            <Badge variant={ssl ? 'success' : 'neutral'} appearance="soft" dot>{ssl ? 'معتبر' : 'بررسی نشد'}</Badge>
           </div>
-          <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '18px 20px' }}>
+          <div className="psa-card psa-card--pad">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}>
-              <span style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--gd-success-bg)', color: 'var(--gd-success)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ width: 38, height: 38, borderRadius: 10, background: ssl ? 'var(--gd-success-bg)' : 'var(--gd-bg-inset)', color: ssl ? 'var(--gd-success)' : 'var(--gd-text-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Icon name="lock-keyhole" size={20} />
               </span>
-              <span className="dwp-mono" style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: 'var(--gd-success-text)' }}>{faNum(data.ssl.days)}</span>
+              <span className="dwp-mono" style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: sslTone }}>
+                {ssl ? faNum(ssl.days) : '—'}
+              </span>
             </div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>گواهی SSL</div>
             <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 3, lineHeight: 1.6 }}>
               {/* "تمدید خودکار" was asserted here. Whether a certificate
                   auto-renews is a property of the host's ACME setup, which we
                   cannot see — we only read the expiry from the handshake. */}
-              {data.ssl.issuer} · انقضا {faNum(data.ssl.days)} روز دیگر
+              {ssl
+                ? `${ssl.issuer || 'صادرکنندهٔ نامشخص'} · انقضا ${faNum(ssl.days)} روز دیگر`
+                : (data.sslError || 'گواهی خوانده نشد.')}
             </div>
           </div>
         </div>
@@ -272,7 +355,7 @@ export default function Security() {
 function VulnCard({ result, error }) {
   if (error) {
     return (
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: '16px 20px', marginBottom: 18 }}>
+      <div className="psa-card" style={{ padding: '16px 20px', marginBottom: 18 }}>
         <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>آسیب‌پذیری‌های شناخته‌شده</div>
         <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>
           فهرست افزونه‌ها و قالب‌ها خوانده نشد: {error}
@@ -286,7 +369,7 @@ function VulnCard({ result, error }) {
   const unsure = result.unknownVersion || []
 
   return (
-    <div style={{ background: 'var(--gd-bg-surface)', border: `1px solid ${hits.length ? 'var(--gd-danger)' : 'var(--gd-border)'}`, borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '18px 20px', marginBottom: 18 }}>
+    <div className="psa-card" style={{ border: hits.length ? '1px solid var(--gd-danger)' : undefined, padding: '18px 20px', marginBottom: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
         <Icon name={hits.length ? 'shield-alert' : 'shield-check'} size={18} style={{ color: hits.length ? 'var(--gd-danger)' : 'var(--gd-success)' }} />
         <span style={{ fontSize: 14.5, fontWeight: 800 }}>
@@ -345,7 +428,7 @@ function VulnCard({ result, error }) {
 
 function CoreIntegrityCard({ result, error }) {
   const shell = (children) => (
-    <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-sm)', padding: '20px 24px', marginBottom: 18 }}>
+    <div className="psa-card" style={{ padding: '20px 24px', marginBottom: 18 }}>
       {children}
     </div>
   )

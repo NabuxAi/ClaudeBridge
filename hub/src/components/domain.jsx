@@ -7,8 +7,18 @@ const AUTHORITY = {
   auto: { icon: 'zap', label: 'خودکار' },
 }
 
-export function AuthorityBadge({ level = 'confirm', size = 'md', showIcon = true, label, className = '' }) {
-  const cfg = AUTHORITY[level] || AUTHORITY.confirm
+export function AuthorityBadge({ level, size = 'md', showIcon = true, label, className = '' }) {
+  const cfg = AUTHORITY[level]
+  // An authority nobody reported must not borrow one of the three real
+  // levels — each of them is a permission claim. Neutral "نامشخص" is the
+  // honest state until the server says otherwise.
+  if (!cfg) {
+    return (
+      <span className={['gd-authority', 'gd-authority--unknown', `gd-authority--${size}`, className].filter(Boolean).join(' ')}>
+        {label != null ? label : 'نامشخص'}
+      </span>
+    )
+  }
   return (
     <span className={['gd-authority', `gd-authority--${level}`, `gd-authority--${size}`, className].filter(Boolean).join(' ')}>
       {showIcon && <Icon name={cfg.icon} size={size === 'sm' ? 12 : 14} />}

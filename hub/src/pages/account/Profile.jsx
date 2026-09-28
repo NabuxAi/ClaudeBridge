@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Input, Select } from '../../components/index.js'
+import { Button, Input, Select, AlertCard } from '../../components/index.js'
 import { account } from '../../lib/api.js'
 
 export default function Profile() {
@@ -10,16 +10,25 @@ export default function Profile() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState('')
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let alive = true
-    account.profile().then((d) => {
-      if (!alive) return
-      setData(d)
-      setForm({ name: d.name || '', lang: d.lang || 'fa', timezone: d.timezone || 'Asia/Tehran', two_factor: Boolean(d.twoFactor) })
-    })
+    account.profile()
+      .then((d) => {
+        if (!alive) return
+        setData(d)
+        // کلید باید همان «twoFactor» باشد که سرور از بدنهٔ PATCH می‌خواند؛
+        // کلید قدیمی «two_factor» بی‌صدا نادیده گرفته می‌شد.
+        setForm({ name: d.name || '', lang: d.lang || 'fa', timezone: d.timezone || 'Asia/Tehran', twoFactor: Boolean(d.twoFactor) })
+      })
+      .catch((e) => {
+        // A failed request must not leave the page hung on the empty header.
+        if (alive) setLoadError(e?.message || 'بارگذاری پروفایل انجام نشد.')
+      })
     return () => { alive = false }
-  }, [])
+  }, [reloadKey])
 
   const set = (k) => (v) => { setForm((f) => ({ ...f, [k]: v })); setSaved(''); }
 
@@ -34,15 +43,34 @@ export default function Profile() {
     } finally { setSaving(false) }
   }
 
+  if (loadError) {
+    return (
+      <>
+        <PageHead title="پروفایل و تنظیمات حساب" subtitle="اطلاعات حساب" />
+        <AlertCard
+          severity="critical"
+          title="بارگذاری پروفایل ناموفق بود"
+          desc={loadError}
+          className="dwp-acc-alert"
+          actions={(
+            <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => { setLoadError(null); setReloadKey((k) => k + 1) }}>
+              تلاش دوباره
+            </Button>
+          )}
+        />
+      </>
+    )
+  }
+
   if (!data || !form) return <PageHead title="پروفایل و تنظیمات حساب" subtitle="اطلاعات حساب" />
 
   return (
     <>
       <PageHead title="پروفایل و تنظیمات حساب" subtitle="اطلاعات حساب" />
 
-      <div className="dwp-profile-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 18, marginBottom: 22 }}>
+      <div className="dwp-profile-grid" style={{ marginBottom: 22 }}>
         {/* Profile card */}
-        <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '22px 24px' }}>
+        <div className="dwp-card" style={{ padding: '22px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
             <span style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--gd-primary)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 26, flex: '0 0 auto' }}>
               {data.initials}
@@ -58,7 +86,7 @@ export default function Profile() {
               a fake number, on a field the server has no column for. Email is
               read-only because changing it is an identity change and needs a
               verification flow that does not exist yet. */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <div className="dwp-acc-form-grid">
             <Input label="نام و نام خانوادگی" value={form.name} onChange={(e) => set('name')(e.target.value)} />
             <Input label="ایمیل" value={data.email} leftIcon="mail" disabled readOnly />
             <Select label="زبان پنل" value={form.lang} onChange={(e) => set('lang')(e.target.value)}>
@@ -87,7 +115,7 @@ export default function Profile() {
             iOS app session that were the same on every account — this system
             issues one bearer token and tracks no devices at all. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '20px 22px' }}>
+          <div className="dwp-card" style={{ padding: '20px 22px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
               <Icon name="key-round" size={17} style={{ color: 'var(--gd-primary)' }} /> امنیت حساب
             </div>

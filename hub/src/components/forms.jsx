@@ -8,7 +8,8 @@ export function Input({
   const box = (
     <div className={['gd-input', `gd-input--${size}`, error && 'gd-input--error', className].filter(Boolean).join(' ')}>
       {leftIcon && <Icon name={leftIcon} size={16} className="gd-input__icon" />}
-      <input id={id} className="gd-input__el" {...rest} />
+      {/* required drives real browser validation, not just the star */}
+      <input id={id} className="gd-input__el" required={required} {...rest} />
       {rightIcon && <Icon name={rightIcon} size={16} className="gd-input__icon" />}
     </div>
   )
@@ -30,7 +31,7 @@ export function Input({
 export function Textarea({ label, hint, error, rows = 4, id, required, ...rest }) {
   const el = (
     <textarea
-      id={id} rows={rows}
+      id={id} rows={rows} required={required}
       className={['gd-textarea__el', error && 'gd-textarea__el--error'].filter(Boolean).join(' ')}
       {...rest}
     />
@@ -49,7 +50,7 @@ export function Textarea({ label, hint, error, rows = 4, id, required, ...rest }
 export function Select({ label, size = 'md', options = [], id, hint, error, required, children, ...rest }) {
   const el = (
     <div className={['gd-select', `gd-select--${size}`].filter(Boolean).join(' ')}>
-      <select id={id} className="gd-select__el" {...rest}>
+      <select id={id} className="gd-select__el" required={required} {...rest}>
         {children || options.map((o) =>
           <option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>)}
       </select>
@@ -88,7 +89,9 @@ export function Switch({ checked, defaultChecked, onChange, disabled, size = 'md
   return (
     <span className="gd-switch-row">
       {btn}
-      <label className="gd-switch__label" htmlFor={id} onClick={toggle}>{label}</label>
+      {/* htmlFor alone is enough: a <button> is labelable, so a label click is
+          forwarded to it once. An onClick here fired toggle a second time. */}
+      <label className="gd-switch__label" htmlFor={id}>{label}</label>
     </span>
   )
 }

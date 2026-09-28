@@ -2,27 +2,40 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, Badge, AuthorityBadge, SkeletonStats, SkeletonTable } from '../../components/index.js'
+import { Button, Badge, AuthorityBadge, NotMeasured, SkeletonStats, SkeletonTable } from '../../components/index.js'
 import { faNum } from '../../lib/format.js'
 import { site as siteApi } from '../../lib/api.js'
 import { useTask } from '../../lib/tasks.jsx'
 
 const RISK_VARIANT = { high: 'danger', medium: 'warning', low: 'success' }
 
+// Names must exist in the generated map (src/lib/icon-map.js). The old names
+// ('layout-template', 'shopping-cart', 'box') are not in it, so every plugin
+// row fell back to an empty Circle.
 const ITEM_ICON = {
-  Elementor: 'layout-template',
-  WooCommerce: 'shopping-cart',
-  'Yoast SEO': 'box',
+  Elementor: 'layout-grid',
+  WooCommerce: 'credit-card',
+  'Yoast SEO': 'search',
   'WordPress Core': 'boxes',
 }
-const iconFor = (u) => ITEM_ICON[u.name] || (u.type === 'هسته' ? 'boxes' : 'box')
+const iconFor = (u) =>
+  ITEM_ICON[u.name] ||
+  (u.type === 'هسته' ? 'boxes' : u.type === 'قالب' ? 'palette' : 'plug')
 
 const statusFor = (u) =>
   u.authority === 'auto'
     ? { icon: 'zap', color: 'var(--gd-success)', label: 'آمادهٔ اجرای خودکار' }
     : { icon: 'user-check', color: 'var(--gd-warning)', label: 'نیازمند تأیید شما' }
 
-const COLS = '2fr 1.1fr 1fr 1.3fr 0.9fr'
+// What runUpdates needs per item: the machine kind ('plugin'/'theme'/'core')
+// and the file slug, not the queue row's Persian display label. Rows carry
+// `kind` for plugins/themes; core has no kind and is matched by id on the
+// server (server/src/routes/sites.js). One shared mapper — the batch button
+// used to post the raw rows and the server's kind/name matching never matched.
+const runItem = (u) => ({
+  type: u.kind || (u.type === 'قالب' ? 'theme' : u.type === 'هسته' ? 'core' : 'plugin'),
+  name: u.file || u.name,
+})
 
 export default function Updates() {
   const { siteId } = useOutletContext()
@@ -31,7 +44,6 @@ export default function Updates() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
-  const timer = useRef(null)
 
   const aliveRef = useRef(true)
 
@@ -46,14 +58,15 @@ export default function Updates() {
 
   useEffect(() => {
     aliveRef.current = true
-    const timerId = timer.current
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load()
-    return () => { aliveRef.current = false; clearTimeout(timerId) }
+    return () => { aliveRef.current = false }
   }, [load])
 
   async function apply(items) {
-    const itemName = items && items[0] ? items[0].name : 'تمام موارد'
+    const itemName = !items?.length
+      ? 'همهٔ موارد'
+      : items.length > 1 ? `${faNum(items.length)} مورد کم‌ریسک` : items[0].name
     setBusy(itemName)
     setError('')
     try {
@@ -86,7 +99,7 @@ export default function Updates() {
     />
   )
 
-  if (loading && !data) {
+  if (loading && !data && !error) {
     return (
       <>
         {head}
@@ -98,11 +111,52 @@ export default function Updates() {
     )
   }
 
-  const { queue = [], done = [] } = data || {}
+  if (!data) {
+    // A failed load used to fall through to an empty queue, which the page
+    // then announced as "تمامی افزونه‌ها و هسته به‌روز هستند". Nothing was
+    // measured; the view says so instead of claiming an all-clear.
+    return (
+      <>
+        {head}
+        <NotMeasured title="وضعیت به‌روزرسانی‌ها خوانده نشد" reason={error || 'پاسخی از سرور دریافت نشد.'} icon="alert-triangle" />
+        <div style={{ textAlign: 'center', marginTop: 14 }}>
+          <Button variant="secondary" size="sm" leftIcon="refresh-cw" disabled={loading} onClick={load}>
+            تلاش دوباره
+          </Button>
+        </div>
+      </>
+    )
+  }
+
+  if (data.provenance?.unavailable) {
+    // Same contract as Backups: an unpaired site or LIVE=0 has nothing to
+    // measure, so the view says why instead of rendering zero cards.
+    return (
+      <>
+        {head}
+        <NotMeasured title="به‌روزرسانی‌های ریسک‌سنجی‌شده" reason={data.provenance.unavailable} />
+      </>
+    )
+  }
+
+  const { queue = [], done = [] } = data
+  // The live read itself failed (update_status error): the queue below is the
+  // empty seed, not a measured zero, so the page must not present it as one.
+  const updatesFailed = Boolean(data.updatesError)
   const autoCount = queue.filter((u) => u.authority === 'auto').length
   const confirmCount = queue.filter((u) => u.authority === 'confirm').length
-  const featured = queue.find((u) => u.authority === 'confirm') || queue[0]
+  // Only a confirm-authority item belongs in the "نیازمند تأیید شما — اقدام
+  // حساس" card. The old `|| queue[0]` promoted the first auto item into that
+  // card with a confirm badge — a false claim for patch updates the server
+  // marks auto (server/src/live.js:128-139). With no confirm item the card
+  // does not render; auto items stay in the queue table with their honest
+  // "آمادهٔ اجرای خودکار" status.
+  const featured = queue.find((u) => u.authority === 'confirm')
   const rows = queue.filter((u) => u.id !== (featured && featured.id))
+  // "به‌روزرسانی همه" used to post without items, and the site then queued
+  // every pending change — including the high-risk confirm items the featured
+  // card says always need approval. The batch is the low-risk/auto items only.
+  const autoItems = queue.filter((u) => u.authority === 'auto')
 
   const stats = [
     { icon: 'list-checks', value: queue.length, label: 'در صف بررسی', bg: 'var(--gd-bg-inset)', color: 'var(--gd-text-secondary)' },
@@ -121,10 +175,22 @@ export default function Updates() {
     <>
       {head}
 
-      {/* Summary stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
+      {updatesFailed && (
+        <div className="psa-err" role="alert">
+          <Icon name="alert-triangle" size={17} style={{ flex: '0 0 auto', marginTop: 2 }} />
+          <div style={{ flex: 1 }}>
+            فهرست به‌روزرسانی‌ها از سایت خوانده نشد{data.updatesError ? `: ${data.updatesError}` : ''}.
+            تا وقتی خواندن ممکن نشود، نمی‌دانیم چیزی عقب افتاده است یا نه.
+          </div>
+        </div>
+      )}
+
+      {/* Summary stat cards — hidden when the read failed: zero cards there
+          would be a measured-looking claim about data nobody read. */}
+      {!updatesFailed && (
+      <div className="psa-stats">
         {stats.map((s) => (
-          <div key={s.label} style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-xs)', padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 13 }}>
+          <div key={s.label} className="psa-stat">
             <span style={{ width: 40, height: 40, borderRadius: 11, background: s.bg, color: s.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
               <Icon name={s.icon} size={21} />
             </span>
@@ -135,6 +201,7 @@ export default function Updates() {
           </div>
         ))}
       </div>
+      )}
 
       {/* Needs-approval decision card */}
       {featured && (
@@ -175,7 +242,7 @@ export default function Updates() {
               <Button
                 variant="primary" size="md" leftIcon="check"
                 disabled={Boolean(busy) || activeTask?.state === 'running'}
-                onClick={() => apply([{ type: featured.kind || (featured.type === 'قالب' ? 'theme' : featured.type === 'هسته' ? 'core' : 'plugin'), name: featured.file || featured.name }])}
+                onClick={() => apply([runItem(featured)])}
               >
                 تأیید و به‌روزرسانی
               </Button>
@@ -186,22 +253,28 @@ export default function Updates() {
 
       {/* Update queue */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>صف آپدیت ({faNum(queue.length)})</div>
-        {queue.length > 0 && (
+        <div style={{ fontSize: 15, fontWeight: 700 }}>
+          صف آپدیت{updatesFailed ? '' : ` (${faNum(queue.length)})`}
+        </div>
+        {/* Runs only the low-risk (auto-authority) items, and only when there
+            are some — the old button posted with no items and the site queued
+            every pending change, including the confirm-risk ones the featured
+            card promises will always ask first. */}
+        {!updatesFailed && autoItems.length > 0 && (
           <Button
             size="sm"
             variant="subtle"
             leftIcon="refresh-cw"
             disabled={Boolean(busy) || activeTask?.state === 'running'}
-            onClick={() => apply()}
+            onClick={() => apply(autoItems.map(runItem))}
           >
-            به‌روزرسانی همه
+            اجرای {faNum(autoItems.length)} مورد کم‌ریسک
           </Button>
         )}
       </div>
 
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '11px 20px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', fontSize: 12, fontWeight: 700, color: 'var(--gd-text-muted)' }}>
+      <div className="psa-queue">
+        <div className="psa-queue__row psa-queue__row--head">
           <span>مورد</span>
           <span>نسخه</span>
           <span>ریسک</span>
@@ -210,12 +283,14 @@ export default function Updates() {
         </div>
         {rows.length === 0 && !featured ? (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--gd-text-muted)', fontSize: 13.5 }}>
-            هیچ موردی در صف آپدیت نیست؛ تمامی افزونه‌ها و هسته به‌روز هستند.
+            {updatesFailed
+              ? 'فهرست از سایت خوانده نشد؛ نمی‌دانیم چیزی در صف هست یا نه.'
+              : 'هیچ موردی در صف آپدیت نیست؛ تمامی افزونه‌ها و هسته به‌روز هستند.'}
           </div>
-        ) : rows.map((u, i) => {
+        ) : rows.map((u) => {
           const st = statusFor(u)
           return (
-            <div key={u.id} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: i < rows.length - 1 ? '1px solid var(--gd-border-subtle)' : 'none', fontSize: 13.5 }}>
+            <div key={u.id} className="psa-queue__row psa-queue__row--body">
               <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                 <Icon name={iconFor(u)} size={17} style={{ color: 'var(--gd-text-secondary)', flex: '0 0 auto' }} /> {u.name}
               </span>
@@ -229,7 +304,7 @@ export default function Updates() {
               <Button
                 variant="ghost" size="sm"
                 disabled={Boolean(busy) || activeTask?.state === 'running'}
-                onClick={() => apply([{ type: u.kind || (u.type === 'قالب' ? 'theme' : u.type === 'هسته' ? 'core' : 'plugin'), name: u.file || u.name }])}
+                onClick={() => apply([runItem(u)])}
               >
                 اجرا
               </Button>
@@ -240,7 +315,7 @@ export default function Updates() {
 
       {/* Completed updates */}
       <div style={{ fontSize: 15, fontWeight: 700, margin: '22px 0 12px' }}>انجام‌شده</div>
-      <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden' }}>
+      <div className="psa-card">
         {done.length === 0 ? (
           <div style={{ padding: '20px', textAlign: 'center', color: 'var(--gd-text-muted)', fontSize: 13 }}>
             گزارش آپدیت‌های انجام‌شده پس از هر به‌روزرسانی در این بخش ثبت می‌شود.

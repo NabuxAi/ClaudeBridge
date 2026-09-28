@@ -20,12 +20,14 @@ import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js'
 import Clock from 'lucide-react/dist/esm/icons/clock.js'
 import Cloud from 'lucide-react/dist/esm/icons/cloud.js'
 import Code from 'lucide-react/dist/esm/icons/code.js'
+import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js'
 import Crown from 'lucide-react/dist/esm/icons/crown.js'
 import Database from 'lucide-react/dist/esm/icons/database.js'
 import DatabaseBackup from 'lucide-react/dist/esm/icons/database-backup.js'
 import Download from 'lucide-react/dist/esm/icons/download.js'
 import Eye from 'lucide-react/dist/esm/icons/eye.js'
+import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js'
 import File from 'lucide-react/dist/esm/icons/file.js'
 import FileBadge from 'lucide-react/dist/esm/icons/file-badge.js'
 import FileCheck2 from 'lucide-react/dist/esm/icons/file-check-2.js'
@@ -116,9 +118,11 @@ export const ICONS = {
   'crown': Crown,
   'database': Database,
   'code': Code,
+  'copy': Copy,
   'database-backup': DatabaseBackup,
   'download': Download,
   'eye': Eye,
+  'eye-off': EyeOff,
   'file': File,
   'file-badge': FileBadge,
   'file-check-2': FileCheck2,

@@ -80,6 +80,31 @@ if (!dsn) {
     }
   })
 
+  test('admin user responses expose no pass_hash and carry created_at/site_count', async () => {
+    const user = await makeUser({ role: 'admin' })
+    const app = createApp()
+    const { server, base } = await listen(app)
+    try {
+      const headers = { Authorization: `Bearer ${signToken({ sub: user.id, role: 'admin' })}` }
+      const list = await fetch(`${base}/admin/users`, { headers })
+      assert.equal(list.status, 200)
+      const listBody = await list.json()
+      assert.ok(listBody.users.length >= 1)
+      for (const u of listBody.users) {
+        assert.ok(!('pass_hash' in u), 'pass_hash must never reach the browser')
+        assert.equal(typeof u.created_at, 'number')
+        assert.equal(typeof u.site_count, 'number')
+      }
+      const detail = await fetch(`${base}/admin/users/${user.id}`, { headers })
+      assert.equal(detail.status, 200)
+      const detailBody = await detail.json()
+      assert.ok(!('pass_hash' in detailBody.user), 'pass_hash must never reach the browser')
+      assert.equal(typeof detailBody.user.created_at, 'number')
+    } finally {
+      server.close()
+    }
+  })
+
   test('admin stats are readable by admin', async () => {
     const user = await makeUser({ role: 'admin' })
     const app = createApp()

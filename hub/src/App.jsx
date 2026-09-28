@@ -71,6 +71,10 @@ export default function App() {
       {/* B · auth */}
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<Login />} />
+        {/* The reset link the server emails is /reset?token=… (routes/auth.js),
+            so /reset must resolve — the catch-all would drop the query string.
+            /reset-password stays registered for compatibility. */}
+        <Route path="/reset" element={<Reset />} />
         <Route path="/reset-password" element={<Reset />} />
         <Route path="/register" element={<Register />} />
       </Route>

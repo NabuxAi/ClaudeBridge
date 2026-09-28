@@ -17,6 +17,11 @@ export const demoSites = [
 // roles — none of which are built, and one of which (staging) is contradicted
 // on the updates screen. A price list is a contract; it is the last place to
 // describe intentions as capabilities.
+//
+// This is the server-side copy of the plan data. The hub's copies are the mock
+// API list in hub/src/data/mock.js (`plans`) and the price cards in
+// hub/src/pages/marketing/Landing.jsx — they live apart only because server
+// and hub are separate packages, so keep prices and features identical.
 export const plans = [
   { id: 'base', name: 'پایه', price: 190000, popular: false, features: [
     '۱ سایت', 'به‌روزرسانی خودکار هسته، افزونه و قالب', 'بکاپ دیتابیس روی خود سایت', 'اسکن امنیتی روزانه',
@@ -25,7 +30,7 @@ export const plans = [
     '۵ سایت', 'همهٔ امکانات پلن پایه', 'بررسی یکپارچگی فایل‌های هسته', 'بررسی تداخل افزونه و قالب', 'عملیات نجات',
   ] },
   { id: 'agency', name: 'آژانس', price: 990000, popular: false, features: [
-    'سایت نامحدود', 'همهٔ امکانات پلن حرفه‌ای', 'گزارش امنیتی روزانه در تلگرام',
+    'سایت نامحدود', 'همهٔ امکانات پلن حرفه‌ای', 'مدیریت سایت‌های مشتری از یک پنل',
   ] },
 ]
 

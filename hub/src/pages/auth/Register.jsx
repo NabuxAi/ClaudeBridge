@@ -36,7 +36,7 @@ export default function Register() {
 
   return (
     <>
-      <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.01em', margin: 0 }}>ساخت حساب رایگان</h2>
+      <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>ساخت حساب رایگان</h2>
       <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 24px' }}>
         دسترسی آزمایشی — بدون نیاز به کارت بانکی.
       </p>
@@ -55,7 +55,10 @@ export default function Register() {
         />
         {err && <div className="gd-field__msg gd-field__msg--error">{err}</div>}
         <Button variant="primary" size="lg" fullWidth leftIcon="sparkles" type="submit" loading={busy}>
-          شروع رایگان ۱۴ روزه
+          {/* No "14-day free trial" here: no trial clock or entitlement exists
+              server-side (billing is NOT_BUILT). What this button really does
+              is create a pilot account — the label must say exactly that. */}
+          ساخت حساب آزمایشی
         </Button>
       </form>
       {/* "Sign up with Google" was here with no handler and no OAuth client. */}

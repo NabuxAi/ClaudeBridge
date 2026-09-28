@@ -24,12 +24,16 @@ export default function Speed() {
   const [report, setReport] = useState(null)
   const [error, setError] = useState('')
   const [acting, setActing] = useState('')
+  // A stalled poll is one we gave up reading after repeated failures. It must
+  // unlock the button again — the operator decides, not a network hiccup.
+  const [stalled, setStalled] = useState(false)
   const timer = useRef(null)
+  const fails = useRef(0)
 
   useEffect(() => () => clearTimeout(timer.current), [])
 
   async function start() {
-    setError(''); setReport(null); setJob(null)
+    setError(''); setReport(null); setJob(null); setStalled(false); fails.current = 0
     try {
       const res = await siteApi(siteId).measureSpeed({ url: url.trim() })
       const started = res.job || res
@@ -48,17 +52,34 @@ export default function Speed() {
   function poll(jobId) {
     clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
+      // One transient read failure must not brick the chain: retry a few
+      // times, then stop honestly and hand control back to the operator.
+      let s
       try {
-        const s = await siteApi(siteId).job(jobId)
-        setJob(s)
-        if (s.state !== 'done' && s.state !== 'failed') return poll(jobId)
-        // Matching runs on our server, not the site: the recipe book improves
-        // over time and every site should get today's rules tonight, without
-        // anyone updating a plugin.
-        if (s.state === 'done' && s.result) {
-          setReport(await siteApi(siteId).analyseSpeed(s.result))
+        s = await siteApi(siteId).job(jobId)
+        fails.current = 0
+      } catch (e) {
+        fails.current += 1
+        if (fails.current >= 5) {
+          setStalled(true)
+          setError('خواندن وضعیت اندازه‌گیری چند بار ناموفق ماند — می‌توانید دوباره تلاش کنید.')
+          return
         }
-      } catch (e) { setError(e?.message || 'وضعیت خوانده نشد.') }
+        setError(`${e?.message || 'وضعیت خوانده نشد.'} — دوباره تلاش می‌کنیم…`)
+        return poll(jobId)
+      }
+      setStalled(false)
+      setJob(s)
+      if (s.state !== 'done' && s.state !== 'failed') return poll(jobId)
+      // Matching runs on our server, not the site: the recipe book improves
+      // over time and every site should get today's rules tonight, without
+      // anyone updating a plugin. A failed analysis must not restart the poll
+      // of an already-done job — it reports once, here.
+      if (s.state === 'done' && s.result) {
+        try {
+          setReport(await siteApi(siteId).analyseSpeed(s.result))
+        } catch (e) { setError(e?.message || 'تحلیل نتیجه انجام نشد.') }
+      }
     }, 2000)
   }
 
@@ -69,16 +90,24 @@ export default function Speed() {
       const msg = res?.result?.content?.[0]?.text
       let parsed = null
       try { parsed = msg ? JSON.parse(msg) : null } catch { /* plain text */ }
+      // perf_clean_transients is batched: while it reports remaining > 0 the
+      // work is not done, so the finding stays open and the button offers
+      // another run instead of a green checkmark.
+      const remaining = typeof parsed?.remaining === 'number' ? parsed.remaining : null
       setReport((r) => ({
         ...r,
         findings: r.findings.map((f) =>
-          f.id === finding.id ? { ...f, done: parsed?.message || 'انجام شد' } : f
+          f.id === finding.id
+            ? (remaining === null || remaining === 0
+              ? { ...f, done: parsed?.message || 'انجام شد', again: null }
+              : { ...f, done: null, again: parsed?.message || 'بخشی انجام شد — دوباره اجرا کنید.' })
+            : f
         ),
       }))
     } catch (e) { setError(e?.message || 'اجرا نشد.') } finally { setActing('') }
   }
 
-  const running = job && job.state !== 'done' && job.state !== 'failed'
+  const running = job && !stalled && job.state !== 'done' && job.state !== 'failed'
 
   return (
     <>
@@ -143,7 +172,11 @@ function Measurements({ profile }) {
       <div className="dwp-grid dwp-grid-4">
         <Stat
           label="حجم autoload" value={kb(s.autoload?.bytes)} unit=""
-          tone={s.autoload?.verdict === 'bad' ? 'danger' : s.autoload?.verdict === 'warn' ? 'warning' : 'success'}
+          // Missing autoload data stays neutral — an absent reading is not a
+          // healthy one, and the dash must not render green.
+          tone={!s.autoload
+            ? 'neutral'
+            : s.autoload.verdict === 'bad' ? 'danger' : s.autoload.verdict === 'warn' ? 'warning' : 'success'}
           sub={s.autoload ? `${faNum(s.autoload.count)} ردیف، روی هر درخواست` : null}
         />
         <Stat
@@ -256,14 +289,19 @@ function Findings({ report, onFix, acting }) {
                 button, however tempting the one-click version would be. */}
             {f.action && !f.done && (
               <div style={{ marginTop: 12 }}>
-                <Button variant="secondary" size="sm" leftIcon="sparkles" disabled={acting === f.id} onClick={() => onFix(f)}>
-                  {acting === f.id ? 'در حال اجرا…' : 'انجامش بده'}
+                <Button variant="secondary" size="sm" leftIcon={f.again ? 'repeat' : 'sparkles'} disabled={acting === f.id} onClick={() => onFix(f)}>
+                  {acting === f.id ? 'در حال اجرا…' : f.again ? 'دوباره اجرا کن' : 'انجامش بده'}
                 </Button>
               </div>
             )}
             {f.done && (
               <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--gd-success)', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Icon name="check" size={14} /> {f.done}
+              </div>
+            )}
+            {f.again && (
+              <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--gd-warning-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Icon name="repeat" size={14} /> {f.again}
               </div>
             )}
           </div>

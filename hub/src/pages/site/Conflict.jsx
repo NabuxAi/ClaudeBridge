@@ -18,7 +18,11 @@ export default function Conflict() {
   const [forbid, setForbid] = useState('')
   const [job, setJob] = useState(null)
   const [error, setError] = useState('')
+  // A stalled poll is one we gave up reading after repeated failures. It must
+  // unlock the button again — the operator decides, not a network hiccup.
+  const [stalled, setStalled] = useState(false)
   const timer = useRef(null)
+  const fails = useRef(0)
 
   useEffect(() => () => clearTimeout(timer.current), [])
 
@@ -26,6 +30,8 @@ export default function Conflict() {
     if (!url.trim()) return
     setError('')
     setJob(null)
+    setStalled(false)
+    fails.current = 0
     try {
       const res = await siteApi(siteId).findConflict({ url: url.trim(), expect: expect.trim(), forbid: forbid.trim() })
       const started = res.job || res
@@ -44,21 +50,46 @@ export default function Conflict() {
   }
 
   // Poll rather than await. Every tick is a cheap option read on the site — the
-  // expensive work is already running in its own background request.
+  // expensive work is already running in its own background request. One
+  // transient read failure must not brick the chain: retry a few times, then
+  // stop honestly and hand control back to the operator.
   function poll(jobId) {
     clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
+      let s
       try {
-        const s = await siteApi(siteId).job(jobId)
-        setJob(s)
-        if (s.state !== 'done' && s.state !== 'failed') poll(jobId)
+        s = await siteApi(siteId).job(jobId)
+        // A job the site no longer knows answers HTTP 200 {ok:false} — without
+        // this check the poll would never terminate.
+        if (!s || s.ok === false || !s.state) throw new Error(s?.message || 'وضعیت خوانده نشد.')
+        fails.current = 0
       } catch (e) {
-        setError(e?.message || 'وضعیت خوانده نشد.')
+        fails.current = (fails.current || 0) + 1
+        if (fails.current >= 5) {
+          setStalled(true)
+          setError('خواندن وضعیت بررسی چند بار ناموفق ماند — بررسی روی سایت ادامه دارد و می‌توانید دوباره تلاش کنید.')
+          return
+        }
+        setError(`${e?.message || 'وضعیت خوانده نشد.'} — دوباره تلاش می‌کنیم…`)
+        return poll(jobId)
       }
+      setStalled(false)
+      setJob(s)
+      if (s.state !== 'done' && s.state !== 'failed') poll(jobId)
     }, 2000)
   }
 
-  const running = job && job.state !== 'done' && job.state !== 'failed'
+  // Resuming means reading the same job again — the hunt keeps running on the
+  // site regardless. Starting a fresh hunt over a live site is a separate,
+  // explicit decision the start button still offers.
+  function resumePoll() {
+    if (!job?.id) return
+    setStalled(false)
+    fails.current = 0
+    poll(job.id)
+  }
+
+  const running = job && !stalled && job.state !== 'done' && job.state !== 'failed'
   const result = job?.result
 
   return (
@@ -114,9 +145,16 @@ export default function Conflict() {
       </div>
 
       {error && (
-        <p style={{ fontSize: 13, color: 'var(--gd-danger-text)', background: 'var(--gd-danger-bg)', border: '1px solid var(--gd-danger)', borderRadius: 'var(--gd-radius-md)', padding: '11px 14px' }}>
+        <div style={{ fontSize: 13, color: 'var(--gd-danger-text)', background: 'var(--gd-danger-bg)', border: '1px solid var(--gd-danger)', borderRadius: 'var(--gd-radius-md)', padding: '11px 14px' }}>
           {error}
-        </p>
+          {stalled && job?.id && (
+            <div>
+              <Button size="sm" variant="secondary" style={{ marginTop: 8 }} onClick={resumePoll}>
+                تلاش دوباره
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
       {job && <JobProgress job={job} />}
@@ -228,7 +266,14 @@ function ConflictResult({ result }) {
         body={
           result.restored
             ? `افزونه‌های فعال و قالب دوباره خوانده شدند و با حالت اول یکی هستند. وضعیت صفحه پس از بازگردانی: ${
-                result.final_health?.healthy ? 'سالم' : `همان خرابی اولیه${result.final_health?.status ? ` (${faNum(result.final_health.status)})` : ''}`
+                result.final_health?.healthy
+                  ? 'سالم'
+                  : result.final_health
+                    ? `همان خرابی اولیه${result.final_health?.status ? ` (${faNum(result.final_health.status)})` : ''}`
+                    : // The site never re-measured the page (e.g. the healthy-baseline
+                      // short-circuit) — saying "still broken" would contradict the
+                      // verdict above, so the missing reading stays missing.
+                      '— (اندازه‌گیری نشد)'
               }.`
             : `بازگردانی کامل نشد — سایت را دستی بررسی کنید. ${result.restore_error || ''}`
         }

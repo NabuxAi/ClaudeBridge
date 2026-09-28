@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Badge, Button, IconButton, Input, Select, AlertCard } from '../../components/index.js'
+import { Badge, Button, IconButton, Input, Select, AlertCard, Toast } from '../../components/index.js'
 import { account, site as siteClient, ApiError } from '../../lib/api.js'
 
 const ROLE_CFG = {
@@ -18,9 +18,39 @@ const ROLE_OPTIONS = [
 
 const COLS = '2.2fr 1fr 1.4fr 1fr 0.6fr'
 
+/* دلیل‌های sendMail سمت سرور برای mail.ok=false (server/src/mailer.js). */
+const MAIL_FAIL_REASONS = {
+  no_email_url: 'سرویس ایمیل روی سرور پیکربندی نشده است',
+  no_recipient: 'آدرس گیرنده نامعتبر است',
+  provider_error: 'سرویس ایمیل ارسال را نپذیرفت',
+}
+
+/**
+ * Express answers an unmounted route with a bare «Not Found»; show what is
+ * actually missing instead of that English fragment. A server-provided
+ * message (site not found, owner-only, …) still wins.
+ */
+function describeApiError(e, fallback, notFound) {
+  if (e instanceof ApiError) {
+    if (e.status === 404 && (!e.message || e.message === 'Not Found')) return notFound
+    if (e.message) return e.message
+  }
+  return fallback
+}
+
+/** One shared fetch+normalise path for the team of a site. */
+async function teamRequest(siteId) {
+  try {
+    return { team: await siteClient(siteId).team() }
+  } catch (e) {
+    return { error: describeApiError(e, 'بارگذاری اعضا با خطا مواجه شد.', 'مدیریت اعضای تیم هنوز روی سرور فعال نشده است.') }
+  }
+}
+
 export default function Team() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [sites, setSites] = useState(null)
+  const [sitesError, setSitesError] = useState(null)
   const [selectedSiteId, setSelectedSiteId] = useState(searchParams.get('site') || '')
   const [team, setTeam] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -31,49 +61,85 @@ export default function Team() {
   const [inviteError, setInviteError] = useState(null)
   const [actionBusy, setActionBusy] = useState({})
   const [toast, setToast] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [acceptResult, setAcceptResult] = useState(null)
+  const acceptHandledRef = useRef(false)
 
+  // The site list is fetched once. Depending on selectedSiteId here re-ran
+  // this request on every site switch just to recompute a default that no
+  // longer applies.
   useEffect(() => {
     let alive = true
-    account.sites().then((d) => {
-      if (!alive) return
-      setSites(d || [])
-      if (!selectedSiteId && d?.[0]?.id) {
-        setSelectedSiteId(d[0].id)
-      }
-    })
+    account.sites()
+      .then((d) => {
+        if (!alive) return
+        setSites(d || [])
+        setSelectedSiteId((cur) => cur || d?.[0]?.id || '')
+      })
+      .catch((e) => {
+        if (alive) setSitesError(e?.message || 'بارگذاری سایت‌ها انجام نشد.')
+      })
     return () => { alive = false }
-  }, [selectedSiteId])
+  }, [reloadKey])
+
+  // ایمیل دعوت روی «/app/team?accept=<توکن>» فرود می‌آید. توکن یک‌بارمصرف
+  // است: یک‌بار می‌خوانیمش، بلافاصله از URL پاک می‌کنیم (نباید در تاریخچه یا
+  // رفرش بماند) و همان‌جا می‌پذیریم. API پذیرش کنار توکن به شناسهٔ سایت هم
+  // نیاز دارد که لینک باید به‌صورت ?site= بیاورد.
+  useEffect(() => {
+    const token = searchParams.get('accept')
+    if (!token || acceptHandledRef.current) return undefined
+    acceptHandledRef.current = true
+    const siteId = searchParams.get('site')
+    const next = new URLSearchParams(searchParams)
+    next.delete('accept')
+    setSearchParams(next, { replace: true })
+    let alive = true
+    if (!siteId) {
+      // قاعدهٔ react-hooks/set-state-in-effect setState همگام در بدنهٔ افکت را
+      // منع می‌کند. این هشدار ایستا و یک‌بارمصرف است؛ مثل شاخه‌های then/catch
+      // در callback تنظیم می‌شود، عمداً به alive وابسته نیست (StrictMode
+      // بلافاصله cleanup را صدا می‌زند و پیام پیش از نمایش حذف می‌شد).
+      queueMicrotask(() => {
+        setAcceptResult({
+          severity: 'warning',
+          title: 'لینک پذیرش دعوت ناقص است',
+          desc: 'این لینک شناسهٔ سایت را هم ندارد و از پنل قابل پذیرش نیست. از مدیر سایت بخواهید دعوت‌نامه را دوباره بفرستد.',
+        })
+      })
+      return undefined
+    }
+    siteClient(siteId).acceptInvitation(token)
+      .then(() => {
+        if (alive) setAcceptResult({ severity: 'success', title: 'دعوت‌نامه پذیرفته شد', desc: 'عضویت شما در سایت ثبت شد.' })
+      })
+      .catch((e) => {
+        if (alive) setAcceptResult({
+          severity: 'critical',
+          title: 'پذیرش دعوت‌نامه انجام نشد',
+          desc: describeApiError(e, 'پذیرش دعوت‌نامه ناموفق بود.', 'پذیرش دعوت روی سرور فعال نشده است.'),
+        })
+      })
+    return () => { alive = false }
+  }, [searchParams, setSearchParams])
 
   const loadTeam = useCallback(async (siteId) => {
-    if (!siteId) return
-    try {
-      const data = await siteClient(siteId).team()
-      setTeam(data)
-      setError(null)
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'بارگذاری اعضا با خطا مواجه شد.')
-    } finally {
-      setLoading(false)
-    }
+    const r = await teamRequest(siteId)
+    setTeam(r.team || null)
+    setError(r.error || null)
+    setLoading(false)
   }, [])
 
   useEffect(() => {
+    if (!selectedSiteId) return undefined
+    setSearchParams({ site: selectedSiteId })
     let alive = true
-    if (selectedSiteId) {
-      setSearchParams({ site: selectedSiteId })
-      siteClient(selectedSiteId).team().then((data) => {
-        if (alive) {
-          setTeam(data)
-          setError(null)
-          setLoading(false)
-        }
-      }).catch((e) => {
-        if (alive) {
-          setError(e instanceof ApiError ? e.message : 'بارگذاری اعضا با خطا مواجه شد.')
-          setLoading(false)
-        }
-      })
-    }
+    teamRequest(selectedSiteId).then((r) => {
+      if (!alive) return
+      setTeam(r.team || null)
+      setError(r.error || null)
+      setLoading(false)
+    })
     return () => { alive = false }
   }, [selectedSiteId, setSearchParams])
 
@@ -88,13 +154,19 @@ export default function Team() {
     setInviteBusy(true)
     setInviteError(null)
     try {
-      await siteClient(selectedSiteId).inviteMember({ email: inviteEmail.trim(), role: inviteRole })
+      const result = await siteClient(selectedSiteId).inviteMember({ email: inviteEmail.trim(), role: inviteRole })
       setInviteEmail('')
       setInviteRole('viewer')
-      showToast('دعوت‌نامه ارسال شد.')
+      // «دعوت‌نامه ثبت شد» و «سرویس ایمیل آن را پذیرفت» دو ادعای جدایند؛ سرور
+      // دومی را در mail.ok برمی‌گرداند و فقط با آن پیام موفقیت می‌دهیم.
+      if (result?.mail && result.mail.ok === false) {
+        setInviteError(`دعوت‌نامه ساخته شد، اما ایمیل ارسال نشد — ${MAIL_FAIL_REASONS[result.mail.reason] || result.mail.reason || 'دلیل نامشخص'}. دعوت‌نامه در فهرست «در انتظار» باقی مانده است.`)
+      } else {
+        showToast('دعوت‌نامه ارسال شد.')
+      }
       await loadTeam(selectedSiteId)
     } catch (e) {
-      setInviteError(e instanceof ApiError ? e.message : 'ارسال دعوت‌نامه ناموفق بود.')
+      setInviteError(describeApiError(e, 'ارسال دعوت‌نامه ناموفق بود.', 'دعوت عضو هنوز روی سرور فعال نشده است.'))
     } finally {
       setInviteBusy(false)
     }
@@ -107,7 +179,7 @@ export default function Team() {
       showToast('دعوت‌نامه لغو شد.')
       await loadTeam(selectedSiteId)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'لغو دعوت‌نامه ناموفق بود.')
+      setError(describeApiError(e, 'لغو دعوت‌نامه ناموفق بود.', 'مدیریت اعضای تیم هنوز روی سرور فعال نشده است.'))
     } finally {
       setActionBusy((b) => ({ ...b, [`revoke:${invitationId}`]: false }))
     }
@@ -120,7 +192,7 @@ export default function Team() {
       showToast('نقش به‌روزرسانی شد.')
       await loadTeam(selectedSiteId)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'تغییر نقش ناموفق بود.')
+      setError(describeApiError(e, 'تغییر نقش ناموفق بود.', 'مدیریت اعضای تیم هنوز روی سرور فعال نشده است.'))
     } finally {
       setActionBusy((b) => ({ ...b, [`role:${memberId}`]: false }))
     }
@@ -134,7 +206,7 @@ export default function Team() {
       showToast('عضو حذف شد.')
       await loadTeam(selectedSiteId)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'حذف عضو ناموفق بود.')
+      setError(describeApiError(e, 'حذف عضو ناموفق بود.', 'مدیریت اعضای تیم هنوز روی سرور فعال نشده است.'))
     } finally {
       setActionBusy((b) => ({ ...b, [`remove:${memberId}`]: false }))
     }
@@ -147,6 +219,25 @@ export default function Team() {
       action={null}
     />
   )
+
+  if (sitesError) {
+    return (
+      <>
+        {head}
+        <AlertCard
+          severity="critical"
+          title="بارگذاری سایت‌ها ناموفق بود"
+          desc={sitesError}
+          className="dwp-acc-alert"
+          actions={(
+            <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => { setSitesError(null); setReloadKey((k) => k + 1) }}>
+              تلاش دوباره
+            </Button>
+          )}
+        />
+      </>
+    )
+  }
 
   if (!sites) return head
 
@@ -181,13 +272,26 @@ export default function Team() {
         </div>
       )}
 
+      {acceptResult && (
+        <AlertCard
+          severity={acceptResult.severity}
+          title={acceptResult.title}
+          desc={acceptResult.desc}
+          onDismiss={() => setAcceptResult(null)}
+          className="dwp-acc-alert"
+        />
+      )}
+
       {error && (
         <AlertCard
-          severity="danger"
+          severity="critical"
           title="خطا"
           desc={error}
           onDismiss={() => setError(null)}
-          style={{ marginBottom: 18 }}
+          className="dwp-acc-alert"
+          actions={selectedSiteId ? (
+            <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => { setError(null); loadTeam(selectedSiteId) }}>تلاش دوباره</Button>
+          ) : undefined}
         />
       )}
 
@@ -199,7 +303,7 @@ export default function Team() {
 
       {!loading && team && (
         <>
-          <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden', marginBottom: 22 }}>
+          <div className="dwp-card dwp-acc-tablewrap" style={{ marginBottom: 22 }}>
             <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '11px 20px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', fontSize: 12, fontWeight: 700, color: 'var(--gd-text-muted)' }}>
               <span>عضو</span>
               <span>نقش</span>
@@ -266,7 +370,7 @@ export default function Team() {
           </div>
 
           {team.invitations.length > 0 && (
-            <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', overflow: 'hidden', marginBottom: 22 }}>
+            <div className="dwp-card dwp-acc-tablewrap" style={{ marginBottom: 22 }}>
               <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--gd-border)', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Icon name="mail" size={17} /> دعوت‌نامه‌های در انتظار
               </div>
@@ -294,12 +398,12 @@ export default function Team() {
             </div>
           )}
 
-          <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: '18px 20px' }}>
+          <div className="dwp-card" style={{ padding: '18px 20px' }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Icon name="user-plus" size={17} /> دعوت عضو جدید
             </div>
             <form onSubmit={handleInvite} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'flex-end' }}>
+              <div className="dwp-acc-invite-grid">
                 <Input
                   label="ایمیل"
                   type="email"
@@ -325,10 +429,8 @@ export default function Team() {
       )}
 
       {toast && (
-        <div style={{ position: 'fixed', left: 20, bottom: 20, zIndex: 100 }}>
-          <div style={{ background: 'var(--gd-success)', color: '#fff', padding: '10px 16px', borderRadius: 'var(--gd-radius-md)', boxShadow: 'var(--gd-shadow-md)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Icon name="check" size={16} /> {toast.title}
-          </div>
+        <div style={{ position: 'fixed', insetInlineEnd: 20, bottom: 20, zIndex: 100 }}>
+          <Toast tone={toast.tone} title={toast.title} />
         </div>
       )}
     </>

@@ -454,14 +454,14 @@
    ============================================================ */
 
 :root {
-  --gd-duration-fast:  120ms;  /* @kind other */
-  --gd-duration:       180ms;  /* @kind other */
-  --gd-duration-slow:  280ms;  /* @kind other */
+  --gd-duration-fast:  150ms;  /* @kind other — nx --nx-dur-fast */
+  --gd-duration:       220ms;  /* @kind other — nx --nx-dur-base */
+  --gd-duration-slow:  380ms;  /* @kind other — nx --nx-dur-slow */
 
-  --gd-ease-standard:   cubic-bezier(0.2, 0, 0, 1);    /* @kind other */
-  --gd-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1); /* @kind other */
-  --gd-ease-in:         cubic-bezier(0.4, 0, 1, 1);    /* @kind other */
-  --gd-ease-out:        cubic-bezier(0, 0, 0.2, 1);    /* @kind other */
+  --gd-ease-standard:   cubic-bezier(0.2, 0, 0, 1);    /* @kind other — == nx --nx-ease-emphasized */
+  --gd-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1); /* @kind other — == nx --nx-ease-out */
+  --gd-ease-in:         cubic-bezier(0.7, 0, 0.84, 0); /* @kind other — nx --nx-ease-in */
+  --gd-ease-out:        cubic-bezier(0.16, 1, 0.3, 1); /* @kind other — nx --nx-ease-out */
 }
 
 /* Signature "live monitoring" pulse — ripple on a status dot */
@@ -619,7 +619,7 @@ code, kbd, samp { font-family: var(--gd-font-mono); font-size: 0.9em; }
   .gd-btn--subtle{background:var(--gd-primary-subtle);color:var(--gd-primary);}
   .gd-btn--subtle:hover{background:color-mix(in srgb,var(--gd-primary) 15%,var(--gd-bg-surface));}
   .gd-btn--danger{background:var(--gd-danger);color:#fff;}
-  .gd-btn--danger:hover{background:var(--gd-red-700);}
+  .gd-btn--danger:hover{background:var(--gd-danger-hover);}
   .gd-btn__label{display:inline-block;}
   .gd-btn__spin-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
   .gd-btn__spinner{animation:gd-spin .7s linear infinite;}
@@ -897,3 +897,192 @@ code, kbd, samp { font-family: var(--gd-font-mono); font-size: 0.9em; }
   .gd-tab__badge{font-family:var(--gd-font-mono);font-size:var(--gd-text-xs);font-weight:var(--gd-weight-semibold);
     background:var(--gd-bg-inset);color:var(--gd-text-secondary);border-radius:var(--gd-radius-pill);padding:1px 6px;}
   .gd-tabs--pill .gd-tab--active .gd-tab__badge,.gd-tabs--underline .gd-tab--active .gd-tab__badge{background:var(--gd-primary-subtle);color:var(--gd-primary);}
+
+/* ============================================================
+   NabuxUi polish — ready-made patterns (mapping §3.3, §3.6, §4)
+   Written only with --gd-* tokens so light and ink themes both
+   hold. This block intentionally sits AFTER the base component
+   rules above: equal specificity, later source order wins.
+   RTL: logical properties only (mapping §5.3). Status colour
+   roles are untouched (mapping §5.1 — AGENTS.md product truth).
+   ============================================================ */
+
+/* ---- §3.3 glass material — standalone card class (glass.css:31-65).
+   Glass is invisible on a flat white page: always lay it on a
+   coloured backdrop (gradient panel, aurora hero). */
+.gd-card--glass {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--gd-glass-tint);
+  background-image: linear-gradient(180deg, var(--gd-glass-sheen), transparent 42%);
+  -webkit-backdrop-filter: blur(10px) saturate(1.7);
+  backdrop-filter: blur(10px) saturate(1.7);
+  border-radius: var(--gd-radius-2xl);
+  color: var(--gd-text);
+  box-shadow:
+    inset 0 0 0 1px var(--gd-glass-rim-soft),
+    inset 0 1px 0 var(--gd-glass-rim),
+    0 0 0 0.5px var(--gd-glass-edge),
+    0 1px 2px var(--gd-glass-shade),
+    0 16px 36px -16px var(--gd-glass-shade);
+}
+
+/* Rotating light rim around the panel (glass.css:68-93) — a
+   conic gradient masked to a 1.25px ring. */
+.gd-card--glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.25px;
+  background: conic-gradient(
+    from 315deg,
+    var(--gd-glass-rim) 0deg, transparent 58deg,
+    var(--gd-glass-edge) 90deg, transparent 122deg,
+    var(--gd-glass-rim-soft) 180deg, transparent 238deg,
+    var(--gd-glass-edge) 270deg, transparent 302deg,
+    var(--gd-glass-rim) 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+
+/* Opt-in interactive glass — tint lifts on hover, enabled only,
+   fine pointers (glass.css:128-136). */
+.gd-card--glass--interactive {
+  cursor: pointer;
+  transition: background-color var(--gd-duration-fast) var(--gd-ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .gd-card--glass--interactive:hover:not(:disabled, [aria-disabled="true"]) {
+    background-color: var(--gd-glass-tint-hover);
+  }
+}
+
+/* ---- §3.6 gradient text (text.css:18-30) */
+.gd-gradient-text {
+  background: var(--gd-gradient-text);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* ---- §4.1 buttons — nx material upgrade (button.css:92-126).
+   Sits after the base .gd-btn rules: later source order wins. */
+.gd-btn--primary {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--gd-primary) 86%, #fff), var(--gd-primary));
+  border-color: color-mix(in oklab, var(--gd-primary) 70%, #000);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 1px 2px rgb(0 0 0 / 0.12),
+    0 6px 16px -6px color-mix(in oklab, var(--gd-primary) 70%, transparent);
+}
+.gd-btn--primary:hover {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--gd-primary-hover) 84%, #fff), var(--gd-primary-hover));
+}
+.gd-btn--secondary {
+  box-shadow: var(--gd-shadow-sm), inset 0 1px 0 var(--gd-highlight);
+}
+.gd-btn--danger {
+  background: var(--gd-danger);
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18),
+    0 6px 16px -6px color-mix(in oklab, var(--gd-danger) 70%, transparent);
+}
+/* Filled variants lift on hover — enabled only (button.css:167-169). */
+.gd-btn--primary:not([disabled]):not([aria-disabled="true"]):hover,
+.gd-btn--danger:not([disabled]):not([aria-disabled="true"]):hover {
+  translate: 0 -1px;
+}
+
+/* ---- §4.2 status badges — nx tonal border: a soft badge always
+   carries a 28% line of its own colour (data.css:729). The neutral
+   soft badge stays quiet (gray = offline/unmeasured, mapping §5.2). */
+.gd-badge--soft.gd-badge--primary { border-color: color-mix(in oklab, var(--gd-primary) 28%, transparent); }
+.gd-badge--soft.gd-badge--success { border-color: color-mix(in oklab, var(--gd-success) 28%, transparent); }
+.gd-badge--soft.gd-badge--warning { border-color: color-mix(in oklab, var(--gd-warning) 28%, transparent); }
+.gd-badge--soft.gd-badge--danger  { border-color: color-mix(in oklab, var(--gd-danger) 28%, transparent); }
+.gd-badge--soft.gd-badge--info    { border-color: color-mix(in oklab, var(--gd-info) 28%, transparent); }
+/* Pulsing dot — only for genuinely live data (AGENTS.md truth rules). */
+.gd-badge__dot--pulse { animation: gd-pulse 1.8s var(--gd-ease-out) infinite; }
+
+/* ---- §4.3 section header — glass eyebrow + display title
+   (hero.css:44-56 eyebrow pattern) */
+.gd-sec-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gd-space-2);
+  margin-block-end: var(--gd-space-5);
+}
+.gd-sec-head__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gd-space-2);
+  justify-self: start;
+  align-self: flex-start;
+  padding-block: 0.3rem;
+  padding-inline: 0.35rem 0.75rem;
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-full);
+  background: var(--gd-glass);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--gd-shadow-xs);
+  color: var(--gd-text-secondary);
+  font: var(--gd-font-caption);
+}
+.gd-sec-head__title {
+  font: var(--gd-weight-bold) var(--gd-text-xl)/1.35 var(--gd-font-display-family);
+}
+
+/* ---- §4.4 clean list / table — nx data-table pattern
+   (data.css:572-645), logical properties for RTL */
+.gd-table {
+  background: var(--gd-bg-surface);
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-xl);
+  box-shadow: var(--gd-shadow-sm), inset 0 1px 0 var(--gd-highlight);
+  overflow: auto;
+  overscroll-behavior-x: contain;
+}
+.gd-table table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--gd-text-sm); }
+.gd-table th, .gd-table td { padding: 0.75rem 1rem; text-align: start; vertical-align: middle; white-space: nowrap; }
+.gd-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--gd-bg-surface);
+  color: var(--gd-text-secondary);
+  font-size: var(--gd-text-xs);
+  font-weight: var(--gd-weight-semibold);
+  border-block-end: 1px solid var(--gd-border);
+}
+.gd-table td { border-block-end: 1px solid var(--gd-border); color: var(--gd-text-secondary); }
+.gd-table td:first-child { color: var(--gd-text); font-weight: var(--gd-weight-medium); }
+.gd-table tbody tr:last-child td { border-block-end: 0; }
+.gd-table tbody tr:hover { background: var(--gd-bg-hover); }   /* a row answers with colour only */
+.gd-table [data-numeric] { font-variant-numeric: tabular-nums; }
+
+/* ---- §4.5 loading skeleton — nx sheen pattern (feedback.css:388-399).
+   .dwp-skeleton in app.css stays for existing markup; .gd-skeleton
+   is the reference pattern for new surfaces. */
+@keyframes gd-sheen {
+  from { background-position: 200% 0; }
+  to   { background-position: -100% 0; }
+}
+.gd-skeleton {
+  display: block;
+  block-size: 1rem;
+  border-radius: var(--gd-radius-sm);
+  background: linear-gradient(100deg, var(--gd-skeleton) 40%, var(--gd-skeleton-shine) 50%, var(--gd-skeleton) 60%)
+    var(--gd-skeleton) 0 0 / 300% 100%;
+  animation: gd-sheen 1.6s linear infinite;
+}
+.gd-skeleton--circle { border-radius: 50%; aspect-ratio: 1; inline-size: 2.5rem; block-size: auto; }
+.gd-skeleton--rect   { border-radius: var(--gd-radius-lg); block-size: 8rem; }
+@media (prefers-reduced-motion: reduce) {
+  .gd-skeleton { animation-duration: 4s; }   /* the global guard below forces ~0ms; documented intent */
+}

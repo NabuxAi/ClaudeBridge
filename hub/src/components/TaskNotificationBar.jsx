@@ -11,7 +11,10 @@ export default function TaskNotificationBar() {
   const isRunning = activeTask.state === 'running'
   const isDone = activeTask.state === 'done'
   const isFailed = activeTask.state === 'failed'
-  const isPaused = activeTask.state === 'paused'
+  // 'detached' = the panel stopped displaying progress. The job itself keeps
+  // running on the managed site (there is no cancel endpoint), so the wording
+  // must never claim the work stopped.
+  const isDetached = activeTask.state === 'detached'
 
   const progress = isDone ? 100 : (activeTask.progress || 10)
 
@@ -31,46 +34,48 @@ export default function TaskNotificationBar() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
           <span style={{
             width: 28, height: 28, borderRadius: 8,
-            background: isFailed ? 'var(--gd-danger)' : isDone ? 'var(--gd-success)' : 'var(--gd-primary-subtle)',
-            color: (isFailed || isDone) ? '#fff' : 'var(--gd-primary)',
+            background: isFailed ? 'var(--gd-danger)' : isDone ? 'var(--gd-success)' : isDetached ? 'var(--gd-bg-inset)' : 'var(--gd-primary-subtle)',
+            color: isFailed ? '#fff' : isDone ? '#fff' : isDetached ? 'var(--gd-text-secondary)' : 'var(--gd-primary)',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto',
           }}>
             {isRunning && <Icon name="loader-2" size={16} className="gd-activity__ic--spin" />}
             {isDone && <Icon name="check" size={16} />}
             {isFailed && <Icon name="alert-octagon" size={16} />}
-            {isPaused && <Icon name="clock" size={16} />}
+            {isDetached && <Icon name="eye-off" size={16} />}
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {activeTask.title}
             </div>
-            {activeTask.message && (
-              <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 1 }}>
-                {activeTask.message}
-              </div>
-            )}
+            <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 1 }}>
+              {isDetached
+                ? 'نمایش پیشرفت در پنل قطع شد؛ کار ممکن است روی سایت همچنان در حال اجرا باشد.'
+                : activeTask.message}
+            </div>
           </div>
         </div>
 
         {/* Action Controls & Percentage */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: isFailed ? 'var(--gd-danger)' : isDone ? 'var(--gd-success)' : 'var(--gd-primary)' }}>
-            {isFailed ? 'خطا' : isDone ? 'تکمیل شد' : `${faNum(progress)}٪`}
+          <span style={{ fontSize: 12.5, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: isFailed ? 'var(--gd-danger)' : isDone ? 'var(--gd-success)' : isDetached ? 'var(--gd-text-muted)' : 'var(--gd-primary)' }}>
+            {/* A frozen percentage presented as current would be a reading we
+                no longer take; the dash says the display is detached. */}
+            {isFailed ? 'خطا' : isDone ? 'تکمیل شد' : isDetached ? '—' : `${faNum(progress)}٪`}
           </span>
 
           {isRunning && (
-            <Button size="sm" variant="subtle" onClick={cancelTask} leftIcon="minus">
-              توقف
+            <Button size="sm" variant="subtle" onClick={cancelTask} leftIcon="eye-off">
+              قطع نمایش
             </Button>
           )}
 
-          {isPaused && (
+          {isDetached && activeTask.id && (
             <Button size="sm" variant="primary" onClick={resumeTask} leftIcon="play">
-              ادامه
+              ادامه نمایش
             </Button>
           )}
 
-          {(isDone || isFailed) && (
+          {(isDone || isFailed || isDetached) && (
             <IconButton icon="x" label="بستن" size="sm" onClick={clearTask} />
           )}
         </div>
@@ -83,7 +88,7 @@ export default function TaskNotificationBar() {
         <div style={{
           height: '100%',
           width: `${progress}%`,
-          background: isFailed ? 'var(--gd-danger)' : isDone ? 'var(--gd-success)' : 'var(--gd-primary)',
+          background: isFailed ? 'var(--gd-danger)' : isDone ? 'var(--gd-success)' : isDetached ? 'var(--gd-text-muted)' : 'var(--gd-primary)',
           transition: 'width 0.4s ease',
         }} />
       </div>

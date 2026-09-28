@@ -22,7 +22,10 @@ export default function AdminDashboard() {
       {error && <p style={{ color: 'var(--gd-danger-text)' }}>{error}</p>}
       <div className="dwp-grid dwp-grid-3" style={{ marginBottom: 22 }}>
         <MetricCard icon="users" iconTone="primary" label="کاربران" value={faNum(stats?.users ?? '—')} hint="ثبت‌نام‌شده" />
-        <MetricCard icon="globe" iconTone="neutral" label="سایت‌ها" value={faNum(stats?.sites ?? '—')} hint={`${faNum(stats?.pairedSites ?? 0)} متصل`} />
+        {/* The hint stays «—» until the stats actually arrive: a definite
+            «۰ متصل» during loading or after an error dresses an unmeasured
+            value up as a measured zero. */}
+        <MetricCard icon="globe" iconTone="neutral" label="سایت‌ها" value={faNum(stats?.sites ?? '—')} hint={stats ? `${faNum(stats.pairedSites ?? 0)} متصل` : '—'} />
         <MetricCard icon="bell-ring" iconTone="warning" label="هشدار باز" value={faNum(stats?.openIncidents ?? '—')} hint="نیازمند توجه" />
         <MetricCard icon="activity" iconTone="success" label="رویداد ۲۴ ساعت" value={faNum(stats?.events24h ?? '—')} hint="آخرین شبانه‌روز" />
         <MetricCard icon="activity" iconTone="neutral" label="رویداد ۷ روز" value={faNum(stats?.events7d ?? '—')} hint="آخرین هفته" />

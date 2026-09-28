@@ -9,6 +9,12 @@ import { Button, StatusPill, AuthorityBadge } from '../../components/index.js'
 // Core Web Vitals, suspicious-login detection and attack blocking. None of
 // those exist. Selling them is worse than showing them in the panel, because
 // this is where the purchase decision is made.
+//
+// The "transparent report" sample below obeys the same rule: it shows a core
+// integrity finding (a real daily check) with an honestly unknown cause and a
+// rescue proposal that waits for the owner's approval. It deliberately does
+// NOT show payment-page 500 detection or automatic plugin-version rollback —
+// probes only cover homepage/wp-login and no file rollback path exists.
 const FEATURES = [
   { icon: 'refresh-cw', title: 'همیشه به‌روز', desc: 'هسته، افزونه‌ها و قالب‌ها خودکار به آخرین نسخه می‌رسند. در حالت ایمنی، این گزینه‌ها قابل خاموش کردن نیستند.' },
   { icon: 'shield-check', title: 'اسکن بدافزار', desc: 'اسکن روزانه با بانک امضای به‌روز، به‌علاوهٔ جست‌وجوی هش در پایگاه‌های بیرونی.' },
@@ -28,22 +34,27 @@ const AUTH_LEVELS = [
 const PLANS = [
   { name: 'پایه', price: '۱۹۰٬۰۰۰', popular: false, feats: ['۱ سایت', 'به‌روزرسانی خودکار', 'بکاپ و اسکن روزانه'], cta: 'درخواست دسترسی', variant: 'secondary' },
   { name: 'حرفه‌ای', price: '۴۹۰٬۰۰۰', popular: true, feats: ['۵ سایت', 'بررسی یکپارچگی هسته', 'بررسی تداخل و عملیات نجات'], cta: 'درخواست دسترسی', variant: 'primary' },
-  { name: 'آژانس', price: '۹۹۰٬۰۰۰', popular: false, feats: ['سایت نامحدود', 'همهٔ امکانات حرفه‌ای', 'گزارش روزانه در تلگرام'], cta: 'تماس با فروش', variant: 'secondary' },
+  // No "گزارش روزانه در تلگرام" here: the daily digest goes to the operator's
+  // fixed TELEGRAM_CHAT_ID, not to site owners (no owner Telegram channel
+  // exists). And no "تماس با فروش" CTA: /pricing offers pilot access, not a
+  // sales contact — the label must match what the destination actually does.
+  { name: 'آژانس', price: '۹۹۰٬۰۰۰', popular: false, feats: ['سایت نامحدود', 'همهٔ امکانات حرفه‌ای', 'مدیریت سایت‌های مشتری از یک پنل'], cta: 'درخواست دسترسی', variant: 'secondary' },
 ]
 
 
 export default function Landing() {
   return (
     <>
-      {/* Hero (ink) */}
-      <div data-theme="ink" style={{ background: 'var(--gd-bg-app)' }}>
+      {/* Hero (ink) — aurora backdrop feeds the glass panel (mapping §3.2/§3.5) */}
+      <div data-theme="ink" className="dwp-hero-shell" style={{ background: 'var(--gd-bg-app)' }}>
+        <div className="dwp-hero-backdrop" aria-hidden="true"><i /><i /><i /></div>
         <div className="dwp-container dwp-hero" style={{ paddingBlock: '66px 74px', display: 'grid', gap: 44, alignItems: 'center' }}>
           <div>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, color: 'var(--gd-primary)', background: 'var(--gd-primary-subtle)', border: '1px solid var(--gd-primary-border)', padding: '6px 13px', borderRadius: 'var(--gd-radius-pill)' }}>
               <Icon name="sparkles" size={14} /> پشتیبان هوشمند وردپرس
             </span>
-            <h1 style={{ fontSize: 'clamp(28px, 5vw, 44px)', lineHeight: 1.25, fontWeight: 800, letterSpacing: '-.02em', margin: '18px 0 0', color: 'var(--gd-text)' }}>
-              سایت وردپرسی شما، <span style={{ color: 'var(--gd-primary)' }}>همیشه به‌روز</span> و زیر نظر اسکن روزانه
+            <h1 style={{ fontSize: 'clamp(28px, 5vw, 44px)', lineHeight: 1.25, fontWeight: 800, margin: '18px 0 0', color: 'var(--gd-text)' }}>
+              سایت وردپرسی شما، <span className="gd-gradient-text">همیشه به‌روز</span> و زیر نظر اسکن روزانه
             </h1>
             <p style={{ fontSize: 17, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: '16px 0 0', maxWidth: 520 }}>
               به‌جای استخدام پشتیبان دائمی سایت. کارهای روزمرهٔ نگهداری خودکار می‌شوند و فقط برای تصمیم‌های حساس از شما اجازه گرفته می‌شود.
@@ -58,7 +69,7 @@ export default function Landing() {
             </div>
           </div>
           <div>
-            <div style={{ borderRadius: 'var(--gd-radius-2xl)', padding: 20, boxShadow: 'var(--gd-shadow-xl)', border: '1px solid var(--gd-border)', background: 'var(--gd-bg-subtle)' }}>
+            <div className="gd-card--glass" style={{ padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-text-muted)', background: 'var(--gd-bg-inset)', border: '1px solid var(--gd-border)', borderRadius: 999, padding: '3px 10px' }}>پیش‌نمایش پنل</span>
                 <span className="dwp-spacer" /><StatusPill status="healthy" />
@@ -82,8 +93,8 @@ export default function Landing() {
       {/* Features */}
       <section id="features" className="dwp-container" style={{ paddingBlock: 66 }}>
         <div style={{ textAlign: 'center', maxWidth: 600, margin: '0 auto 40px' }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', color: 'var(--gd-primary)' }}>قابلیت‌ها</span>
-          <h2 style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-.01em', margin: '10px 0 0' }}>دقیقاً چه کارهایی انجام می‌دهد؟</h2>
+          <span className="gd-sec-head__eyebrow">قابلیت‌ها</span>
+          <h2 style={{ fontSize: 32, fontWeight: 800, margin: '10px 0 0' }}>دقیقاً چه کارهایی انجام می‌دهد؟</h2>
         </div>
         <div className="dwp-grid dwp-grid-3">
           {FEATURES.map((f) => (
@@ -100,8 +111,8 @@ export default function Landing() {
       <section id="authority" style={{ background: 'var(--gd-bg-app)', borderTop: '1px solid var(--gd-border)', borderBottom: '1px solid var(--gd-border)' }}>
         <div className="dwp-container" style={{ paddingBlock: 60 }}>
           <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 34px' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', color: 'var(--gd-primary)' }}>کنترل با شماست</span>
-            <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: '10px 0 8px' }}>سه سطح اختیار</h2>
+            <span className="gd-sec-head__eyebrow">کنترل با شماست</span>
+            <h2 style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 8px' }}>سه سطح اختیار</h2>
             <p style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--gd-text-secondary)', margin: 0 }}>تعیین کنید پشتیبان چقدر آزادی عمل داشته باشد. اقدام‌های حساس در هر سطحی به تأیید شما نیاز دارند.</p>
           </div>
           <div className="dwp-grid dwp-grid-3">
@@ -122,9 +133,9 @@ export default function Landing() {
       {/* Transparent report sample */}
       <section className="dwp-container dwp-report" style={{ paddingBlock: 64, display: 'grid', gap: 44, alignItems: 'center' }}>
         <div>
-          <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', color: 'var(--gd-primary)' }}>گزارش شفاف</span>
-          <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: '10px 0 12px' }}>به زبان ساده به شما می‌گوید چه شد</h2>
-          <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: 0 }}>هر رخداد را با همین ترتیب گزارش می‌کند: وضعیت، علت، اقدام انجام‌شده و نتیجه — بدون اصطلاحات فنی گیج‌کننده.</p>
+          <span className="gd-sec-head__eyebrow">گزارش شفاف</span>
+          <h2 style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 12px' }}>به زبان ساده به شما می‌گوید چه شد</h2>
+          <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: 0 }}>هر یافته را با همین ترتیب گزارش می‌کند: علت، اقدام پیشنهادی و وضعیت — بدون ادعایی که هنوز رخ نداده.</p>
         </div>
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-text-muted)', marginBottom: 8 }}>نمونه گزارش</div>
@@ -135,11 +146,11 @@ export default function Landing() {
                 <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--gd-danger-text)' }}>هشدار مهم</span>
                 <span className="dwp-mono" style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginInlineStart: 'auto' }}>۱۴:۳۲</span>
               </div>
-              <div style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--gd-text-secondary)', marginTop: 6 }}>صفحهٔ پرداخت از ۱۲ دقیقه قبل خطای ۵۰۰ داشت.</div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--gd-text-secondary)', marginTop: 6 }}>بررسی یکپارچگی هسته: فایلی در wp-includes با نسخهٔ رسمی وردپرس مطابقت ندارد.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 9, fontSize: 13 }}>
-                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>علت:</b> آپدیت افزونهٔ درگاه پرداخت</span>
-                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>اقدام:</b> نسخهٔ قبلی افزونه بازیابی شد</span>
-                <span style={{ color: 'var(--gd-success-text)', fontWeight: 600 }}><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>وضعیت فعلی:</b> سایت سالم است</span>
+                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>علت:</b> هنوز مشخص نیست — فایل باید بررسی شود</span>
+                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>اقدام پیشنهادی:</b> عملیات نجات؛ جایگزینی با نسخهٔ رسمی وردپرس</span>
+                <span style={{ color: 'var(--gd-warning-text)', fontWeight: 600 }}><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>وضعیت فعلی:</b> منتظر تأیید شما</span>
               </div>
             </div>
           </div>
@@ -150,8 +161,8 @@ export default function Landing() {
       <section style={{ background: 'var(--gd-bg-app)', borderTop: '1px solid var(--gd-border)' }}>
         <div className="dwp-container" style={{ paddingBlock: 64 }}>
           <div style={{ textAlign: 'center', maxWidth: 600, margin: '0 auto 36px' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', color: 'var(--gd-primary)' }}>قیمت‌گذاری ساده</span>
-            <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: '10px 0 0' }}>پلنی برای هر اندازه</h2>
+            <span className="gd-sec-head__eyebrow">قیمت‌گذاری ساده</span>
+            <h2 style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 0' }}>پلنی برای هر اندازه</h2>
           </div>
           <div className="dwp-grid dwp-grid-3" style={{ alignItems: 'start' }}>
             {PLANS.map((p) => (
@@ -175,7 +186,7 @@ export default function Landing() {
       <div data-theme="ink" style={{ background: 'var(--gd-bg-app)' }}>
         <div className="dwp-container dwp-cta" style={{ paddingBlock: 60, display: 'flex', alignItems: 'center', gap: 30, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 280 }}>
-            <h2 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.01em', margin: 0, color: 'var(--gd-text)' }}>همین امروز خیال‌تان از سایت راحت شود</h2>
+            <h2 style={{ fontSize: 30, fontWeight: 800, margin: 0, color: 'var(--gd-text)' }}>همین امروز خیال‌تان از سایت راحت شود</h2>
             <p style={{ fontSize: 15, color: 'var(--gd-text-secondary)', margin: '10px 0 0' }}>دسترسی آزمایشی — بدون کارت بانکی. اتصال در کمتر از دو دقیقه.</p>
           </div>
           <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">ساخت حساب</Button>

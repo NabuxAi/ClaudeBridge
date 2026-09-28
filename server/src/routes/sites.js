@@ -9,7 +9,7 @@ import * as events from '../events.js'
 import * as proposals from '../proposals.js'
 import * as assistant from '../assistant.js'
 import * as conversations from '../conversations.store.js'
-import { isSensitive, SENSITIVE_SET } from '../authority.js'
+import { isSensitive, SENSITIVE_SET, SENSITIVE_TOOLS } from '../authority.js'
 import { probeSite } from '../probe.js'
 import { analyse as analysePerf } from '../perf/recipes.js'
 import { checkInventory, slugOf } from '../intel/vulns.js'
@@ -349,6 +349,9 @@ function concern(name) {
         // currently holding it down, plus what the last run actually did.
         data.updatePolicy = describePolicy(site.policy)
         data.updateState = site.update_state || null
+        // The always-human actions, derived from authority.js itself so the
+        // panel's card cannot drift from what the relay actually refuses.
+        data.sensitive = SENSITIVE_TOOLS.map((t) => SENSITIVE_LABELS[t] || t)
       }
       res.json(data)
     } catch (e) { next(e) }
@@ -431,6 +434,22 @@ const KIND_LABEL = {
   rescue: 'عملیات نجات',
   conflict: 'بررسی تداخل',
   action: 'اقدام حساس',
+}
+
+/**
+ * Persian display names for the always-sensitive tools. The SET itself comes
+ * from authority.js — only the labels live here. A tool that joins
+ * SENSITIVE_TOOLS without a label is shown as its tool id rather than a guess.
+ */
+const SENSITIVE_LABELS = {
+  delete_plugin: 'حذف افزونه',
+  delete_theme: 'حذف قالب',
+  activate_theme: 'فعال‌سازی قالب',
+  edit_file: 'ویرایش فایل',
+  delete_file: 'حذف فایل',
+  db_query: 'اجرای کوئری دیتابیس',
+  rescue_rotate_keys: 'چرخش کلیدهای امنیتی',
+  create_plugin: 'ساخت افزونه',
 }
 
 router.get('/sites/:id/overview', concern('overview'))
@@ -702,21 +721,63 @@ router.post('/sites/:id/updates/run', async (req, res, next) => {
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
     }
-    const items = Array.isArray(req.body?.items) ? req.body.items : undefined
+    // The updates panel filters its batch to low-risk items on the client; a
+    // client is not trusted to do that. A single named item passes unchanged —
+    // that request IS the explicit per-item approval the featured
+    // «تأیید و به‌روزرسانی» card exists for. A batch, or an unqualified "run
+    // everything", is re-classified here against the site's own pending list
+    // with the same riskOf that labels the queue, and carries low-risk
+    // (auto-authority) items only. Nothing classifiable, nothing queued.
+    const requested = Array.isArray(req.body?.items) && req.body.items.length > 0
+      ? req.body.items
+      : null
+    let items
+    if (requested && requested.length === 1) {
+      items = requested
+    } else {
+      const statusRaw = await connector.callTool(
+        { url: site.url, secret: site.secret, siteKey: site.site_key },
+        'update_status',
+        {}
+      )
+      const statusText = statusRaw?.content?.[0]?.text
+      const pending = updatesFromStatus(typeof statusText === 'string' ? JSON.parse(statusText) : statusRaw)?.queue || []
+      const find = (it) => {
+        const type = String(it?.type || '')
+        const name = String(it?.name || '')
+        if (type === 'core') return pending.find((p) => p.id === 'core')
+        return pending.find((p) => p.kind === type && (p.file || p.name) === name)
+      }
+      // Nothing matching the site's own pending list is a different failure
+      // from "matched, but every match needs approval": a stale client list
+      // must not be told its low-risk picks are high-risk. Say which happened.
+      const matched = requested ? requested.map(find).filter(Boolean) : pending
+      const safe = matched.filter((p) => p.authority === 'auto')
+      if (safe.length === 0) {
+        return res.status(400).json({
+          message: requested
+            ? (matched.length === 0
+              ? 'هیچ‌کدام از موارد ارسالی در صف به‌روزرسانی سایت پیدا نشد؛ فهرست آپدیت‌ها را دوباره بگیرید.'
+              : 'موارد انتخاب‌شده نیازمند تأیید شماست؛ هر مورد پرریسک باید جداگانه تأیید و اجرا شود.')
+            : 'مورد کم‌ریسکی در صف نیست؛ موارد پرریسک نیازمند تأیید جداگانهٔ شماست.',
+        })
+      }
+      items = safe.map((p) => (p.id === 'core'
+        ? { type: 'core', name: p.name }
+        : { type: p.kind, name: p.file || p.name }))
+    }
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },
       'job_start',
-      { type: 'update_apply', ...(items ? { items } : {}) }
+      { type: 'update_apply', items }
     )
     const text = raw?.content?.[0]?.text
     res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
 
     events.record({
       siteId: site.id, kind: 'update', severity: 'info',
-      title: items?.length
-        ? `به‌روزرسانی دستی ${items.length} مورد شروع شد`
-        : 'به‌روزرسانی همهٔ موارد در صف شروع شد',
-      detail: { items: items || 'all', by: req.user?.sub || null },
+      title: `به‌روزرسانی دستی ${items.length} مورد شروع شد`,
+      detail: { items, by: req.user?.sub || null },
     }).catch(() => {})
   } catch (e) {
     res.status(e.status || 502).json({ message: e.message })
@@ -735,22 +796,11 @@ router.get('/sites/:id/backups/preflight', async (req, res, next) => {
     const site = await loadSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.json({
-        ok: true,
-        free_disk_bytes: 5 * 1024 * 1024 * 1024,
-        free_disk_formatted: '۵.۰ GB',
-        total_full_bytes: 280 * 1024 * 1024,
-        total_full_formatted: '۲۸۰.۰ MB',
-        total_full_duration: 35,
-        can_full_backup: true,
-        can_db_backup: true,
-        sections: {
-          db: { key: 'db', title: 'پایگاه داده (SQL)', description: 'جداول دیتابیس', bytes: 35 * 1024 * 1024, formatted: '۳۵.۰ MB', duration_sec: 5, required: true },
-          plugins: { key: 'plugins', title: 'افزونه‌ها (Plugins)', description: 'پوشه wp-content/plugins', bytes: 85 * 1024 * 1024, formatted: '۸۵.۰ MB', duration_sec: 10, required: false },
-          themes: { key: 'themes', title: 'قالب‌ها (Themes)', description: 'پوشه wp-content/themes', bytes: 20 * 1024 * 1024, formatted: '۲۰.۰ MB', duration_sec: 4, required: false },
-          uploads: { key: 'uploads', title: 'رسانه‌ها و آپلودها (Uploads)', description: 'پوشه wp-content/uploads', bytes: 140 * 1024 * 1024, formatted: '۱۴۰.۰ MB', duration_sec: 16, required: false },
-        },
-      })
+      // No measurement exists for a site we cannot reach. This used to answer
+      // with fixed numbers (۵GB free, ۲۸۰MB backup) behind ok:true — a
+      // fabricated preflight on exactly the screen where the customer decides
+      // what a backup will overwrite. Fail like every other route does.
+      return res.status(400).json({ message: 'سایت متصل نیست.' })
     }
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },

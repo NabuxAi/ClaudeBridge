@@ -22,31 +22,49 @@ export function TaskProvider({ children, siteId }) {
     if (timerRef.current) clearInterval(timerRef.current)
     if (!jobId || !siteId) return
 
+    // Consecutive unreadable polls. A job id nothing answers for (HTTP 200
+    // {ok:false}) or a server that keeps failing must end the task instead of
+    // showing «running» forever — the work itself may still run on the site.
+    let fails = 0
     timerRef.current = setInterval(async () => {
+      let s
       try {
-        const s = await siteApi(siteId).job(jobId)
-        if (!s) return
-
-        setActiveTask(() => ({
-          id: jobId,
-          title: taskMeta.title || s.message || 'در حال پردازش…',
-          type: taskMeta.type || s.type || 'job',
-          state: s.state || 'running', // 'running' | 'paused' | 'done' | 'failed'
-          progress: s.progress || (s.state === 'done' ? 100 : 30),
-          message: s.message,
-          result: s.result,
-        }))
-
-        if (s.state === 'done' || s.state === 'failed') {
+        s = await siteApi(siteId).job(jobId)
+        if (!s || s.ok === false || !s.state) throw new Error(s?.message || 'وضعیت خوانده نشد.')
+        fails = 0
+      } catch {
+        fails += 1
+        if (fails >= 5) {
           clearInterval(timerRef.current)
           timerRef.current = null
-          // Automatically clear done task after 6 seconds
-          setTimeout(() => {
-            setActiveTask((curr) => (curr?.id === jobId ? null : curr))
-          }, 6000)
+          setActiveTask((curr) => (curr?.id === jobId
+            ? {
+                ...curr,
+                state: 'failed',
+                message: 'خواندن وضعیت عملیات چند بار ناموفق ماند؛ اجرای آن روی سایت ممکن است همچنان در جریان باشد.',
+              }
+            : curr))
         }
-      } catch {
-        // continue polling or ignore
+        return
+      }
+
+      setActiveTask(() => ({
+        id: jobId,
+        title: taskMeta.title || s.message || 'در حال پردازش…',
+        type: taskMeta.type || s.type || 'job',
+        state: s.state || 'running', // 'running' | 'done' | 'failed' | 'detached'
+        progress: s.progress || (s.state === 'done' ? 100 : 30),
+        message: s.message,
+        result: s.result,
+      }))
+
+      if (s.state === 'done' || s.state === 'failed') {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+        // Automatically clear done task after 6 seconds
+        setTimeout(() => {
+          setActiveTask((curr) => (curr?.id === jobId ? null : curr))
+        }, 6000)
       }
     }, 2000)
   }, [siteId])
@@ -65,10 +83,14 @@ export function TaskProvider({ children, siteId }) {
     }
   }, [pollJob])
 
-  const cancelTask = useCallback(async () => {
+  // This cannot stop anything: a queued job (scan, backup, update) keeps
+  // running on the managed site and the server has no cancel endpoint. So the
+  // only honest effect is ending the panel's own progress display, and the
+  // bar must say exactly that — never "متوقف شد" about the job itself.
+  const cancelTask = useCallback(() => {
     if (!activeTask) return
     if (timerRef.current) clearInterval(timerRef.current)
-    setActiveTask((prev) => prev ? { ...prev, state: 'paused', title: `متوقف شد: ${prev.title}` } : null)
+    setActiveTask((prev) => (prev ? { ...prev, state: 'detached' } : null))
   }, [activeTask])
 
   const resumeTask = useCallback(async () => {

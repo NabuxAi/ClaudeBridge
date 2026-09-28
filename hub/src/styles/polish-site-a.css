@@ -1,0 +1,156 @@
+/* ============================================================
+   DigiWP hub — polish layer: site pages — batch A
+   Scope: Overview.jsx / Security.jsx / Updates.jsx (زیر SiteShell)
+   NabuxUi polish per hub/docs/nabuxui-design-mapping.md:
+   فقط توکن‌های --gd-*، ویژگی‌های منطقی برای RTL، نقش رنگ‌های
+   وضعیت دست‌نخورده (نگاشت §5). پیشوند کلاس: .psa-
+   ============================================================ */
+
+/* ---- بنر وضعیت (سلامت Overview / حکم امنیت Security) — سطح nx
+   بالا-آمده با هایلایت ۱px لبهٔ بالا (نگاشت §3.7.1). flex-wrap:
+   در عرض کم ستون آمار زیر بخش اصلی می‌رود و جداکنندهٔ عمودی به
+   افقی تبدیل می‌شود، تا خوانایی فارسی و چیدمان موبایل نشکند. */
+.psa-banner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  background: var(--gd-bg-surface);
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-xl);
+  box-shadow: var(--gd-shadow-sm), inset 0 1px 0 var(--gd-highlight);
+  padding: 22px 26px;
+  margin-block-end: 18px;
+}
+.psa-banner__main { display: flex; align-items: center; gap: 16px; flex: 0 0 auto; }
+
+/* دایرهٔ آیکون: سبز = پاسخ سالم، قرمز = پاسخ نداد، خاکستری =
+   بررسی انجام نشد (خاکستری یعنی ناموجود/اندازه‌گیری‌نشده — §5.2) */
+.psa-banner__ic {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.psa-banner__ic--ok      { background: var(--gd-success-bg); color: var(--gd-success); }
+.psa-banner__ic--down    { background: var(--gd-danger-bg);  color: var(--gd-danger); }
+.psa-banner__ic--unknown { background: var(--gd-bg-inset);   color: var(--gd-text-muted); }
+
+.psa-banner__stats {
+  flex: 1;
+  min-inline-size: 280px;
+  display: flex;
+  gap: 34px;
+  padding-inline-start: 26px;
+  border-inline-start: 1px solid var(--gd-border-subtle);
+}
+.psa-banner__stats--grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px 22px; }
+@media (max-width: 700px) {
+  .psa-banner { padding: 18px; gap: 16px; }
+  .psa-banner__stats {
+    flex-basis: 100%;
+    min-inline-size: 0;
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--gd-border-subtle);
+    padding-block-start: 14px;
+    gap: 18px;
+  }
+  .psa-banner__stats--grid { grid-template-columns: 1fr; }
+}
+
+/* ---- دوستونهٔ پایین صفحه (رخدادها/گواهی SSL) — زیر ۸۶۰px مثل
+   hero تک‌ستونه می‌شود (همان نقطهٔ شکست P1.1 در app.css) */
+.psa-cols {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 18px;
+  margin-block-start: 20px;
+}
+@media (max-width: 860px) {
+  .psa-cols { grid-template-columns: 1fr; }
+}
+
+/* ---- سطح کارت استاندارد — سه‌گانهٔ تکراری bg/border/radius/shadow
+   با هایلایت nx (نگاشت §3.7.1)؛ padding با تغییرکننده یا inline */
+.psa-card {
+  background: var(--gd-bg-surface);
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-lg);
+  box-shadow: var(--gd-shadow-sm), inset 0 1px 0 var(--gd-highlight);
+}
+.psa-card--pad  { padding: 18px 20px; }
+.psa-card--list { padding: 6px 20px; }
+
+/* ---- بنر خطا/خواندن‌نشدنی — کهربایی یعنی «نیازمند توجه»، نه
+   قرمز بحرانی؛ متن خطا صادقانه دیده می‌شود، دادهٔ غایب سبز
+   صفر نمی‌شود (قواعد حقی محصول در AGENTS.md) */
+.psa-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--gd-warning-border);
+  background: var(--gd-warning-bg);
+  border-radius: var(--gd-radius-lg);
+  padding: 13px 16px;
+  margin-block-end: 16px;
+  color: var(--gd-warning-text);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+/* ---- کارت‌های آمار Updates — ۳ ستون، زیر ۶۴۰px تک‌ستون */
+.psa-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-block-end: 20px;
+}
+@media (max-width: 640px) {
+  .psa-stats { grid-template-columns: 1fr; }
+}
+.psa-stat {
+  background: var(--gd-bg-surface);
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-lg);
+  box-shadow: var(--gd-shadow-xs), inset 0 1px 0 var(--gd-highlight);
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+/* ---- جدول صف Updates — قالب ستون‌ها عیناً قبلی؛ به‌جای
+   overflow مخفی، پنل در موبایل اسکرول می‌شود تا ستون‌ها خرد
+   نشوند (هم‌الگوی pbk-panel در دستهٔ B و نگاشت §4.4) */
+.psa-queue {
+  background: var(--gd-bg-surface);
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-lg);
+  box-shadow: var(--gd-shadow-sm), inset 0 1px 0 var(--gd-highlight);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.psa-queue__row {
+  display: grid;
+  grid-template-columns: 2fr 1.1fr 1fr 1.3fr 0.9fr;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 20px;
+  font-size: 13.5px;
+  min-inline-size: 620px;
+}
+.psa-queue__row--head {
+  padding-block: 11px;
+  background: var(--gd-bg-subtle);
+  border-block-end: 1px solid var(--gd-border);
+  font-size: var(--gd-text-xs);
+  font-weight: 700;
+  color: var(--gd-text-muted);
+  white-space: nowrap;
+}
+.psa-queue__row--body { border-block-end: 1px solid var(--gd-border-subtle); }
+.psa-queue__row--body:last-child { border-block-end: none; }

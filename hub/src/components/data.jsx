@@ -3,13 +3,19 @@ import Icon from '../lib/icons.jsx'
 const STATUS_LABELS = {
   healthy: 'سالم', warning: 'هشدار', critical: 'بحرانی',
   checking: 'در حال بررسی', info: 'اطلاع', offline: 'آفلاین',
+  unknown: 'نامشخص',
 }
 
-export function StatusPill({ status = 'healthy', label, pulse, size = 'md', className = '', children }) {
-  const doPulse = pulse === undefined ? status === 'checking' : pulse
-  const text = children != null ? children : label != null ? label : STATUS_LABELS[status]
+export function StatusPill({ status, label, pulse, size = 'md', className = '', children }) {
+  // No status = not measured or not loaded. Showing nothing is the honest
+  // state — a default of 'healthy' here is exactly how a green zero happens.
+  if (!status) return null
+  // An unrecognized value is unknown (neutral gray), never silently green.
+  const key = STATUS_LABELS[status] ? status : 'unknown'
+  const doPulse = pulse === undefined ? key === 'checking' : pulse
+  const text = children != null ? children : label != null ? label : STATUS_LABELS[key]
   return (
-    <span className={['gd-status', `gd-status--${status}`, `gd-status--${size}`, className].filter(Boolean).join(' ')}>
+    <span className={['gd-status', `gd-status--${key}`, `gd-status--${size}`, className].filter(Boolean).join(' ')}>
       <span className={'gd-status__dot' + (doPulse ? ' gd-status__dot--pulse' : '')} />
       {text}
     </span>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
@@ -74,6 +74,14 @@ export default function Rescue() {
   const [results, setResults] = useState({})
   const [busy, setBusy] = useState('')
   const [errors, setErrors] = useState({})
+  // A queued step (backup) finishes in a background job, not in the rescue
+  // response. Each running step polls its own job id; unmount clears them all.
+  const timers = useRef({})
+  const fails = useRef({})
+
+  useEffect(() => () => {
+    Object.values(timers.current).forEach(clearTimeout)
+  }, [])
 
   async function run(step) {
     if (step.confirm) {
@@ -86,18 +94,70 @@ export default function Rescue() {
     setBusy(step.id)
     setErrors((e) => ({ ...e, [step.id]: null }))
     try {
-      startTask({
-        id: `rescue-${step.id}`,
-        title: `عملیات نجات: ${step.title}`,
-        type: 'rescue',
-      })
       const res = await siteApi(siteId).rescue(step.id, step.confirm ? { confirm: true } : {})
-      setResults((r) => ({ ...r, [step.id]: res.result }))
+      // Only a queued step carries a real job id. Fabricating one instead —
+      // e.g. `rescue-backup` — would be polled forever, because nothing answers
+      // for an id the site never issued.
+      const jobId = res?.queued ? res.result?.id : null
+      if (jobId) {
+        startTask({ id: jobId, title: `عملیات نجات: ${step.title}`, type: 'rescue' })
+        pollJob(step.id, jobId)
+      } else if (res?.queued) {
+        // Queued, but the site answered without a job id (e.g. an outdated
+        // plugin refused the job type). The outcome is genuinely not available.
+        setErrors((er) => ({
+          ...er,
+          [step.id]: res.result?.message || 'اجرا در صف رفت ولی شناسهٔ وضعیتی برنگشت — بعداً دوباره اجرا کنید.',
+        }))
+        setBusy((b) => (b === step.id ? '' : b))
+      } else {
+        setResults((r) => ({ ...r, [step.id]: res?.result }))
+        setBusy((b) => (b === step.id ? '' : b))
+      }
     } catch (e) {
       setErrors((er) => ({ ...er, [step.id]: e?.message || 'اجرا نشد.' }))
-    } finally {
-      setBusy('')
+      setBusy((b) => (b === step.id ? '' : b))
     }
+  }
+
+  // Same contract as Speed's poll: transient read failures retry a few times,
+  // then the step stops honestly instead of hanging on «در حال اجرا». The
+  // finished job carries the step's real result (backup: counts, size,
+  // verified) or its real failure message.
+  function pollJob(stepId, jobId) {
+    clearTimeout(timers.current[stepId])
+    timers.current[stepId] = setTimeout(async () => {
+      let s
+      try {
+        s = await siteApi(siteId).job(jobId)
+        // A job the site no longer knows answers HTTP 200 {ok:false} — without
+        // this check the poll would never terminate.
+        if (!s || s.ok === false || !s.state) throw new Error(s?.message || 'وضعیت خوانده نشد.')
+        fails.current[stepId] = 0
+      } catch {
+        fails.current[stepId] = (fails.current[stepId] || 0) + 1
+        if (fails.current[stepId] >= 5) {
+          delete timers.current[stepId]
+          setErrors((er) => ({
+            ...er,
+            [stepId]: 'خواندن وضعیت مرحله چند بار ناموفق ماند. اجرای آن روی سایت ادامه دارد — بعداً دوباره اجرا کنید.',
+          }))
+          setBusy((b) => (b === stepId ? '' : b))
+          return
+        }
+        return pollJob(stepId, jobId)
+      }
+      delete timers.current[stepId]
+      if (s.state === 'done') {
+        setResults((r) => ({ ...r, [stepId]: s.result }))
+        setBusy((b) => (b === stepId ? '' : b))
+      } else if (s.state === 'failed') {
+        setErrors((er) => ({ ...er, [stepId]: s.message || 'اجرا روی سایت ناموفق بود.' }))
+        setBusy((b) => (b === stepId ? '' : b))
+      } else {
+        pollJob(stepId, jobId)
+      }
+    }, 2000)
   }
 
   return (

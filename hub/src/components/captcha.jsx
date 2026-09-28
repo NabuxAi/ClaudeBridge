@@ -29,7 +29,8 @@ export default function Captcha({ value, onChange, onReady, refreshKey = 0, erro
       onReady?.(c.id)
       onChange?.('')
     } catch (e) {
-      setFailed(e?.message || 'سؤال امنیتی بارگذاری نشد.')
+      // خطای شبکه پیام انگلیسی خام «Failed to fetch» می‌دهد؛ فقط پیام فارسیِ خطای سرور را نشان بده
+      setFailed(e?.name === 'ApiError' && e?.message ? e.message : 'سؤال امنیتی بارگذاری نشد؛ اتصال به سرور برقرار نیست.')
     } finally {
       setLoading(false)
     }
@@ -46,7 +47,7 @@ export default function Captcha({ value, onChange, onReady, refreshKey = 0, erro
         onReady?.(c.id)
         onChange?.('')
       })
-      .catch((e) => { if (alive) setFailed(e?.message || 'سؤال امنیتی بارگذاری نشد.') })
+      .catch((e) => { if (alive) setFailed(e?.name === 'ApiError' && e?.message ? e.message : 'سؤال امنیتی بارگذاری نشد؛ اتصال به سرور برقرار نیست.') })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [refreshKey, onReady, onChange])

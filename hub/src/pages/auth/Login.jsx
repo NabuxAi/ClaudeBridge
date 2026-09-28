@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Button, Input, Checkbox } from '../../components/index.js'
+import { Button, Input } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
 import { useAuth } from '../../lib/auth.jsx'
 import { auth as authApi } from '../../lib/api.js'
@@ -56,7 +56,7 @@ export default function Login() {
 
   return (
     <>
-      <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.01em', margin: 0 }}>ورود به حساب</h2>
+      <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>ورود به حساب</h2>
       <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px' }}>
         به پنل پشتیبان هوشمند سایت خود وارد شوید.
       </p>
@@ -65,8 +65,11 @@ export default function Login() {
           value={email} onChange={(e) => setEmail(e.target.value)} required />
         <Input label="رمز عبور" type="password" placeholder="••••••••" leftIcon="lock"
           value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Checkbox label="مرا به خاطر بسپار" defaultChecked />
+        {/* "Remember me" lived here as a defaultChecked checkbox with no
+            handler — the token is kept for 7 days regardless (api.js token
+            storage). A control that claims behaviour it has is removed until
+            real session-length handling exists. */}
+        <div>
           <Link to="/reset-password" style={{ fontSize: 13, fontWeight: 600 }}>فراموشی رمز؟</Link>
         </div>
         {needCaptcha && (

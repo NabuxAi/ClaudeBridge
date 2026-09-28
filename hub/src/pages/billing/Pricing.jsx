@@ -35,12 +35,17 @@ const PLAN_DETAILS = {
   },
   agency: {
     subtitle: 'برای آژانس‌ها و مدیریت سایت مشتریان',
-    cta: 'تماس با تیم فروش',
+    // Same pilot request the other plans make — no real sales contact exists
+    // yet, and a "تماس با تیم فروش" button that only requests a pilot would be
+    // a label lying about its destination. Revisit when a support address is.
+    cta: 'درخواست دسترسی آزمایشی',
     variant: 'secondary',
     features: [
       { t: 'همهٔ امکانات حرفه‌ای، به‌علاوهٔ:', head: true },
       { t: 'سایت نامحدود' },
-      { t: 'گزارش امنیتی روزانه در تلگرام' },
+      // No "گزارش تلگرام" here: the daily digest goes to the operator's fixed
+      // TELEGRAM_CHAT_ID, not to site owners — same reason Landing omits it.
+      { t: 'مدیریت سایت‌های مشتری از یک پنل' },
     ],
   },
 }
@@ -54,7 +59,6 @@ const ROWS = [
   { label: 'بررسی یکپارچگی هسته', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
   { label: 'بررسی تداخل', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
   { label: 'عملیات نجات', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
-  { label: 'گزارش تلگرام', base: { icon: 'minus' }, pro: { icon: 'minus' }, agency: { icon: 'check' } },
   { label: 'پشتیبانی', base: 'تیکت', pro: 'تیکت', agency: 'اولویت‌دار' },
 ]
 

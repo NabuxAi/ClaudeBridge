@@ -17,29 +17,62 @@ export default function Hosting() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState('')
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const [attempt, setAttempt] = useState(0)
+  // The route element is reused when only :siteId changes, so state from the
+  // previous site survives in this component. `loadedFor` says which site the
+  // rendered state belongs to: until it matches, the skeleton shows and no
+  // stale message or value leaks through.
+  const [loadedFor, setLoadedFor] = useState(null)
 
   useEffect(() => {
     let alive = true
-    Promise.all([account.hostingOptions(), account.sites()]).then(([opts, sites]) => {
-      if (!alive) return
-      setOptions(opts)
-      const me = sites.find((s) => s.id === siteId)
-      const h = me?.hosting || {}
-      setDescribed(h)
-      setForm({
-        region: h.region || 'unknown',
-        provider: h.provider || 'other',
-        providerName: h.providerName || '',
-        egress: h.egress || 'auto',
-        callbackUrl: h.callbackUrl || '',
+    Promise.all([account.hostingOptions(), account.sites()])
+      .then(([opts, sites]) => {
+        if (!alive) return
+        setOptions(opts)
+        const me = sites.find((s) => s.id === siteId)
+        const h = me?.hosting || {}
+        setDescribed(h)
+        setForm({
+          region: h.region || 'unknown',
+          provider: h.provider || 'other',
+          providerName: h.providerName || '',
+          egress: h.egress || 'auto',
+          callbackUrl: h.callbackUrl || '',
+        })
+        // Session-scoped notes ("saved", server URL, errors) never outlive
+        // the load they belong to.
+        setServerUrl(''); setSaved(''); setError(''); setLoadError('')
+        setLoadedFor(siteId)
       })
-    })
+      .catch((e) => {
+        if (!alive) return
+        setOptions(null); setForm(null); setDescribed(null)
+        setLoadError(e?.message || 'بارگذاری تنظیمات میزبانی انجام نشد.')
+        setLoadedFor(siteId)
+      })
     return () => { alive = false }
-  }, [siteId])
+  }, [siteId, attempt])
 
   const head = <PageHead title="میزبانی" subtitle="محل سایت و مسیر ارتباط ما با آن" />
 
-  if (!form || !options) {
+  // A failed first load must say so and offer a way back — never an eternal
+  // skeleton that looks like slowness.
+  if (loadError && loadedFor === siteId) {
+    return (
+      <>
+        {head}
+        <div className="gd-card gd-card--e-sm gd-card--p-md dwp-error-row">
+          <Icon name="alert-circle" size={17} style={{ color: 'var(--gd-danger)' }} />
+          <span style={{ fontSize: 13.5, color: 'var(--gd-danger-text)', flex: 1 }}>{loadError}</span>
+          <Button variant="secondary" size="sm" onClick={() => setAttempt((a) => a + 1)}>تلاش دوباره</Button>
+        </div>
+      </>
+    )
+  }
+
+  if (loadedFor !== siteId || !form || !options) {
     return (
       <>
         {head}
@@ -57,11 +90,47 @@ export default function Hosting() {
     (p) => p.id === 'other' || form.region === 'unknown' || p.region === form.region
   )
 
+  // Changing the region can disqualify the selected provider. Left alone, the
+  // controlled select would render empty while form.provider kept the stale
+  // value — a pair the server happily stores but this panel can no longer show.
+  // Drop back to "other" so what is sent is always what is on screen.
+  const changeRegion = (region) => {
+    setForm((f) => {
+      const keepsProvider = region === 'unknown' || f.provider === 'other'
+        || options.providers.some((p) => p.id === f.provider && p.region === region)
+      return keepsProvider ? { ...f, region } : { ...f, region, provider: 'other' }
+    })
+    setSaved('')
+  }
+
   async function save() {
+    // The server silently nulls a callback URL it cannot parse
+    // (server/src/hosting.js normaliseUrl). Refuse the same input here, so the
+    // field never keeps showing an address that was not actually stored.
+    const cb = form.callbackUrl.trim()
+    if (cb) {
+      let valid = false
+      try { valid = ['http:', 'https:'].includes(new URL(cb).protocol) } catch { valid = false }
+      if (!valid) {
+        setError('آدرس بازگشت نامعتبر است — باید با http:// یا https:// شروع شود.')
+        return
+      }
+    }
     setSaving(true); setError(''); setSaved('')
     try {
       const res = await siteApi(siteId).setHosting(form)
-      setDescribed(res.hosting)
+      const h = res.hosting || {}
+      setDescribed(h)
+      // Sync the inputs with what the server actually stored — it normalises
+      // values (trims the URL, nulls an unknown provider name), so the form
+      // must not keep showing what it refused.
+      setForm((f) => ({
+        region: h.region || f.region,
+        provider: h.provider || f.provider,
+        providerName: h.providerName || '',
+        egress: h.egress || f.egress,
+        callbackUrl: h.callbackUrl || '',
+      }))
       setServerUrl(res.serverUrl || '')
       setSaved('ذخیره شد.')
     } catch (e) {
@@ -71,14 +140,14 @@ export default function Hosting() {
 
   return (
     <>
-      <PageHead title="میزبانی" subtitle="محل سایت و مسیر ارتباط ما با آن" />
+      {head}
 
-      <div style={card}>
+      <div className="gd-card gd-card--e-sm gd-card--p-md">
         <Field
           label="سایت روی کدام کشور میزبانی می‌شود؟"
           hint="اگر درخواست‌های ما از سرور نامناسبی برود، ممکن است اصلاً به سایت نرسد و ما آن را «خاموش» ببینیم."
         >
-          <Select value={form.region} onChange={(e) => set('region')(e.target.value)}>
+          <Select value={form.region} onChange={(e) => changeRegion(e.target.value)}>
             {options.regions.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
           </Select>
           <p style={hint}>{options.regions.find((r) => r.id === form.region)?.note}</p>
@@ -114,7 +183,7 @@ export default function Hosting() {
           <Input value={form.callbackUrl} onChange={(e) => set('callbackUrl')(e.target.value)} placeholder="https://api.digiwp.com/v1" dir="ltr" />
         </Field>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end', marginTop: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap' }}>
           {saved && <span style={{ fontSize: 12.5, color: 'var(--gd-success)' }}>{saved}</span>}
           {error && <span style={{ fontSize: 12.5, color: 'var(--gd-danger-text)' }}>{error}</span>}
           <Button variant="primary" size="md" leftIcon="check" disabled={saving} onClick={save}>
@@ -124,7 +193,7 @@ export default function Hosting() {
       </div>
 
       {serverUrl && (
-        <div style={{ ...card, marginTop: 16 }}>
+        <div className="gd-card gd-card--e-sm gd-card--p-md" style={{ marginTop: 16 }}>
           <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>آدرس فعلی بازگشت</div>
           <p style={{ ...hint, marginTop: 0 }}>
             افزونهٔ روی سایت شما دفعهٔ بعد که تنظیمات را می‌خواند، این آدرس را می‌گیرد.
@@ -136,7 +205,7 @@ export default function Hosting() {
       {/* What we already know we cannot do on this host. Said before someone
           runs into it, not after a job fails and looks like our bug. */}
       {described?.traits?.length > 0 && (
-        <div style={{ ...card, marginTop: 16 }}>
+        <div className="gd-card gd-card--e-sm gd-card--p-md" style={{ marginTop: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 700, marginBottom: 10 }}>
             <Icon name="info" size={16} style={{ color: 'var(--gd-text-muted)' }} />
             محدودیت‌های شناخته‌شدهٔ این هاست
@@ -169,10 +238,6 @@ function Field({ label, hint: h, children }) {
   )
 }
 
-const card = {
-  background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)',
-  borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-sm)', padding: '18px 20px',
-}
 const hint = { fontSize: 11.5, color: 'var(--gd-text-muted)', margin: '6px 0 0', lineHeight: 1.9 }
 const mono = {
   display: 'block', fontFamily: 'var(--gd-font-mono)', fontSize: 12,

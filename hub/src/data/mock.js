@@ -66,7 +66,7 @@ export const plans = () => delay([
     '۵ سایت', 'همهٔ امکانات پلن پایه', 'بررسی یکپارچگی فایل‌های هسته', 'بررسی تداخل افزونه و قالب', 'عملیات نجات',
   ] },
   { id: 'agency', name: 'آژانس', price: 990000, popular: false, features: [
-    'سایت نامحدود', 'همهٔ امکانات پلن حرفه‌ای', 'گزارش امنیتی روزانه در تلگرام',
+    'سایت نامحدود', 'همهٔ امکانات پلن حرفه‌ای', 'مدیریت سایت‌های مشتری از یک پنل',
   ] },
 ])
 export const billing = () => delay({
@@ -144,7 +144,6 @@ export const acceptInvitation = () => delay({
   id: 'tm_demo', userId: 'u_1', name: 'مریم رضایی', email: 'maryam@example.com',
   role: 'viewer', roleLabel: 'فقط مشاهده', initials: 'م', status: 'active', joinedAt: Date.now(),
 })
-export const notifications = () => delay({ provenance: { live: [], unavailable: 'تنظیمات اعلان هنوز ساخته نشده. گزارش امنیتی روزانه فقط به تلگرامی می‌رود که در سرور پیکربندی شده.' } })
 
 let mockNotificationChannels = [
   { id: 'email', label: 'ایمیل', desc: 'هشدارها و گزارش روزانه به ایمیل شما', enabled: true, destination: currentUser.email, quietHoursStart: null, quietHoursEnd: null, updatedAt: Date.now() },

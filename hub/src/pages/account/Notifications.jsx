@@ -2,16 +2,31 @@ import { useEffect, useState } from 'react'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input, Select, Switch, Badge } from '../../components/index.js'
-import { account } from '../../lib/api.js'
+import { account, ApiError } from '../../lib/api.js'
 
 /**
  * Notification preferences and contact enrollment.
  *
- * This screen replaces the previous placeholder: every toggle, contact row,
- * and quiet-hour setting is persisted through the real API. There is no mock
- * fallback in production; loading, error, empty, and unavailable states are
- * rendered honestly.
+ * Every toggle, contact row, and quiet-hour setting is persisted through the
+ * real API (/notifications/*). Those routes only exist once the server mounts
+ * its notifications router; while it does not, this screen says so plainly in
+ * an explicit unavailable state instead of claiming persistence that is not
+ * there. There is no mock fallback in production; loading, error, empty, and
+ * unavailable states are rendered honestly.
  */
+
+/**
+ * Express answers an unmounted route with a bare «Not Found»; name what is
+ * actually missing instead. A server-provided message still wins.
+ */
+function describeError(e, fallback, notFound) {
+  if (e instanceof ApiError) {
+    if (e.status === 404 && (!e.message || e.message === 'Not Found')) return notFound
+    if (e.message) return e.message
+  }
+  return e?.message || fallback
+}
+
 export default function Notifications() {
   const [channels, setChannels] = useState(null)
   const [contacts, setContacts] = useState(null)
@@ -21,10 +36,14 @@ export default function Notifications() {
   const [newContact, setNewContact] = useState({ type: 'email', value: '' })
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState('')
+  const [rowBusy, setRowBusy] = useState({})
+  const [rowError, setRowError] = useState('')
 
   const [savingChannel, setSavingChannel] = useState('')
-  const [channelSaved, setChannelSaved] = useState('')
-  const [channelError, setChannelError] = useState('')
+  // نتیجهٔ ذخیره به کانال صاحبش گره می‌خورد؛ یک رشتهٔ مشترک پیام «ذخیره شد.»
+  // یا خطای یک کانال را زیر همهٔ کارت‌های کانال تکرار می‌کرد.
+  const [channelSaved, setChannelSaved] = useState(null)
+  const [channelError, setChannelError] = useState(null)
 
   useEffect(() => {
     let alive = true
@@ -35,7 +54,7 @@ export default function Notifications() {
       setLoading(false)
     }).catch((e) => {
       if (!alive) return
-      setError(e?.message || 'بارگذاری تنظیمات انجام نشد.')
+      setError(describeError(e, 'بارگذاری تنظیمات انجام نشد.', 'تنظیمات اعلان هنوز روی سرور فعال نشده است.'))
       setLoading(false)
     })
     return () => { alive = false }
@@ -43,8 +62,8 @@ export default function Notifications() {
 
   async function saveChannel(channel) {
     setSavingChannel(channel.id)
-    setChannelSaved('')
-    setChannelError('')
+    setChannelSaved(null)
+    setChannelError(null)
     try {
       const saved = await account.saveNotificationPreference(channel.id, {
         enabled: channel.enabled,
@@ -53,9 +72,9 @@ export default function Notifications() {
         quietHoursEnd: channel.quietHoursEnd,
       })
       setChannels((prev) => prev.map((c) => (c.id === saved.channel || c.id === channel.id ? { ...c, ...saved } : c)))
-      setChannelSaved('ذخیره شد.')
+      setChannelSaved({ id: channel.id, message: 'ذخیره شد.' })
     } catch (e) {
-      setChannelError(e?.message || 'ذخیره نشد.')
+      setChannelError({ id: channel.id, message: describeError(e, 'ذخیره نشد.', 'ذخیرهٔ تنظیمات اعلان هنوز روی سرور فعال نشده است.') })
     } finally {
       setSavingChannel('')
     }
@@ -63,6 +82,9 @@ export default function Notifications() {
 
   function updateChannel(id, patch) {
     setChannels((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)))
+    // الگوی صفحهٔ پروفایل: با هر ویرایش، پیام «ذخیره شد.» قبلی معتبر نیست.
+    setChannelSaved(null)
+    setChannelError(null)
   }
 
   async function addContact(e) {
@@ -73,28 +95,37 @@ export default function Notifications() {
       const contact = await account.addNotificationContact(newContact)
       setContacts((prev) => [...prev.filter((c) => !(c.type === contact.type && c.value === contact.value)), contact])
       setNewContact({ type: 'email', value: '' })
-    } catch (e) {
-      setAddError(e?.message || 'ثبت تماس انجام نشد.')
+    } catch (e2) {
+      setAddError(describeError(e2, 'ثبت تماس انجام نشد.', 'ثبت مخاطب هنوز روی سرور فعال نشده است.'))
     } finally {
       setAdding(false)
     }
   }
 
   async function verifyContact(id) {
+    setRowBusy((b) => ({ ...b, [id]: true }))
+    setRowError('')
     try {
       const updated = await account.verifyNotificationContact(id)
       setContacts((prev) => prev.map((c) => (c.id === id ? updated : c)))
     } catch (e) {
-      setAddError(e?.message || 'تأیید تماس انجام نشد.')
+      setRowError(describeError(e, 'تأیید تماس انجام نشد.', 'تأیید مخاطب هنوز روی سرور فعال نشده است.'))
+    } finally {
+      setRowBusy((b) => ({ ...b, [id]: false }))
     }
   }
 
   async function removeContact(id) {
+    if (!window.confirm('این مخاطب حذف می‌شود. ادامه می‌دهید؟')) return
+    setRowBusy((b) => ({ ...b, [id]: true }))
+    setRowError('')
     try {
       await account.deleteNotificationContact(id)
       setContacts((prev) => prev.filter((c) => c.id !== id))
     } catch (e) {
-      setAddError(e?.message || 'حذف تماس انجام نشد.')
+      setRowError(describeError(e, 'حذف تماس انجام نشد.', 'حذف مخاطب هنوز روی سرور فعال نشده است.'))
+    } finally {
+      setRowBusy((b) => ({ ...b, [id]: false }))
     }
   }
 
@@ -119,7 +150,7 @@ export default function Notifications() {
 
       <div style={{ display: 'grid', gap: 18 }}>
         {channels && channels.map((channel) => (
-          <div key={channel.id} style={card}>
+          <div key={channel.id} className="dwp-card" style={{ padding: '18px 20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
               <Switch
                 id={`ch-${channel.id}`}
@@ -132,7 +163,7 @@ export default function Notifications() {
               <p style={{ fontSize: 12, color: 'var(--gd-text-muted)', margin: 0, flex: '1 1 100%' }}>{channel.desc}</p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+            <div className="dwp-acc-channel-grid" style={{ marginBottom: 14 }}>
               <Input
                 label="مقصد"
                 hint={channel.id === 'email' ? 'مثلاً your@email.com' : channel.id === 'sms' ? 'مثلاً ۰۹۱۲۳۴۵۶۷۸۹' : 'توکن یا اشتراک push'}
@@ -158,9 +189,9 @@ export default function Notifications() {
               </Select>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
-              {channelSaved && savingChannel !== channel.id && <span style={{ fontSize: 12.5, color: 'var(--gd-success)' }}>{channelSaved}</span>}
-              {channelError && savingChannel !== channel.id && <span style={{ fontSize: 12.5, color: 'var(--gd-danger-text)' }}>{channelError}</span>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              {channelSaved?.id === channel.id && <span style={{ fontSize: 12.5, color: 'var(--gd-success)' }}>{channelSaved.message}</span>}
+              {channelError?.id === channel.id && <span style={{ fontSize: 12.5, color: 'var(--gd-danger-text)' }}>{channelError.message}</span>}
               <Button variant="secondary" size="md" disabled={savingChannel === channel.id} onClick={() => saveChannel(channel)}>
                 {savingChannel === channel.id ? 'در حال ذخیره…' : 'ذخیرهٔ کانال'}
               </Button>
@@ -169,7 +200,7 @@ export default function Notifications() {
         ))}
       </div>
 
-      <div style={{ ...card, marginTop: 18 }}>
+      <div className="dwp-card" style={{ padding: '18px 20px', marginTop: 18 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>مخاطبان ثبت‌شده</div>
         <p style={{ ...hint, marginTop: 0, marginBottom: 12 }}>
           هر ایمیل، شماره یا دستگاهی که می‌خواهید روی آن اعلان بفرستیم باید اینجا ثبت و ترجیحاً تأیید شود.
@@ -182,7 +213,7 @@ export default function Notifications() {
         {contacts && contacts.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             {contacts.map((c, i) => (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: i ? '1px solid var(--gd-border-subtle)' : 'none' }}>
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: i ? '1px solid var(--gd-border-subtle)' : 'none', flexWrap: 'wrap' }}>
                 <Icon name={CONTACT_ICON[c.type] || 'at-sign'} size={16} style={{ color: 'var(--gd-text-muted)' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, direction: 'ltr' }}>{c.value}</div>
@@ -194,17 +225,27 @@ export default function Notifications() {
                   {c.verified ? 'تأیید شده' : 'تأیید نشده'}
                 </Badge>
                 {!c.verified && (
-                  <Button variant="secondary" size="sm" onClick={() => verifyContact(c.id)}>
+                  <Button variant="secondary" size="sm" loading={rowBusy[c.id]} onClick={() => verifyContact(c.id)}>
                     تأیید
                   </Button>
                 )}
-                <Button variant="ghost" size="sm" leftIcon="trash-2" onClick={() => removeContact(c.id)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  leftIcon={rowBusy[c.id] ? undefined : 'trash-2'}
+                  loading={rowBusy[c.id]}
+                  onClick={() => removeContact(c.id)}
+                >
                   حذف
                 </Button>
               </div>
             ))}
           </div>
         )}
+
+        {/* Row-level failures surface next to the row they came from, not in
+            the add-form message far below. */}
+        {rowError && <p style={{ ...hint, color: 'var(--gd-danger-text)', marginBottom: 12 }}>{rowError}</p>}
 
         <form onSubmit={addContact} style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <Select
@@ -222,7 +263,7 @@ export default function Notifications() {
             onChange={(e) => setNewContact((s) => ({ ...s, value: e.target.value }))}
             placeholder={newContact.type === 'email' ? 'your@email.com' : newContact.type === 'sms' ? '۰۹۱۲۳۴۵۶۷۸۹' : 'توکن push'}
             dir="ltr"
-            style={{ flex: '1 1 240px' }}
+            wrapClassName="dwp-contact-value-field"
           />
           <Button variant="primary" size="md" type="submit" disabled={adding}>
             {adding ? 'در حال ثبت…' : 'ثبت مخاطب'}
@@ -254,14 +295,6 @@ const CONTACT_LABEL = {
 }
 
 const faNum = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
-
-const card = {
-  background: 'var(--gd-bg-surface)',
-  border: '1px solid var(--gd-border)',
-  borderRadius: 'var(--gd-radius-lg)',
-  boxShadow: 'var(--gd-shadow-sm)',
-  padding: '18px 20px',
-}
 
 const hint = { fontSize: 11.5, color: 'var(--gd-text-muted)', margin: '8px 0 0', lineHeight: 1.9 }
 
