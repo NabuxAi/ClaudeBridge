@@ -135,3 +135,48 @@ test('manual update rollback needs a human at every authority level', () => {
   }
   assert.equal(classify('update_rollback'), 'sensitive')
 })
+
+test('design-viewing tools are readable at every level', () => {
+  // list_block_types, render_blocks and list_elementor_widgets only look: the
+  // registered palette, and a compiled preview of specs nothing saves. Seeing
+  // what a design would become is what lets a cautious owner review it.
+  for (const level of AUTHORITY_LEVELS) {
+    for (const tool of ['list_block_types', 'render_blocks', 'list_elementor_widgets']) {
+      const v = permits(level, tool)
+      assert.equal(v.allowed, true, `${tool} must be readable at ${level}`)
+      assert.equal(v.kind, 'read')
+    }
+  }
+})
+
+test('in-place block/elementor editing never runs unattended', () => {
+  // append_blocks and elementor_section_append change a live page the moment
+  // they run. Revisions keep the history, but policy treats in-place editing
+  // of existing content like edit_file: a human approves, at every level —
+  // creating a new draft page (create_block_page, elementor_page_create) is
+  // the recoverable half and stays mutating.
+  for (const level of AUTHORITY_LEVELS) {
+    for (const tool of ['append_blocks', 'elementor_section_append']) {
+      const v = permits(level, tool)
+      assert.equal(v.allowed, false, `${tool} must never run unattended at ${level}`)
+      assert.equal(v.kind, 'sensitive')
+    }
+  }
+  assert.equal(permits('auto', 'create_block_page').allowed, true)
+  assert.equal(permits('auto', 'elementor_page_create').allowed, true)
+})
+
+test('publishing a designed page asks a human; creating a draft does not', () => {
+  // The draft default of create_block_page / elementor_page_create is a
+  // convention. The status argument is the real decision, so it carries the
+  // classification: draft stays recoverable, publish is live content and
+  // must not happen unattended under `auto`.
+  for (const tool of ['create_block_page', 'elementor_page_create']) {
+    assert.equal(classify(tool, { status: 'draft' }), 'mutating', `${tool} draft stays mutating`)
+    assert.equal(permits('auto', tool, { status: 'draft' }).allowed, true)
+    assert.equal(classify(tool, { status: 'publish' }), 'sensitive', `${tool} publish must be sensitive`)
+    assert.equal(permits('auto', tool, { status: 'publish' }).allowed, false)
+    // No args at all is the tool's own classification: draft-shaped mutating.
+    assert.equal(classify(tool), 'mutating')
+  }
+})

@@ -43,11 +43,16 @@ AI/MCP client --------------------------------> WordPress plugin directly
      Connector Mode.
    - PHP 7.4+ / WordPress 5.6+ target.
    - Version at baseline: `3.7.4`.
-   - Current release after the 2026-09-28 transactional safe-update
-     pipeline (P0.4): `3.8.0`.
-   - Approximately 145 advertised tools: 16 initial tools, 79 generated CRUD
-     tools, and 50 appended tools (47 at baseline plus `update_health_check`,
-     `update_journal_get`, `update_rollback`).
+   - Current release after the 2026-09-29 smart-design wave (seven Gutenberg
+     block / Elementor tools) on top of the 2026-09-28 transactional
+     safe-update pipeline (P0.4): `3.9.0`.
+   - 151 advertised tools: 17 initial tools, 79 generated CRUD tools, and 55
+     appended tools (48 before the design wave plus the seven `3.9.0` design
+     tools: `list_block_types`, `render_blocks`, `create_block_page`,
+     `append_blocks`, `list_elementor_widgets`, `elementor_page_create`,
+     `elementor_section_append`). Counted from the source on 2026-09-29; the
+     previous "16 initial / 50 appended ≈ 145" split was already off — the
+     initial array holds 17 entries and the pre-design appended section 48.
 
 2. `server/`
    - Express relay and control plane backed by PostgreSQL.
@@ -157,6 +162,23 @@ for UI convenience.
 - Transactional manual update pipeline (`3.8.0`): preflight, per-wave file
   snapshots, health gates, automatic plugin/theme rollback, durable journal —
   see P0.4 for the honest boundaries.
+- Block/Elementor design tools (`3.9.0`): `render_blocks` compiles JSON block
+  specs into Gutenberg markup and returns it — a pure preview, nothing is
+  saved; `create_block_page` and `elementor_page_create` create new pages
+  from structured block / section-column-widget specs and default to `draft`
+  so a human reviews before anything goes live; `append_blocks` and
+  `elementor_section_append` append to an existing page in place and are
+  classified sensitive at every authority level — `edit_file`'s precedent,
+  pinned in `server/src/authority.js:121-126`; the Elementor tools work only
+  when Elementor is active and refuse honestly otherwise, and only block
+  names / widget types registered on the site are accepted. Two more honesty
+  gates pinned in tests: `append_blocks` refuses Elementor builder-mode pages
+  (post_content changes there are invisible to visitors) and reports whether
+  revisions are actually enabled for that post type instead of promising an
+  undo that may not exist; and `classify()` treats `status: 'publish'` on the
+  two create tools as sensitive — the draft default is a convention, the
+  status argument is the decision, so publishing asks a human even under
+  `auto`.
 - Three-level authority, proposals, approvals, and audit trail.
 - Site readings, event/incidence model, and limited health probes.
 - Malware/signature scan and WordPress core checksum integrity.
@@ -536,9 +558,11 @@ external-services/privacy disclosure. Optional external calls are acceptable;
 hidden external calls are not.
 
 **Status: resolved (counts aligned).** `PRODUCT_SPEC.md` now says "more than 130
-tools" instead of 58. README badges track `CB_VERSION` (currently 3.8.0). The
-"100+ tools" copy in every translated README is updated to "130+ tools". The
-external-services/privacy disclosure remains in the roadmap.
+tools" instead of 58. The "100+ tools" copy in every translated README is
+updated to "130+ tools". README version badges have drifted again: they read
+`3.7.6` while `CB_VERSION` is `3.9.0` (verified 2026-09-29) — update the
+badges with the next release touch. The external-services/privacy disclosure
+remains in the roadmap.
 
 ### P1.7 — release archive can trigger malware-upload scanners
 
@@ -637,25 +661,34 @@ These rules override visual mockups and optimistic marketing copy:
 
 ## Verified test/build baseline
 
-Verified on 2026-09-28 (after the 3.8.0 safe-update pipeline and the hub
-NabuxUi unification + two bug-fix waves):
+Verified on 2026-09-29 (after the `3.9.0` design-tools wave):
 
-- `php -l` passed for `wp-claude-bridge.php` and both generated artifacts
-  (`dist/digiwp-ai-bridge/`, `dist/digi-ai-bridge/`), after rebuilding both.
-- Hub `npm run lint` and `npm run build` — passed.
-- Server suite without PostgreSQL:
-  - 290 tests discovered (includes `safe-update-pipeline.test.js` and the
-    new authority cases);
-  - 278 passed;
+- `php -l` passed for `wp-claude-bridge.php`,
+  `dist/digiwp-ai-bridge/digiwp-ai-bridge.php`, and
+  `dist/digi-ai-bridge/digi-ai-bridge.php`; both dist artifacts pin
+  `CB_VERSION` `3.9.0`.
+- Server suite without PostgreSQL (`npm test` in `server/`):
+  - 300 tests discovered — includes the new `design-tools.test.js` (7
+    cases), the new authority cases, and the publish-vs-draft
+    classification case added with the honesty gates;
+  - 288 passed;
   - 0 failed;
   - 12 skipped for `CB_TEST_DATABASE_URL`.
+- Server suite with PostgreSQL (`CB_TEST_DATABASE_URL=… npm test` against a
+  local postgres 16 instance): 357 tests discovered; 357 passed; 0 failed;
+  0 skipped. The count is higher because database-dependent files register
+  one placeholder test when the URL is absent and their real cases only
+  register when it is set (e.g. `server/test/pairing-flow.test.js:20-23`).
 - The skipped tests cover database properties such as pairing flow, proposal
   outcome/claim behavior, audit persistence, and demo-seed guarding. A no-database
   green run is not the full release gate.
-- Full PostgreSQL baseline: 287 passing, none skipped (2026-08-16; re-run
-  rather than relying on that count after changes).
+- Hub `npm run lint` and `npm run build` were last verified passing on
+  2026-09-28 (before the design wave, which touched no hub source); re-run
+  them after any hub change.
 
-Historical baseline (2026-08-16): 264 discovered / 260 passed / 4 skipped.
+Historical baselines: 2026-09-28 no-database run 290 discovered / 278
+passed / 12 skipped; 2026-08-16 full-PostgreSQL run 287 passing, none
+skipped; 2026-08-16 no-database run 264 / 260 / 4.
 
 ### Canonical release verification
 
@@ -679,7 +712,9 @@ npm run build
 
 Build plugin artifacts before the server suite. At baseline,
 `plugin-tool-dispatch.test.js` reads both generated PHP files directly and can
-fail with `ENOENT` if `dist/` has not been built.
+fail with `ENOENT` if `dist/` has not been built. As of `3.9.0`,
+`design-tools.test.js` reads the canonical source plus both dist artifacts
+the same way, so the same ordering requirement applies.
 
 `npm run lint` in `hub/` is not a valid gate until ESLint and its configuration
 are added. Fix the gate rather than deleting the script.

@@ -43,6 +43,8 @@ export const READ_TOOLS = Object.freeze([
   'list_revisions',
   'list_post_types',
   'list_taxonomies',
+  'list_block_types',
+  'list_elementor_widgets',
   'list_statuses',
   'count_posts',
   'count_terms',
@@ -56,6 +58,7 @@ export const READ_TOOLS = Object.freeze([
   'job_status',
   'preview_url',
   'render_page',
+  'render_blocks',
   'screenshot',
   'rescue_inventory',
   'rescue_leftovers',
@@ -83,6 +86,8 @@ export const MUTATING_TOOLS = Object.freeze([
   'install_plugin',
   'install_theme',
   'write_file',
+  'create_block_page',
+  'elementor_page_create',
   'restore_revision',
   'upload_media_from_url',
   'job_start',
@@ -113,6 +118,12 @@ export const SENSITIVE_TOOLS = Object.freeze([
   // update is what broke the site — and it overwrites everything that
   // changed since. Same approval as file editing, for the same reason.
   'update_rollback',
+  // `append_blocks` and `elementor_section_append` edit a page that is already
+  // live: the content visitors see changes the moment they run. Revisions keep
+  // the history, but restoring one is a second edit of the same live page, so
+  // the policy is `edit_file`'s — a human decides, every time, at every level.
+  'append_blocks',
+  'elementor_section_append',
 ])
 
 const READ = new Set(READ_TOOLS)
@@ -178,6 +189,16 @@ export function classify(tool, args = null) {
     // tool is: a type this build has not heard of may be anything.
     if (type && !JOB_TYPES.has(type)) return 'sensitive'
     if (SENSITIVE_JOBS.has(type)) return 'sensitive'
+  }
+
+  if (name === 'create_block_page' || name === 'elementor_page_create') {
+    // Creating a draft is recoverable — trash it and it is gone. Publishing
+    // is live content the world sees, made by an unattended assistant if
+    // this stayed under `auto`. The draft default is a convention, not a
+    // guarantee; the status argument is the actual decision, so it is the
+    // thing classified here. `publish` therefore asks a human, the way the
+    // generated CRUD tools already fail closed for page creation.
+    if (String(args?.status || '') === 'publish') return 'sensitive'
   }
 
   if (READ.has(name)) return 'read'

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.8.0
+ * Version: 3.9.0
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.8.0' );
+define( 'CB_VERSION', '3.9.0' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -2078,6 +2078,21 @@ function cb_tools() {
 	$tools[] = array( 'name' => 'get_meta', 'description' => 'Get metadata for a post/term/user/comment. Omit key to get all meta.', 'inputSchema' => array( 'type' => 'object', 'properties' => $meta_props, 'required' => array( 'object_id' ) ), 'op' => 'cb_op_get_meta' );
 	$tools[] = array( 'name' => 'update_meta', 'description' => 'Set a metadata value.', 'inputSchema' => array( 'type' => 'object', 'properties' => $meta_props + array( 'value' => array( 'description' => 'Any JSON value.' ) ), 'required' => array( 'object_id', 'key', 'value' ) ), 'op' => 'cb_op_update_meta' );
 	$tools[] = array( 'name' => 'delete_meta', 'description' => 'Delete a metadata key.', 'inputSchema' => array( 'type' => 'object', 'properties' => $meta_props, 'required' => array( 'object_id', 'key' ) ), 'op' => 'cb_op_delete_meta' );
+
+	// ---- AI design: Gutenberg blocks + Elementor ----
+	// Reads inspect/preview, creates land as drafts for human review, appends
+	// edit live content in place (the edit_file precedent). Registrations stay
+	// one line each on purpose: plugin-tool-dispatch.test.js reads them line by line.
+	$block_spec_prop    = array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Registered block name, e.g. "core/heading".' ), 'attributes' => array( 'type' => 'object', 'description' => 'Block attributes; encoded into the block comment by the plugin.' ), 'content' => array( 'type' => 'string', 'description' => 'Optional saved HTML of the block (wp_kses_post applies).' ), 'inner' => array( 'type' => 'array', 'description' => 'Nested child block specs.', 'items' => array( 'type' => 'object' ) ) ), 'required' => array( 'name' ) );
+	$elementor_widget_prop = array( 'type' => 'object', 'properties' => array( 'widget' => array( 'type' => 'string', 'description' => 'Registered Elementor widget name, e.g. "heading" (see list_elementor_widgets).' ), 'settings' => array( 'type' => 'object', 'description' => 'Widget settings; content fields may carry HTML.' ) ), 'required' => array( 'widget' ) );
+	$elementor_section_prop = array( 'type' => 'object', 'properties' => array( 'settings' => array( 'type' => 'object', 'description' => 'Section settings (background, padding…).' ), 'columns' => array( 'type' => 'array', 'description' => 'Columns of this section.', 'items' => array( 'type' => 'object', 'properties' => array( 'settings' => array( 'type' => 'object', 'description' => 'Column settings (width…).' ), 'widgets' => array( 'type' => 'array', 'description' => 'Widgets placed in this column.', 'items' => $elementor_widget_prop ) ), 'required' => array( 'widgets' ) ) ) ), 'required' => array( 'columns' ) );
+	$tools[] = array( 'name' => 'list_block_types', 'description' => 'List every block type registered on this site (name, title, category) — the palette an AI designer may compose with. About Gutenberg content blocks, not reusable-block posts (that is list_blocks). Read-only; pass search to filter by substring.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'search' => array( 'type' => 'string', 'description' => 'Optional case-insensitive substring filter on name/title.' ) ) ), 'op' => 'cb_op_list_block_types' );
+	$tools[] = array( 'name' => 'render_blocks', 'description' => 'Pure preview: compile JSON block specs (name + attributes + content + inner) into valid Gutenberg block markup and RETURN it — nothing is saved. Check a spec compiles here before passing it to create_block_page or append_blocks; both write exactly what this shows. Not the same as render_page, which renders a live URL.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'specs' => array( 'type' => 'array', 'description' => 'Ordered top-level block specs.', 'items' => $block_spec_prop ) ), 'required' => array( 'specs' ) ), 'op' => 'cb_op_render_blocks' );
+	$tools[] = array( 'name' => 'create_block_page', 'description' => 'Create a new page or post whose content is compiled from JSON block specs (same specs as render_blocks — markup is generated by the plugin, never pasted in). Defaults to draft so a human reviews before it goes live. Only block names registered on this site are accepted.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'title' => array( 'type' => 'string' ), 'post_type' => array( 'type' => 'string', 'enum' => array( 'page', 'post' ), 'description' => 'Default "page".' ), 'status' => array( 'type' => 'string', 'enum' => array( 'draft', 'pending', 'private', 'publish' ), 'description' => 'Default "draft" — a human reviews before publishing.' ), 'specs' => array( 'type' => 'array', 'items' => $block_spec_prop ) ), 'required' => array( 'title', 'specs' ) ), 'op' => 'cb_op_create_block_page' );
+	$tools[] = array( 'name' => 'append_blocks', 'description' => 'Append blocks to the END of an existing post/page\'s content (block specs as in render_blocks; appended markup is plugin-generated). This edits live content in place — revisions keep the history, but the live version changes immediately — so treat it like edit_file, not like creating a draft. Validate the specs with render_blocks first.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'post_id' => array( 'type' => 'integer' ), 'specs' => array( 'type' => 'array', 'items' => $block_spec_prop ) ), 'required' => array( 'post_id', 'specs' ) ), 'op' => 'cb_op_append_blocks' );
+	$tools[] = array( 'name' => 'list_elementor_widgets', 'description' => 'List the Elementor widget types registered on this site (name, title, categories) — the palette for elementor_page_create and elementor_section_append. Read-only. If Elementor is not active, returns an honest "not available" instead of anything made up.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_list_elementor_widgets', 'noargs' => true );
+	$tools[] = array( 'name' => 'elementor_page_create', 'description' => 'Create a new page rendered by Elementor: builds a valid _elementor_data document from section→column→widget JSON specs (fresh unique element ids), sets the builder metas, and clears stale Elementor CSS so it regenerates. Defaults to draft for human review. Requires Elementor active; refuses honestly otherwise.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'title' => array( 'type' => 'string' ), 'status' => array( 'type' => 'string', 'enum' => array( 'draft', 'pending', 'private', 'publish' ), 'description' => 'Default "draft".' ), 'sections' => array( 'type' => 'array', 'description' => 'Ordered sections; each column carries widgets.', 'items' => $elementor_section_prop ) ), 'required' => array( 'title', 'sections' ) ), 'op' => 'cb_op_elementor_page_create' );
+	$tools[] = array( 'name' => 'elementor_section_append', 'description' => 'Append sections (section→column→widget specs) to the END of an existing Elementor page\'s _elementor_data, with fresh unique element ids and stale CSS cleared so it regenerates. Edits the live page in place, like append_blocks. If the page was not built with Elementor, says so honestly and changes nothing.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'post_id' => array( 'type' => 'integer' ), 'sections' => array( 'type' => 'array', 'items' => $elementor_section_prop ) ), 'required' => array( 'post_id', 'sections' ) ), 'op' => 'cb_op_elementor_section_append' );
 
 	// WordPress playbooks are loaded on demand from the configured DigiWP server,
 	// or from an operator-provided local directory. Release packages intentionally
@@ -4541,6 +4556,635 @@ function cb_op_delete_meta( $args ) {
 	return array( 'deleted' => (bool) delete_metadata( $type, $id, $key ) );
 }
 
+/* ---- AI design: Gutenberg blocks + Elementor (shared compilers first) ---- */
+
+/** Structurally valid namespaced block name, e.g. "core/paragraph". */
+function cb_block_name_valid( $name ) {
+	return is_string( $name ) && 1 === preg_match( '/^[a-z0-9-]+\/[a-z0-9-]+$/', $name );
+}
+
+/**
+ * Validate a list of block specs before anything is written. With
+ * $registry_check, write tools additionally refuse block names this site has
+ * not registered: a spec that references a block the editor does not know
+ * opens with block validation errors, which to the owner IS a broken page.
+ *
+ * @return array( boolean ok, string persian message ) — message empty when ok.
+ */
+function cb_block_specs_validate( $specs, $registry_check = false, $depth = 0 ) {
+	if ( $depth > 10 ) {
+		return array( false, 'ساختار بلوک‌ها بیش از حد تو در تو است (حداکثر ۱۰ سطح).' );
+	}
+	if ( ! is_array( $specs ) || empty( $specs ) ) {
+		return array( false, 'فهرست specs بلوک خالی است یا آرایه نیست.' );
+	}
+	foreach ( $specs as $spec ) {
+		if ( ! is_array( $spec ) ) {
+			return array( false, 'هر بلوک باید یک شیء با کلید name باشد.' );
+		}
+		$name = isset( $spec['name'] ) ? $spec['name'] : '';
+		if ( ! cb_block_name_valid( $name ) ) {
+			return array( false, 'نام بلوک نامعتبر است: «' . sanitize_text_field( (string) $name ) . '» — باید شبیه core/paragraph باشد.' );
+		}
+		if ( $registry_check && class_exists( 'WP_Block_Type_Registry' ) ) {
+			$registered = WP_Block_Type_Registry::get_instance()->get_all_registered();
+			// An empty registry proves nothing about the site; do not false-refuse.
+			if ( ! empty( $registered ) && ! isset( $registered[ $name ] ) ) {
+				return array( false, 'بلوک «' . $name . '» روی این سایت ثبت نشده است؛ فهرست مجاز را با list_block_types ببینید.' );
+			}
+		}
+		if ( isset( $spec['attributes'] ) && ! is_array( $spec['attributes'] ) ) {
+			return array( false, 'attributes بلوک «' . $name . '» باید شیء باشد.' );
+		}
+		if ( isset( $spec['content'] ) && ! is_string( $spec['content'] ) ) {
+			return array( false, 'content بلوک «' . $name . '» باید رشته باشد.' );
+		}
+		if ( isset( $spec['inner'] ) ) {
+			if ( ! is_array( $spec['inner'] ) ) {
+				return array( false, 'inner بلوک «' . $name . '» باید آرایه باشد.' );
+			}
+			if ( ! empty( $spec['inner'] ) ) {
+				$inner = cb_block_specs_validate( $spec['inner'], $registry_check, $depth + 1 );
+				if ( ! $inner[0] ) {
+					return $inner;
+				}
+			}
+		}
+	}
+	return array( true, '' );
+}
+
+/**
+ * The single compiler every block-writing path shares: JSON block specs →
+ * valid Gutenberg block-comment markup. Nothing here trusts caller-supplied
+ * markup — the comments are built by this function, attributes are encoded
+ * with wp_json_encode (same flags as core's serializer), and the one
+ * intentionally-HTML field (content) goes through wp_kses_post. render_blocks
+ * previews exactly what create_block_page and append_blocks write, because
+ * all three come through here.
+ */
+function cb_blocks_markup( $specs ) {
+	if ( ! is_array( $specs ) ) {
+		return '';
+	}
+	$out = array();
+	foreach ( $specs as $spec ) {
+		$markup = cb_block_spec_to_markup( is_array( $spec ) ? $spec : array(), 0 );
+		if ( '' !== $markup ) {
+			$out[] = $markup;
+		}
+	}
+	return implode( "\n\n", $out );
+}
+
+/** One spec → its block comment(s); the recursive half of cb_blocks_markup. */
+function cb_block_spec_to_markup( $spec, $depth ) {
+	$name = isset( $spec['name'] ) ? (string) $spec['name'] : '';
+	if ( $depth > 10 || ! cb_block_name_valid( $name ) ) {
+		return '';
+	}
+	$attrs   = ( isset( $spec['attributes'] ) && is_array( $spec['attributes'] ) ) ? $spec['attributes'] : array();
+	$inner   = ( isset( $spec['inner'] ) && is_array( $spec['inner'] ) ) ? $spec['inner'] : array();
+	$content = '';
+	if ( isset( $spec['content'] ) && is_string( $spec['content'] ) ) {
+		$content = trim( (string) wp_kses_post( $spec['content'] ) );
+	}
+	$head = '<!-- wp:' . $name;
+	if ( ! empty( $attrs ) ) {
+		$json = wp_json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( is_string( $json ) && false !== strpos( $json, '-->' ) ) {
+			// A literal --> inside the JSON would close the block comment early
+			// and leak the rest as raw post_content. Gutenberg's own serializer
+			// neutralises this the same way: escape the dashes as \u002d, which
+			// JSON decodes back to exactly the same value.
+			$json = str_replace( '--', '\u002d\u002d', $json );
+		}
+		if ( is_string( $json ) ) {
+			$head .= ' ' . $json;
+		}
+	}
+	if ( '' === $content && empty( $inner ) ) {
+		return $head . ' /-->';
+	}
+	$body = '';
+	if ( '' !== $content ) {
+		$body .= $content . "\n";
+	}
+	foreach ( $inner as $child ) {
+		$body .= cb_block_spec_to_markup( is_array( $child ) ? $child : array(), $depth + 1 ) . "\n";
+	}
+	return $head . " -->\n" . rtrim( $body ) . "\n<!-- /wp:" . $name . ' -->';
+}
+
+/** Tool op: the registered block palette on this site, honestly. */
+function cb_op_list_block_types( $args = array() ) {
+	if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
+		return array( 'ok' => false, 'message' => 'رجیستری بلوک وردپرس روی این سایت در دسترس نیست.' );
+	}
+	$blocks = WP_Block_Type_Registry::get_instance()->get_all_registered();
+	if ( empty( $blocks ) ) {
+		return array( 'ok' => false, 'message' => 'هیچ نوع بلوکی روی این سایت ثبت نشده است.' );
+	}
+	$search = isset( $args['search'] ) ? strtolower( trim( (string) $args['search'] ) ) : '';
+	$out    = array();
+	foreach ( $blocks as $block ) {
+		$title = ( isset( $block->title ) && '' !== (string) $block->title ) ? (string) $block->title : $block->name;
+		if ( '' !== $search && strpos( strtolower( $block->name . ' ' . $title ), $search ) === false ) {
+			continue;
+		}
+		$out[] = array(
+			'name'     => $block->name,
+			'title'    => $title,
+			'category' => ( isset( $block->category ) && is_string( $block->category ) ) ? $block->category : '',
+		);
+	}
+	usort( $out, function ( $a, $b ) {
+		return strcmp( $a['name'], $b['name'] );
+	} );
+	return array(
+		'ok'          => true,
+		'total'       => count( $blocks ),
+		'returned'    => count( $out ),
+		'block_types' => $out,
+	);
+}
+
+/** Tool op: pure preview — specs in, markup out, nothing written anywhere. */
+function cb_op_render_blocks( $args = array() ) {
+	$specs = ( isset( $args['specs'] ) && is_array( $args['specs'] ) ) ? $args['specs'] : array();
+	$valid = cb_block_specs_validate( $specs, false );
+	if ( ! $valid[0] ) {
+		return array( 'ok' => false, 'message' => $valid[1] );
+	}
+	$markup  = cb_blocks_markup( $specs );
+	$parsed  = null;
+	$warning = '';
+	if ( function_exists( 'parse_blocks' ) ) {
+		// Honest self-check: re-parse what we just compiled and confirm
+		// WordPress reads the same number of blocks back out of it.
+		$parsed = count( array_filter( parse_blocks( $markup ), function ( $b ) {
+			return ! empty( $b['blockName'] );
+		} ) );
+		if ( $parsed !== count( $specs ) ) {
+			$warning = 'تعداد بلوک‌های بازخوانی‌شده با ورودی یکی نیست؛ پیش از نوشتن بررسی کنید.';
+		}
+	}
+	return array(
+		'ok'            => true,
+		'preview'       => true,
+		'saved'         => false,
+		'message'       => 'پیش‌نمایش است؛ هیچ چیزی ذخیره نشده است. همین specs را می‌توانید به create_block_page یا append_blocks بدهید.',
+		'blocks'        => count( $specs ),
+		'markup_length' => strlen( $markup ),
+		'parsed_blocks' => $parsed,
+		'warning'       => $warning,
+		'markup'        => $markup,
+	);
+}
+
+/** Tool op: create a new page/post from block specs — draft by default. */
+function cb_op_create_block_page( $args = array() ) {
+	$args  = is_array( $args ) ? $args : array();
+	$title = sanitize_text_field( (string) ( isset( $args['title'] ) ? $args['title'] : '' ) );
+	if ( '' === $title ) {
+		return array( 'ok' => false, 'message' => 'عنوان لازم است.' );
+	}
+	$post_type = isset( $args['post_type'] ) ? (string) $args['post_type'] : 'page';
+	if ( ! in_array( $post_type, array( 'page', 'post' ), true ) ) {
+		return array( 'ok' => false, 'message' => 'post_type فقط page یا post می‌تواند باشد.' );
+	}
+	$status = isset( $args['status'] ) ? (string) $args['status'] : 'draft';
+	if ( ! in_array( $status, array( 'draft', 'pending', 'private', 'publish' ), true ) ) {
+		return array( 'ok' => false, 'message' => 'status باید draft، pending، private یا publish باشد.' );
+	}
+	$specs = ( isset( $args['specs'] ) && is_array( $args['specs'] ) ) ? $args['specs'] : array();
+	$valid = cb_block_specs_validate( $specs, true );
+	if ( ! $valid[0] ) {
+		return array( 'ok' => false, 'message' => $valid[1] );
+	}
+	cb_become_admin();
+	// wp_insert_post() unslashes its input, so slash it — the REST posts
+	// controller does exactly the same on its own save path.
+	$post_id = wp_insert_post( array(
+		'post_title'   => wp_slash( $title ),
+		'post_type'    => $post_type,
+		'post_status'  => $status,
+		'post_content' => wp_slash( cb_blocks_markup( $specs ) ),
+	), true );
+	if ( is_wp_error( $post_id ) ) {
+		return array( 'ok' => false, 'message' => 'ساخت نوشته ناموفق بود: ' . $post_id->get_error_message() );
+	}
+	return array(
+		'ok'       => true,
+		'post_id'  => (int) $post_id,
+		'status'   => $status,
+		'edit_url' => admin_url( 'post.php?post=' . (int) $post_id . '&action=edit' ),
+		'message'  => 'draft' === $status ? 'برگه به‌صورت پیش‌نویس ساخته شد تا ابتدا بازبینی انسانی شود.' : sprintf( '%s با شناسهٔ %d ساخته شد.', $post_type, (int) $post_id ),
+	);
+}
+
+/** Tool op: append blocks to the end of an existing post's live content. */
+function cb_op_append_blocks( $args = array() ) {
+	$args    = is_array( $args ) ? $args : array();
+	$post_id = isset( $args['post_id'] ) ? (int) $args['post_id'] : 0;
+	if ( $post_id <= 0 ) {
+		return array( 'ok' => false, 'message' => 'شناسهٔ نوشته (post_id) نامعتبر است.' );
+	}
+	$post = get_post( $post_id );
+	if ( ! $post || 'revision' === $post->post_type ) {
+		return array( 'ok' => false, 'message' => 'نوشته‌ای با این شناسه پیدا نشد.' );
+	}
+	if ( 'trash' === $post->post_status ) {
+		return array( 'ok' => false, 'message' => 'این نوشته در زباله‌دان است؛ ابتدا باید بازگردانده شود.' );
+	}
+	if ( ! post_type_supports( $post->post_type, 'editor' ) ) {
+		return array( 'ok' => false, 'message' => 'این نوع محتوا ویرایشگر ندارد؛ افزودن بلوک به آن معنا ندارد.' );
+	}
+	// A page Elementor renders comes from _elementor_data, not post_content.
+	// Editing post_content there would "succeed" invisibly — the honest move
+	// is to refuse and point at the Elementor tool, not to change what the
+	// visitor will never see.
+	if ( 'builder' === get_post_meta( $post_id, '_elementor_edit_mode', true ) ) {
+		return array( 'ok' => false, 'message' => 'این برگه با المنتور ساخته شده و از دادهٔ المنتور رندر می‌شود؛ افزودن بلوک گوتنبرگ به محتوای آن دیده نمی‌شود. برای افزودن سکشن از ابزار elementor_section_append استفاده کنید.' );
+	}
+	$specs = ( isset( $args['specs'] ) && is_array( $args['specs'] ) ) ? $args['specs'] : array();
+	$valid = cb_block_specs_validate( $specs, true );
+	if ( ! $valid[0] ) {
+		return array( 'ok' => false, 'message' => $valid[1] );
+	}
+	$addition = cb_blocks_markup( $specs );
+	$content  = (string) $post->post_content;
+	$new      = ( '' === trim( $content ) ) ? $addition : $content . "\n\n" . $addition;
+	cb_become_admin();
+	$updated = wp_update_post( array( 'ID' => $post_id, 'post_content' => wp_slash( $new ) ), true );
+	if ( is_wp_error( $updated ) ) {
+		return array( 'ok' => false, 'message' => 'به‌روزرسانی محتوا ناموفق بود: ' . $updated->get_error_message() );
+	}
+	// Revisions are the undo story only when this install actually keeps
+	// them for this post type; WP_POST_REVISIONS can turn them off.
+	$revisions = function_exists( 'wp_revisions_enabled' ) ? (bool) wp_revisions_enabled( $post ) : false;
+	return array(
+		'ok'             => true,
+		'post_id'        => $post_id,
+		'appended_chars' => strlen( $addition ),
+		'revisions'      => $revisions,
+		'message'        => $revisions
+			? 'بلوک‌ها به انتهای محتوای همین نوشته افزوده شد؛ نسخه‌های پیشین در بازنگری‌ها موجود است.'
+			: 'بلوک‌ها به انتهای محتوای همین نوشته افزوده شد؛ توجه: بازنگری برای این نوع محتوا غیرفعال است و راه بازگشتی خودکار وجود ندارد.',
+	);
+}
+
+/**
+ * Elementor availability, using the same detection the site stack uses
+ * (cb_site_stack): the elementor/loaded hook or the plugin class. Returning
+ * the instance does not promise the widgets API is usable — callers must
+ * still check widgets_manager and its methods, because that surface moves
+ * between Elementor majors.
+ *
+ * @return object Plugin instance, or null when Elementor is not usable.
+ */
+function cb_elementor_plugin() {
+	if ( ! did_action( 'elementor/loaded' ) && ! class_exists( '\Elementor\Plugin' ) ) {
+		return null;
+	}
+	if ( ! class_exists( '\Elementor\Plugin' ) || ! property_exists( '\Elementor\Plugin', 'instance' ) ) {
+		return null;
+	}
+	$instance = \Elementor\Plugin::$instance;
+	return is_object( $instance ) ? $instance : null;
+}
+
+/**
+ * Registered Elementor widget types (name => type object), or null when the
+ * widgets API is not usable on this install. Callers report that honestly.
+ */
+function cb_elementor_widget_types() {
+	$elementor = cb_elementor_plugin();
+	if ( null === $elementor ) {
+		return null;
+	}
+	if ( ! isset( $elementor->widgets_manager ) || ! is_object( $elementor->widgets_manager ) || ! method_exists( $elementor->widgets_manager, 'get_widget_types' ) ) {
+		return null;
+	}
+	$types = $elementor->widgets_manager->get_widget_types();
+	return ( is_array( $types ) && ! empty( $types ) ) ? $types : null;
+}
+
+/**
+ * Elementor widget/section settings ARE content, and content in Elementor
+ * legitimately contains HTML (a heading, a text_editor body). Strings are
+ * therefore passed through wp_kses_post — the same line cb_blocks_markup
+ * draws — rather than sanitize_text_field, which would eat real content.
+ */
+function cb_elementor_clean_settings( $settings ) {
+	if ( ! is_array( $settings ) ) {
+		return array();
+	}
+	$out = array();
+	foreach ( $settings as $key => $value ) {
+		if ( is_array( $value ) ) {
+			$out[ $key ] = cb_elementor_clean_settings( $value );
+		} elseif ( is_string( $value ) ) {
+			$out[ $key ] = wp_kses_post( $value );
+		} else {
+			$out[ $key ] = $value;
+		}
+	}
+	return $out;
+}
+
+/**
+ * Validate section→column→widget specs before anything is written. Widget
+ * names are cross-checked against the registered widget types — an unknown
+ * widget renders nothing but breaks nothing, which is worse than an error
+ * because the page looks built when it is not.
+ *
+ * @return array( boolean ok, string persian message ) — message empty when ok.
+ */
+function cb_elementor_sections_validate( $sections, $widget_types ) {
+	if ( ! is_array( $sections ) || empty( $sections ) ) {
+		return array( false, 'فهرست sections خالی است یا آرایه نیست.' );
+	}
+	if ( empty( $widget_types ) ) {
+		return array( false, 'هیچ ابزارک المنتوری روی این سایت ثبت نشده است.' );
+	}
+	foreach ( $sections as $section ) {
+		if ( ! is_array( $section ) ) {
+			return array( false, 'سکشن باید شیء باشد.' );
+		}
+		if ( isset( $section['settings'] ) && ! is_array( $section['settings'] ) ) {
+			return array( false, 'settings سکشن باید شیء باشد.' );
+		}
+		$columns = ( isset( $section['columns'] ) && is_array( $section['columns'] ) ) ? $section['columns'] : array();
+		if ( empty( $columns ) ) {
+			return array( false, 'هر سکشن دست‌کم یک ستون لازم دارد.' );
+		}
+		foreach ( $columns as $column ) {
+			if ( ! is_array( $column ) ) {
+				return array( false, 'ستون باید شیء باشد.' );
+			}
+			if ( isset( $column['settings'] ) && ! is_array( $column['settings'] ) ) {
+				return array( false, 'settings ستون باید شیء باشد.' );
+			}
+			$widgets = ( isset( $column['widgets'] ) && is_array( $column['widgets'] ) ) ? $column['widgets'] : array();
+			if ( empty( $widgets ) ) {
+				return array( false, 'هر ستون دست‌کم یک ابزارک لازم دارد.' );
+			}
+			foreach ( $widgets as $widget ) {
+				if ( ! is_array( $widget ) ) {
+					return array( false, 'ابزارک باید شیء باشد.' );
+				}
+				$name = isset( $widget['widget'] ) ? (string) $widget['widget'] : '';
+				if ( '' === $name || ! isset( $widget_types[ $name ] ) ) {
+					return array( false, 'ابزارک «' . sanitize_text_field( $name ) . '» روی این سایت ثبت نشده است؛ فهرست مجاز را با list_elementor_widgets ببینید.' );
+				}
+				if ( isset( $widget['settings'] ) && ! is_array( $widget['settings'] ) ) {
+					return array( false, 'settings ابزارک «' . $name . '» باید شیء باشد.' );
+				}
+			}
+		}
+	}
+	return array( true, '' );
+}
+
+/**
+ * Fresh, document-unique 7-hex-char element id. Duplicate ids corrupt the
+ * Elementor tree, so uniqueness is checked against $used — which, when
+ * appending, already holds every id present in the existing document.
+ */
+function cb_elementor_fresh_id( &$used ) {
+	do {
+		$id = substr( bin2hex( random_bytes( 4 ) ), 0, 7 );
+	} while ( isset( $used[ $id ] ) );
+	$used[ $id ] = true;
+	return $id;
+}
+
+/** Collect every element id already used in an _elementor_data document. */
+function cb_elementor_collect_ids( $elements, &$used ) {
+	if ( ! is_array( $elements ) ) {
+		return;
+	}
+	foreach ( $elements as $element ) {
+		if ( ! is_array( $element ) ) {
+			continue;
+		}
+		if ( isset( $element['id'] ) && is_string( $element['id'] ) ) {
+			$used[ $element['id'] ] = true;
+		}
+		if ( isset( $element['elements'] ) ) {
+			cb_elementor_collect_ids( $element['elements'], $used );
+		}
+	}
+}
+
+/**
+ * The Elementor counterpart of cb_blocks_markup: section→column→widget specs
+ * → a valid _elementor_data elements array, every element carrying a fresh
+ * unique 7-hex id. Input specs never carry ids of their own — ids are made
+ * here, against the document's existing ones.
+ */
+function cb_elementor_sections_to_data( $sections, &$used ) {
+	$data = array();
+	foreach ( $sections as $section ) {
+		$columns_out = array();
+		$columns_in  = ( isset( $section['columns'] ) && is_array( $section['columns'] ) ) ? $section['columns'] : array();
+		foreach ( $columns_in as $column ) {
+			$widgets_out = array();
+			$widgets_in  = ( isset( $column['widgets'] ) && is_array( $column['widgets'] ) ) ? $column['widgets'] : array();
+			foreach ( $widgets_in as $widget ) {
+				$widgets_out[] = array(
+					'id'         => cb_elementor_fresh_id( $used ),
+					'elType'     => 'widget',
+					'widgetType' => isset( $widget['widget'] ) ? (string) $widget['widget'] : '',
+					'settings'   => cb_elementor_clean_settings( isset( $widget['settings'] ) ? $widget['settings'] : array() ),
+					'elements'   => array(),
+					'isInner'    => false,
+				);
+			}
+			$columns_out[] = array(
+				'id'       => cb_elementor_fresh_id( $used ),
+				'elType'   => 'column',
+				'settings' => cb_elementor_clean_settings( isset( $column['settings'] ) ? $column['settings'] : array() ),
+				'elements' => $widgets_out,
+				'isInner'  => false,
+			);
+		}
+		$data[] = array(
+			'id'       => cb_elementor_fresh_id( $used ),
+			'elType'   => 'section',
+			'settings' => cb_elementor_clean_settings( isset( $section['settings'] ) ? $section['settings'] : array() ),
+			'elements' => $columns_out,
+			'isInner'  => false,
+		);
+	}
+	return $data;
+}
+
+/**
+ * Persist an _elementor_data document the way an Elementor editor round-trip
+ * expects: JSON string in the meta (slashed, because the meta API unslashes),
+ * builder edit mode, wp-page template type, this install's Elementor
+ * version, and the generated-CSS meta dropped so Elementor regenerates it on
+ * the next render — writing the document directly skips the editor's own
+ * CSS-regeneration hook, and stale CSS would render the old layout.
+ *
+ * @return bool true when the _elementor_data write landed. The helper metas
+ *              (edit mode, template type, version) are set but do not gate the
+ *              result: update_post_meta() returns false when the stored value
+ *              already equals the new one, so folding them in would report
+ *              failure on every established Elementor page whose helper metas
+ *              are already correct while _elementor_data really was written.
+ */
+function cb_elementor_write_document( $post_id, $data ) {
+	$json = wp_json_encode( $data, JSON_UNESCAPED_UNICODE );
+	if ( ! is_string( $json ) || '' === $json ) {
+		return false;
+	}
+	$ok = (bool) update_post_meta( $post_id, '_elementor_data', wp_slash( $json ) );
+	update_post_meta( $post_id, '_elementor_edit_mode', 'builder' );
+	update_post_meta( $post_id, '_elementor_template_type', 'wp-page' );
+	if ( defined( 'ELEMENTOR_VERSION' ) ) {
+		update_post_meta( $post_id, '_elementor_version', ELEMENTOR_VERSION );
+	}
+	delete_post_meta( $post_id, '_elementor_css' );
+	return $ok;
+}
+
+/** Tool op: the registered Elementor widget palette, honestly. */
+function cb_op_list_elementor_widgets( $args = array() ) {
+	if ( null === cb_elementor_plugin() ) {
+		return array( 'ok' => false, 'message' => 'المنتور روی این سایت فعال نیست؛ فهرست ابزارک‌های المنتور موجود نیست.' );
+	}
+	$elementor = cb_elementor_plugin();
+	if ( ! isset( $elementor->widgets_manager ) || ! is_object( $elementor->widgets_manager ) || ! method_exists( $elementor->widgets_manager, 'get_widget_types' ) ) {
+		return array( 'ok' => false, 'message' => 'المنتور فعال است اما مدیر ابزارک‌های آن در دسترس نیست (نسخهٔ المنتور سازگار نیست).' );
+	}
+	$widgets = $elementor->widgets_manager->get_widget_types();
+	if ( ! is_array( $widgets ) || empty( $widgets ) ) {
+		return array( 'ok' => false, 'message' => 'المنتور فعال است اما هیچ ابزارکی روی این سایت ثبت نشده است.' );
+	}
+	$out = array();
+	foreach ( $widgets as $slug => $widget ) {
+		$title = '';
+		if ( is_object( $widget ) && method_exists( $widget, 'get_title' ) ) {
+			$title = wp_strip_all_tags( (string) $widget->get_title() );
+		}
+		$categories = array();
+		if ( is_object( $widget ) && method_exists( $widget, 'get_categories' ) ) {
+			$categories = (array) $widget->get_categories();
+		}
+		$out[] = array(
+			'widget'     => (string) $slug,
+			'title'      => '' !== $title ? $title : (string) $slug,
+			'categories' => array_values( array_filter( $categories, 'is_string' ) ),
+		);
+	}
+	usort( $out, function ( $a, $b ) {
+		return strcmp( $a['widget'], $b['widget'] );
+	} );
+	return array( 'ok' => true, 'count' => count( $out ), 'widgets' => $out );
+}
+
+/** Tool op: create a new Elementor-rendered page — draft by default. */
+function cb_op_elementor_page_create( $args = array() ) {
+	$args = is_array( $args ) ? $args : array();
+	if ( null === cb_elementor_plugin() ) {
+		return array( 'ok' => false, 'message' => 'المنتور روی این سایت فعال نیست؛ ساخت برگهٔ المنتوری ممکن نیست.' );
+	}
+	$title = sanitize_text_field( (string) ( isset( $args['title'] ) ? $args['title'] : '' ) );
+	if ( '' === $title ) {
+		return array( 'ok' => false, 'message' => 'عنوان لازم است.' );
+	}
+	$status = isset( $args['status'] ) ? (string) $args['status'] : 'draft';
+	if ( ! in_array( $status, array( 'draft', 'pending', 'private', 'publish' ), true ) ) {
+		return array( 'ok' => false, 'message' => 'status باید draft، pending، private یا publish باشد.' );
+	}
+	$widget_types = cb_elementor_widget_types();
+	if ( null === $widget_types ) {
+		return array( 'ok' => false, 'message' => 'المنتور فعال است اما ابزارک‌های آن خوانده نشد؛ نسخهٔ المنتور سازگار نیست.' );
+	}
+	$sections = ( isset( $args['sections'] ) && is_array( $args['sections'] ) ) ? $args['sections'] : array();
+	$valid    = cb_elementor_sections_validate( $sections, $widget_types );
+	if ( ! $valid[0] ) {
+		return array( 'ok' => false, 'message' => $valid[1] );
+	}
+	$used = array();
+	$data = cb_elementor_sections_to_data( $sections, $used );
+	cb_become_admin();
+	$post_id = wp_insert_post( array(
+		'post_title'   => wp_slash( $title ),
+		'post_type'    => 'page',
+		'post_status'  => $status,
+		'post_content' => '',
+	), true );
+	if ( is_wp_error( $post_id ) ) {
+		return array( 'ok' => false, 'message' => 'ساخت برگه ناموفق بود: ' . $post_id->get_error_message() );
+	}
+	if ( ! cb_elementor_write_document( $post_id, $data ) ) {
+		return array( 'ok' => false, 'post_id' => (int) $post_id, 'message' => 'برگه ساخته شد اما نوشتن دادهٔ المنتور ناموفق بود؛ برگه را در پیشخوان بررسی یا حذف کنید.' );
+	}
+	return array(
+		'ok'       => true,
+		'post_id'  => (int) $post_id,
+		'status'   => $status,
+		'sections' => count( $data ),
+		'edit_url' => admin_url( 'post.php?post=' . (int) $post_id . '&action=edit' ),
+		'message'  => 'draft' === $status ? 'برگهٔ المنتوری به‌صورت پیش‌نویس ساخته شد تا ابتدا بازبینی انسانی شود.' : 'برگهٔ المنتوری ساخته شد.',
+	);
+}
+
+/** Tool op: append sections to the end of an existing Elementor page's data. */
+function cb_op_elementor_section_append( $args = array() ) {
+	$args = is_array( $args ) ? $args : array();
+	if ( null === cb_elementor_plugin() ) {
+		return array( 'ok' => false, 'message' => 'المنتور روی این سایت فعال نیست؛ افزودن سکشن ممکن نیست.' );
+	}
+	$post_id = isset( $args['post_id'] ) ? (int) $args['post_id'] : 0;
+	if ( $post_id <= 0 ) {
+		return array( 'ok' => false, 'message' => 'شناسهٔ برگه (post_id) نامعتبر است.' );
+	}
+	$post = get_post( $post_id );
+	if ( ! $post || 'revision' === $post->post_type ) {
+		return array( 'ok' => false, 'message' => 'برگه‌ای با این شناسه پیدا نشد.' );
+	}
+	if ( 'trash' === $post->post_status ) {
+		return array( 'ok' => false, 'message' => 'این برگه در زباله‌دان است؛ ابتدا باید بازگردانده شود.' );
+	}
+	$edit_mode = get_post_meta( $post_id, '_elementor_edit_mode', true );
+	if ( 'builder' !== $edit_mode ) {
+		return array( 'ok' => false, 'message' => 'این برگه با المنتور ساخته نشده است (_elementor_edit_mode برابر builder نیست)؛ چیزی تغییر نکرد.' );
+	}
+	$raw  = get_post_meta( $post_id, '_elementor_data', true );
+	$data = ( is_string( $raw ) && '' !== $raw ) ? json_decode( $raw, true ) : null;
+	if ( ! is_array( $data ) ) {
+		return array( 'ok' => false, 'message' => 'دادهٔ المنتور این برگه خوانده نشد؛ چیزی تغییر نکرد.' );
+	}
+	$widget_types = cb_elementor_widget_types();
+	if ( null === $widget_types ) {
+		return array( 'ok' => false, 'message' => 'المنتور فعال است اما ابزارک‌های آن خوانده نشد؛ نسخهٔ المنتور سازگار نیست.' );
+	}
+	$sections = ( isset( $args['sections'] ) && is_array( $args['sections'] ) ) ? $args['sections'] : array();
+	$valid    = cb_elementor_sections_validate( $sections, $widget_types );
+	if ( ! $valid[0] ) {
+		return array( 'ok' => false, 'message' => $valid[1] );
+	}
+	$used = array();
+	cb_elementor_collect_ids( $data, $used );
+	$added = cb_elementor_sections_to_data( $sections, $used );
+	cb_become_admin();
+	if ( ! cb_elementor_write_document( $post_id, array_merge( $data, $added ) ) ) {
+		return array( 'ok' => false, 'message' => 'نوشتن دادهٔ المنتور ناموفق بود؛ چیزی تغییر نکرد.' );
+	}
+	return array(
+		'ok'              => true,
+		'post_id'         => $post_id,
+		'sections_added'  => count( $added ),
+		'sections_total'  => count( $data ) + count( $added ),
+		'message'         => 'سکشن‌ها به انتهای برگهٔ المنتوری افزوده شد و CSS قدیمی پاک شد تا دوباره ساخته شود.',
+	);
+}
+
 /* ============================================================================
  * 5. REST LAYER  (Application Password auth, requires edit_themes)
  * ========================================================================== */
@@ -6512,6 +7156,27 @@ Create it as a draft at [/slug], link it from [where], and give me the preview l
 	);
 
 	$r[] = array(
+		'id'       => 'block-landing-page',
+		'title'    => 'Compose a Landing Page Out of Gutenberg Blocks',
+		'tags'     => array( 'Content', 'Design' ),
+		'requires' => array(),
+		'time'     => '20–40 min',
+		'summary'  => 'Design with the block palette this site actually has, preview the exact markup before writing, and land it as a draft for human review.',
+		'tools'    => array( 'list_block_types', 'render_blocks', 'create_block_page', 'append_blocks', 'render_page' ),
+		'prompt'   => 'Build a landing page on this site out of native Gutenberg blocks.
+
+Brief: [what the page must get people to do], audience [who they are], tone [how it should read].
+
+1. Call list_block_types to see the block palette actually registered here — theme blocks included. Design with what exists; do not invent block names.
+2. Draft the section structure (hero, problem, solution, proof, objections, call to action — adapt when something fits better and tell me why) and each block\'s attributes.
+3. Compile the specs with render_blocks and show me the markup before anything is created. Iterate there — that tool saves nothing.
+4. Create the page with create_block_page as a DRAFT. Do not publish.
+5. If I later ask for more sections on that page, use append_blocks — it edits the live page in place, so ask me first each time.
+
+Match the voice of the existing site: read two or three published pages first. Never publish without my approval.',
+	);
+
+	$r[] = array(
 		'id'       => 'navigation-rebuild',
 		'title'    => 'Rebuild the Site Navigation',
 		'tags'     => array( 'Content', 'UX' ),
@@ -6802,6 +7467,23 @@ Build them as templates applied site-wide, match the existing brand colors and f
 Render it and analyze what is actually loaded: Elementor widget CSS and JS files, Google Fonts and their weights, icon libraries, images served far larger than displayed, and third-party embeds.
 
 Read the page\'s Elementor data and tell me about deeply nested sections, empty containers, widgets that are hidden on every breakpoint, and animations nobody sees. Give me a ranked list of what to remove or replace with the expected saving, then apply the ones I approve and flush the cache.',
+	);
+
+	$r[] = array(
+		'id'       => 'elementor-hero-section',
+		'title'    => 'Add a Hero Section to an Existing Elementor Page',
+		'tags'     => array( 'Elementor', 'Design' ),
+		'requires' => array( 'elementor' ),
+		'time'     => '15–30 min',
+		'summary'  => 'One section→column→widget spec appended to the page\'s real Elementor document, with fresh element ids and regenerated CSS.',
+		'tools'    => array( 'list_elementor_widgets', 'elementor_section_append', 'render_page' ),
+		'prompt'   => 'Add a hero section to the Elementor page [page URL or id].
+
+1. Confirm the page really is an Elementor page and tell me its post id. If it is not, say so and stop — do not build a parallel page next to it.
+2. Call list_elementor_widgets to see the widget palette registered on this site, and use only those widget names.
+3. Propose the section spec: heading, subheading, call-to-action button, background [color/gradient/image URL], and how it should behave on mobile [stack/keep columns]. Wait for my confirmation.
+4. Apply it with elementor_section_append. It edits the live page in place, so it waits for my explicit go-ahead.
+5. Render the page afterwards with render_page and show me what actually changed. If the section looks wrong, say so honestly instead of stacking more sections on top.',
 	);
 
 	/* ---- Stack-specific: SEO plugin, ACF, forms, multisite --------------- */
