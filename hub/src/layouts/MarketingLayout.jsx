@@ -17,7 +17,7 @@ export default function MarketingLayout() {
           </nav>
           <span className="dwp-desktop-only" style={{ width: 1, height: 24, background: 'var(--gd-border)' }} />
           <Button as={Link} to="/login" variant="ghost" size="sm">ورود</Button>
-          <Button as={Link} to="/register" variant="primary" size="sm">شروع رایگان</Button>
+          <Button as={Link} to="/register" variant="primary" size="sm">ساخت حساب</Button>
         </div>
       </header>
 

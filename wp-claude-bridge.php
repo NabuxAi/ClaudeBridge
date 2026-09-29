@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.7.7
+ * Version: 3.8.0
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.7.7' );
+define( 'CB_VERSION', '3.8.0' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -1075,6 +1075,113 @@ function cb_op_backup_policy_get()        { return cb_backup_policy_get(); }
 function cb_op_backup_policy_set( $args ) { return cb_backup_policy_set( is_array( $args ) ? $args : array() ); }
 function cb_op_backup_prune( $args )      { return cb_backup_prune( is_array( $args ) ? $args : array() ); }
 
+/** Read-only: the four gate probes, on demand. */
+function cb_op_update_health() {
+	$h = cb_update_health_checks();
+	return array(
+		'ok'         => true,
+		'checked_at' => time(),
+		'pass'       => cb_update_health_pass( null, $h ),
+		'health'     => $h,
+	);
+}
+
+/** Read-only: the latest safe-update journal (or one run's, by id). */
+function cb_op_update_journal( $args ) {
+	$args   = is_array( $args ) ? $args : array();
+	$run_id = isset( $args['run_id'] ) ? sanitize_text_field( (string) $args['run_id'] ) : '';
+	if ( '' !== $run_id ) {
+		$dir = cb_safe_update_run_dir( $run_id );
+		$j   = cb_update_journal_read( $dir );
+		if ( ! is_array( $j ) ) {
+			return array( 'ok' => false, 'message' => 'ژورنالی با این شناسهٔ اجرا پیدا نشد.' );
+		}
+		return array( 'ok' => true, 'journal' => $j );
+	}
+	$latest = cb_update_journal_latest_run();
+	if ( null === $latest ) {
+		return array( 'ok' => false, 'message' => 'هنوز اجرای به‌روزرسانی موجی ثبت نشده است.' );
+	}
+	$j = cb_update_journal_read( $latest['dir'] );
+	if ( ! is_array( $j ) ) {
+		return array( 'ok' => false, 'message' => 'ژورنال آخرین اجرا خوانده نشد.' );
+	}
+	return array( 'ok' => true, 'journal' => $j );
+}
+
+/**
+ * Manual rollback of one wave from its snapshot — the undo window for the
+ * site that broke a day after a clean-looking update. Plugins and themes
+ * only; core is a human decision with the safety backup, not a zip.
+ */
+function cb_op_update_rollback( $args ) {
+	$args   = is_array( $args ) ? $args : array();
+	$run_id = isset( $args['run_id'] ) ? sanitize_text_field( (string) $args['run_id'] ) : '';
+
+	$latest = null;
+	if ( '' !== $run_id ) {
+		$dir = cb_safe_update_run_dir( $run_id );
+		if ( '' !== $dir && file_exists( cb_update_journal_path( $dir ) ) ) {
+			$latest = array( 'run_id' => $run_id, 'dir' => $dir );
+		}
+	} else {
+		$latest = cb_update_journal_latest_run();
+	}
+	if ( null === $latest ) {
+		return array( 'ok' => false, 'message' => 'اجرایی برای بازگردانی پیدا نشد.' );
+	}
+	$journal = cb_update_journal_read( $latest['dir'] );
+	if ( ! is_array( $journal ) || empty( $journal['items'] ) ) {
+		return array( 'ok' => false, 'message' => 'ژورنال این اجرا خوانده نشد یا موجی ندارد.' );
+	}
+
+	// Default: the newest wave that actually has a snapshot to come back to.
+	$idx    = isset( $args['index'] ) && is_numeric( $args['index'] ) ? (int) $args['index'] : null;
+	$choice = null;
+	if ( null !== $idx && isset( $journal['items'][ $idx ] ) ) {
+		$choice = $journal['items'][ $idx ];
+	} else {
+		for ( $k = count( $journal['items'] ) - 1; $k >= 0; $k-- ) {
+			if ( ! empty( $journal['items'][ $k ]['snapshot'] ) && 'core' !== $journal['items'][ $k ]['type'] ) {
+				$choice = $journal['items'][ $k ];
+				break;
+			}
+		}
+	}
+	if ( null === $choice || empty( $choice['snapshot'] ) || 'core' === $choice['type'] ) {
+		return array( 'ok' => false, 'message' => 'موجی با snapshot قابل‌بازگردانی در این اجرا نیست (هسته snapshot ندارد).' );
+	}
+
+	$snapshot_path = $latest['dir'] . '/' . preg_replace( '/[^A-Za-z0-9_.-]/', '', (string) $choice['snapshot'] );
+	$rb = cb_update_rollback_item( $choice['type'], $choice['name'], $snapshot_path );
+	$health = cb_update_health_checks();
+
+	if ( ! isset( $journal['manual_rollbacks'] ) || ! is_array( $journal['manual_rollbacks'] ) ) {
+		$journal['manual_rollbacks'] = array();
+	}
+	$journal['manual_rollbacks'][] = array(
+		'at'     => time(),
+		'name'   => $choice['name'],
+		'type'   => $choice['type'],
+		'ok'     => ! is_wp_error( $rb ),
+		'error'  => is_wp_error( $rb ) ? $rb->get_error_message() : null,
+		'health' => cb_update_health_summary( $health ),
+	);
+	cb_update_journal_write( $latest['dir'], $journal );
+
+	if ( is_wp_error( $rb ) ) {
+		return array( 'ok' => false, 'message' => $rb->get_error_message(), 'run_id' => $latest['run_id'] );
+	}
+	return array(
+		'ok'         => true,
+		'message'    => 'موج بازگردانی شد و سلامت دوباره سنجیده شد.',
+		'run_id'     => $latest['run_id'],
+		'item'       => array( 'type' => $choice['type'], 'name' => $choice['name'] ),
+		'health'     => cb_update_health_summary( $health ),
+		'health_pass'=> cb_update_health_pass( null, $health ),
+	);
+}
+
 function cb_dir_size_quick( $dir ) {
 	if ( ! is_dir( $dir ) ) {
 		return 0;
@@ -2005,6 +2112,9 @@ function cb_tools() {
 	// reports what is genuinely still pending rather than echoing the switches.
 	$tools[] = array( 'name' => 'set_update_policy', 'description' => 'Set whether WordPress core, plugins and themes keep themselves up to date on this site. Sent by the DigiWP panel. When safe_mode is true the three switches are forced on and cannot be turned off — there is no secure configuration that is also out of date.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'auto_core' => array( 'type' => 'boolean' ), 'auto_plugins' => array( 'type' => 'boolean' ), 'auto_themes' => array( 'type' => 'boolean' ), 'safe_mode' => array( 'type' => 'boolean' ) ) ), 'op' => 'cb_op_set_update_policy' );
 	$tools[] = array( 'name' => 'update_status', 'description' => 'What is actually pending on this site right now: current WordPress version vs latest, and every plugin and theme with an update waiting, with from/to versions. Forces a fresh check against wordpress.org rather than trusting cached transients. This is measured state, not the configured intent.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_update_status' );
+	$tools[] = array( 'name' => 'update_health_check', 'description' => 'Run the four safe-update health probes right now (homepage, wp-login, REST root, cron) with status codes and timings. Read-only. This is the same gate the update pipeline runs after every wave, available on its own so health can be verified independently of any update.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_update_health', 'noargs' => true );
+	$tools[] = array( 'name' => 'update_journal_get', 'description' => 'Read the safe-update journal: the last transactional update run, wave by wave — old/new versions, health verdicts before and after, rollback outcomes, and any manual rollbacks. Read-only. Pass run_id for a specific past run; omit it for the latest.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'run_id' => array( 'type' => 'string', 'description' => 'Optional run id from a previous update result.' ) ) ), 'op' => 'cb_op_update_journal' );
+	$tools[] = array( 'name' => 'update_rollback', 'description' => 'Manually restore one wave of a past update run from its file snapshot (plugins and themes only; core is excluded on purpose). Destructive: it replaces the item\'s current files with the pre-update snapshot and records the rollback in the journal. Defaults to the latest run\'s newest snapshot-backed wave.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'run_id' => array( 'type' => 'string', 'description' => 'Optional run id; defaults to the latest run.' ), 'index' => array( 'type' => 'number', 'description' => 'Optional wave index in that run\'s journal; defaults to the newest snapshot-backed wave.' ) ) ), 'op' => 'cb_op_update_rollback' );
 
 	// Cookbook: the same recipes the site owner sees in wp-admin.
 	$tools[] = array( 'name' => 'list_recipes', 'description' => 'List the cookbook recipes bundled with this plugin — ready-made playbooks for the jobs people hand to an AI on a WordPress site (security audit, speed audit, plugin conflict hunt, child theme, alt text sweep, content calendar, WooCommerce restock/sale/checkout review, Elementor header & footer, theme.json rebrand, and more). Each returns an id; call get_recipe for the full prompt. Set for_this_site=true to see only the recipes whose stack this site actually has.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'tag' => array( 'type' => 'string', 'description' => 'Filter by tag, e.g. "WooCommerce", "Security", "Performance".' ), 'search' => array( 'type' => 'string' ), 'for_this_site' => array( 'type' => 'boolean', 'description' => 'Only recipes matching this site (WooCommerce, Elementor, block theme, …).' ) ) ), 'op' => 'cb_op_list_recipes' );
@@ -2971,6 +3081,438 @@ function cb_job_perf( $job ) {
  * honest answer to "what if this update breaks the site" is a database you can
  * put back, not a promise that it will not.
  */
+/* -----------------------------------------------------------------
+ * SAFE UPDATE PIPELINE
+ *
+ * "The update broke the site" is the oldest failure in WordPress, and a
+ * database dump taken before it does not undo it: plugins and themes are
+ * files, and the broken thing is a file. This pipeline makes the manual
+ * update job transactional the way P0.4 asked for:
+ *
+ *   preflight  — disk space for snapshots, a database safety backup, and a
+ *                health baseline measured BEFORE anything changes. A site
+ *                whose REST was already broken must not be "rolled back"
+ *                for staying exactly as broken as it was.
+ *   waves      — one item per chunk. Before each upgrade the item's current
+ *                files are zipped into the run directory.
+ *   gate       — after each upgrade the same probes run again. Anything that
+ *                worked at baseline and fails now rolls that item back from
+ *                its snapshot, and the queue STOPS: after one bad wave the
+ *                honest move is to stop, not to keep going.
+ *   journal    — every run writes journal.json next to its snapshots and a
+ *                summary into an option: old/new version, health verdicts,
+ *                rollback outcome. "Updated" and "still works" are recorded
+ *                as separate facts because they are.
+ *
+ * Core is deliberately NOT auto-rolled-back. A WordPress upgrade migrates
+ * the database schema forward; putting old files over a migrated database
+ * is how a half-broken site becomes a fully broken one. For core the gate
+ * stops the queue and the journal says so in plain words — recovery is a
+ * human decision with the safety backup in hand.
+ * -------------------------------------------------------------- */
+
+/** Run artifacts live under the protected backup dir: safe-updates/<run_id>/. */
+function cb_safe_update_root() {
+	$base = cb_backup_dir();
+	if ( '' === $base ) {
+		return '';
+	}
+	$dir = $base . '/safe-updates';
+	if ( ! is_dir( $dir ) ) {
+		wp_mkdir_p( $dir );
+		cb_put_contents( $dir . '/.htaccess', "Require all denied\nDeny from all\n" );
+		cb_put_contents( $dir . '/index.php', "<?php // Silence is golden.\n" );
+	}
+	return is_dir( $dir ) ? $dir : '';
+}
+
+function cb_safe_update_run_dir( $run_id ) {
+	$root = cb_safe_update_root();
+	if ( '' === $root ) {
+		return '';
+	}
+	$run_id = preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $run_id );
+	if ( '' === $run_id ) {
+		return '';
+	}
+	$dir = $root . '/' . $run_id;
+	if ( ! is_dir( $dir ) ) {
+		wp_mkdir_p( $dir );
+	}
+	return $dir;
+}
+
+/** Current version of one queue item, or null when it cannot be read. */
+function cb_update_item_version( $type, $name ) {
+	if ( 'core' === $type ) {
+		return get_bloginfo( 'version' );
+	}
+	if ( 'theme' === $type ) {
+		if ( function_exists( 'wp_get_themes' ) ) {
+			$themes = wp_get_themes();
+			if ( isset( $themes[ $name ] ) ) {
+				return $themes[ $name ]->get( 'Version' );
+			}
+			foreach ( $themes as $stylesheet => $t ) {
+				if ( strtolower( $t->get( 'Name' ) ) === strtolower( $name ) ) {
+					return $t->get( 'Version' );
+				}
+			}
+		}
+		return null;
+	}
+	if ( function_exists( 'get_plugins' ) ) {
+		$all = get_plugins();
+		if ( isset( $all[ $name ] ) ) {
+			return isset( $all[ $name ]['Version'] ) ? $all[ $name ]['Version'] : null;
+		}
+		foreach ( $all as $file => $info ) {
+			if ( strtolower( $info['Name'] ) === strtolower( $name ) || strpos( $file, $name . '/' ) === 0 ) {
+				return isset( $info['Version'] ) ? $info['Version'] : null;
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * Resolve a queue item to the path the snapshot and the rollback both touch.
+ *
+ * Matching mirrors the apply step (stylesheet / plugin file, then a name
+ * match fallback), and the result is validated to sit inside WP_PLUGIN_DIR
+ * or a theme root — a rollback deletes what this returns, so it may never
+ * point anywhere else.
+ *
+ * @return array|array{dir:string,slug:string,single_file:bool}|WP_Error
+ */
+function cb_update_resolve_item( $type, $name ) {
+	if ( 'core' === $type ) {
+		return new WP_Error( 'cb_update', 'هسته فایل موردی برای snapshot ندارد.' );
+	}
+	if ( 'theme' === $type ) {
+		$target = $name;
+		if ( function_exists( 'wp_get_themes' ) ) {
+			$themes = wp_get_themes();
+			if ( ! isset( $themes[ $target ] ) ) {
+				foreach ( $themes as $stylesheet => $t ) {
+					if ( strtolower( $t->get( 'Name' ) ) === strtolower( $target ) ) {
+						$target = $stylesheet;
+						break;
+					}
+				}
+			}
+		}
+		$root = function_exists( 'get_theme_root' ) ? get_theme_root( $target ) : WP_CONTENT_DIR . '/themes';
+		$dir  = rtrim( $root, '/\\' ) . '/' . ltrim( $target, '/\\' );
+		if ( ! is_dir( $dir ) ) {
+			return new WP_Error( 'cb_update', 'پوشهٔ قالب پیدا نشد: ' . $target );
+		}
+		return array( 'dir' => $dir, 'slug' => basename( $dir ), 'single_file' => false );
+	}
+
+	$target = $name;
+	if ( function_exists( 'get_plugins' ) ) {
+		$all_plugins = get_plugins();
+		if ( ! isset( $all_plugins[ $target ] ) ) {
+			foreach ( $all_plugins as $file => $info ) {
+				if ( strtolower( $info['Name'] ) === strtolower( $target ) || strpos( $file, $target . '/' ) === 0 ) {
+					$target = $file;
+					break;
+				}
+			}
+		}
+	}
+	$target = str_replace( '\\', '/', $target );
+	if ( false !== strpos( $target, '../' ) ) {
+		return new WP_Error( 'cb_update', 'نام افزونه نامعتبر است.' );
+	}
+	$parent = dirname( WP_PLUGIN_DIR . '/' . ltrim( $target, '/' ) );
+	if ( $parent === rtrim( WP_PLUGIN_DIR, '/\\' ) ) {
+		// A single-file plugin: the "folder" is one PHP file inside WP_PLUGIN_DIR.
+		$file = WP_PLUGIN_DIR . '/' . ltrim( $target, '/' );
+		if ( ! is_file( $file ) ) {
+			return new WP_Error( 'cb_update', 'فایل افزونه پیدا نشد: ' . $target );
+		}
+		return array( 'dir' => $file, 'slug' => basename( $file ), 'single_file' => true );
+	}
+	if ( ! is_dir( $parent ) ) {
+		return new WP_Error( 'cb_update', 'پوشهٔ افزونه پیدا نشد: ' . $target );
+	}
+	return array( 'dir' => $parent, 'slug' => basename( $parent ), 'single_file' => false );
+}
+
+/** Zip one item's current files into the run directory. Returns the zip path or WP_Error. */
+function cb_update_snapshot_item( $type, $name, $run_dir, $i ) {
+	if ( '' === $run_dir || ! class_exists( 'ZipArchive' ) ) {
+		return new WP_Error( 'cb_snapshot', 'ZipArchive یا پوشهٔ اجرا در دسترس نیست.' );
+	}
+	$r = cb_update_resolve_item( $type, $name );
+	if ( is_wp_error( $r ) ) {
+		return $r;
+	}
+	$slug     = preg_replace( '/[^A-Za-z0-9_.-]/', '-', $r['slug'] );
+	$zip_path = $run_dir . '/snap-' . (int) $i . '-' . ( 'theme' === $type ? 'theme' : 'plugin' ) . '-' . $slug . '.zip';
+	$zip      = new ZipArchive();
+	if ( true !== $zip->open( $zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE ) ) {
+		return new WP_Error( 'cb_snapshot', 'باز کردن zip برای snapshot ناموفق بود.' );
+	}
+	if ( $r['single_file'] ) {
+		$zip->addFile( $r['dir'], basename( $r['dir'] ) );
+	} else {
+		$it = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator( $r['dir'], FilesystemIterator::SKIP_DOTS ),
+			RecursiveIteratorIterator::LEAVES_ONLY,
+			RecursiveIteratorIterator::CATCH_GET_CHILD
+		);
+		$base = rtrim( $r['dir'], '/\\' ) . '/';
+		foreach ( $it as $f ) {
+			if ( $f->isFile() ) {
+				$zip->addFile( $f->getPathname(), ltrim( substr( str_replace( '\\', '/', $f->getPathname() ), strlen( $base ) ), '/' ) );
+			}
+		}
+	}
+	$zip->close();
+	if ( ! file_exists( $zip_path ) || (int) @filesize( $zip_path ) < 100 ) {
+		return new WP_Error( 'cb_snapshot', 'snapshot خالی نوشته شد.' );
+	}
+	return $zip_path;
+}
+
+/** Recursive delete for a validated item directory only. Never called on anything else. */
+function cb_update_rrmdir( $dir ) {
+	if ( ! is_dir( $dir ) ) {
+		return false;
+	}
+	$it = new RecursiveIteratorIterator(
+		new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS ),
+		RecursiveIteratorIterator::CHILD_FIRST,
+		RecursiveIteratorIterator::CATCH_GET_CHILD
+	);
+	foreach ( $it as $f ) {
+		if ( $f->isDir() ) {
+			@rmdir( $f->getPathname() );
+		} else {
+			@unlink( $f->getPathname() );
+		}
+	}
+	return @rmdir( $dir );
+}
+
+/**
+ * Put one item back exactly as the snapshot found it.
+ *
+ * The item is deleted and re-extracted, which is why the directory comes
+ * from cb_update_resolve_item() and never from the caller's string.
+ */
+function cb_update_rollback_item( $type, $name, $snapshot_path ) {
+	if ( ! class_exists( 'ZipArchive' ) || ! $snapshot_path || ! file_exists( $snapshot_path ) ) {
+		return new WP_Error( 'cb_rollback', 'snapshot در دسترس نیست؛ بازگردانی ممکن نشد.' );
+	}
+	$r = cb_update_resolve_item( $type, $name );
+	if ( is_wp_error( $r ) ) {
+		return $r;
+	}
+	if ( $r['single_file'] ) {
+		// Extract next to the live file, swap in, keep the broken one for inspection.
+		$tmp = rtrim( dirname( $r['dir'] ), '/\\' ) . '/.cb-rollback-' . wp_generate_password( 6, false, false );
+		if ( ! wp_mkdir_p( $tmp ) ) {
+			return new WP_Error( 'cb_rollback', 'ساخت پوشهٔ موقت بازگردانی ناموفق بود.' );
+		}
+		$zip = new ZipArchive();
+		if ( true !== $zip->open( $snapshot_path ) ) {
+			return new WP_Error( 'cb_rollback', 'باز کردن snapshot ناموفق بود.' );
+		}
+		$ok = $zip->extractTo( $tmp );
+		$zip->close();
+		if ( ! $ok || ! file_exists( $tmp . '/' . basename( $r['dir'] ) ) ) {
+			return new WP_Error( 'cb_rollback', 'استخراج snapshot ناموفق بود.' );
+		}
+		@rename( $r['dir'], rtrim( dirname( $r['dir'] ), '/\\' ) . '/.broken-' . basename( $r['dir'] ) . '-' . wp_generate_password( 4, false, false ) );
+		$moved = @rename( $tmp . '/' . basename( $r['dir'] ), $r['dir'] );
+		cb_update_rrmdir( $tmp );
+		return $moved ? true : new WP_Error( 'cb_rollback', 'جایگزینی فایل بازگردانی‌شده ناموفق بود.' );
+	}
+
+	$zip = new ZipArchive();
+	if ( true !== $zip->open( $snapshot_path ) ) {
+		return new WP_Error( 'cb_rollback', 'باز کردن snapshot ناموفق بود.' );
+	}
+	$entries = array();
+	for ( $zi = 0; $zi < $zip->numFiles; $zi++ ) {
+		$e = $zip->getNameIndex( $zi );
+		if ( is_string( $e ) ) {
+			$entries[] = $e;
+		}
+	}
+	$zip->close();
+	if ( empty( $entries ) ) {
+		return new WP_Error( 'cb_rollback', 'snapshot خالی است.' );
+	}
+	if ( ! cb_update_rrmdir( $r['dir'] ) && is_dir( $r['dir'] ) ) {
+		return new WP_Error( 'cb_rollback', 'حذف نسخهٔ خراب ناموفق بود.' );
+	}
+	if ( ! wp_mkdir_p( $r['dir'] ) ) {
+		return new WP_Error( 'cb_rollback', 'ساخت پوشهٔ بازگردانی ناموفق بود.' );
+	}
+	$zip = new ZipArchive();
+	if ( true !== $zip->open( $snapshot_path ) ) {
+		return new WP_Error( 'cb_rollback', 'باز کردن snapshot ناموفق بود.' );
+	}
+	$ok = $zip->extractTo( $r['dir'] );
+	$zip->close();
+	if ( ! $ok || ! is_file( $r['dir'] . '/' . $entries[0] ) ) {
+		return new WP_Error( 'cb_rollback', 'استخراج snapshot کامل نشد.' );
+	}
+	return true;
+}
+
+/** One loopback probe. sslverify off on purpose: this is the site talking to itself. */
+function cb_update_probe( $label, $url, $expect_body = '' ) {
+	$start = microtime( true );
+	$res   = wp_remote_get( $url, array( 'timeout' => 10, 'redirection' => 2, 'sslverify' => false ) );
+	$ms    = (int) round( ( microtime( true ) - $start ) * 1000 );
+	if ( is_wp_error( $res ) ) {
+		return array( 'label' => $label, 'ok' => false, 'code' => 0, 'ms' => $ms, 'error' => $res->get_error_message() );
+	}
+	$code = (int) wp_remote_retrieve_response_code( $res );
+	$body = wp_remote_retrieve_body( $res );
+	$ok   = ( $code >= 200 && $code < 400 && ( '' === $expect_body || false !== strpos( $body, $expect_body ) ) );
+	return array( 'label' => $label, 'ok' => (bool) $ok, 'code' => $code, 'ms' => $ms );
+}
+
+/** The four probes the gate runs: homepage, login, REST root, cron. */
+function cb_update_health_checks() {
+	return array(
+		'home'  => cb_update_probe( 'home', home_url( '/' ) ),
+		'login' => cb_update_probe( 'login', home_url( '/wp-login.php' ) ),
+		'rest'  => cb_update_probe( 'rest', esc_url_raw( rest_url( '/' ) ), '"name"' ),
+		'cron'  => cb_update_probe( 'cron', site_url( '/wp-cron.php?doing_wp_cron=' . time() ) ),
+	);
+}
+
+/** Compact verdict for the journal: full probe payloads stay out of it. */
+function cb_update_health_summary( $h ) {
+	if ( ! is_array( $h ) ) {
+		return null;
+	}
+	$out = array();
+	foreach ( array( 'home', 'login', 'rest', 'cron' ) as $k ) {
+		if ( isset( $h[ $k ] ) && is_array( $h[ $k ] ) ) {
+			$out[ $k ] = array(
+				'ok'   => ! empty( $h[ $k ]['ok'] ),
+				'code' => isset( $h[ $k ]['code'] ) ? (int) $h[ $k ]['code'] : 0,
+				'ms'   => isset( $h[ $k ]['ms'] ) ? (int) $h[ $k ]['ms'] : 0,
+			);
+		}
+	}
+	return $out;
+}
+
+/**
+ * The gate: nothing that worked before the wave may be broken after it.
+ *
+ * Without a baseline (the standalone health tool), the gate is the stricter
+ * absolute form — home and REST must answer. With one, a probe that was
+ * already broken stays broken without failing the run, because "unchanged"
+ * is not damage the update caused.
+ */
+function cb_update_health_pass( $baseline, $current ) {
+	if ( ! is_array( $baseline ) ) {
+		return ! empty( $current['home']['ok'] ) && ! empty( $current['rest']['ok'] );
+	}
+	foreach ( array( 'home', 'login', 'rest', 'cron' ) as $k ) {
+		$was = ! empty( $baseline[ $k ]['ok'] );
+		$now = ! empty( $current[ $k ]['ok'] );
+		if ( $was && ! $now ) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function cb_update_journal_path( $run_dir ) {
+	return $run_dir . '/journal.json';
+}
+
+function cb_update_journal_read( $run_dir ) {
+	if ( '' === $run_dir || ! file_exists( cb_update_journal_path( $run_dir ) ) ) {
+		return null;
+	}
+	$j = json_decode( (string) cb_get_contents( cb_update_journal_path( $run_dir ) ), true );
+	return is_array( $j ) ? $j : null;
+}
+
+function cb_update_journal_write( $run_dir, $journal ) {
+	if ( '' === $run_dir || ! is_array( $journal ) ) {
+		return false;
+	}
+	$ok = cb_put_contents( cb_update_journal_path( $run_dir ), wp_json_encode( $journal ) );
+	// A small mirror in the options table so the read tool does not have to
+	// guess which run directory was the latest one.
+	if ( ! empty( $journal['run_id'] ) ) {
+		update_option( 'cb_safe_update_last', array(
+			'run_id'  => $journal['run_id'],
+			'started' => isset( $journal['started_at'] ) ? (int) $journal['started_at'] : 0,
+			'state'   => isset( $journal['state'] ) ? $journal['state'] : 'running',
+		), false );
+	}
+	return $ok;
+}
+
+/** The latest run directory: the option's pointer first, newest on disk second. */
+function cb_update_journal_latest_run() {
+	$root = cb_safe_update_root();
+	if ( '' === $root || ! is_dir( $root ) ) {
+		return null;
+	}
+	$last = get_option( 'cb_safe_update_last' );
+	if ( is_array( $last ) && ! empty( $last['run_id'] ) ) {
+		$dir = $root . '/' . preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $last['run_id'] );
+		if ( is_dir( $dir ) ) {
+			return array( 'run_id' => $last['run_id'], 'dir' => $dir );
+		}
+	}
+	$best = null;
+	foreach ( scandir( $root ) as $d ) {
+		if ( '.' === $d || '..' === $d ) {
+			continue;
+		}
+		$dir = $root . '/' . $d;
+		if ( is_dir( $dir ) && file_exists( cb_update_journal_path( $dir ) ) ) {
+			$m = (int) @filemtime( cb_update_journal_path( $dir ) );
+			if ( null === $best || $m > $best[0] ) {
+				$best = array( $m, $d, $dir );
+			}
+		}
+	}
+	return $best ? array( 'run_id' => $best[1], 'dir' => $best[2] ) : null;
+}
+
+/** Snapshots are rollback artifacts, not archives: old runs go after a week. */
+function cb_safe_update_prune( $days = 7 ) {
+	$root = cb_safe_update_root();
+	if ( '' === $root || ! is_dir( $root ) ) {
+		return 0;
+	}
+	$removed = 0;
+	$limit   = time() - ( DAY_IN_SECONDS * max( 1, (int) $days ) );
+	foreach ( scandir( $root ) as $d ) {
+		if ( '.' === $d || '..' === $d ) {
+			continue;
+		}
+		$dir = $root . '/' . $d;
+		if ( is_dir( $dir ) && (int) @filemtime( $dir ) < $limit ) {
+			if ( cb_update_rrmdir( $dir ) ) {
+				$removed++;
+			}
+		}
+	}
+	return $removed;
+}
+
+/**
+ * The manual update job: preflight, then one wave per item, each gated.
+ */
 function cb_job_update_apply( $job ) {
 	require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
 	require_once ABSPATH . 'wp-admin/includes/plugin.php';
@@ -2980,7 +3522,7 @@ function cb_job_update_apply( $job ) {
 	$args  = is_array( $job['args'] ) ? $job['args'] : array();
 	$state = is_array( $job['cursor'] ) ? $job['cursor'] : array();
 
-	if ( ! isset( $state['queue'] ) ) {
+	if ( ! isset( $state['phase'] ) ) {
 		// An explicit list, or everything pending. Explicit wins so the panel's
 		// "update this one" button does not quietly update eleven things.
 		$queue = array();
@@ -3012,34 +3554,118 @@ function cb_job_update_apply( $job ) {
 				'result' => array( 'ok' => true, 'applied' => array(), 'failed' => array() ) );
 		}
 
+		$run_id  = gmdate( 'Ymd-His' ) . '-' . wp_generate_password( 6, false, false );
+		$run_dir = cb_safe_update_run_dir( $run_id );
+		$state   = array(
+			'phase'      => 'init',
+			'run_id'     => $run_id,
+			'queue'      => $queue,
+			'i'          => 0,
+			'applied'    => array(),
+			'failed'     => array(),
+			'rolled_back'=> array(),
+			'skipped'    => 0,
+			'safety'     => null,
+		);
+		cb_update_journal_write( $run_dir, array(
+			'run_id'      => $run_id,
+			'started_at'  => time(),
+			'wp_version'  => get_bloginfo( 'version' ),
+			'queue'       => count( $queue ),
+			'state'       => 'preflight',
+			'snapshot_capable' => ( '' !== $run_dir && class_exists( 'ZipArchive' ) ),
+			'items'       => array(),
+		) );
+	}
+
+	$run_dir = cb_safe_update_run_dir( $state['run_id'] );
+	$journal = cb_update_journal_read( $run_dir );
+	if ( ! is_array( $journal ) ) {
+		$journal = array( 'run_id' => $state['run_id'], 'items' => array() );
+	}
+
+	// ---- preflight: disk, database safety backup, health baseline --------
+	if ( 'init' === $state['phase'] ) {
+		$free = @disk_free_space( '' !== $run_dir ? $run_dir : ABSPATH );
+		if ( false === $free || null === $free ) {
+			$free = @disk_free_space( ABSPATH );
+		}
+		if ( false !== $free && $free < ( 100 * 1024 * 1024 ) ) {
+			$journal['state'] = 'aborted';
+			$journal['abort'] = 'فضای خالی هاست کمتر از ۱۰۰ مگابایت است؛ برای snapshot و بازگردانی، اجرا متوقف شد.';
+			cb_update_journal_write( $run_dir, $journal );
+			return array( 'done' => true, 'message' => $journal['abort'],
+				'result' => array( 'ok' => false, 'applied' => array(), 'failed' => array(), 'run_id' => $state['run_id'] ) );
+		}
+
 		$safety = cb_backup_run( array( 'label' => 'pre-update', 'files' => false ) );
-		$state = array(
-			'queue'   => $queue,
-			'i'       => 0,
-			'applied' => array(),
-			'failed'  => array(),
-			'safety'  => ! empty( $safety['ok'] ) ? $safety['backup']['id'] : null,
+		$state['safety'] = ! empty( $safety['ok'] ) ? $safety['backup']['id'] : null;
+		$journal['safety_backup']   = $state['safety'];
+		$journal['baseline_health'] = cb_update_health_summary( cb_update_health_checks() );
+		$journal['state']           = 'waves';
+		$state['phase']             = 'items';
+		cb_update_journal_write( $run_dir, $journal );
+		return array(
+			'cursor'   => $state,
+			'progress' => 5,
+			'message'  => 'پیش‌نیازها آماده شد؛ آپدیت موجی آغاز می‌شود.',
 		);
 	}
 
 	$n = count( $state['queue'] );
+
+	// ---- finish ----------------------------------------------------------
 	if ( $state['i'] >= $n ) {
+		wp_update_plugins();
+		wp_update_themes();
+		wp_version_check();
+		$journal['state']       = 'done';
+		$journal['finished_at'] = time();
+		cb_update_journal_write( $run_dir, $journal );
+		cb_safe_update_prune( 7 );
+
+		$parts   = array( sprintf( '%d مورد به‌روز شد', count( $state['applied'] ) ) );
+		$parts[] = sprintf( '%d ناموفق', count( $state['failed'] ) );
+		if ( $state['rolled_back'] ) {
+			$parts[] = sprintf( '%d به‌روزرسانی خراب کرد و بازگردانی شد', count( $state['rolled_back'] ) );
+		}
+		if ( $state['skipped'] ) {
+			$parts[] = sprintf( '%d مورد پس از توقف صف اجرا نشد', $state['skipped'] );
+		}
 		return array(
 			'done'    => true,
-			'message' => $state['failed']
-				? sprintf( '%d مورد به‌روز شد، %d ناموفق', count( $state['applied'] ), count( $state['failed'] ) )
-				: sprintf( '%d مورد به‌روز شد', count( $state['applied'] ) ),
+			'message' => implode( '، ', $parts ) . '.',
 			'result'  => array(
-				'ok'      => empty( $state['failed'] ),
-				'applied' => $state['applied'],
-				'failed'  => $state['failed'],
-				'safety_backup' => $state['safety'],
+				'ok'             => empty( $state['failed'] ) && empty( $state['rolled_back'] ),
+				'applied'        => $state['applied'],
+				'failed'         => $state['failed'],
+				'rolled_back'    => $state['rolled_back'],
+				'skipped'        => $state['skipped'],
+				'safety_backup'  => $state['safety'],
+				'run_id'         => $state['run_id'],
+				'health_gated'   => true,
 			),
 		);
 	}
 
+	// ---- one wave: snapshot → upgrade → gate → maybe rollback ------------
 	$item = $state['queue'][ $state['i'] ];
+	$i    = (int) $state['i'];
+	$from = cb_update_item_version( $item['type'], $item['name'] );
+
+	$snapshot = null;
+	$snap_err = null;
+	if ( 'core' !== $item['type'] ) {
+		$s = cb_update_snapshot_item( $item['type'], $item['name'], $run_dir, $i );
+		if ( is_wp_error( $s ) ) {
+			$snap_err = $s->get_error_message();
+		} else {
+			$snapshot = $s;
+		}
+	}
+
 	$skin = cb_upgrader_skin();
+	$res  = null;
 	try {
 		ob_start();
 		if ( 'core' === $item['type'] ) {
@@ -3098,16 +3724,89 @@ function cb_job_update_apply( $job ) {
 		$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => $e->getMessage() );
 	}
 
-	$state['i']++;
-	if ( $state['i'] >= $n ) {
-		wp_update_plugins();
-		wp_update_themes();
-		wp_version_check();
+	$to      = cb_update_item_version( $item['type'], $item['name'] );
+	$health  = cb_update_health_checks();
+	// The gate compares against the measured baseline, probe by probe.
+	$baseline_probes = isset( $journal['baseline_health'] ) && is_array( $journal['baseline_health'] )
+		? $journal['baseline_health']
+		: null;
+	$pass = cb_update_health_pass( $baseline_probes, $health );
+
+	$entry = array(
+		'index'   => $i,
+		'type'    => $item['type'],
+		'name'    => $item['name'],
+		'from'    => $from,
+		'to'      => $to,
+		'outcome' => 'applied',
+		'health'  => cb_update_health_summary( $health ),
+		'snapshot'=> is_string( $snapshot ) ? basename( $snapshot ) : null,
+	);
+
+	if ( ! empty( $snap_err ) ) {
+		$entry['snapshot_error'] = $snap_err;
+	}
+
+	$stop = false;
+	$applied_ok = in_array( true, array_map( function ( $a ) use ( $item ) {
+		return $a['name'] === $item['name'];
+	}, $state['applied'] ), true );
+
+	if ( $applied_ok && ! $pass ) {
+		if ( 'core' === $item['type'] ) {
+			// Core rollback is deliberately manual: the upgrade already moved
+			// the database schema forward, and old files over a new schema is
+			// worse than a stopped queue. The safety backup is the way back.
+			$entry['outcome'] = 'applied_health_failed';
+			$entry['note']    = 'پس از به‌روزرسانی هسته سلامت سایت افت کرد. بازگردانی خودکار هسته انجام نمی‌شود (اسکیمای دیتابیس جلو رفته است)؛ بکاپ ایمنی موجود است و تصمیم با انسان است.';
+			$stop = true;
+		} elseif ( is_string( $snapshot ) && file_exists( $snapshot ) ) {
+			$rb = cb_update_rollback_item( $item['type'], $item['name'], $snapshot );
+			$health_after = cb_update_health_checks();
+			$entry['health_after_rollback'] = cb_update_health_summary( $health_after );
+			if ( is_wp_error( $rb ) ) {
+				$entry['outcome']        = 'rollback_failed';
+				$entry['rollback_error'] = $rb->get_error_message();
+			} else {
+				$entry['outcome'] = 'rolled_back';
+			}
+			$state['rolled_back'][] = array( 'name' => $item['name'], 'type' => $item['type'],
+				'rollback_ok' => ! is_wp_error( $rb ) );
+			$stop = true;
+		} else {
+			$entry['outcome']        = 'applied_health_failed';
+			$entry['rollback_error'] = 'snapshot در دسترس نبود؛ بازگردانی خودکار ممکن نشد.';
+			$state['rolled_back'][]  = array( 'name' => $item['name'], 'type' => $item['type'], 'rollback_ok' => false );
+			$stop = true;
+		}
+		// The wave that broke the site is the last one this run attempts.
+		$state['skipped'] = max( 0, $n - $state['i'] - 1 );
+		// Keep the applied entry honest: it updated, and then it was undone.
+		if ( 'rolled_back' === $entry['outcome'] ) {
+			$state['applied'] = array_values( array_filter( $state['applied'], function ( $a ) use ( $item ) {
+				return $a['name'] !== $item['name'];
+			} ) );
+		}
+	} elseif ( ! $applied_ok ) {
+		$entry['outcome'] = 'failed';
+	}
+
+	$journal['items'][] = $entry;
+	$state['i']         = $i + 1;
+	if ( $stop ) {
+		$journal['state'] = 'stopped_after_rollback';
+		$state['i']       = $n; // finish on the next pass with an honest summary
+	}
+	cb_update_journal_write( $run_dir, $journal );
+
+	if ( $stop ) {
+		return array( 'cursor' => $state, 'progress' => 95,
+			'message' => 'سلامت سایت پس از این موج افت کرد و صف متوقف شد: ' . $item['name'] );
 	}
 
 	return array(
 		'cursor'   => $state,
-		'progress' => (int) ( 100 * $state['i'] / max( 1, $n ) ),
+		'progress' => (int) ( 5 + 90 * $state['i'] / max( 1, $n ) ),
 		'message'  => sprintf( 'به‌روزرسانی %d از %d: %s', $state['i'], $n, $item['name'] ),
 	);
 }

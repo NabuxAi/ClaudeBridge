@@ -109,3 +109,29 @@ test('the route and the assistant share one sensitive list', async () => {
   const { SENSITIVE_SET } = await import('../src/authority.js')
   for (const t of SENSITIVE_TOOLS) assert.equal(SENSITIVE_SET.has(t), true)
 })
+
+test('the safe-update observers are readable at every level', () => {
+  // update_health_check and update_journal_get are the pipeline's evidence:
+  // probes and the journal. Reading them is what lets a cautious owner
+  // verify a run without being able to start one.
+  for (const level of AUTHORITY_LEVELS) {
+    for (const tool of ['update_health_check', 'update_journal_get']) {
+      const v = permits(level, tool)
+      assert.equal(v.allowed, true, `${tool} must be readable at ${level}`)
+      assert.equal(v.kind, 'read')
+    }
+  }
+})
+
+test('manual update rollback needs a human at every authority level', () => {
+  // update_rollback puts pre-update files back over live ones, possibly long
+  // after the run — everything changed since the snapshot is overwritten.
+  // The automatic rollback inside a just-failed wave is part of that wave;
+  // this tool is a separate human decision, so it sits with edit_file.
+  for (const level of AUTHORITY_LEVELS) {
+    const v = permits(level, 'update_rollback')
+    assert.equal(v.allowed, false, `update_rollback must never run unattended at ${level}`)
+    assert.equal(v.kind, 'sensitive')
+  }
+  assert.equal(classify('update_rollback'), 'sensitive')
+})

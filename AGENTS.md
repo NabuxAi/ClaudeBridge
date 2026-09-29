@@ -43,10 +43,11 @@ AI/MCP client --------------------------------> WordPress plugin directly
      Connector Mode.
    - PHP 7.4+ / WordPress 5.6+ target.
    - Version at baseline: `3.7.4`.
-   - Current release after the 2026-08-31 archive-scanner remediation and
-     on-demand playbook restoration: `3.7.6`.
-   - 6,121 lines and approximately 142 advertised tools at baseline: 16 initial
-     tools, 79 generated CRUD tools, and 47 appended tools.
+   - Current release after the 2026-09-28 transactional safe-update
+     pipeline (P0.4): `3.8.0`.
+   - Approximately 145 advertised tools: 16 initial tools, 79 generated CRUD
+     tools, and 50 appended tools (47 at baseline plus `update_health_check`,
+     `update_journal_get`, `update_rollback`).
 
 2. `server/`
    - Express relay and control plane backed by PostgreSQL.
@@ -153,6 +154,9 @@ for UI convenience.
 - WordPress MCP transport and direct tool execution.
 - HMAC Hub Connector Mode, pairing, ping, and live relay.
 - Core/plugin/theme inventory and update policy.
+- Transactional manual update pipeline (`3.8.0`): preflight, per-wave file
+  snapshots, health gates, automatic plugin/theme rollback, durable journal —
+  see P0.4 for the honest boundaries.
 - Three-level authority, proposals, approvals, and audit trail.
 - Site readings, event/incidence model, and limited health probes.
 - Malware/signature scan and WordPress core checksum integrity.
@@ -173,8 +177,14 @@ for UI convenience.
 - Monitoring probes currently cover the homepage and `wp-login`; checkout,
   payment gateway, contact form, and arbitrary business transactions are not
   continuously monitored.
-- Automatic updates use WordPress background updates. The manual update job
-  takes a database snapshot, but there is no complete file rollback path.
+- Automatic updates still use WordPress background updates with no pipeline.
+  As of `3.8.0` the **manual** update job (`update_apply`) is transactional:
+  per-item file snapshots, a measured health baseline, one item per wave,
+  health gates (homepage / wp-login / REST / cron) after each wave, and
+  automatic rollback from the snapshot when a gate fails — which also stops
+  the queue. Core updates are health-gated but deliberately NOT auto-rolled
+  back (the upgrade migrates the DB schema forward; old files over a new
+  schema is worse), and `update_rollback` restores plugin/theme waves only.
 - Backups are local to the managed site, not off-site, not independently
   encrypted, and not a disaster-recovery guarantee.
 - The security scan is signature/heuristic based. A clean result is not proof
@@ -333,11 +343,24 @@ pipeline needs:
 Relevant lines: `wp-claude-bridge.php:2657-2750`,
 `wp-claude-bridge.php:4098-4178`, `server/src/policy.js`.
 
-**Status: resolved (honest messaging).** `server/src/policy.js` now describes
-safe mode as keeping automatic updates on, not as a guarantee of automatic
-rollback after a bad update. The full transactional safe-update pipeline (file
-snapshot, preflight checks, post-update health verification, automatic rollback)
-remains in the product roadmap.
+**Status: resolved in 3.8.0 (transactional manual pipeline).** The manual
+`update_apply` job now IS the pipeline this finding asked for: preflight (free
+disk ≥ 100 MB, database safety backup, measured health baseline), per-item
+file snapshots zipped into `cb-backups-<hash>/safe-updates/<run_id>/`, one
+item per wave, the four health probes after each wave compared against the
+baseline, automatic rollback from the snapshot when a wave breaks something
+that worked before — and the queue stops there. Every run writes a durable
+journal (`journal.json` + an options-table pointer); the result separates
+`applied`, `failed`, `rolled_back`, and `skipped`. Two new read-only tools
+expose it (`update_health_check`, `update_journal_get`) and
+`update_rollback` restores a plugin/theme wave manually (server-side:
+sensitive at every authority level; see `server/src/authority.js`).
+Regression structure is pinned in `server/test/safe-update-pipeline.test.js`.
+Honest boundaries that remain: WordPress background (automatic) updates do
+not go through this pipeline; core updates are gated but never auto-rolled
+back — the upgrade migrates the DB schema forward, so old files over a new
+schema is a worse outcome, and the journal says so in plain words; probes
+cover homepage/login/REST/cron, not business journeys.
 
 ### P0.5 — database backups can live under a public uploads URL
 
@@ -513,7 +536,7 @@ external-services/privacy disclosure. Optional external calls are acceptable;
 hidden external calls are not.
 
 **Status: resolved (counts aligned).** `PRODUCT_SPEC.md` now says "more than 130
-tools" instead of 58. README badges track `CB_VERSION` (currently 3.7.6). The
+tools" instead of 58. README badges track `CB_VERSION` (currently 3.8.0). The
 "100+ tools" copy in every translated README is updated to "130+ tools". The
 external-services/privacy disclosure remains in the roadmap.
 
@@ -614,20 +637,25 @@ These rules override visual mockups and optimistic marketing copy:
 
 ## Verified test/build baseline
 
-Verified on 2026-08-16:
+Verified on 2026-09-28 (after the 3.8.0 safe-update pipeline and the hub
+NabuxUi unification + two bug-fix waves):
 
-- `php -l wp-claude-bridge.php` — passed.
-- Hub production build — passed.
-- Server suite after generated release artifacts, without PostgreSQL:
-  - 264 tests discovered;
-  - 260 passed;
+- `php -l` passed for `wp-claude-bridge.php` and both generated artifacts
+  (`dist/digiwp-ai-bridge/`, `dist/digi-ai-bridge/`), after rebuilding both.
+- Hub `npm run lint` and `npm run build` — passed.
+- Server suite without PostgreSQL:
+  - 290 tests discovered (includes `safe-update-pipeline.test.js` and the
+    new authority cases);
+  - 278 passed;
   - 0 failed;
-  - 4 skipped because `CB_TEST_DATABASE_URL` was not set.
+  - 12 skipped for `CB_TEST_DATABASE_URL`.
 - The skipped tests cover database properties such as pairing flow, proposal
   outcome/claim behavior, audit persistence, and demo-seed guarding. A no-database
   green run is not the full release gate.
-- Full PostgreSQL baseline: 287 passing, none skipped. Re-run rather than relying
-  on that count after changes.
+- Full PostgreSQL baseline: 287 passing, none skipped (2026-08-16; re-run
+  rather than relying on that count after changes).
+
+Historical baseline (2026-08-16): 264 discovered / 260 passed / 4 skipped.
 
 ### Canonical release verification
 
@@ -705,8 +733,8 @@ Do this before expanding the feature list:
 
 - Off-site encrypted backups, retention tiers, restore drills, and recovery
   objectives.
-- Transactional update pipeline with canary/waves, file+DB rollback, and health
-  verification.
+- Extend the 3.8.0 manual pipeline to WordPress background updates, plus
+  canary/staging waves; core still has no automatic file rollback by design.
 - Configurable synthetic journeys: checkout, forms, cron, REST, login, SSL and
   domain expiry.
 - Real uptime history and SLO/incident calculations instead of snapshot-only

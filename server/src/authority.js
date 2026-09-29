@@ -30,6 +30,8 @@
 export const READ_TOOLS = Object.freeze([
   'site_info',
   'update_status',
+  'update_health_check',
+  'update_journal_get',
   'backup_list',
   'backup_preflight',
   'backup_read',
@@ -105,6 +107,12 @@ export const SENSITIVE_TOOLS = Object.freeze([
   'db_query',
   'rescue_rotate_keys',
   'create_plugin',
+  // Puts a pre-update snapshot back over the item's live files. The automatic
+  // rollback inside the update pipeline is one half of a just-failed wave;
+  // this tool is a human deciding, possibly a day later, that a "successful"
+  // update is what broke the site — and it overwrites everything that
+  // changed since. Same approval as file editing, for the same reason.
+  'update_rollback',
 ])
 
 const READ = new Set(READ_TOOLS)
