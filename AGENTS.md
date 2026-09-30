@@ -192,6 +192,24 @@ for UI convenience.
   (`notification_settings` + `user_contacts` tables, `/notifications/*` endpoints,
   and the hub Notifications page).
 - Assistant answers/tool loop and optional scheduled fleet sweep.
+- Transactional email delivery (2026-09-30, commit `4d7dc2d`): `sendMail`
+  prefers `EMAIL_SERVER` (direct SMTP via `nodemailer`) over `EMAIL_URL` (HTTP
+  provider) under one `{ok, status?, reason, detail}` contract
+  (`server/src/mailer.js:85-150`), and `/auth/forgot-password` reports an
+  honest `mailConfigured` deployment state. Password-reset delivery was
+  verified end to end on production on 2026-09-30 — see the production E2E
+  baseline for what was and was not proven.
+- Auth pages reskinned in the NabuxUi language (2026-09-30, commit `4d7dc2d`):
+  split-screen `AuthLayout` reusing the landing hero backdrop and
+  `gd-card--glass` (`hub/src/layouts/AuthLayout.jsx:6-23`), shared atoms for
+  password show/hide, a two-step progress rail, and status badges
+  (`hub/src/pages/auth/shared.jsx`), styles isolated in
+  `hub/src/styles/polish-auth.css`, email autofocus, and button loading states
+  in Login/Register. `Reset.jsx` renders an honest "ارسال ایمیل فعال نیست"
+  state when the server answers `mailConfigured:false`
+  (`hub/src/pages/auth/Reset.jsx:36-38,50-63`). Existing contracts —
+  Input/Button/Captcha components, the `/reset?token=` routing, 401 handling —
+  are unchanged.
 - Plugin manifest/update channel and two release variants.
 
 ### Partial, limited, or easy to misdescribe
@@ -215,6 +233,11 @@ for UI convenience.
   beyond deterministic readings and must say so.
 - Owner-alert machinery exists, but a deployment with no configured owner
   channel reaches only the operator or nobody. Check `/alerts/readiness`.
+  As of 2026-09-30 production does have an SMTP transport (`EMAIL_SERVER`),
+  but only in Coolify's on-disk managed files — the next Coolify deploy
+  regenerates them from its own database and silently reverts the panel to
+  `mailConfigured:false` until the variables are also saved in the Coolify UI
+  (see the production E2E baseline).
 - Subscription/trial record: PostgreSQL-backed, with a 14-day default trial
   materialised on first billing read and a no-payment pilot request
   (`server/src/billing.store.js`, `server/src/routes/billing.js`), rendered in
@@ -230,7 +253,6 @@ for UI convenience.
 
 - Payment gateways, invoices, and plan entitlement/site-count/trial-expiry
   enforcement.
-- Password-reset email/token flow.
 - Two-factor authentication, passkeys, session/device management, token
   revocation before expiry, or "log out all devices".
 - Account deletion workflow.
@@ -333,12 +355,37 @@ Relevant lines: `hub/src/pages/auth/Reset.jsx:7-17`.
 **Status: resolved.** `server/src/password-resets.schema.js` adds a
 `password_resets` table that stores SHA-256 hashed tokens, per-user active-token
 enforcement, expiry, and a spent-once flag. `server/src/mailer.js` sends via
-`EMAIL_URL`/`EMAIL_API_KEY`. `server/src/routes/auth.js` adds
+`EMAIL_URL`/`EMAIL_API_KEY` (and, since 2026-09-30, `EMAIL_SERVER` SMTP — see
+the delivery update below). `server/src/routes/auth.js` adds
 `/auth/forgot-password` (enumeration-safe, captcha-guarded, rate-limited) and
 `/auth/reset-password` (token hash check, expiry check, password strength check).
 `hub/src/pages/auth/Reset.jsx` now renders the real two-step flow. Tests in
 `server/test/auth-password-reset.test.js` cover token hashing, single active
 token, expiry, and password change.
+
+**Delivery update, 2026-09-30 (commit `4d7dc2d`).** `sendMail` now has two
+transports in priority order: `EMAIL_SERVER` — a direct SMTP connection URL
+(`smtps://` implicit TLS / `smtp://` STARTTLS, percent-encoded username decoded
+in the mailer) through a lazily imported `nodemailer` transport — and the
+existing `EMAIL_URL` HTTP POST provider (`server/src/mailer.js:43-59,61-74,85-150`,
+`server/src/config.js:107-110`). The `{ok, status?, reason, detail}` response
+contract is unchanged for both. `/auth/forgot-password` additionally returns
+`mailConfigured`, a deployment state computed before the account lookup so it is
+identical for every address and cannot enumerate the customer list; when no
+transport is configured the message honestly says mail is not configured on
+this server (`server/src/routes/auth.js:166,190-194`), and a failed delivery is
+logged to the operator with reason/status only — no provider detail, no
+address. `server/test/mailer.test.js` (transport selection and SMTP error
+branches via an injected fake transport) and `server/test/auth-forgot-mail.test.js`
+(`mailConfigured` states, byte-identical responses for existing and absent
+addresses) pin this. Delivery was verified against production on 2026-09-30
+(see the production E2E baseline). Honest limits: an SMTP "250 accepted" is not
+by itself proof of inbox delivery — in that run receipt was additionally
+verified through the operator's own IMAP mailbox, which says nothing about
+deliverability to arbitrary customer domains — and a pre-existing timing side
+channel remains: response bodies are byte-identical for existing and absent
+addresses, but an existing address costs one SMTP round trip, so response time
+can hint at account existence; captcha and rate limits bound it.
 
 ### P0.4 — "Safe Mode" has no complete update rollback
 
@@ -650,6 +697,11 @@ These rules override visual mockups and optimistic marketing copy:
 - `LIVE=1` enables real connector relay.
 - `PUBLIC_BASE_URL` is handed to connectors. A wrong value at pairing can strand
   future plugin updates.
+- `EMAIL_SERVER` (an `smtp://`/`smtps://` connection URL; wins over `EMAIL_URL`)
+  enables transactional mail — password resets and owner email alerts. On the
+  Coolify production deployment it must be set in the Coolify UI too: editing
+  only the on-disk `.env`/`docker-compose.yaml` survives until the next deploy
+  overwrites it (verified 2026-09-30).
 - `ASSISTANT_URL` and `ASSISTANT_API_KEY` enable model reasoning.
 - `ASSISTANT_SWEEP` is intentionally off by default because it costs tokens and
   can perform recoverable changes on `auto` sites.
@@ -661,34 +713,97 @@ These rules override visual mockups and optimistic marketing copy:
 
 ## Verified test/build baseline
 
-Verified on 2026-09-29 (after the `3.9.0` design-tools wave):
+Verified on 2026-09-30 (after the SMTP-mail/auth wave, commit `4d7dc2d`):
 
-- `php -l` passed for `wp-claude-bridge.php`,
-  `dist/digiwp-ai-bridge/digiwp-ai-bridge.php`, and
-  `dist/digi-ai-bridge/digi-ai-bridge.php`; both dist artifacts pin
-  `CB_VERSION` `3.9.0`.
-- Server suite without PostgreSQL (`npm test` in `server/`):
-  - 300 tests discovered — includes the new `design-tools.test.js` (7
-    cases), the new authority cases, and the publish-vs-draft
-    classification case added with the honesty gates;
-  - 288 passed;
-  - 0 failed;
-  - 12 skipped for `CB_TEST_DATABASE_URL`.
-- Server suite with PostgreSQL (`CB_TEST_DATABASE_URL=… npm test` against a
-  local postgres 16 instance): 357 tests discovered; 357 passed; 0 failed;
-  0 skipped. The count is higher because database-dependent files register
-  one placeholder test when the URL is absent and their real cases only
-  register when it is set (e.g. `server/test/pairing-flow.test.js:20-23`).
-- The skipped tests cover database properties such as pairing flow, proposal
-  outcome/claim behavior, audit persistence, and demo-seed guarding. A no-database
-  green run is not the full release gate.
-- Hub `npm run lint` and `npm run build` were last verified passing on
-  2026-09-28 (before the design wave, which touched no hub source); re-run
-  them after any hub change.
+- Server suite with PostgreSQL (`CB_TEST_DATABASE_URL=… npm test` in
+  `server/` against a throwaway `postgres:16` container): 374 tests
+  discovered; 374 passed; 0 failed; 0 skipped. Includes the wave's 16 new
+  tests — 9 in `server/test/mailer.test.js`, 7 in
+  `server/test/auth-forgot-mail.test.js`.
+- Server suite without PostgreSQL (`npm test`): 316 tests discovered;
+  304 passed; 0 failed; 12 skipped for `CB_TEST_DATABASE_URL`. An earlier
+  round in the same run was red and was repaired before this green run.
+  The database-dependent files register one placeholder test when the URL is
+  absent and their real cases only register when it is set (e.g.
+  `server/test/pairing-flow.test.js:20-23`), so a no-database green run is
+  not the full release gate.
+- Hub `npm run lint` and `npm run build` both passed after the auth reskin.
+- `php -l` was not re-run in this wave: `4d7dc2d` touched no plugin PHP
+  source (13 files, all under `hub/` and `server/`). Last PHP verification
+  stands from 2026-09-29: `php -l` passed for `wp-claude-bridge.php` and both
+  dist artifacts; both pin `CB_VERSION` `3.9.0`.
 
-Historical baselines: 2026-09-28 no-database run 290 discovered / 278
-passed / 12 skipped; 2026-08-16 full-PostgreSQL run 287 passing, none
-skipped; 2026-08-16 no-database run 264 / 260 / 4.
+Historical baselines: 2026-09-29 no-database run 300 discovered / 288
+passed / 12 skipped and full-PostgreSQL run 357 / 357 / 0; 2026-09-28
+no-database run 290 / 278 / 12; 2026-08-16 full-PostgreSQL run 287 passing,
+none skipped; 2026-08-16 no-database run 264 / 260 / 4.
+
+### Production E2E baseline (2026-09-30)
+
+Run on 2026-09-30 against the real deployment at `https://ai.digiwp.com`
+(commit `4d7dc2d`, Coolify auto-deploy confirmed by the running server image
+tag equaling the full commit SHA). The public API base is
+`https://ai.digiwp.com/api/` (nginx `/api/` → `server:8787/v1/`);
+`/api/v1/*` returns 404.
+
+Panel (password-reset email):
+
+- Test-account registration via the API: ok.
+- Before the env fix, `POST /auth/forgot-password` answered
+  `{ok:true, mailConfigured:false}` with the honest "mail is not configured
+  on this server" message, logged `delivery failed (reason=no_email_url)` for
+  the operator, and still created the hashed `password_resets` row (SHA-256
+  token hash, one-hour expiry) — the token exists, delivery honestly fails.
+- After applying `EMAIL_SERVER` (SMTP) + `EMAIL_FROM=noreply@nabuxai.com`:
+  `{ok:true, mailConfigured:true}` with the vague enumeration-safe message; a
+  nonexistent mailbox is refused honestly (SMTP 550); a real mailbox received
+  "250 2.0.0 Message queued", the reset mail arrived in the IMAP inbox, and
+  the full cycle token → reset → login with the new password succeeded.
+- Honest limits of that evidence: an SMTP 250 is not proof of inbox delivery
+  by itself — receipt was machine-verified through the operator's own IMAP
+  mailbox, which proves nothing about deliverability to arbitrary customer
+  domains or that an owner read the mail. The env change was applied to
+  Coolify's on-disk `.env` AND the inline `environment:` of
+  `docker-compose.yaml` (compose has no `env_file`); both files are
+  Coolify-managed and the next Coolify deploy regenerates them from its
+  database, wiping `EMAIL_SERVER`/`EMAIL_FROM` and silently reverting the
+  panel to `mailConfigured:false`. Persist them in the Coolify UI. Backup
+  copies `.env.bak-e2e-20260930005123` and
+  `docker-compose.yaml.bak-e2e-20260930005123` remain on the server
+  (root-only; delete the env backup once the UI value is permanent). Two E2E
+  test accounts remain in production because no account-deletion workflow
+  exists; credentials are in `/root/digiwp-e2e-creds.txt` (chmod 600).
+
+WordPress (plugin over the real relay, hermetic stack on the same server —
+the customer site `account30t.com` sits behind ArvanCloud and its origin was
+unreachable, so a throwaway stack was used):
+
+- Stack: `digiwp-e2e-wp` (`wordpress:6.6-php8.2-apache`; WP 6.6.2,
+  core-upgraded to 7.1.2 to satisfy Elementor's minimum; PHP 8.2.25) +
+  `digiwp-e2e-db` (`mariadb:11`), no published ports, wp-cli via a
+  `wordpress:cli` sidecar; plugin `digiwp-ai-bridge` `3.9.0` installed and
+  active; paired to the production panel through the real HMAC connector.
+- 14 tools exercised through the panel relay; 14 succeeded: `site_info`,
+  `update_status`, `list_plugins`, `backup_preflight`,
+  `job_start{security_scan}` (done; 220 files scanned, zero findings),
+  `job_start{backup, files:false}` (done; 150,951 bytes, 12 tables, 170
+  rows, `verified:true`), `update_health_check` (all four probes 200 before
+  and after the update), `list_block_types` (94 registered types),
+  `render_blocks` (pure preview, `saved:false`), `create_block_page`
+  (draft), `list_elementor_widgets` (149 widgets on Elementor 4.3.2),
+  `elementor_page_create` (draft with valid `_elementor_data`),
+  `job_start{update_apply}` (without approval → `202 requiresApproval` and
+  nothing ran; with approval → akismet 5.3.3→5.7.2), and
+  `update_journal_get` (durable run journal read back).
+- Cleanup: draft posts trashed, test admin removed, containers/volumes/
+  network fully removed — independently re-verified on the server during the
+  review pass.
+- Caveat found: `render_blocks` silently emits self-closing markup that
+  renders nothing on the front end when `content` is nested inside
+  `attributes` instead of sitting at the spec level; spec-level content
+  renders correctly.
+- This was API-driven E2E over the real relay, not browser Playwright
+  flows; the P1.5 Playwright gap stands.
 
 ### Canonical release verification
 
