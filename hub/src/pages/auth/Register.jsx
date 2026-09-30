@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button, Input } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
+import Icon from '../../lib/icons.jsx'
 import { useAuth } from '../../lib/auth.jsx'
+import { PasswordField } from './shared.jsx'
 
 export default function Register() {
   const { register } = useAuth()
@@ -36,24 +38,33 @@ export default function Register() {
 
   return (
     <>
-      <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>ساخت حساب رایگان</h2>
-      <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 24px' }}>
-        دسترسی آزمایشی — بدون نیاز به کارت بانکی.
-      </p>
-      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
+      <div className="dwp-auth-head">
+        <span className="gd-sec-head__eyebrow"><Icon name="user-plus" size={13} /> ثبت‌نام</span>
+        <h2 className="dwp-auth-title">ساخت حساب <span className="gd-gradient-text">رایگان</span></h2>
+        <p className="dwp-auth-sub">دسترسی آزمایشی — بدون نیاز به کارت بانکی.</p>
+      </div>
+      <form onSubmit={submit} className="dwp-auth-form">
         <Input label="نام و نام خانوادگی" placeholder="مثلاً مریم رضایی" leftIcon="user"
-          value={name} onChange={(e) => setName(e.target.value)} required />
+          value={name} onChange={(e) => setName(e.target.value)} required autoFocus autoComplete="name" />
         <Input label="ایمیل" type="email" placeholder="you@example.com" leftIcon="mail"
-          value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <Input label="رمز عبور" type="password" leftIcon="lock" hint="حداقل ۸ نویسه"
-          value={password} onChange={(e) => setPassword(e.target.value)} required />
+          value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" inputMode="email" />
+        <PasswordField
+          id="register-password"
+          label="رمز عبور"
+          hint="حداقل ۸ نویسه"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
         <Captcha
           value={captchaAnswer}
           onChange={setCaptchaAnswer}
           onReady={setCaptchaId}
           refreshKey={captchaKey}
         />
-        {err && <div className="gd-field__msg gd-field__msg--error">{err}</div>}
+        {err && (
+          <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{err}</div>
+        )}
         <Button variant="primary" size="lg" fullWidth leftIcon="sparkles" type="submit" loading={busy}>
           {/* No "14-day free trial" here: no trial clock or entitlement exists
               server-side (billing is NOT_BUILT). What this button really does
@@ -62,8 +73,8 @@ export default function Register() {
         </Button>
       </form>
       {/* "Sign up with Google" was here with no handler and no OAuth client. */}
-      <p style={{ textAlign: 'center', fontSize: 13.5, color: 'var(--gd-text-secondary)', margin: '22px 0 0' }}>
-        قبلاً حساب دارید؟ <Link to="/login" style={{ fontWeight: 700 }}>وارد شوید</Link>
+      <p className="dwp-auth-foot">
+        قبلاً حساب دارید؟ <Link to="/login" className="dwp-auth-link dwp-auth-link--strong">وارد شوید</Link>
       </p>
     </>
   )

@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Button, Input } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
+import Icon from '../../lib/icons.jsx'
 import { useAuth } from '../../lib/auth.jsx'
 import { auth as authApi } from '../../lib/api.js'
+import { PasswordField } from './shared.jsx'
 
 export default function Login() {
   const { login } = useAuth()
@@ -56,22 +58,27 @@ export default function Login() {
 
   return (
     <>
-      <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>ورود به حساب</h2>
-      <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px' }}>
-        به پنل پشتیبان هوشمند سایت خود وارد شوید.
-      </p>
-      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="dwp-auth-head">
+        <span className="gd-sec-head__eyebrow"><Icon name="lock-keyhole" size={13} /> حساب کاربری</span>
+        <h2 className="dwp-auth-title">ورود به <span className="gd-gradient-text">حساب</span></h2>
+        <p className="dwp-auth-sub">به پنل پشتیبان هوشمند سایت خود وارد شوید.</p>
+      </div>
+      <form onSubmit={submit} className="dwp-auth-form">
+        {/* autoFocus: the email is the first thing every visitor types. */}
         <Input label="ایمیل" type="email" placeholder="you@example.com" leftIcon="mail"
-          value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <Input label="رمز عبور" type="password" placeholder="••••••••" leftIcon="lock"
-          value={password} onChange={(e) => setPassword(e.target.value)} required />
+          value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus
+          autoComplete="username" inputMode="email" />
         {/* "Remember me" lived here as a defaultChecked checkbox with no
             handler — the token is kept for 7 days regardless (api.js token
             storage). A control that claims behaviour it has is removed until
             real session-length handling exists. */}
-        <div>
-          <Link to="/reset-password" style={{ fontSize: 13, fontWeight: 600 }}>فراموشی رمز؟</Link>
-        </div>
+        <PasswordField
+          id="login-password"
+          label="رمز عبور"
+          labelExtra={<Link to="/reset-password" className="dwp-auth-link">فراموشی رمز؟</Link>}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
         {needCaptcha && (
           <Captcha
             value={captchaAnswer}
@@ -80,14 +87,16 @@ export default function Login() {
             refreshKey={captchaKey}
           />
         )}
-        {err && <div className="gd-field__msg gd-field__msg--error">{err}</div>}
+        {err && (
+          <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{err}</div>
+        )}
         <Button variant="primary" size="lg" fullWidth rightIcon="arrow-left" type="submit" loading={busy}>ورود</Button>
       </form>
       {/* A "sign in with Google" button used to sit here with no handler and no
           OAuth client — clicking it did nothing, on the one screen where a dead
           control makes someone think their account is broken. */}
-      <p style={{ textAlign: 'center', fontSize: 13.5, color: 'var(--gd-text-secondary)', margin: '24px 0 0' }}>
-        حساب ندارید؟ <Link to="/register" style={{ fontWeight: 700 }}>ثبت‌نام کنید</Link>
+      <p className="dwp-auth-foot">
+        حساب ندارید؟ <Link to="/register" className="dwp-auth-link dwp-auth-link--strong">ثبت‌نام کنید</Link>
       </p>
     </>
   )

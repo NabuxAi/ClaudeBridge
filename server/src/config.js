@@ -99,6 +99,12 @@ export const config = {
     smsTextField: process.env.SMS_TEXT_FIELD || 'text',
     smsFromField: process.env.SMS_FROM_FIELD || 'from',
     smsFrom: process.env.SMS_FROM || '',
+    // Direct SMTP delivery, as a connection URL:
+    //   smtps://user%40domain.com:pass@smtp.example.com:465   (implicit TLS)
+    //   smtp://user:pass@smtp.example.com:587                  (STARTTLS)
+    // Wins over EMAIL_URL when both are set. The username is
+    // percent-encoded because it contains "@" (%40); mailer.js decodes it.
+    emailServer: process.env.EMAIL_SERVER || '',
     emailUrl: process.env.EMAIL_URL || '',
     emailApiKey: process.env.EMAIL_API_KEY || '',
     emailFrom: process.env.EMAIL_FROM || 'alerts@digiwp.com',

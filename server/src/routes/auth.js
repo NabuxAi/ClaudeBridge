@@ -5,7 +5,7 @@ import { users, passwordResets } from '../store.js'
 import { config } from '../config.js'
 import * as captcha from '../security/captcha.js'
 import { hit, clear, peek, clientIp, limiter } from '../security/ratelimit.js'
-import { sendMail } from '../mailer.js'
+import { sendMail, isMailerConfigured } from '../mailer.js'
 
 const router = Router()
 
@@ -149,6 +149,13 @@ const forgotLimit = limiter('forgot-password', {
  * The response is deliberately vague: "if this email has an account, a link
  * was sent". That is the only claim we can make without leaking whether the
  * address is registered.
+ *
+ * `mailConfigured` is the one extra field, and it is deployment state, not
+ * account state: it is computed before the lookup so it is identical for
+ * every address. Revealing "email is not configured here" only for
+ * addresses that have an account would enumerate the customer list;
+ * revealing it for all of them tells an attacker nothing the login page of
+ * any deployment does not.
  */
 router.post('/auth/forgot-password', forgotLimit, async (req, res, next) => {
   try {
@@ -156,20 +163,35 @@ router.post('/auth/forgot-password', forgotLimit, async (req, res, next) => {
     const c = captcha.verify(captchaId, captchaAnswer)
     if (!c.ok) return res.status(400).json({ message: captcha.MESSAGES[c.reason], captchaRequired: true })
 
+    const mailConfigured = isMailerConfigured()
+
     const normalized = String(email || '').trim().toLowerCase()
     // Always cost the same regardless of whether the account exists.
     const row = normalized ? await users.byEmailRaw(normalized) : null
     if (row) {
       const { raw } = await passwordResets.create(row.id)
       const link = `${config.publicPanelUrl || 'http://localhost:8080'}/reset?token=${raw}`
-      await sendMail({
+      const mail = await sendMail({
         to: row.email,
         subject: 'بازنشانی رمز عبور DigiWP',
         text: `برای بازنشانی رمز عبور روی این لینک کلیک کنید:\n${link}\n\nاین لینک یک ساعت معتبر است و فقط یک‌بار قابل استفاده است.`,
         html: `<p>برای بازنشانی رمز عبور روی این لینک کلیک کنید:</p><p><a href="${link}">${link}</a></p><p>این لینک یک ساعت معتبر است و فقط یک‌بار قابل استفاده است.</p>`,
       })
+      // The response must stay vague or the delivery outcome becomes an
+      // account-existence oracle, so a failed send is visible to the operator
+      // only — and with reason/status alone: no provider detail (it can echo
+      // sender credentials), no address.
+      if (!mail.ok) {
+        console.warn(`forgot-password: delivery failed (reason=${mail.reason}${mail.status ? ` status=${mail.status}` : ''})`)
+      }
     }
-    res.json({ ok: true, message: 'اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی ارسال شده است.' })
+    res.json({
+      ok: true,
+      mailConfigured,
+      message: mailConfigured
+        ? 'اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی ارسال شده است.'
+        : 'ارسال ایمیل روی این سرور پیکربندی نشده است؛ برای بازنشانی رمز عبور با پشتیبانی تماس بگیرید.',
+    })
   } catch (e) { next(e) }
 })
 

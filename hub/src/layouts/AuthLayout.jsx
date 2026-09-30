@@ -3,42 +3,53 @@ import Brand from './Brand.jsx'
 import Icon from '../lib/icons.jsx'
 import { StatusPill } from '../components/index.js'
 
-// Split auth screen: form on one side, an ink "night-watch" panel on the other.
+// Split auth screen, rebuilt in the landing hero's language (NabuxUi mapping
+// §3.2/§3.5): an ink aurora scene carries a glass form card on one side and
+// the "night watch" panel on the other. Glass is invisible on a flat surface,
+// so the whole screen becomes the ink backdrop the glass sits on.
 export default function AuthLayout() {
   return (
-    <div className="dwp-authwrap" dir="rtl"
-      style={{ display: 'flex', minHeight: '100vh', fontFamily: 'var(--gd-font-sans)', color: 'var(--gd-text)' }}>
-      <div style={{ flex: 1, background: 'var(--gd-bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 48 }}>
-        <div style={{ width: '100%', maxWidth: 376 }}>
-          <div style={{ marginBottom: 30 }}><Brand /></div>
+    <div className="dwp-authwrap" dir="rtl" data-theme="ink">
+      {/* Decorative drifting lights — the same .dwp-hero-backdrop the landing
+          hero uses (polish-marketing.css), reused instead of copied. It is
+          aria-hidden and pointer-events:none there, and clips its own
+          overflow, so it can never add scroll or steal a tap. */}
+      <div className="dwp-hero-backdrop" aria-hidden="true"><i /><i /><i /></div>
+      <div className="dwp-auth-main">
+        <div className="dwp-auth-card gd-card--glass">
+          <div className="dwp-auth-brand"><Brand /></div>
           <Outlet />
         </div>
       </div>
-      <aside className="dwp-desktop-only" data-theme="ink"
-        style={{ width: '46%', background: 'var(--gd-bg-app)', color: 'var(--gd-text)', padding: '56px 52px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <span style={{ width: 56, height: 56, borderRadius: 15, background: 'var(--gd-primary-subtle)', border: '1px solid var(--gd-primary-border)', color: 'var(--gd-primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="shield-check" size={30} />
+      <aside className="dwp-auth-aside dwp-desktop-only">
+        <span className="gd-sec-head__eyebrow">
+          <Icon name="shield-check" size={14} /> پشتیبان هوشمند وردپرس
         </span>
-        <h3 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.35, letterSpacing: '-.01em', margin: '22px 0 0' }}>
-          سایت شما، همیشه به‌روز و زیر نظر اسکن روزانه.
+        <h3 className="dwp-auth-aside__title">
+          سایت شما، <span className="gd-gradient-text">همیشه به‌روز</span> و زیر نظر اسکن روزانه.
         </h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 13, marginTop: 26 }}>
+        <ul className="dwp-auth-aside__list">
           {['به‌روزرسانی خودکار با حالت ایمنی', 'اسکن بدافزار و بررسی یکپارچگی هسته', 'بکاپ دیتابیس با بازگردانی'].map((t) => (
-            <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 11, fontSize: 14, color: 'var(--gd-text-secondary)' }}>
-              <Icon name="check-circle-2" size={19} style={{ color: 'var(--gd-primary)' }} /> {t}
-            </span>
+            <li key={t} className="dwp-auth-aside__item">
+              <Icon name="check-circle-2" size={19} /> {t}
+            </li>
           ))}
-        </div>
-        <div style={{ marginTop: 32, borderRadius: 'var(--gd-radius-xl)', border: '1px solid var(--gd-border)', background: 'var(--gd-bg-subtle)', padding: 16, boxShadow: 'var(--gd-shadow-xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--gd-success-bg)', color: 'var(--gd-success-text)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
-              <Icon name="shield-check" size={22} />
-            </span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 15 }}>همه‌چیز سالم است</div>
-              <div className="dwp-mono" style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 2 }}>example.ir · ۹ سرویس</div>
-            </div>
+        </ul>
+        {/* Preview, not a reading — no site is connected on this screen. The
+            tag says «پیش‌نمایش پنل» and the copy points at where the real
+            status will appear: the same honest preview card as the landing
+            hero, instead of a made-up «example.ir · ۹ سرویس» healthy site. */}
+        <div className="dwp-auth-preview gd-card--glass">
+          <div className="dwp-auth-preview__head">
+            <span className="dwp-auth-preview__tag">پیش‌نمایش پنل</span>
             <StatusPill status="healthy" size="sm" />
+          </div>
+          <div className="dwp-auth-preview__row">
+            <span className="dwp-auth-preview__ic"><Icon name="shield-check" size={22} /></span>
+            <div>
+              <div className="dwp-auth-preview__title">وضعیت سایت شما</div>
+              <div className="dwp-auth-preview__sub">پس از اتصال، اینجا نمایش داده می‌شود</div>
+            </div>
           </div>
         </div>
       </aside>

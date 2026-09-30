@@ -7,6 +7,288 @@
    ویژگی‌های منطقی برای RTL، و رنگ‌های وضعیت بدون جابه‌جایی نقش.
    ============================================================ */
 
+/* ---- پوستهٔ احراز هویت: صحنهٔ ink با aurora ------------------
+   الگوی hero لندینگ (§3.2/§3.5): شیشه روی سطح تخت نامرئی است،
+   پس کل صحنه ink می‌شود و نورهای شناور همان .dwp-hero-backdropِ
+   مارکتینگ است (polish-marketing.css) — بازیافت کد، نه کپی. */
+.dwp-authwrap {
+  position: relative;
+  isolation: isolate;               /* بک‌دراپِ z-index:-1 پشت محتوا می‌ماند */
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--gd-bg-app);
+  color: var(--gd-text);
+  font-family: var(--gd-font-sans);
+}
+
+.dwp-auth-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  padding: 44px 40px;
+}
+
+/* margin-block:auto — نه align-items:center — تا وقتی کارت از صفحه
+   بلندتر شد، بالای آن پشت لبهٔ اسکرول گم نشود. */
+.dwp-auth-card {
+  margin-block: auto;
+  width: 100%;
+  max-width: 412px;
+  padding: 34px 34px 30px;
+}
+
+.dwp-auth-brand { margin-block-end: 26px; }
+
+/* ---- پنل کناری «نگهبانی شبانه» (فقط دسکتاپ) ------------------ */
+.dwp-auth-aside {
+  position: relative;
+  width: 44%;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 26px;
+  padding: 56px 52px;
+  border-inline-start: 1px solid var(--gd-border-subtle);
+}
+.dwp-auth-aside__title {
+  margin: 0;
+  font-family: var(--gd-font-display-family);
+  font-size: var(--gd-text-3xl);
+  font-weight: var(--gd-weight-extrabold);
+  line-height: 1.35;                /* تیتر فارسی نمایشی (§2.4) */
+  color: var(--gd-text);
+}
+.dwp-auth-aside__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.dwp-auth-aside__item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: var(--gd-text-md);
+  color: var(--gd-text-secondary);
+}
+.dwp-auth-aside__item svg { color: var(--gd-primary); }
+
+/* پیش‌نمایش صادق پنل: برچسب «پیش‌نمایش پنل» + اشاره به این‌که
+   وضعیت واقعی پس از اتصال نمایش داده می‌شود — همان کارتِ
+   شیشه‌ای hero لندینگ، نه یک سایت سالمِ ساختگی. */
+.dwp-auth-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+}
+.dwp-auth-preview__head { display: flex; align-items: center; gap: 10px; }
+.dwp-auth-preview__head .gd-status { margin-inline-start: auto; }
+.dwp-auth-preview__tag {
+  font-size: var(--gd-text-xs);
+  font-weight: var(--gd-weight-bold);
+  color: var(--gd-text-muted);
+  background: var(--gd-bg-inset);
+  border: 1px solid var(--gd-border);
+  border-radius: var(--gd-radius-pill);
+  padding: 3px 10px;
+}
+.dwp-auth-preview__row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 15px;
+  border-radius: var(--gd-radius-lg);
+  background: var(--gd-bg-surface);
+  border: 1px solid var(--gd-border);
+}
+.dwp-auth-preview__ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 46px;
+  block-size: 46px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--gd-success-bg);
+  color: var(--gd-success-text);
+}
+.dwp-auth-preview__title {
+  font-size: var(--gd-text-base);
+  font-weight: var(--gd-weight-extrabold);
+  color: var(--gd-text);
+}
+.dwp-auth-preview__sub {
+  font-size: var(--gd-text-xs);
+  color: var(--gd-text-muted);
+  margin-block-start: 3px;
+}
+
+/* ---- سربرگ و فرم صفحات احراز هویت ---------------------------- */
+.dwp-auth-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-block-end: 22px;
+}
+.dwp-auth-title {
+  margin: 0;
+  font-family: var(--gd-font-display-family);
+  font-size: var(--gd-text-2xl);
+  font-weight: var(--gd-weight-extrabold);
+  line-height: 1.4;
+  color: var(--gd-text);
+}
+.dwp-auth-sub {
+  margin: 0;
+  font-size: var(--gd-text-md);
+  line-height: 1.8;
+  color: var(--gd-text-secondary);
+}
+/* حالت‌های پایانی (ارسال شد / بازنشانی شد): زیرنویس از تیتر جدا می‌شود
+   و قبل از دکمه/لینک فاصله می‌گیرد — این حالت‌ها .dwp-auth-head ندارند. */
+.dwp-auth-sub--state { margin-block: 6px 24px; }
+.dwp-auth-form { display: flex; flex-direction: column; gap: 15px; }
+.dwp-auth-foot {
+  margin: 22px 0 0;
+  text-align: center;
+  font-size: var(--gd-text-sm);
+  line-height: 1.8;
+  color: var(--gd-text-secondary);
+}
+.dwp-auth-link {
+  font-size: var(--gd-text-sm);
+  font-weight: var(--gd-weight-semibold);
+  color: var(--gd-primary);
+  text-decoration: none;
+}
+.dwp-auth-link:hover { text-decoration: underline; }
+.dwp-auth-link--strong { font-weight: var(--gd-weight-bold); }
+.dwp-auth-backlink { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---- نشان حالت جریان بازنشانی -------------------------------- */
+.dwp-auth-iconbadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 52px;
+  block-size: 52px;
+  flex: 0 0 auto;
+  border-radius: var(--gd-radius-lg);
+  margin-block-end: 16px;
+}
+.dwp-auth-iconbadge--primary {
+  background: var(--gd-primary-subtle);
+  border: 1px solid var(--gd-primary-border);
+  color: var(--gd-primary);
+}
+.dwp-auth-iconbadge--success {
+  background: var(--gd-success-bg);
+  border: 1px solid var(--gd-success-border);
+  color: var(--gd-success-text);
+}
+.dwp-auth-iconbadge--warning {
+  background: var(--gd-warning-bg);
+  border: 1px solid var(--gd-warning-border);
+  color: var(--gd-warning-text);
+}
+
+/* ---- ریل مراحل بازیابی ---------------------------------------- */
+.dwp-auth-steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 22px;
+  padding: 0;
+  list-style: none;
+}
+.dwp-auth-steps__step { display: flex; align-items: center; gap: 8px; }
+.dwp-auth-steps__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 26px;
+  block-size: 26px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  font-size: 12.5px;
+  font-weight: var(--gd-weight-bold);
+  background: transparent;
+  border: 1.5px solid var(--gd-border-strong);
+  color: var(--gd-text-muted);
+}
+.dwp-auth-steps__label {
+  font-size: 12.5px;
+  font-weight: var(--gd-weight-semibold);
+  color: var(--gd-text-muted);
+  white-space: nowrap;
+}
+.dwp-auth-steps__conn {
+  flex: 1 1 14px;
+  min-inline-size: 12px;
+  max-inline-size: 56px;
+  block-size: 2px;
+  border-radius: 2px;
+  background: var(--gd-border-strong);
+}
+.dwp-auth-steps__step.is-active .dwp-auth-steps__dot,
+.dwp-auth-steps__step.is-done .dwp-auth-steps__dot {
+  background: var(--gd-primary);
+  border-color: var(--gd-primary);
+  color: var(--gd-on-primary);
+}
+.dwp-auth-steps__step.is-active .dwp-auth-steps__label {
+  color: var(--gd-primary);
+  font-weight: var(--gd-weight-bold);
+}
+.dwp-auth-steps__step.is-done .dwp-auth-steps__label { color: var(--gd-text-secondary); }
+.dwp-auth-steps__step.is-done + .dwp-auth-steps__conn { background: var(--gd-primary); }
+
+/* ---- فیلد رمز عبور با نمایش/پنهان ----------------------------- */
+.dwp-auth-pass__labelrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dwp-auth-pass__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 30px;
+  block-size: 30px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: var(--gd-radius-sm);
+  background: transparent;
+  color: var(--gd-text-muted);
+  cursor: pointer;
+  transition: color var(--gd-duration-fast) var(--gd-ease-standard),
+    background var(--gd-duration-fast) var(--gd-ease-standard);
+}
+.dwp-auth-pass__toggle:hover { color: var(--gd-text); background: var(--gd-bg-hover); }
+.dwp-auth-pass__toggle:focus-visible { outline: 2px solid var(--gd-focus-ring); outline-offset: 2px; }
+
+/* ---- موبایل ----------------------------------------------------
+   پنل کناری با .dwp-desktop-only در app.css زیر ۸۶۰px پنهان می‌شود؛
+   اینجا فقط چسبندگی و پدینگ کارت تنظیم می‌شود تا در ۳۲۰px هم
+   سرریز افقی نباشد (همه چیز درصدی/شاره است و aurora خودش clip است). */
+@media (max-width: 860px) {
+  .dwp-auth-main { padding: 36px 20px; }
+}
+@media (max-width: 400px) {
+  .dwp-auth-main { padding: 28px 16px; }
+  .dwp-auth-card { padding: 26px 20px 24px; }
+  .dwp-auth-head { margin-block-end: 18px; }
+}
+
 /* ---- آنبوردینگ: پوستهٔ صفحه ----------------------------------
    padding از استایل inline به اینجا آمد تا media query بتواند
    رویش برنده شود؛ گاتر ثابت ۴۰px دو طرف، در موبایل بخشی از

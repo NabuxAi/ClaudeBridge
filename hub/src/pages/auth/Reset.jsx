@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input } from '../../components/index.js'
+import Captcha from '../../components/captcha.jsx'
 import { auth } from '../../lib/api.js'
+import { AuthSteps, IconBadge, PasswordField } from './shared.jsx'
 
 export default function Reset() {
   const [params] = useSearchParams()
@@ -13,63 +15,75 @@ export default function Reset() {
 
 function ForgotForm() {
   const [email, setEmail] = useState('')
-  const [captcha, setCaptcha] = useState({ id: '', question: '', answer: '' })
+  const [captchaId, setCaptchaId] = useState('')
+  const [captchaAnswer, setCaptchaAnswer] = useState('')
+  const [captchaKey, setCaptchaKey] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [sent, setSent] = useState(false)
+  // idle | sent | unconfigured — the server's mail state decides the last two.
+  const [result, setResult] = useState('idle')
   const [error, setError] = useState('')
-
-  useEffect(() => { loadCaptcha() }, [])
-
-  async function loadCaptcha() {
-    try {
-      const c = await auth.captcha()
-      setCaptcha({ id: c.id, question: c.question, answer: '' })
-    } catch {
-      setCaptcha({ id: '', question: '', answer: '' })
-    }
-  }
 
   async function submit(e) {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      await auth.forgotPassword({ email, captchaId: captcha.id, captchaAnswer: captcha.answer })
-      setSent(true)
+      const res = await auth.forgotPassword({ email, captchaId, captchaAnswer })
+      // Mail delivery is a DEPLOYMENT state, reported the same for every
+      // request (never per-account), so reading it here cannot leak whether
+      // this address exists. Older servers and the mock don't send the field —
+      // then the enumeration-safe default text stands.
+      const unconfigured = res?.delivery === 'unconfigured'
+        || res?.mailConfigured === false
+        || res?.mail_configured === false
+      setResult(unconfigured ? 'unconfigured' : 'sent')
     } catch (e) {
       setError(e?.message || 'ارسال نشد.')
-      loadCaptcha()
-      setCaptcha((c) => ({ ...c, answer: '' }))
+      // Single-use on the server: a failed submit burns the challenge.
+      setCaptchaAnswer('')
+      setCaptchaKey((k) => k + 1)
     } finally {
       setLoading(false)
     }
   }
 
-  if (sent) {
+  if (result === 'unconfigured') {
+    // Honest by requirement: this deployment cannot send mail at all, so
+    // «لینک ارسال شد» would be a lie for every address alike.
+    return (
+      <>
+        <IconBadge name="alert-triangle" tone="warning" />
+        <h2 className="dwp-auth-title">ارسال ایمیل فعال نیست</h2>
+        <p className="dwp-auth-sub dwp-auth-sub--state">
+          در حال حاضر ارسال ایمیل روی این سرویس پیکربندی نشده و لینک بازنشانی برای هیچ حسابی ارسال نمی‌شود. برای بازنشانی رمز عبور، از پشتیبانی بخواهید.
+        </p>
+        <BackToLogin />
+      </>
+    )
+  }
+
+  if (result === 'sent') {
     return (
       <>
         <IconBadge name="mail-check" />
-        <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>لینک ارسال شد</h2>
-        <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px', lineHeight: 1.8 }}>
+        <h2 className="dwp-auth-title">لینک ارسال شد</h2>
+        <p className="dwp-auth-sub dwp-auth-sub--state">
           اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی رمز عبور برای آن ارسال شده است.
         </p>
-        <p style={{ textAlign: 'center', fontSize: 13.5, color: 'var(--gd-text-secondary)', margin: '24px 0 0' }}>
-          <Link to="/login" style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Icon name="arrow-right" size={15} /> بازگشت به ورود
-          </Link>
-        </p>
+        <BackToLogin />
       </>
     )
   }
 
   return (
     <>
-      <IconBadge name="key-round" />
-      <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>بازنشانی رمز عبور</h2>
-      <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px', lineHeight: 1.8 }}>
-        ایمیل خود را وارد کنید؛ اگر حسابی با این ایمیل داشته باشید، لینک بازنشانی برای آن ارسال می‌شود.
-      </p>
-      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="dwp-auth-head">
+        <span className="gd-sec-head__eyebrow"><Icon name="key-round" size={13} /> بازیابی دسترسی</span>
+        <h2 className="dwp-auth-title">بازنشانی <span className="gd-gradient-text">رمز عبور</span></h2>
+        <p className="dwp-auth-sub">ایمیل خود را وارد کنید؛ اگر حسابی با این ایمیل داشته باشید، لینک بازنشانی برای آن ارسال می‌شود.</p>
+      </div>
+      <AuthSteps current={1} />
+      <form onSubmit={submit} className="dwp-auth-form">
         {/* Input passes the native event straight through (forms.jsx spreads
             {...rest} onto <input>) — the handler must read e.target.value,
             exactly like Login. Storing the event itself would stringify as
@@ -77,40 +91,32 @@ function ForgotForm() {
         <Input
           type="email"
           label="ایمیل"
+          leftIcon="mail"
+          placeholder="you@example.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
           autoFocus
+          autoComplete="username"
+          inputMode="email"
         />
-        {captcha.question && (
-          <div>
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 6, color: 'var(--gd-text-secondary)' }}>
-              {captcha.question}
-            </label>
-            <Input
-              type="text"
-              value={captcha.answer}
-              onChange={(e) => setCaptcha((c) => ({ ...c, answer: e.target.value }))}
-              required
-              placeholder="پاسخ عددی"
-            />
-          </div>
-        )}
+        {/* The same shared challenge component Login/Register use — this form
+            used to render the question by hand, which drifted from the shared
+            error/retry behaviour. */}
+        <Captcha
+          value={captchaAnswer}
+          onChange={setCaptchaAnswer}
+          onReady={setCaptchaId}
+          refreshKey={captchaKey}
+        />
         {error && (
-          <p style={{ fontSize: 13, color: 'var(--gd-danger)', margin: 0 }}>
-            <Icon name="alert-circle" size={14} style={{ verticalAlign: '-2px', marginLeft: 5 }} />
-            {error}
-          </p>
+          <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{error}</div>
         )}
-        <Button variant="primary" size="lg" fullWidth leftIcon="send" disabled={loading} type="submit" style={{ marginTop: 6 }}>
-          {loading ? 'در حال ارسال…' : 'ارسال لینک بازنشانی'}
+        <Button variant="primary" size="lg" fullWidth leftIcon="send" type="submit" loading={loading}>
+          ارسال لینک بازنشانی
         </Button>
       </form>
-      <p style={{ textAlign: 'center', fontSize: 13.5, color: 'var(--gd-text-secondary)', margin: '24px 0 0' }}>
-        <Link to="/login" style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Icon name="arrow-right" size={15} /> بازگشت به ورود
-        </Link>
-      </p>
+      <BackToLogin />
     </>
   )
 }
@@ -147,12 +153,14 @@ function ResetForm({ token }) {
   if (done) {
     return (
       <>
-        <IconBadge name="check-circle" tone="success" />
-        <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>رمز عبور بازنشانی شد</h2>
-        <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px', lineHeight: 1.8 }}>
+        <IconBadge name="check-circle-2" tone="success" />
+        <h2 className="dwp-auth-title">رمز عبور <span className="gd-gradient-text">بازنشانی شد</span></h2>
+        <p className="dwp-auth-sub dwp-auth-sub--state">
           رمز عبور جدید ذخیره شد. اکنون می‌توانید وارد شوید.
         </p>
-        <Button variant="primary" size="lg" fullWidth leftIcon="log-in" href="/login">
+        {/* href (not a router Link) keeps the existing behaviour: a fresh
+            document load on the login screen after the password changed. */}
+        <Button variant="primary" size="lg" fullWidth rightIcon="arrow-left" href="/login">
           ورود
         </Button>
       </>
@@ -161,56 +169,45 @@ function ResetForm({ token }) {
 
   return (
     <>
-      <IconBadge name="lock" />
-      <h2 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>رمز عبور جدید</h2>
-      <p style={{ fontSize: 14, color: 'var(--gd-text-secondary)', margin: '8px 0 26px', lineHeight: 1.8 }}>
-        لینک بازنشانی یک ساعت معتبر و یک‌بار مصرف است. رمز جدید خود را وارد کنید.
-      </p>
-      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <Input
-          type="password"
+      <div className="dwp-auth-head">
+        <span className="gd-sec-head__eyebrow"><Icon name="key-round" size={13} /> بازیابی دسترسی</span>
+        <h2 className="dwp-auth-title">رمز عبور <span className="gd-gradient-text">جدید</span></h2>
+        <p className="dwp-auth-sub">لینک بازنشانی یک ساعت معتبر و یک‌بار مصرف است. رمز جدید خود را وارد کنید.</p>
+      </div>
+      <AuthSteps current={2} />
+      <form onSubmit={submit} className="dwp-auth-form">
+        <PasswordField
+          id="reset-password"
           label="رمز عبور جدید"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          required
           autoFocus
+          autoComplete="new-password"
         />
-        <Input
-          type="password"
+        <PasswordField
+          id="reset-confirm"
           label="تکرار رمز عبور"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          required
+          autoComplete="new-password"
         />
         {error && (
-          <p style={{ fontSize: 13, color: 'var(--gd-danger)', margin: 0 }}>
-            <Icon name="alert-circle" size={14} style={{ verticalAlign: '-2px', marginLeft: 5 }} />
-            {error}
-          </p>
+          <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{error}</div>
         )}
-        <Button variant="primary" size="lg" fullWidth leftIcon="check" disabled={loading} type="submit" style={{ marginTop: 6 }}>
-          {loading ? 'در حال ذخیره…' : 'ذخیرهٔ رمز جدید'}
+        <Button variant="primary" size="lg" fullWidth leftIcon="check" type="submit" loading={loading}>
+          ذخیرهٔ رمز جدید
         </Button>
       </form>
     </>
   )
 }
 
-function IconBadge({ name, tone = 'primary' }) {
-  // The soft primary surface + hairline is the same badge language the auth
-  // layout's aside uses. Green is reserved for an action that truly completed
-  // (a saved password) — the "if this email exists" screen must stay neutral,
-  // because it deliberately does not confirm anything.
-  const success = tone === 'success'
+function BackToLogin() {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      width: 52, height: 52, borderRadius: 'var(--gd-radius-lg)',
-      background: success ? 'var(--gd-success-bg)' : 'var(--gd-primary-subtle)',
-      border: `1px solid ${success ? 'var(--gd-success-border)' : 'var(--gd-primary-border)'}`,
-      color: success ? 'var(--gd-success-text)' : 'var(--gd-primary)', marginBottom: 18,
-    }}>
-      <Icon name={name} size={26} />
-    </span>
+    <p className="dwp-auth-foot">
+      <Link to="/login" className="dwp-auth-link dwp-auth-link--strong dwp-auth-backlink">
+        <Icon name="arrow-right" size={15} /> بازگشت به ورود
+      </Link>
+    </p>
   )
 }
