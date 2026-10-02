@@ -40,11 +40,12 @@ router.post('/sites/:id/team/invitations', inviteLimit, async (req, res, next) =
 })
 
 /**
- * Accept an invitation.
+ * Accept an invitation — the already-has-an-account path.
  *
  * Requires authentication: the signed-in user's email must match the invited
- * address. A future onboarding flow can register a new user first and then call
- * this with the same token.
+ * address. Someone without an account does not come here: the register
+ * endpoint accepts the same token (`inviteToken`) and attaches the membership
+ * right after creating the account.
  */
 router.post('/team/invitations/accept', async (req, res, next) => {
   try {

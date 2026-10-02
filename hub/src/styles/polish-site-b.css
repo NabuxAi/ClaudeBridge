@@ -58,11 +58,14 @@
 .pbk-cols-backups { grid-template-columns: 1.4fr 1.1fr 1fr 0.8fr 1fr 1.5fr; }
 .pbk-cols-target  { grid-template-columns: 1.4fr 1fr 0.8fr 1fr 0.7fr 1.3fr; }
 .pbk-cols-jobs    { grid-template-columns: 1fr 1.2fr 0.9fr 0.9fr 1fr; }
+/* مانیتورها (Monitors.jsx): مانیتور / آخرین بررسی / دسترس‌پذیری / وضعیت / اقدامات */
+.mon-cols         { grid-template-columns: 1.8fr 1.5fr 1fr 0.9fr 1.7fr; }
 
 @media (max-width: 860px) {
   .pbk-cols-backups,
   .pbk-cols-target { min-width: 780px; }
   .pbk-cols-jobs { min-width: 620px; }
+  .mon-cols { min-width: 760px; }
 }
 
 /* ---- row action cluster ------------------------------------ */

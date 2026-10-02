@@ -94,12 +94,37 @@ export default function Billing() {
   const paymentUnavailable = billing?.payment?.provenance?.unavailable
   const invoicesUnavailable = billing?.invoices?.provenance?.unavailable
 
+  // Trial state, honest: a raw `status: 'trialing'` also reads 'trialing'
+  // after the window has passed. The server now sends `trialState`
+  // ('trialing' | 'expired' | 'ended'); the derivation behind it is the same
+  // rule, so a response (or dev mock) without the field still renders truth.
+  const trialState = subscription
+    ? (subscription.trialState
+      || (subscription.isTrialing ? 'trialing' : subscription.status === 'trialing' ? 'expired' : 'ended'))
+    : null
+  const trialExpired = trialState === 'expired'
   const currentPlan = subscription?.plan
-  const usagePct = currentPlan?.siteLimit ? Math.round(((subscription?.sitesUsed || 0) / currentPlan.siteLimit) * 100) : 0
+  const currentPlanLimit = currentPlan?.siteLimit ?? null
+  const capReached = currentPlanLimit != null && (subscription?.sitesUsed || 0) >= currentPlanLimit
+  const usagePct = currentPlanLimit ? Math.round(((subscription?.sitesUsed || 0) / currentPlanLimit) * 100) : 0
 
   return (
     <>
       <PageHead {...HEAD} />
+
+      {/* Expired trial: say what is actually blocked (adding sites), what
+          still works (everything already in the account), and what does NOT
+          exist (a payment gateway) — instead of a fake checkout button. */}
+      {trialExpired && (
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'var(--gd-warning-bg)', border: '1px solid var(--gd-warning)', borderRadius: 'var(--gd-radius-lg)', padding: '15px 18px', marginBottom: 24 }}>
+          <Icon name="alert-triangle" size={19} style={{ color: 'var(--gd-warning)', flex: '0 0 auto', marginTop: 1 }} />
+          <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--gd-text-secondary)' }}>
+            <b style={{ color: 'var(--gd-text)' }}>دسترسی آزمایشی شما به پایان رسیده است.</b>{' '}
+            افزودن سایت جدید تا فعال‌سازی اشتراک متوقف است؛ سایت‌های موجود و همهٔ اطلاعات همین حساب همچنان در دسترس‌اند.
+            درگاه پرداخت هنوز فعال نیست — برای ادامه، یکی از پلن‌های پایین را برای درخواست دسترسی آزمایشی انتخاب کنید یا با پشتیبانی تماس بگیرید.
+          </div>
+        </div>
+      )}
 
       {/* Current plan + payment method */}
       <div className="dwp-billing-top" style={{ marginBottom: 24 }}>
@@ -122,14 +147,25 @@ export default function Billing() {
                   </span>
                   <span style={{ fontSize: 19, fontWeight: 800 }}>پلن {currentPlan?.name || '—'}</span>
                   {/* Same source as the trial line below: a raw `status` can
-                      still read «trialing» after the trial window has passed. */}
-                  <Badge variant="primary" appearance="solid">{subscription.isTrialing ? 'دسترسی آزمایشی' : 'فعال'}</Badge>
+                      still read «trialing» after the trial window has passed,
+                      and «فعال» without a gateway would fabricate a renewal. */}
+                  {subscription.isTrialing ? (
+                    <Badge variant="primary" appearance="solid">دسترسی آزمایشی</Badge>
+                  ) : trialExpired ? (
+                    <Badge variant="danger" appearance="solid">دسترسی آزمایشی منقضی شد</Badge>
+                  ) : (
+                    <Badge variant="success" appearance="solid">فعال</Badge>
+                  )}
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--gd-text-secondary)', marginTop: 10 }}>
                   {subscription.isTrialing ? (
                     <><Icon name="sparkles" size={14} /> {formatTrial(subscription.daysLeftInTrial)}</>
-                  ) : (
+                  ) : trialExpired ? (
+                    <>دسترسی آزمایشی در <b style={{ fontFamily: 'var(--gd-font-mono)' }}>{formatDate(subscription?.trialEndsAt)}</b> به پایان رسید. افزودن سایت جدید تا فعال‌سازی اشتراک متوقف است.</>
+                  ) : subscription?.currentPeriodEnd ? (
                     <>تمدید بعدی: <b style={{ fontFamily: 'var(--gd-font-mono)' }}>{formatDate(subscription?.currentPeriodEnd)}</b></>
+                  ) : (
+                    <>بدون دورهٔ تمدید ثبت‌شده.</>
                   )}
                 </div>
               </div>
@@ -144,8 +180,13 @@ export default function Billing() {
                 <span style={{ fontFamily: 'var(--gd-font-mono)', fontWeight: 700 }}>{faNum(subscription?.sitesUsed || 0)} از {currentPlan?.siteLimit ? faNum(currentPlan.siteLimit) : 'نامحدود'}</span>
               </div>
               <div style={{ height: 9, borderRadius: 999, background: 'var(--gd-blue-100)', overflow: 'hidden' }}>
-                <div style={{ width: `${Math.min(usagePct, 100)}%`, height: '100%', background: 'var(--gd-primary)', borderRadius: 999 }} />
+                <div style={{ width: `${Math.min(usagePct, 100)}%`, height: '100%', background: capReached ? 'var(--gd-danger)' : 'var(--gd-primary)', borderRadius: 999 }} />
               </div>
+              {capReached && (
+                <div style={{ fontSize: 12, color: 'var(--gd-danger-text)', marginTop: 7 }}>
+                  ظرفیت پلن تکمیل شده است؛ افزودن سایت جدید موقتاً مسدود است تا پلن ارتقا یابد.
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 9, marginTop: 18 }}>
               <Button as={Link} to="/pricing" variant="primary" size="sm" leftIcon="arrow-up-circle">تغییر پلن</Button>

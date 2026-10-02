@@ -69,6 +69,27 @@ export const config = {
   // (or be hashed to 32 bytes). Without it, target CRUD still works but stored
   // credentials cannot be encrypted/decrypted.
   offsiteBackupKey: process.env.OFFSITE_BACKUP_KEY || '',
+  // Scheduled uptime monitors: one plain HTTP GET per enabled monitor URL.
+  // Interval in minutes; 0 disables the schedule (manual checks still work).
+  // Default is deliberately modest — every tick is an outbound request against
+  // a customer's site or host, and a monitor fleet grows one URL at a time.
+  monitors: {
+    intervalMinutes: Number(process.env.MONITOR_INTERVAL_MINUTES ?? 5),
+  },
+  // Web Push (VAPID) for browser notifications straight from this server.
+  // Exactly the mailConfigured lesson: absent is a supported state reported as
+  // { configured:false } — the server never mints its own keys at boot, because
+  // a key generated into local storage dies with the next deploy and every
+  // subscription minted against it dies with it. Both halves must come from the
+  // environment as a matching pair (from `web-push generateVAPIDKeys`); one
+  // without the other is not configured.
+  push: {
+    publicKey: process.env.VAPID_PUBLIC_KEY || '',
+    privateKey: process.env.VAPID_PRIVATE_KEY || '',
+    // Identifies this server to push services; a plain mailto is the standard
+    // form and carries no secret, so it defaults rather than requiring setup.
+    subject: process.env.VAPID_SUBJECT || 'mailto:alerts@digiwp.com',
+  },
   // Whether an X-Forwarded-For header may be believed. On by default because
   // this runs behind Traefik; it must be OFF anywhere the server is reachable
   // directly, since the header is trivially forged and a forged one bypasses

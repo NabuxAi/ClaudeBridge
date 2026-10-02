@@ -49,6 +49,7 @@ import ListChecks from 'lucide-react/dist/esm/icons/list-checks.js'
 import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js'
 import Lock from 'lucide-react/dist/esm/icons/lock.js'
 import LockKeyhole from 'lucide-react/dist/esm/icons/lock-keyhole.js'
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js'
 import Mail from 'lucide-react/dist/esm/icons/mail.js'
 import MailCheck from 'lucide-react/dist/esm/icons/mail-check.js'
 import Menu from 'lucide-react/dist/esm/icons/menu.js'
@@ -144,6 +145,7 @@ export const ICONS = {
   'loader-2': Loader2,
   'lock': Lock,
   'lock-keyhole': LockKeyhole,
+  'log-out': LogOut,
   'mail': Mail,
   'mail-check': MailCheck,
   'menu': Menu,

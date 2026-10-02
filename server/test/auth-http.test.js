@@ -18,6 +18,8 @@ import { config } from '../src/config.js'
 // a tiny app that mounts the real router with a stubbed store — see below.
 const { default: authRouter } = await import('../src/routes/auth.js')
 const store = await import('../src/store.js')
+const { sessions: sessionsStore } = await import('../src/sessions.store.js')
+const { twoFactor } = await import('../src/twofactor.store.js')
 
 const PASSWORD = 'a-real-password-123'
 let PASS_HASH
@@ -25,6 +27,8 @@ let PASS_HASH
 const realByEmailRaw = store.users.byEmailRaw
 const realById = store.users.byId
 const realCreate = store.users.create
+const realSessionCreate = sessionsStore.create
+const realTwoFactorGet = twoFactor.get
 
 function stubStore() {
   store.users.byEmailRaw = async (email) =>
@@ -33,12 +37,21 @@ function stubStore() {
       : null
   store.users.byId = async (id) => ({ id, name: 'کاربر', email: 'someone@example.com' })
   store.users.create = async ({ email }) => ({ id: 'u_new', name: 'تازه', email })
+  // Login/register now write a session row next to the token; this file runs
+  // without a database, so the write is stubbed like the other store calls.
+  sessionsStore.create = async () => ({ id: 's_stub', token_hash: 'stub' })
+  // The login route asks the 2FA store whether the account has a second
+  // factor; without a database the honest answer here is "none enrolled",
+  // which is also the answer every test in this file was written against.
+  twoFactor.get = async () => null
 }
 
 function restoreStore() {
   store.users.byEmailRaw = realByEmailRaw
   store.users.byId = realById
   store.users.create = realCreate
+  sessionsStore.create = realSessionCreate
+  twoFactor.get = realTwoFactorGet
 }
 
 function makeApp() {

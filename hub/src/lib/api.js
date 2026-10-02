@@ -75,7 +75,55 @@ export const auth = {
   challengeState: call(mock.challengeState, () => http('/auth/challenge-state')),
   forgotPassword: call(mock.forgotPassword, (b) => http('/auth/forgot-password', { method: 'POST', body: b })),
   resetPassword: call(mock.resetPassword, (b) => http('/auth/reset-password', { method: 'POST', body: b })),
-  logout: () => { setToken(''); return Promise.resolve({ ok: true }) },
+  // خروج: نشست سمت سرور باطل می‌شود (POST /auth/logout سطرِ همین نشست را
+  // revoked می‌کند) و توکن محلی همیشه پاک می‌شود — حتی اگر فراخوانی ناموفق
+  // باشد (نشست از قبل باطل، شبکه در دسترس نیست). اگر سرور فقط توکن را از
+  // مرورگر بردارد، توکن کپی‌شده از دستگاه مشترک تا ۷ روز زنده می‌ماند؛ پس
+  // خروج محلی هرگز به نتیجهٔ فراخوانی گره نمی‌خورد.
+  logout: call(
+    () => { setToken(''); return Promise.resolve({ ok: true }) },
+    async () => {
+      try {
+        return await http('/auth/logout', { method: 'POST', body: {} })
+      } catch {
+        return { ok: false }
+      } finally {
+        setToken('')
+      }
+    }
+  ),
+  // Active sessions of THIS account (the security page). The mock answers
+  // with an empty list on purpose: inventing devices a development build
+  // has never seen is exactly the fabricated-rows pattern the product
+  // truth rules forbid.
+  sessions: call(() => Promise.resolve({ sessions: [] }), () => http('/auth/sessions')),
+  revokeSession: call(
+    () => Promise.resolve({ ok: true }),
+    (id) => http(`/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  ),
+  revokeOtherSessions: call(
+    () => Promise.resolve({ ok: true, revoked: 0 }),
+    () => http('/auth/sessions/revoke-others', { method: 'POST', body: {} })
+  ),
+  // Two-factor (TOTP) enrollment and state. The mocks answer the honest
+  // dev-mock states: no factor exists (status) and enrollment cannot run
+  // without the real server that mints and verifies secrets.
+  twoFactorStatus: call(
+    () => Promise.resolve({ enabled: false, pending: false, recoveryCodesLeft: 0 }),
+    () => http('/auth/2fa/status')
+  ),
+  twoFactorSetup: call(
+    () => Promise.reject(new ApiError('ورود دو مرحله‌ای در حالت نمایشی در دسترس نیست.', 501)),
+    () => http('/auth/2fa/setup', { method: 'POST', body: {} })
+  ),
+  twoFactorActivate: call(
+    () => Promise.reject(new ApiError('ورود دو مرحله‌ای در حالت نمایشی در دسترس نیست.', 501)),
+    (b) => http('/auth/2fa/activate', { method: 'POST', body: b })
+  ),
+  twoFactorDisable: call(
+    () => Promise.reject(new ApiError('ورود دو مرحله‌ای در حالت نمایشی در دسترس نیست.', 501)),
+    (b) => http('/auth/2fa/disable', { method: 'POST', body: b })
+  ),
 }
 
 // ---- Account (sites, billing, team, notifications, profile) ----
@@ -107,6 +155,26 @@ export const account = {
     mock.verifyNotificationContact,
     (id) => http(`/notifications/contacts/${id}/verify`, { method: 'POST' })
   ),
+  // Browser push (VAPID) enrollment. The mocks answer the honest dev-mock
+  // states, same pattern as 2FA/monitors: configured:false with the reason
+  // (a fake cannot mint a deployment's VAPID keys), and the subscribe write
+  // refusing — a mock must not look like a subscription that can receive.
+  pushStatus: call(
+    () => Promise.resolve({ configured: false, reason: 'کلیدهای VAPID در حالت نمایشی تنظیم نشده‌اند.', subscriptions: [] }),
+    () => http('/push/status')
+  ),
+  pushPublicKey: call(
+    () => Promise.resolve({ configured: false, message: 'اعلان مرورگر در حالت نمایشی فعال نیست.' }),
+    () => http('/push/public-key')
+  ),
+  pushSubscribe: call(
+    () => Promise.reject(new ApiError('ثبت اشتراک اعلان در حالت نمایشی در دسترس نیست.', 501)),
+    (body) => http('/push/subscribe', { method: 'POST', body })
+  ),
+  pushUnsubscribe: call(
+    () => Promise.resolve({ ok: true }),
+    (id) => http('/push/unsubscribe', { method: 'POST', body: { id } })
+  ),
   profile: call(mock.profile, () => http('/profile')),
   saveProfile: call(
     (body) => mock.saveProfile(body),
@@ -126,6 +194,13 @@ export const account = {
     (body) => http('/contact', { method: 'PATCH', body })
   ),
   alertReadiness: call(mock.alertReadiness, () => http('/alerts/readiness')),
+  // حذف حساب — یک‌طرفه و غیرقابل‌بازگشتی. سرور رمز فعلی را می‌خواهد و همهٔ
+  // نشست‌ها/اعتبارنامه‌های جفت‌سازی را باطل می‌کند. موکِ حالت توسعه فقط ok
+  // برمی‌گرداند و هیچ چیزی حذف نمی‌کند — همان قرارداد بی‌اثرِ revokeSession.
+  deleteAccount: call(
+    () => Promise.resolve({ ok: true }),
+    (password) => http('/account/delete', { method: 'POST', body: { password } })
+  ),
   activity: call(() => Promise.resolve({ events: [] }), () => http('/account/activity')),
 }
 
@@ -387,6 +462,39 @@ export function site(siteId) {
     runOffsiteBackup: call(
       (targetId) => mock.runOffsiteBackup(siteId, targetId),
       (targetId) => http(p('/offsite-backups/jobs'), { method: 'POST', body: { targetId } })
+    ),
+    // Uptime monitors — «بررسی دسترسی HTTP، نه سفر کاربری/پرداخت». The mocks
+    // answer the honest dev-mock states: an empty list carrying the scope
+    // label (no invented readings), and create/update/check refusing with 501
+    // because a fake cannot verify a real URL. Same pattern as the 2FA mocks.
+    listMonitors: call(
+      () => Promise.resolve({
+        monitors: [],
+        availability: { scope: 'بررسی دسترسی HTTP، نه سفر کاربری/پرداخت', days7: { measured: false, percent: null, incidents: null, checks: 0 }, days30: { measured: false, percent: null, incidents: null, checks: 0 } },
+        scope: 'بررسی دسترسی HTTP، نه سفر کاربری/پرداخت',
+        limit: 10,
+      }),
+      () => http(p('/monitors'))
+    ),
+    createMonitor: call(
+      () => Promise.reject(new ApiError('مانیتورها در حالت نمایشی در دسترس نیستند.', 501)),
+      (body) => http(p('/monitors'), { method: 'POST', body })
+    ),
+    updateMonitor: call(
+      () => Promise.reject(new ApiError('مانیتورها در حالت نمایشی در دسترس نیستند.', 501)),
+      (monitorId, body) => http(p(`/monitors/${encodeURIComponent(monitorId)}`), { method: 'PATCH', body })
+    ),
+    deleteMonitor: call(
+      () => Promise.resolve({ ok: true }),
+      (monitorId) => http(p(`/monitors/${encodeURIComponent(monitorId)}`), { method: 'DELETE' })
+    ),
+    checkMonitor: call(
+      () => Promise.reject(new ApiError('بررسی دستی مانیتور در حالت نمایشی در دسترس نیست.', 501)),
+      (monitorId) => http(p(`/monitors/${encodeURIComponent(monitorId)}/check`), { method: 'POST', body: {} })
+    ),
+    listMonitorResults: call(
+      () => Promise.resolve({ results: [] }),
+      (monitorId, limit) => http(p(`/monitors/${encodeURIComponent(monitorId)}/results${limit ? `?limit=${encodeURIComponent(limit)}` : ''}`))
     ),
   }
 }

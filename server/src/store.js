@@ -52,6 +52,10 @@ export const users = {
     return publicUser(row)
   },
   byEmailRaw: (email) => one('SELECT * FROM users WHERE email = $1', [String(email || '').trim().toLowerCase()]),
+  // The unshaped row — pass_hash included. Routes that re-prove the password
+  // behind a live session (2FA disable, account deletion) need the hash; the
+  // public shape deliberately never carries it.
+  byIdRaw: (id) => one('SELECT * FROM users WHERE id = $1', [id]),
   byId: async (id) => publicUser(await one('SELECT * FROM users WHERE id = $1', [id])),
   /** Emergency contact details. Merged, so writing a push token keeps the phone. */
   async setContact(id, patch) {
@@ -68,7 +72,10 @@ export const users = {
   },
 
   async update(id, fields) {
-    const allowed = ['name', 'two_factor', 'lang', 'timezone']
+    // No `two_factor`: the flag is owned by /auth/2fa/* (activate/disable),
+    // which keep it in sync with the enrollment row. A profile write that
+    // could flip it would let a claim exist with no secret behind it.
+    const allowed = ['name', 'lang', 'timezone']
     const keys = Object.keys(fields).filter((k) => allowed.includes(k))
     if (!keys.length) return this.byId(id)
     const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(', ')
@@ -129,6 +136,43 @@ export const users = {
     const row = await one('UPDATE users SET role = $2 WHERE id = $1 RETURNING *', [id, role])
     if (!row) throw httpError(404, 'کاربر پیدا نشد.')
     return publicUser(row)
+  },
+
+  /**
+   * Tombstone a deleted account's row instead of deleting it.
+   *
+   * Deleting the row outright would CASCADE through sites → events and take
+   * the audit trail with it; the events log is site-scoped by design, so the
+   * audit record survives only if both the user and site rows do. What "the
+   * account is deleted" therefore means here is: the identity is gone from
+   * the row, and nothing about the row can authenticate or be contacted.
+   *
+   *   email → `deleted-<sha256(id)…>@invalid` — unique per account (the
+   *     column is UNIQUE), so the address frees up for re-registration
+   *     without colliding with another tombstone, and `.invalid` is a
+   *     reserved TLD no mailer can deliver to.
+   *   pass_hash → a value verifyPassword() rejects by shape (no scrypt
+   *     derivation, no timing worth measuring). It is unreachable by login
+   *     anyway: byEmailRaw no longer finds the old address.
+   *   name → a neutral label, so the admin users list says "deleted" instead
+   *     of carrying the person's name.
+   *   contact → NULL — the enrolled phone/push tokens are personal data.
+   *
+   * Returns the RAW row; the route decides what of it may be said out loud.
+   */
+  async anonymize(id) {
+    const row = await one('SELECT * FROM users WHERE id = $1', [id])
+    if (!row) throw httpError(404, 'کاربر پیدا نشد.')
+    const deletedEmail =
+      'deleted-' + crypto.createHash('sha256').update(String(id)).digest('hex').slice(0, 12) + '@invalid'
+    return one(
+      `UPDATE users
+         SET email = $2, name = $3, pass_hash = $4,
+             contact = '{"phone":null,"fcmToken":null,"najvaToken":null}'::jsonb, two_factor = false
+        WHERE id = $1
+       RETURNING *`,
+      [id, deletedEmail, 'حساب حذف‌شده', 'deleted:' + crypto.randomBytes(32).toString('hex')]
+    )
   },
 }
 
@@ -203,6 +247,27 @@ export const sites = {
 
   /** Internal row incl. secret — for the relay. Caller must have checked ownership. */
   rawForUser: (id, userId) => one('SELECT * FROM sites WHERE id = $1 AND user_id = $2', [id, userId]),
+
+  /**
+   * Site row incl. secret plus this user's membership role in one query:
+   * 'owner' when the site row belongs to them, otherwise their active
+   * team_members role, otherwise null. The site-routes membership layer
+   * (routes/sites.js) is written against this — a single round trip decides
+   * whether the user may see the site at all, and whether they may change it.
+   */
+  rawWithRole: (id, userId) => one(
+    `SELECT s.*,
+            CASE WHEN s.user_id = $2 THEN 'owner'
+              ELSE (
+                SELECT tm.role FROM team_members tm
+                 WHERE tm.site_id = s.id AND tm.user_id = $2 AND tm.status = 'active'
+                 LIMIT 1
+              )
+            END AS member_role
+       FROM sites s
+      WHERE s.id = $1`,
+    [id, userId]
+  ),
 
   async add(userId, { name, title }) {
     if (!name) throw httpError(400, 'دامنهٔ سایت لازم است.')
@@ -358,6 +423,21 @@ const ROLE_LABEL = {
 
 const VALID_ROLES = Object.keys(ROLE_LABEL)
 
+/**
+ * What the stored role grants TODAY on the site routes. The role names a ladder
+ * (admin above viewer), but the membership enforcement shipped in this wave
+ * makes every non-owner member read-only at that layer — the site's authority
+ * level (report/confirm/auto) stays a separate, owner-set setting and the
+ * sensitive-tool classification is untouched. The panel must render this
+ * effective access, not the promise carried by the role name, or a «مدیر»
+ * badge would advertise writes the server answers with 403.
+ */
+const EFFECTIVE_ACCESS = {
+  owner: { level: 'owner', label: 'مدیریت کامل' },
+  admin: { level: 'report', label: 'فقط خواندن' },
+  viewer: { level: 'report', label: 'فقط خواندن' },
+}
+
 const publicMember = (m) => m && ({
   id: m.id,
   userId: m.user_id,
@@ -365,6 +445,7 @@ const publicMember = (m) => m && ({
   email: m.email || m.invited_email,
   role: m.role,
   roleLabel: ROLE_LABEL[m.role] || m.role,
+  effective: EFFECTIVE_ACCESS[m.role] || EFFECTIVE_ACCESS.viewer,
   initials: (m.name || m.invited_email || '?').trim().charAt(0),
   status: m.status,
   joinedAt: Number(m.created_at),
@@ -480,14 +561,17 @@ export const team = {
     }
 
     const publicPanelUrl = config.publicPanelUrl || 'http://localhost:8080'
-    // The hub accept flow reads ?accept=<token> and ?site=<siteId>; the accept
-    // endpoint itself requires both (team.accept queries token_hash AND site_id).
+    // Two landing paths, because we cannot know whether the address has an
+    // account yet: one registers with the token attached, one signs in and
+    // accepts from the team page. Both carry the same single-use token, so
+    // whichever is opened first wins and the other reports it as spent.
+    const registerUrl = `${publicPanelUrl}/register?invite=${raw}&email=${encodeURIComponent(normalized)}`
     const acceptUrl = `${publicPanelUrl}/app/team?accept=${raw}&site=${siteId}`
     const mailResult = await sendMail({
       to: normalized,
       subject: `دعوت به همکاری در مدیریت سایت ${site.name}`,
-      text: `شما برای همکاری در مدیریت سایت «${site.name}» با نقش «${ROLE_LABEL[role]}» دعوت شده‌اید.\n\nبرای پذیرش دعوت روی این لینک کلیک کنید:\n${acceptUrl}\n\nاین لینک ۷ روز معتبر است و فقط یک‌بار قابل استفاده است.`,
-      html: `<p>شما برای همکاری در مدیریت سایت «${site.name}» با نقش «${ROLE_LABEL[role]}» دعوت شده‌اید.</p><p><a href="${acceptUrl}">پذیرش دعوت</a></p><p>این لینک ۷ روز معتبر است و فقط یک‌بار قابل استفاده است.</p>`,
+      text: `شما برای همکاری در مدیریت سایت «${site.name}» با نقش «${ROLE_LABEL[role]}» دعوت شده‌اید.\n\nاگر حساب ندارید، با این لینک ثبت‌نام کنید و عضو سایت شوید:\n${registerUrl}\n\nاگر قبلاً حساب دارید، پس از ورود با این لینک دعوت را بپذیرید:\n${acceptUrl}\n\nاین لینک‌ها ۷ روز معتبرند و فقط یک‌بار قابل استفاده‌اند.`,
+      html: `<p>شما برای همکاری در مدیریت سایت «${site.name}» با نقش «${ROLE_LABEL[role]}» دعوت شده‌اید.</p><p>اگر حساب ندارید، <a href="${registerUrl}">با همین ایمیل ثبت‌نام کنید</a> تا عضو سایت شوید.</p><p>اگر قبلاً حساب دارید، پس از ورود <a href="${acceptUrl}">دعوت را از صفحهٔ تیم بپذیرید</a>.</p><p>این لینک‌ها ۷ روز معتبرند و فقط یک‌بار قابل استفاده‌اند.</p>`,
     })
 
     return {
@@ -534,6 +618,55 @@ export const team = {
     )
     await one('UPDATE invitations SET used_at = $2 WHERE id = $1', [invitation.id, now])
 
+    return publicMember({
+      id: memberId, user_id: user.id, name: user.name, email: user.email,
+      role: invitation.role, invited_email: invitation.email, status: 'active', created_at: now,
+    })
+  },
+
+  /**
+   * Spend an invitation during registration — the no-account-yet path.
+   *
+   * The register flow hands over the raw token from the invite link and the
+   * freshly created user; no siteId travels with the request, so the invitation
+   * is found by token hash alone. Every old guarantee holds: the token is
+   * matched by SHA-256 (the raw value was never stored), must be unused,
+   * unrevoked and inside its 7-day window, and belongs to exactly the address
+   * that registered.
+   *
+   * Single-use is enforced by the UPDATE, not the earlier SELECT: two
+   * registrations racing on one link both pass the SELECT, but only the one
+   * whose UPDATE returns a row gets to insert the membership. A failure here
+   * must not fail the account itself — registration reports it and the owner
+   * can re-invite.
+   */
+  async acceptOnRegister(rawToken, user) {
+    if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'لینک دعوت نامعتبر است.')
+    const tokenHash = crypto.createHash('sha256').update(String(rawToken)).digest('hex')
+    const invitation = await one(
+      `SELECT * FROM invitations
+        WHERE token_hash = $1 AND used_at IS NULL AND revoked_at IS NULL
+          AND expires_at > $2`,
+      [tokenHash, Date.now()]
+    )
+    if (!invitation) throw httpError(400, 'دعوت‌نامه منقضی، استفاده‌شده یا لغو شده است.')
+    if (user.email !== invitation.email) {
+      throw httpError(403, 'این دعوت‌نامه متعلق به ایمیل دیگری است؛ با همان ایمیلِ دعوت‌شده ثبت‌نام کنید.')
+    }
+
+    const now = Date.now()
+    const spent = await one(
+      'UPDATE invitations SET used_at = $2 WHERE id = $1 AND used_at IS NULL RETURNING id',
+      [invitation.id, now]
+    )
+    if (!spent) throw httpError(400, 'دعوت‌نامه قبلاً استفاده شده است.')
+
+    const memberId = newId('tm_')
+    await one(
+      `INSERT INTO team_members (id, site_id, user_id, role, invited_email, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'active', $6)`,
+      [memberId, invitation.site_id, user.id, invitation.role, invitation.email, now]
+    )
     return publicMember({
       id: memberId, user_id: user.id, name: user.name, email: user.email,
       role: invitation.role, invited_email: invitation.email, status: 'active', created_at: now,

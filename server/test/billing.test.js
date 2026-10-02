@@ -25,6 +25,7 @@ if (!dsn) {
   await init()
 
   const { hashPassword, signToken } = await import('../src/auth.js')
+  const { sessions } = await import('../src/sessions.store.js')
   const { billing } = await import('../src/billing.store.js')
   const { users } = await import('../src/store.js')
   const { default: billingRouter } = await import('../src/routes/billing.js')
@@ -49,6 +50,19 @@ if (!dsn) {
     })
     app.use('/v1', billingRouter)
     return app
+  }
+
+  // The billing router guards each route with requireAuth, and since the
+  // sessions wave that resolves the token's jti to a live sessions row —
+  // so the test mints a real login-shaped session instead of a bare token.
+  // Same helper as entitlement.test.js, which covers the same router.
+  async function authHeaders(userId) {
+    const jti = crypto.randomBytes(16).toString('hex')
+    await sessions.create({ userId, jti })
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${signToken({ sub: userId, jti })}`,
+    }
   }
 
   test('plans are seeded on schema init', async () => {
@@ -114,9 +128,10 @@ if (!dsn) {
     const server = app.listen(0)
     await new Promise((r) => server.once('listening', r))
     const base = `http://127.0.0.1:${server.address().port}/v1`
+    const H = await authHeaders(user.id)
 
     try {
-      const res = await fetch(`${base}/billing`, { headers: { Authorization: `Bearer ${signToken({ sub: user.id })}` } })
+      const res = await fetch(`${base}/billing`, { headers: H })
       assert.equal(res.status, 200)
       const body = await res.json()
       assert.equal(body.subscription.plan.id, 'pro')
@@ -135,9 +150,10 @@ if (!dsn) {
     const server = app.listen(0)
     await new Promise((r) => server.once('listening', r))
     const base = `http://127.0.0.1:${server.address().port}/v1`
+    const H = await authHeaders(user.id)
 
     try {
-      const res = await fetch(`${base}/billing/trial`, { headers: { Authorization: `Bearer ${signToken({ sub: user.id })}` } })
+      const res = await fetch(`${base}/billing/trial`, { headers: H })
       assert.equal(res.status, 200)
       const body = await res.json()
       assert.equal(body.status, 'trialing')
@@ -154,11 +170,12 @@ if (!dsn) {
     const server = app.listen(0)
     await new Promise((r) => server.once('listening', r))
     const base = `http://127.0.0.1:${server.address().port}/v1`
+    const H = await authHeaders(user.id)
 
     try {
       const res = await fetch(`${base}/billing/request-pilot`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${signToken({ sub: user.id })}` },
+        headers: H,
         body: JSON.stringify({ plan: 'agency' }),
       })
       assert.equal(res.status, 200)
@@ -177,11 +194,12 @@ if (!dsn) {
     const server = app.listen(0)
     await new Promise((r) => server.once('listening', r))
     const base = `http://127.0.0.1:${server.address().port}/v1`
+    const H = await authHeaders(user.id)
 
     try {
       const res = await fetch(`${base}/billing/webhook`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${signToken({ sub: user.id })}` },
+        headers: H,
         body: JSON.stringify({ userId: user.id, plan: 'base', trialDays: 7 }),
       })
       assert.equal(res.status, 200)

@@ -55,6 +55,9 @@ export default function SiteShell() {
     { to: `${base}/security`, icon: 'shield-check', label: 'امنیت' },
     { to: `${base}/backups`, icon: 'database', label: 'بکاپ‌ها' },
     { to: `${base}/speed`, icon: 'gauge', label: 'سرعت' },
+    // پایش دسترس‌پذیری HTTP — دامنهٔ آن در خود صفحه صادقانه label شده:
+    // «بررسی دسترسی HTTP، نه سفر کاربری/پرداخت».
+    { to: `${base}/monitors`, icon: 'activity', label: 'مانیتورها' },
     // Diagnostic, not destructive-by-intent — but it does flip plugins on a
     // live site, so it sits below the read-only screens.
     { to: `${base}/conflict`, icon: 'git-branch', label: 'بررسی تداخل' },

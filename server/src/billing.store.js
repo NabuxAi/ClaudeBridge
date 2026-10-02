@@ -17,6 +17,15 @@ const publicPlan = (p) => p && ({
   features: p.features || [],
 })
 
+// Trial state, spelled out instead of derivable: a raw status of 'trialing'
+// stays 'trialing' after the window has passed, which is how an expired
+// trial used to read as an active one. 'trialing' = inside the window,
+// 'expired' = the window is over and nothing has replaced it (no gateway
+// exists, so nothing replaces it yet), 'ended' = the subscription moved on
+// (e.g. an operator-granted 'active' period via the trusted applyChange).
+const trialStateOf = (s, isTrialing) =>
+  isTrialing ? 'trialing' : s.status === 'trialing' ? 'expired' : 'ended'
+
 const publicSubscription = (s, plan, siteLimit, sitesUsed) => {
   if (!s) return null
   const now = Date.now()
@@ -29,6 +38,7 @@ const publicSubscription = (s, plan, siteLimit, sitesUsed) => {
     plan: plan ? publicPlan(plan) : { id: s.plan, name: s.plan },
     status: s.status,
     isTrialing,
+    trialState: trialStateOf(s, isTrialing),
     trialEndsAt,
     daysLeftInTrial,
     currentPeriodStart: s.current_period_start ? Number(s.current_period_start) : null,
@@ -52,9 +62,15 @@ export const billing = {
     return publicPlan(await one('SELECT * FROM plans WHERE id = $1', [id]))
   },
 
-  /** Number of sites this user owns. */
+  /** Number of sites this user owns. Tombstoned sites (status 'deleted') do
+   *  not count: their pairing credentials are gone and they are out of the
+   *  product, so holding their slot against the plan cap would charge for a
+   *  site the account can no longer reach. */
   async siteCount(userId) {
-    const row = await one('SELECT COUNT(*)::int AS n FROM sites WHERE user_id = $1', [userId])
+    const row = await one(
+      "SELECT COUNT(*)::int AS n FROM sites WHERE user_id = $1 AND status <> 'deleted'",
+      [userId]
+    )
     return row ? Number(row.n) : 0
   },
 
@@ -110,10 +126,56 @@ export const billing = {
     return {
       status: s.status,
       isTrialing,
+      trialState: trialStateOf(s, isTrialing),
       trialEndsAt,
       daysLeftInTrial: daysLeft,
       cancelAtPeriodEnd: !!s.cancel_at_period_end,
     }
+  },
+
+  /**
+   * Entitlement gate for adding a site — the one place plan/trial limits bite.
+   *
+   * Blocked states (402, because nothing is broken or forbidden — the account
+   * simply has no entitlement), each with a machine-readable `code` so the hub
+   * can react without parsing Persian:
+   *   trial_expired       — the trial window is over and no gateway exists to
+   *                         replace it. Adding is blocked; READING everything
+   *                         the account already has stays open.
+   *   site_limit_reached  — sites_used >= plan.site_limit. A plan with
+   *                         site_limit NULL (آژانس) is unlimited by contract.
+   * When allowed, returns the same honest summary the billing endpoints serve
+   * so the caller can log the decision against real numbers.
+   */
+  async canAddSite(userId) {
+    const s = await this.ensure(userId)
+    const plan = await one('SELECT * FROM plans WHERE id = $1', [s.plan])
+    const sitesUsed = await this.siteCount(userId)
+    const siteLimit = plan?.site_limit == null ? null : Number(plan.site_limit)
+    const now = Date.now()
+    const trialEndsAt = s.trial_ends_at ? Number(s.trial_ends_at) : null
+    const isTrialing = s.status === 'trialing' && trialEndsAt && trialEndsAt > now
+    const subscription = publicSubscription(s, plan, siteLimit, sitesUsed)
+
+    if (s.status === 'trialing' && (!trialEndsAt || trialEndsAt <= now)) {
+      const e = httpError(
+        402,
+        'دسترسی آزمایشی شما به پایان رسیده است؛ افزودن سایت جدید تا فعال‌سازی اشتراک متوقف است. درگاه پرداخت هنوز فعال نیست — برای ادامه از صفحهٔ اشتراک درخواست دسترسی آزمایشی ثبت کنید یا با پشتیبانی تماس بگیرید.'
+      )
+      e.code = 'trial_expired'
+      e.details = { subscription }
+      throw e
+    }
+    if (siteLimit != null && sitesUsed >= siteLimit) {
+      const e = httpError(
+        402,
+        `ظرفیت پلن «${plan?.name || s.plan}» (${faDigits(siteLimit)} سایت) تکمیل شده است. برای افزودن سایت بیشتر، پلن خود را ارتقا دهید. درگاه پرداخت هنوز فعال نیست — برای ارتقا با پشتیبانی تماس بگیرید.`
+      )
+      e.code = 'site_limit_reached'
+      e.details = { subscription }
+      throw e
+    }
+    return { isTrialing, trialExpired: false, sitesUsed, siteLimit, subscription }
   },
 
   /**
@@ -192,6 +254,8 @@ export const billing = {
     return this.forUser(userId)
   },
 }
+
+const faDigits = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
 
 function planIdFromName(name) {
   const map = { 'پایه': 'base', 'حرفه‌ای': 'pro', 'آژانس': 'agency' }

@@ -15,6 +15,7 @@
 // ============================================================
 import { ORDER, telegramOps } from './channels.js'
 import { config } from '../config.js'
+import { isPushConfigured } from '../push.js'
 
 /**
  * Send one emergency alert.
@@ -158,6 +159,7 @@ export function alertChannelStatus() {
   const missing = []
   const check = (id, ok, env) => (ok ? live : missing).push(ok ? id : `${id} (${env})`)
 
+  check('web-push', isPushConfigured(), 'VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY')
   check('firebase', !!config.alerts.fcmServerKey, 'FCM_SERVER_KEY')
   check('najva', !!config.alerts.najvaApiKey, 'NAJVA_API_KEY')
   check('sms', !!(config.alerts.smsUrl && config.alerts.smsApiKey), 'SMS_URL + SMS_API_KEY')

@@ -33,6 +33,12 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  // وضعیت اعلان مرورگر: پاسخ /push/status (configured + اشتراک‌های همین حساب).
+  // null یعنی هنوز پاسخی نرسیده؛ صفحه صبر می‌کند، نه اینکه خاموشی را حدس بزند.
+  const [push, setPush] = useState(null)
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushMsg, setPushMsg] = useState(null)
+
   const [newContact, setNewContact] = useState({ type: 'email', value: '' })
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState('')
@@ -56,6 +62,13 @@ export default function Notifications() {
       if (!alive) return
       setError(describeError(e, 'بارگذاری تنظیمات انجام نشد.', 'تنظیمات اعلان هنوز روی سرور فعال نشده است.'))
       setLoading(false)
+    })
+    // وضعیت push جدا گرفته شده تا یک خطای آن، کل صفحه را خطا نکند؛ اما اگر
+    // خودش شکست خورد، دلیلش صادقانه همان‌جا رندر می‌شود نه یک حالت سبز ساختگی.
+    account.pushStatus().then((ps) => {
+      if (alive) setPush(ps)
+    }).catch((e) => {
+      if (alive) setPush({ configured: false, reason: describeError(e, 'وضعیت اعلان مرورگر نامشخص است.', 'اعلان مرورگر هنوز روی سرور فعال نشده است.') })
     })
     return () => { alive = false }
   }, [])
@@ -129,6 +142,76 @@ export default function Notifications() {
     }
   }
 
+  /**
+   * فعال‌سازی اعلان مرورگر روی این دستگاه.
+   *
+   * اجازه در یک حرکت واقعی کاربر از مرورگر گرفته می‌شود، کلید عمومی VAPID از
+   * سرور همین دیپلوی می‌آید، و اشتراک ساخته‌شده به همان حساب ثبت می‌شود. اگر
+   * سرور configured نباشد، مسیر همین‌جا صادقانه تمام می‌شود — هیچ اشتراکی که
+   * هرگز چیزی دریافت نخواهد کرد ساخته یا ذخیره نمی‌شود.
+   */
+  async function enableBrowserPush() {
+    setPushBusy(true)
+    setPushMsg(null)
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+        setPushMsg({ tone: 'error', text: 'این مرورگر از اعلان مرورگر پشتیبانی نمی‌کند.' })
+        return
+      }
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') {
+        setPushMsg({ tone: 'error', text: 'اجازهٔ اعلان داده نشد. بدون اجازهٔ مرورگر، اعلانی ارسال نمی‌شود.' })
+        return
+      }
+      const key = await account.pushPublicKey()
+      if (!key?.configured || !key.publicKey) {
+        setPushMsg({ tone: 'error', text: key?.message || 'اعلان مرورگر روی این سرور فعال نیست: کلیدهای VAPID تنظیم نشده‌اند.' })
+        return
+      }
+      let reg = await navigator.serviceWorker.getRegistration()
+      if (!reg) reg = await navigator.serviceWorker.register('/sw.js')
+      if (!reg || !reg.active) {
+        setPushMsg({ tone: 'error', text: 'سرویس‌ورکر هنوز آماده نیست؛ صفحه را دوباره بارگذاری کنید.' })
+        return
+      }
+      const existing = await reg.pushManager.getSubscription()
+      const sub = existing || await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key.publicKey),
+      })
+      await account.pushSubscribe(sub.toJSON())
+      setPush(await account.pushStatus())
+      setPushMsg({ tone: 'ok', text: 'اعلان مرورگر روی این دستگاه فعال شد.' })
+    } catch (e) {
+      setPushMsg({ tone: 'error', text: describeError(e, 'فعال‌سازی اعلان انجام نشد.', 'ثبت اشتراک اعلان هنوز روی سرور فعال نشده است.') })
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  /** حذف یک اشتراک از حساب؛ اگر همین دستگاه باشد، اشتراک محلی هم باطل می‌شود. */
+  async function removeBrowserPush(sub) {
+    if (!window.confirm('این اشتراک حذف می‌شود و دیگر اعلانی به آن نمی‌رسد. ادامه می‌دهید؟')) return
+    setRowBusy((b) => ({ ...b, [sub.id]: true }))
+    setPushMsg(null)
+    try {
+      await account.pushUnsubscribe(sub.id)
+      try {
+        const reg = await navigator.serviceWorker?.getRegistration()
+        const local = reg ? await reg.pushManager.getSubscription() : null
+        if (local && sub.endpointTail && local.endpoint.endsWith(sub.endpointTail)) {
+          await local.unsubscribe()
+        }
+      } catch { /* حذف سمت مرورگر مکمل است؛ حذف سمت حساب انجام شده و می‌ماند. */ }
+      setPush(await account.pushStatus())
+      setPushMsg({ tone: 'ok', text: 'اشتراک حذف شد.' })
+    } catch (e) {
+      setPushMsg({ tone: 'error', text: describeError(e, 'حذف اشتراک انجام نشد.', 'حذف اشتراک هنوز روی سرور فعال نشده است.') })
+    } finally {
+      setRowBusy((b) => ({ ...b, [sub.id]: false }))
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -198,6 +281,71 @@ export default function Notifications() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="dwp-card" style={{ padding: '18px 20px', marginTop: 18 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>اعلان مرورگر</div>
+        <p style={{ ...hint, marginTop: 0, marginBottom: 12 }}>
+          هشدارهای فوری، مستقیم از سرور روی مرورگرهایی که اجازه داده باشید. پذیرفته‌شدن اعلان به معنی دیده‌شدن آن نیست.
+        </p>
+
+        {push === null && <p style={hint}>در حال دریافت وضعیت…</p>}
+
+        {/* سرور configured نیست: حالت خاموش صادقانه با دلیل — نه یک دکمهٔ
+            بی‌اثر که انگار با کلیک روی آن چیزی روشن می‌شود. */}
+        {push !== null && !push.configured && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+            <Badge variant="neutral" appearance="soft">غیرفعال</Badge>
+            <span style={{ fontSize: 12.5, color: 'var(--gd-text-muted)' }}>
+              {push.reason || 'اعلان مرورگر روی این سرور فعال نیست: کلیدهای VAPID تنظیم نشده‌اند.'}
+            </span>
+          </div>
+        )}
+
+        {push !== null && push.configured && !browserPushSupported() && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+            <Badge variant="neutral" appearance="soft">غیرفعال</Badge>
+            <span style={{ fontSize: 12.5, color: 'var(--gd-text-muted)' }}>
+              این مرورگر از اعلان مرورگر پشتیبانی نمی‌کند.
+            </span>
+          </div>
+        )}
+
+        {push !== null && push.configured && browserPushSupported() && (
+          <>
+            {push.subscriptions?.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                {push.subscriptions.map((s, i) => (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: i ? '1px solid var(--gd-border-subtle)' : 'none', flexWrap: 'wrap' }}>
+                    <Icon name="bell" size={16} style={{ color: 'var(--gd-text-muted)' }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, direction: 'ltr', textAlign: 'right' }}>{s.endpointHost || 'دستگاه ناشناس'}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 2, direction: 'ltr', textAlign: 'right' }}>
+                        …{s.endpointTail || ''} — {safeFaDate(s.createdAt)}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      leftIcon={rowBusy[s.id] ? undefined : 'trash-2'}
+                      loading={rowBusy[s.id]}
+                      onClick={() => removeBrowserPush(s)}
+                    >
+                      حذف
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              {pushMsg?.tone === 'ok' && <span style={{ fontSize: 12.5, color: 'var(--gd-success)' }}>{pushMsg.text}</span>}
+              {pushMsg?.tone === 'error' && <span style={{ fontSize: 12.5, color: 'var(--gd-danger-text)' }}>{pushMsg.text}</span>}
+              <Button variant="secondary" size="md" leftIcon="bell" disabled={pushBusy} onClick={enableBrowserPush}>
+                {pushBusy ? 'در حال فعال‌سازی…' : 'فعال‌سازی اعلان روی این دستگاه'}
+              </Button>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="dwp-card" style={{ padding: '18px 20px', marginTop: 18 }}>
@@ -281,6 +429,30 @@ export default function Notifications() {
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+
+/** آیا این مرورگر اصلاً امکان اشتراک push دارد؟ */
+function browserPushSupported() {
+  return typeof window !== 'undefined'
+    && 'serviceWorker' in navigator
+    && 'PushManager' in window
+    && 'Notification' in window
+}
+
+/** کلید عمومی VAPID (base64url) به Uint8Array — ورودی مورد نیاز PushManager. */
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = window.atob(base64)
+  const output = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i)
+  return output
+}
+
+/** تاریخ ثبت اشتراک؛ تاریخ غایب یا خراب، عدد سبز ساختگی نمی‌شود. */
+function safeFaDate(v) {
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('fa-IR')
+}
 
 const CONTACT_ICON = {
   email: 'mail',

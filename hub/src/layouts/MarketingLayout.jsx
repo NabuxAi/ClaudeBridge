@@ -35,14 +35,27 @@ export default function MarketingLayout() {
             </p>
           </div>
           {[
-            { h: 'محصول', links: ['قابلیت‌ها', 'سطوح اختیار', 'قیمت‌ها'] },
-            { h: 'شرکت', links: ['دربارهٔ ما', 'وبلاگ', 'تماس با ما'] },
-            { h: 'پشتیبانی', links: ['راهنما', 'وضعیت سرویس', 'حریم خصوصی'] },
+            { h: 'محصول', links: [{ t: 'قابلیت‌ها' }, { t: 'سطوح اختیار' }, { t: 'قیمت‌ها' }] },
+            { h: 'شرکت', links: [{ t: 'دربارهٔ ما' }, { t: 'وبلاگ' }, { t: 'تماس با ما' }] },
+            {
+              h: 'پشتیبانی',
+              links: [
+                { t: 'راهنما' },
+                { t: 'وضعیت سرویس' },
+                { t: 'حریم خصوصی', to: '/privacy' },
+                { t: 'شرایط استفاده', to: '/terms' },
+              ],
+            },
           ].map((c) => (
             <div key={c.h}>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>{c.h}</div>
+              {/* Only labels with a real destination become links (the draft
+                  /terms and /privacy pages); everything else stays plain text,
+                  not a dead "#" anchor. */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 13, color: 'var(--gd-text-muted)' }}>
-                {c.links.map((l) => <span key={l}>{l}</span>)}
+                {c.links.map((l) => l.to
+                  ? <Link key={l.t} to={l.to} style={{ color: 'inherit', textDecoration: 'none' }}>{l.t}</Link>
+                  : <span key={l.t}>{l.t}</span>)}
               </div>
             </div>
           ))}

@@ -10,10 +10,36 @@ const router = Router()
 
 const ip = (req) => clientIp(req, { trustProxy: config.trustProxy })
 
+// Same membership layer as routes/sites.js: owner or active team member may
+// read; only the owner may change anything. The owner path keeps the
+// rawForUser seam first (what callers stub); the 403 fires before
+// route-specific 400s so a member probing gets no different error map.
 async function loadSite(req, res) {
-  const raw = await sites.rawForUser(req.params.id, req.user.sub)
-  if (!raw) { res.status(404).json({ message: 'سایت یافت نشد.' }); return null }
+  const owned = await sites.rawForUser(req.params.id, req.user.sub)
+  if (owned) {
+    req.siteRole = 'owner'
+    return owned
+  }
+  const row = await sites.rawWithRole(req.params.id, req.user.sub)
+  if (!row || !row.member_role) {
+    res.status(404).json({ message: 'سایت یافت نشد.' })
+    return null
+  }
+  const { member_role: role, ...raw } = row
+  req.siteRole = role
   return raw
+}
+
+async function loadOwnerSite(req, res) {
+  const site = await loadSite(req, res)
+  if (!site) return null
+  if (req.siteRole !== 'owner') {
+    res.status(403).json({
+      message: 'این اقدام فقط برای مالک سایت مجاز است؛ اعضای تیم در حال حاضر فقط دسترسی مشاهده دارند.',
+    })
+    return null
+  }
+  return site
 }
 
 const targetLimit = limiter('offsite-target', {
@@ -38,7 +64,7 @@ router.get('/sites/:id/offsite-backups/targets', async (req, res, next) => {
 
 router.post('/sites/:id/offsite-backups/targets', targetLimit, async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const target = await offsiteBackups.create(site.id, req.body || {})
     res.status(201).json(target)
@@ -57,7 +83,7 @@ router.get('/sites/:id/offsite-backups/targets/:targetId', async (req, res, next
 
 router.patch('/sites/:id/offsite-backups/targets/:targetId', targetLimit, async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const target = await offsiteBackups.update(site.id, req.params.targetId, req.body || {})
     res.json(target)
@@ -66,7 +92,7 @@ router.patch('/sites/:id/offsite-backups/targets/:targetId', targetLimit, async 
 
 router.delete('/sites/:id/offsite-backups/targets/:targetId', targetLimit, async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     await offsiteBackups.remove(site.id, req.params.targetId)
     res.json({ ok: true })
@@ -86,7 +112,7 @@ router.get('/sites/:id/offsite-backups/jobs', async (req, res, next) => {
 
 router.post('/sites/:id/offsite-backups/jobs', jobLimit, async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
 
     const targetId = req.body?.targetId

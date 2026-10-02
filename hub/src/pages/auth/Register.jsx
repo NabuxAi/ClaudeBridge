@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
 import Icon from '../../lib/icons.jsx'
@@ -9,11 +9,17 @@ import { PasswordField } from './shared.jsx'
 export default function Register() {
   const { register } = useAuth()
   const nav = useNavigate()
+  const [searchParams] = useSearchParams()
+  // دعوت‌نامهٔ تیمی: لینک «ثبت‌نام و پذیرش دعوت» با ?invite=<توکن>&email=<ایمیل>
+  // می‌آید. توکن هرگز در state ذخیره نمی‌شود که در تاریخچه بماند؛ مستقیم از
+  // searchParams به بدنهٔ درخواست می‌رود.
+  const inviteToken = searchParams.get('invite') || ''
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => searchParams.get('email') || '')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [inviteError, setInviteError] = useState('')
   // Registration always demands one: there is no prior failure to key off, and
   // an open registration endpoint is how a user table fills with junk.
   const [captchaId, setCaptchaId] = useState('')
@@ -22,9 +28,18 @@ export default function Register() {
 
   const submit = async (e) => {
     e.preventDefault()
-    setBusy(true); setErr('')
+    setBusy(true); setErr(''); setInviteError('')
     try {
-      await register({ name, email, password, captchaId, captchaAnswer })
+      const res = await register({
+        name, email, password, captchaId, captchaAnswer,
+        ...(inviteToken ? { inviteToken } : {}),
+      })
+      if (res.invite && res.invite.applied === false) {
+        // حساب ساخته شده و کاربر وارد شده، اما دعوت اعمال نشد. صفحه را ترک
+        // نمی‌کنیم تا دلیلش دیده شود؛ ادامهٔ مسیر با دکمهٔ پایین انجام می‌شود.
+        setInviteError(res.invite.error || 'دعوت‌نامه اعمال نشد.')
+        return
+      }
       nav('/onboarding')
     } catch (e2) {
       setErr(e2?.message || 'ساخت حساب ناموفق بود. دوباره تلاش کنید.')
@@ -43,6 +58,12 @@ export default function Register() {
         <h2 className="dwp-auth-title">ساخت حساب <span className="gd-gradient-text">رایگان</span></h2>
         <p className="dwp-auth-sub">دسترسی آزمایشی — بدون نیاز به کارت بانکی.</p>
       </div>
+      {inviteToken && (
+        <div className="gd-field__msg" style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 14 }}>
+          <Icon name="user-plus" size={13} />
+          <span>شما با یک دعوت‌نامهٔ تیمی اینجایید. با همین ایمیلِ دعوت‌شده ثبت‌نام کنید تا پس از ساخت حساب، عضو سایت دعوت‌کننده شوید.</span>
+        </div>
+      )}
       <form onSubmit={submit} className="dwp-auth-form">
         <Input label="نام و نام خانوادگی" placeholder="مثلاً مریم رضایی" leftIcon="user"
           value={name} onChange={(e) => setName(e.target.value)} required autoFocus autoComplete="name" />
@@ -72,9 +93,23 @@ export default function Register() {
           ساخت حساب آزمایشی
         </Button>
       </form>
+      {inviteError && (
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="gd-field__msg gd-field__msg--error">
+            <Icon name="alert-circle" size={13} />
+            عضویت در سایت انجام نشد: {inviteError}
+          </div>
+          <Button variant="secondary" fullWidth leftIcon="arrow-left" onClick={() => nav('/onboarding')}>
+            حساب ساخته شد — ورود به پنل
+          </Button>
+        </div>
+      )}
       {/* "Sign up with Google" was here with no handler and no OAuth client. */}
       <p className="dwp-auth-foot">
         قبلاً حساب دارید؟ <Link to="/login" className="dwp-auth-link dwp-auth-link--strong">وارد شوید</Link>
+        {inviteToken && (
+          <> — پس از ورود، لینک «پذیرش دعوت» داخل ایمیل را باز کنید.</>
+        )}
       </p>
     </>
   )

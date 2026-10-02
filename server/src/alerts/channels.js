@@ -18,6 +18,7 @@
 // fallback, and the whole point is that the second road is tried quickly.
 // ============================================================
 import { config } from '../config.js'
+import { isPushConfigured, sendToSubscriptions } from '../push.js'
 
 const TIMEOUT = 12000
 
@@ -25,6 +26,36 @@ const TIMEOUT = 12000
 const ok = (channel, detail = {}) => ({ channel, ok: true, ...detail })
 const fail = (channel, error, detail = {}) => ({ channel, ok: false, error, ...detail })
 const skip = (channel, why) => ({ channel, ok: false, skipped: true, error: why })
+
+/**
+ * Web Push (VAPID) — the owner's own browsers, reached directly from this
+ * server with no third-party key at all.
+ *
+ * The subscriptions are the rows the hub enrolled through /push/subscribe.
+ * Dead endpoints (404/410 from the push service) are deleted by the sender,
+ * so the channel never pays for the same dead browser twice. "Accepted by the
+ * push service" is the honest ceiling here too — a notification shown on a
+ * lock screen nobody looks at is not a person warned.
+ */
+export async function webPush(msg, to) {
+  if (!isPushConfigured()) return skip('web-push', 'کلیدهای VAPID تنظیم نشده')
+  const subs = to?.pushSubscriptions || []
+  if (!subs.length) return skip('web-push', 'اشتراک مرورگری ثبت نشده')
+
+  const r = await sendToSubscriptions(subs, {
+    title: msg.title,
+    body: msg.body,
+    url: msg.url || '/',
+    severity: msg.severity,
+  })
+  if (!r.ok) return fail('web-push', r.detail || r.reason, { accepted: r.accepted, removed: r.removed })
+  return ok('web-push', {
+    id: null,
+    accepted: r.accepted,
+    removed: r.removed,
+    note: r.note,
+  })
+}
 
 /**
  * Firebase Cloud Messaging.
@@ -206,11 +237,14 @@ export async function telegramOps(msg) {
 /**
  * The order the dispatcher walks.
  *
- * Fastest and most immediate first, most durable last. Push wakes a phone in
- * seconds; SMS survives having no data; email is slowest to be read but is the
- * only one that carries the full explanation.
+ * Fastest and most immediate first, most durable last. Web push is our own
+ * direct line to an enrolled browser (no third-party key between us and the
+ * device); FCM/Najva push goes through providers; SMS survives having no
+ * data; email is slowest to be read but is the only one that carries the full
+ * explanation.
  */
 export const ORDER = [
+  { id: 'web-push', send: webPush },
   { id: 'firebase', send: firebase },
   { id: 'najva', send: najva },
   { id: 'sms', send: sms },

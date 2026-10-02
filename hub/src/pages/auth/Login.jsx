@@ -21,6 +21,11 @@ export default function Login() {
   const [captchaId, setCaptchaId] = useState('')
   const [captchaAnswer, setCaptchaAnswer] = useState('')
   const [captchaKey, setCaptchaKey] = useState(0)
+  // مرحلهٔ دوم ورود دومرحله‌ای: سرور با {totp_required: true} اعلام می‌کند رمز
+  // درست بوده اما بدون کد نشستی صادر نمی‌شود. همان فرم، با یک فیلد کد ادامه
+  // می‌یابد — ایمیل و رمز دوباره فرستاده می‌شوند چون جریان stateless است.
+  const [totpStep, setTotpStep] = useState(false)
+  const [totpCode, setTotpCode] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -36,11 +41,18 @@ export default function Login() {
     e.preventDefault()
     setBusy(true); setErr('')
     try {
-      await login({
+      const r = await login({
         email,
         password,
+        ...(totpStep ? { code: totpCode } : {}),
         ...(needCaptcha ? { captchaId, captchaAnswer } : {}),
       })
+      if (r?.totp_required) {
+        setTotpStep(true)
+        setTotpCode('')
+        setBusy(false)
+        return
+      }
       const returnTo = location.state?.returnTo || sessionStorage.getItem('loginReturnTo') || '/app'
       sessionStorage.removeItem('loginReturnTo')
       nav(returnTo, { replace: true })
@@ -60,13 +72,14 @@ export default function Login() {
     <>
       <div className="dwp-auth-head">
         <span className="gd-sec-head__eyebrow"><Icon name="lock-keyhole" size={13} /> حساب کاربری</span>
-        <h2 className="dwp-auth-title">ورود به <span className="gd-gradient-text">حساب</span></h2>
-        <p className="dwp-auth-sub">به پنل پشتیبان هوشمند سایت خود وارد شوید.</p>
+        <h2 className="dwp-auth-title">{totpStep ? <>تأیید <span className="gd-gradient-text">دومرحله‌ای</span></> : <>ورود به <span className="gd-gradient-text">حساب</span></>}</h2>
+        <p className="dwp-auth-sub">{totpStep ? 'کد شش‌رقمی اپلیکیشن احراز هویت — یا یکی از کدهای بازیابی — را وارد کنید.' : 'به پنل پشتیبان هوشمند سایت خود وارد شوید.'}</p>
       </div>
       <form onSubmit={submit} className="dwp-auth-form">
         {/* autoFocus: the email is the first thing every visitor types. */}
         <Input label="ایمیل" type="email" placeholder="you@example.com" leftIcon="mail"
-          value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus
+          value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus={!totpStep}
+          disabled={totpStep}
           autoComplete="username" inputMode="email" />
         {/* "Remember me" lived here as a defaultChecked checkbox with no
             handler — the token is kept for 7 days regardless (api.js token
@@ -78,7 +91,22 @@ export default function Login() {
           labelExtra={<Link to="/reset-password" className="dwp-auth-link">فراموشی رمز؟</Link>}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          disabled={totpStep}
         />
+        {totpStep && (
+          <Input
+            label="کد تأیید دومرحله‌ای"
+            placeholder="۱۲۳۴۵۶"
+            leftIcon="smartphone"
+            value={totpCode}
+            onChange={(e) => setTotpCode(e.target.value)}
+            required
+            autoFocus
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            dir="ltr"
+          />
+        )}
         {needCaptcha && (
           <Captcha
             value={captchaAnswer}
@@ -90,7 +118,9 @@ export default function Login() {
         {err && (
           <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{err}</div>
         )}
-        <Button variant="primary" size="lg" fullWidth rightIcon="arrow-left" type="submit" loading={busy}>ورود</Button>
+        <Button variant="primary" size="lg" fullWidth rightIcon="arrow-left" type="submit" loading={busy}>
+          {totpStep ? 'تأیید و ورود' : 'ورود'}
+        </Button>
       </form>
       {/* A "sign in with Google" button used to sit here with no handler and no
           OAuth client — clicking it did nothing, on the one screen where a dead

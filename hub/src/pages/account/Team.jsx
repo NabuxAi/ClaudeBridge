@@ -12,9 +12,20 @@ const ROLE_CFG = {
 }
 
 const ROLE_OPTIONS = [
-  { value: 'admin', label: 'مدیر — مدیریت سایت‌های مجاز و تأیید اقدام‌ها' },
-  { value: 'viewer', label: 'فقط مشاهده — گزارش‌ها و وضعیت، بدون تغییر' },
+  // برچسب نقشِ «مدیر» نباید چیزی را وعده بدهد که سرور فعلاً اجرا نمی‌کند: لایهٔ
+  // عضویت (server/src/routes/sites.js) هر عضو غیرمالک را فقط-خواندنی نگه
+  // می‌دارد و همین زیر هر عضو هم نشان داده می‌شود.
+  { value: 'admin', label: 'مدیر — گزارش‌ها و وضعیت (اجرای تغییرات برای اعضا هنوز فعال نیست)' },
+  { value: 'viewer', label: 'فقط مشاهده — گزارش‌ها و وضعیت' },
 ]
+
+/* نمایش صدادق «دسترسی مؤثر»: اگر سرور effective نفرستد (نسخهٔ قدیمی)، سمت
+   کلاینت نقش را به همان معنای فعلی ترجمه می‌کنیم — هیچ نقشی بیش از آنچه
+   سرور اجازه می‌دهد نشان داده نمی‌شود. */
+const effectiveOf = (m) => m?.effective
+  || (m?.role === 'owner'
+    ? { level: 'owner', label: 'مدیریت کامل' }
+    : { level: 'report', label: 'فقط خواندن' })
 
 const COLS = '2.2fr 1fr 1.4fr 1fr 0.6fr'
 
@@ -59,6 +70,9 @@ export default function Team() {
   const [inviteRole, setInviteRole] = useState('viewer')
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteError, setInviteError] = useState(null)
+  // لینک ثبت‌نامِ آخرین دعوت، برای کسی که هنوز حساب ندارد. سرور توکن خام را
+  // فقط در پاسخ همین درخواست برمی‌گرداند و در هیچ فهرستی ذخیره نمی‌شود.
+  const [inviteLink, setInviteLink] = useState(null)
   const [actionBusy, setActionBusy] = useState({})
   const [toast, setToast] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -157,6 +171,16 @@ export default function Team() {
       const result = await siteClient(selectedSiteId).inviteMember({ email: inviteEmail.trim(), role: inviteRole })
       setInviteEmail('')
       setInviteRole('viewer')
+      // اگر این شخص حساب نداشته باشد، مسیر ثبت‌نام با توکنِ همین دعوت عضویت را
+      // یک‌جا برقرار می‌کند (register با inviteToken سمت سرور). لینک فقط همین
+      // یک‌بار نمایش داده می‌شود؛ توکن هش‌شده ذخیره شده و دوباره از سرور
+      // قابل گرفتن نیست.
+      if (result?.raw) {
+        setInviteLink({
+          url: `${window.location.origin}/register?invite=${result.raw}&email=${encodeURIComponent(result?.invitation?.email || '')}`,
+          email: result?.invitation?.email || '',
+        })
+      }
       // «دعوت‌نامه ثبت شد» و «سرویس ایمیل آن را پذیرفت» دو ادعای جدایند؛ سرور
       // دومی را در mail.ok برمی‌گرداند و فقط با آن پیام موفقیت می‌دهیم.
       if (result?.mail && result.mail.ok === false) {
@@ -321,7 +345,12 @@ export default function Team() {
                     <span style={{ display: 'block', fontSize: 12, color: 'var(--gd-text-muted)', fontFamily: 'var(--gd-font-mono)' }}>{team.owner.email}</span>
                   </span>
                 </span>
-                <Badge variant={ROLE_CFG.owner.badge.variant} appearance="soft" icon={ROLE_CFG.owner.badge.icon}>{team.owner.roleLabel}</Badge>
+                <span>
+                  <Badge variant={ROLE_CFG.owner.badge.variant} appearance="soft" icon={ROLE_CFG.owner.badge.icon}>{team.owner.roleLabel}</Badge>
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 4 }}>
+                    دسترسی فعلی: {effectiveOf(team.owner).label}
+                  </span>
+                </span>
                 <span style={{ color: 'var(--gd-text-secondary)' }}>{team.site.title || team.site.name}</span>
                 <span style={{ color: 'var(--gd-success-text)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--gd-success)' }} /> مالک
@@ -332,6 +361,7 @@ export default function Team() {
 
             {team.members.map((m) => {
               const cfg = ROLE_CFG[m.role] || ROLE_CFG.viewer
+              const eff = effectiveOf(m)
               return (
                 <div key={m.id} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: '1px solid var(--gd-border-subtle)', fontSize: 13.5 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
@@ -341,12 +371,22 @@ export default function Team() {
                       <span style={{ display: 'block', fontSize: 12, color: 'var(--gd-text-muted)', fontFamily: 'var(--gd-font-mono)' }}>{m.email}</span>
                     </span>
                   </span>
-                  <Select
-                    value={m.role}
-                    onChange={(e) => updateRole(m.id, e.target.value)}
-                    disabled={actionBusy[`role:${m.id}`]}
-                    options={ROLE_OPTIONS}
-                  />
+                  <span>
+                    <Select
+                      value={m.role}
+                      onChange={(e) => updateRole(m.id, e.target.value)}
+                      disabled={actionBusy[`role:${m.id}`]}
+                      options={ROLE_OPTIONS}
+                    />
+                    {/* نقش ذخیره‌شده و دسترسی مؤثر دو چیزند؛ هر دو صادقانه
+                        نشان داده می‌شوند تا برچسب «مدیر» کاری را وعده ندهد که
+                        سرور با 403 پاسخ می‌دهد. */}
+                    {eff.level !== 'owner' && (
+                      <span style={{ display: 'block', fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 4 }}>
+                        دسترسی فعلی: {eff.label}
+                      </span>
+                    )}
+                  </span>
                   <span style={{ color: 'var(--gd-text-secondary)' }}>{team.site.title || team.site.name}</span>
                   <span style={{ color: 'var(--gd-text-muted)' }}>عضو</span>
                   <span style={{ display: 'flex', justifyContent: 'flex-start' }}>
@@ -368,6 +408,38 @@ export default function Team() {
               </div>
             )}
           </div>
+
+          {inviteLink && (
+            <div className="dwp-card" style={{ padding: '14px 20px', marginBottom: 22 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="link-2" size={16} /> لینک ثبت‌نام برای «{inviteLink.email}»
+              </div>
+              <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '6px 0 10px' }}>
+                اگر این شخص حساب ندارد، با این لینک ثبت‌نام می‌کند و بلافاصله عضو سایت می‌شود. لینک ۷ روز معتبر است و فقط یک‌بار قابل استفاده است.
+              </p>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <code style={{ flex: '1 1 260px', fontSize: 12, fontFamily: 'var(--gd-font-mono)', background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border-subtle)', borderRadius: 8, padding: '8px 10px', overflowWrap: 'anywhere' }}>
+                  {inviteLink.url}
+                </code>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon="copy"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(inviteLink.url)
+                      showToast('لینک کپی شد.')
+                    } catch {
+                      showToast('کپی خودکار نشد؛ لینک را دستی انتخاب کنید.', 'warning')
+                    }
+                  }}
+                >
+                  کپی لینک
+                </Button>
+                <Button variant="ghost" size="sm" leftIcon="x" onClick={() => setInviteLink(null)}>بستن</Button>
+              </div>
+            </div>
+          )}
 
           {team.invitations.length > 0 && (
             <div className="dwp-card dwp-acc-tablewrap" style={{ marginBottom: 22 }}>

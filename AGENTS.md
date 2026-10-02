@@ -43,9 +43,11 @@ AI/MCP client --------------------------------> WordPress plugin directly
      Connector Mode.
    - PHP 7.4+ / WordPress 5.6+ target.
    - Version at baseline: `3.7.4`.
-   - Current release after the 2026-09-29 smart-design wave (seven Gutenberg
-     block / Elementor tools) on top of the 2026-09-28 transactional
-     safe-update pipeline (P0.4): `3.9.0`.
+   - Current release: `3.9.1` (verified 2026-10-02) — the `render_blocks`
+     content-placement fix in the shared block compiler (`3.9.1`) on top of
+     the 2026-09-29 smart-design wave (seven Gutenberg block / Elementor
+     tools, `3.9.0`) and the 2026-09-28 transactional safe-update pipeline
+     (P0.4).
    - 151 advertised tools: 17 initial tools, 79 generated CRUD tools, and 55
      appended tools (48 before the design wave plus the seven `3.9.0` design
      tools: `list_block_types`, `render_blocks`, `create_block_page`,
@@ -99,7 +101,8 @@ Support**. Keep these roles explicit instead of mixing the names casually.
   tests.
 - `hub/src/lib/api.js` — the only hub API client; real/mock routing happens here.
 - `hub/src/lib/auth.jsx` — current bearer-token session state.
-- `hub/src/App.jsx` — route table; currently lacks protected-route guards.
+- `hub/src/App.jsx` — route table; protected routes sit behind
+  `hub/src/lib/ProtectedRoute.jsx` (P1.3) and pages are lazy-loaded (P1.5).
 - `hub/src/pages/marketing/Landing.jsx` — public promise/feature surface.
 - `hub/src/layouts/MarketingLayout.jsx` — public navigation and footer.
 - `hub/src/pages/account/` and `hub/src/pages/site/` — account and per-site UI.
@@ -180,6 +183,138 @@ for UI convenience.
   status argument is the decision, so publishing asks a human even under
   `auto`.
 - Three-level authority, proposals, approvals, and audit trail.
+- Session/device management with server-side revocation (2026-10-01): every
+  login/register token now carries a random `jti`, and `requireAuth`
+  (`server/src/auth.js:133-158`) resolves SHA-256 of that jti to a live row in
+  the `sessions` table (`server/src/sessions.schema.js`,
+  `server/src/sessions.store.js`) — missing, revoked, or expired rows all mean
+  401, so "log out this device" and "log out other devices" are real writes,
+  not wishes. Routes: `GET /auth/sessions` (own sessions, no hashes, current
+  marked), `DELETE /auth/sessions/:id` (own rows only, scoped by user_id),
+  `POST /auth/sessions/revoke-others`. `last_seen_at` is throttled to one
+  write per minute per session; expired rows are pruned on the user's next
+  login. The hub page is `/app/security` (`hub/src/pages/account/Security.jsx`)
+  with the current session marked and per-device logout. Deliberate breaking
+  change: tokens issued before this wave carry no jti and are rejected — every
+  existing user must sign in again once after deploy. One carve-out, pinned in
+  tests: purpose-scoped tokens (`payload.kind`, e.g. the 5-minute
+  `backup_download` capability) keep their stateless short-lived semantics —
+  they are not login sessions. `POST /auth/logout` (2026-10-02 review-fix
+  wave) now revokes the session the request rides in on — pinned in
+  `server/test/sessions.test.js` — and the account-shell header «خروج» button
+  (`hub/src/layouts/AccountShell.jsx`) calls it before clearing the browser's
+  localStorage, so a token copied off a shared device dies server-side instead
+  of living out its 7 days. Still unbuilt: auto-revoking sessions on password
+  reset.
+- Two-factor login with TOTP (2026-10-02): RFC 6238 (HMAC-SHA1, 30-second
+  step, 6 digits, ±1-step window) on `node:crypto` alone in
+  `server/src/totp.js` — base32 codec, code generator, constant-time
+  verifier, otpauth URI; no new dependency. State lives in the
+  `two_factor` + `two_factor_recovery` tables
+  (`server/src/twofactor.schema.js`, `server/src/twofactor.store.js`): the
+  base32 secret held as `pending` until `active`, recovery codes stored only
+  as SHA-256 hashes of their normalized (uppercase, dash-less) form. Routes,
+  all session-token-only: `GET /auth/2fa/status` (enabled/pending/codes left —
+  never the secret), `POST /auth/2fa/setup` (fresh secret + otpauth URI;
+  refused while active; re-setup replaces any abandoned pending secret),
+  `POST /auth/2fa/activate` (first correct code turns the factor on and
+  returns the 8 recovery codes — the only response that ever carries them),
+  `POST /auth/2fa/disable` (current password + a TOTP or recovery code).
+  Login with an active factor answers a correct password with
+  `{totp_required: true}` and issues no session until a code arrives; a wrong
+  code is a 401 «کد ورود دو مرحله‌ای درست نیست.» that feeds the same per-IP
+  and per-account login limiters — code guessing is priced exactly like
+  password guessing, and the fail counters clear only after the second factor
+  passes. Ownership change, deliberate: `two_factor` is no longer writable
+  through `PATCH /account/profile` (`users.update` dropped it from its allow
+  list) — the display flag is synced only by activate/disable, and account
+  deletion purges both 2FA tables explicitly (the tombstoned user row never
+  cascades). Hub: the «ورود دو مرحله‌ای» card on `/app/security`
+  (`hub/src/pages/account/Security.jsx` — URI + manual secret with copy
+  buttons, activate form, one-time recovery-code display behind an explicit
+  warning, disable form behind password + code) and a second step on the
+  login form that re-submits email/password with `code`. Pinned in
+  `server/test/totp.test.js` (the RFC vectors and window tests run
+  everywhere; the enrollment/login/disable flow needs real PostgreSQL).
+  Honest boundaries: no QR image is rendered — the otpauth URI and secret are
+  text the user copies or pastes into their app; a lost phone with zero
+  remaining recovery codes has no self-service recovery path; 2FA is not
+  demanded at registration, and register-time enforcement does not exist.
+- Configurable HTTP uptime monitors with real availability history
+  (2026-10-02, the «مانیتورها» wave): per-site monitor rows (`site_monitors`:
+  label, url, `expect_status` default 200, optional `expect_contains`,
+  enabled) and every check attempt recorded (`monitor_results`), created by
+  `server/src/monitors.schema.js` and wired into the schema concat in
+  `server/src/db.js`. The scheduler runs every enabled monitor of every
+  non-tombstoned site (`server/src/monitors.runner.js`, started beside the
+  digest/intel/sweep schedulers in `server/src/index.js`) — one plain HTTP GET
+  per URL with a 10 s timeout, redirects followed, no JavaScript, no login;
+  the interval is `MONITOR_INTERVAL_MINUTES` (default 5, 0 disables the
+  schedule; manual «بررسی الان» still works). The honest scope label
+  «بررسی دسترسی HTTP، نه سفر کاربری/پرداخت» travels in every API response.
+  Routes in `server/src/routes/monitors.js` (mounted with requireAuth):
+  GET/POST/PATCH/DELETE `/sites/:id/monitors[/:monitorId]` — members read,
+  every write and the manual check are owner-only (same membership layer as
+  sites/offsite-backups) — capped at 10 monitors per site (`monitor_limit_reached`
+  on the 11th, disabled monitors hold their slot), plus
+  `GET .../results` and `POST .../check`. Availability: 7- and 30-day windows
+  computed from recorded attempts with failure *episodes* counted (a stretch
+  of consecutive failures is one outage, not N failed checks); a window with
+  zero attempts is `measured:false, percent:null` — «اندازه‌گیری نشده», never
+  a green zero. Site-wide totals are in `GET /sites/:id/overview`
+  (`data.uptime` — the field that was a deliberate null after the seeded
+  99.98% was removed) and in the monitors list response. Hub: the
+  «مانیتورها» tab (`hub/src/pages/site/Monitors.jsx`, route
+  `/site/:siteId/monitors`) with add/edit/delete, enable/disable, «بررسی
+  الان», last check, and per-monitor + site-wide availability. Results past
+  35 days are pruned (throttled to once an hour per process). Pinned in
+  `server/test/monitors.test.js` (8 tests, real PostgreSQL; the runner's
+  requests are injected through a global fetch fake — no test touches a real
+  network). Honest boundaries: a check is reachability of one URL only —
+  checkout, payment-gateway and login journeys are still not monitored;
+  monitor failures do not yet feed the alert/Telegram dispatch; monitor
+  config changes write no separate audit event; monitor URLs are
+  owner-supplied and fetched unattended by the server, with no internal-network
+  (SSRF) guard — the same trust level as the existing `site.url`/speedtest
+  fetches.
+- Browser push with Web Push/VAPID (2026-10-02, the «اعلان مرورگر» wave):
+  `web-push` is a server dependency and the VAPID pair comes only from the
+  environment (`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` in
+  `server/src/config.js`) — the server never mints keys, and a deployment
+  without them is the honest `{configured:false, reason:…}` state everywhere
+  (the mailConfigured pattern). Subscriptions live in `push_subscriptions`
+  (`server/src/push.schema.js`, `server/src/push.store.js`): one row per
+  browser endpoint, upserted on the endpoint, owned by one account, and the
+  public shapes never return the capability URL in full or the encryption
+  keys. Routes (session-auth, mounted in `server/src/index.js`):
+  `GET /push/status`, `GET /push/public-key`, `POST /push/subscribe`
+  (HTTPS-endpoint + keys validation, refused 503 while unconfigured — a
+  subscription that can never receive is not stored), `POST /push/unsubscribe`
+  (id-or-endpoint, always scoped to the signed-in user). The owner alert
+  dispatcher gained a `web-push` channel (`server/src/alerts/channels.js`,
+  first in `ORDER`, counted in `alertChannelStatus`): `events.raiseEmergency`
+  hands it the owner's subscription rows, the sender
+  (`server/src/push.js`, test seam `_setWebPushForTests` — the mailer
+  transport-factory pattern) reports "push service accepted" with the same
+  «تحویل و خوانده‌شدن آن تأیید نشده» honesty as every other channel, and a
+  push service answering 404/410 deletes that subscription at delivery time
+  (a 500 is kept). Account deletion purges the rows explicitly (the tombstoned
+  user row never cascades). Hub: `hub/public/sw.js` already carried the
+  `push`/`notificationclick` handlers (unchanged); the «اعلان مرورگر» card in
+  `hub/src/pages/account/Notifications.jsx` renders the honest off state with
+  the server's reason when unconfigured, and otherwise enrolls through
+  `Notification.requestPermission()` → `PushManager.subscribe` with the
+  server's public key → `POST /push/subscribe`, with per-device removal.
+  Pinned in `server/test/push.test.js` (13 tests with real PostgreSQL; the
+  sender runs against an injected fake web-push and never touches a network;
+  without `CB_TEST_DATABASE_URL` the file runs the sender/channel half —
+  6 pass — and registers one honest skipped placeholder). Honest boundaries:
+  production has no VAPID keys yet (they must be set in the Coolify UI like
+  `EMAIL_SERVER`, or the next deploy loses them); delivery to a real browser
+  has never been verified end to end; the legacy Alerts-page «فعال‌سازی اعلان
+  روی این دستگاه» button stores the subscription JSON as an `fcmToken` contact
+  and never creates a subscription — it predates this channel and is not
+  wired to it; `/alerts/readiness` still reports the legacy channels only.
 - Site readings, event/incidence model, and limited health probes.
 - Malware/signature scan and WordPress core checksum integrity.
 - NVD-based vulnerability matching with WordPress.org confirmation.
@@ -210,6 +345,19 @@ for UI convenience.
   (`hub/src/pages/auth/Reset.jsx:36-38,50-63`). Existing contracts —
   Input/Button/Captcha components, the `/reset?token=` routing, 401 handling —
   are unchanged.
+- Draft legal pages and the external-services disclosure (2026-10-01):
+  `/terms` and `/privacy` (`hub/src/pages/legal/Terms.jsx`,
+  `hub/src/pages/legal/Privacy.jsx`, lazy routes inside the marketing
+  shell) describe only data flows and limits that exist in the code, and
+  each carries a visible draft banner («پیش‌نویس اولیه — پیش از انتشار
+  نهایی نیازمند بازبینی حقوقی است»); the footer gained these two real
+  links while the other former `#` anchors remain plain text.
+  `docs/PRIVACY.md` lists the nine external services verified in code
+  (mShots, WordPress.org APIs, NVD, the GitHub YARA feed, abuse.ch,
+  hash-only VirusTotal, SMTP mail, the model gateway, S3-compatible
+  backup targets) with file:line references. Honest boundary: no legal
+  review has happened yet — the banners say exactly that — and no support
+  address or channel is invented anywhere in the pages.
 - Plugin manifest/update channel and two release variants.
 
 ### Partial, limited, or easy to misdescribe
@@ -241,25 +389,106 @@ for UI convenience.
 - Subscription/trial record: PostgreSQL-backed, with a 14-day default trial
   materialised on first billing read and a no-payment pilot request
   (`server/src/billing.store.js`, `server/src/routes/billing.js`), rendered in
-  `hub/src/pages/account/Billing.jsx`. No gateway is connected, no invoice is
-  issued, and adding sites is not limited by the plan.
+  `hub/src/pages/account/Billing.jsx`. No gateway is connected and no invoice
+  is issued. Site-count/trial entitlement IS enforced at the one place it
+  bites (2026-10-01): `billing.canAddSite()` gates `POST /sites`
+  (`server/src/routes/account.js`) with 402 before any pairing secret is
+  minted — `trial_expired` when the trial window has passed (reads of
+  everything already in the account stay open) and `site_limit_reached` when
+  `sites_used >= plan.site_limit`; a plan with `site_limit NULL` (آژانس) is
+  unlimited, and a site tombstoned with `status='deleted'` frees its slot.
+  The global error handler now passes an error's optional `code`/`details`
+  through additively (existing errors render byte-for-byte as before).
+  Billing responses carry an explicit `trialState`
+  ('trialing' | 'expired' | 'ended') next to `isTrialing`/`daysLeftInTrial`,
+  and the hub renders the expired state (banner, danger badge, honest
+  «پایان دسترسی آزمایشی» line) instead of a fabricated «تمدید بعدی». Pinned
+  in `server/test/entitlement.test.js` (4 tests, real PostgreSQL). Pairing an
+  already-added site is deliberately NOT gated — the slot is already counted.
 - Per-site team management: invitations with hashed single-use tokens and
   7-day expiry, role changes, and member removal (`server/src/store.js`,
   `server/src/routes/team.js`), rendered in `hub/src/pages/account/Team.jsx`.
-  Owner-only; accepting an invite requires an existing account; member roles
-  are stored but not yet enforced on site endpoints.
+  Owner-only; accepting an invite requires an existing account — or none at
+  all (2026-10-01): `POST /auth/register` accepts the same single-use
+  `inviteToken` and attaches the membership right after the account is
+  created (`team.acceptOnRegister`); an expired, spent, revoked, or
+  wrong-address token never fails the registration — the response reports it
+  in `invite:{applied:false,error}` and the token is not spent on a refusal.
+  The invite email and the Team page now carry the register link
+  (`/register?invite=<token>&email=…`) next to the signed-in accept link.
+- Per-site member roles ARE enforced on the site routes (2026-10-01,
+  membership layer): `sites.rawWithRole` resolves owner/admin/viewer in one
+  query, `routes/sites.js` and `routes/offsite-backups.js` admit an active
+  member to every GET (a stranger still gets the same 404), and every
+  non-GET route — settings writes, pairing (`/ping`), job starts
+  (scan/update/backup/restore/rescue/conflict/perf), assistant, actions,
+  proposal rejection, offsite targets/jobs, and the backup download-token
+  mint — answers 403 «این اقدام فقط برای مالک سایت مجاز است…» BEFORE the
+  route's own 400s. One deliberate GET exception (2026-10-02 review-fix
+  wave): `GET /sites/:id/backups/:backupId/download` is owner-only like its
+  token mint — it streams the full database dump (`user_pass` hashes,
+  options, content), which is not one of the «گزارش‌ها و وضعیت» views the
+  member promise covers; the capability-token path still passes the gate
+  because the token's `sub` is the minting owner (pinned in
+  `server/test/team-roles.test.js`). This is membership only: the authority
+  ladder (report/confirm/auto) and the sensitive-tool classification are
+  untouched, and admin/viewer are both read-only at this layer — the stored
+  role distinction is not yet load-bearing. The Team page renders the honest
+  effective access (`effective:{level,label}` on each member) instead of
+  promising writes the server refuses. Not yet built: shared sites in the
+  member's own site list, and any admin-beyond-read behaviour.
+- Account deletion (2026-10-01): `POST /account/delete`
+  (`server/src/routes/account.js`) asks for the current password behind the
+  live session — wrong answers get one generic 400 and a per-account limiter
+  (5/hour, keyed on the session subject, gating BEFORE the password check) plus
+  a per-IP limiter. On success, in fail-safe order: every session row is
+  revoked (`sessions.revokeAll`, current token included); the user's sites are
+  tombstoned rather than deleted — `secret`/`site_key` emptied, `paired=false`,
+  `status='deleted'`, `connector=NULL` — which kills every connector path
+  (`sites.candidates()` matches only non-empty secrets, so signed
+  `/connector/register` and `/connector/report` calls 401, and every relay
+  path refuses a site without a secret); one `kind:'account'` info event per
+  site records the deletion with no personal data; offsite S3 targets,
+  pending invitations, assistant conversations, team memberships, enrolled
+  contacts, notification settings, unused reset tokens, and the subscription
+  row are removed; finally `users.anonymize()` rewrites the user row in place
+  — email → `deleted-<sha256(id)…>@invalid` (unique, frees the address for
+  re-registration), name → «حساب حذف‌شده», pass_hash → a value
+  `verifyPassword()` rejects by shape, contact reset to all-null. The
+  tombstone is deliberate: deleting the user row would CASCADE through sites
+  → events and destroy the audit trail. No email is sent and none is claimed.
+  Hub: the Profile danger-zone button opens a two-step Dialog (type
+  «حذف حساب» + current password) with an explicit irreversibility list; on
+  success the token is cleared and the browser goes to `/goodbye`
+  (`hub/src/pages/Goodbye.jsx`, a public route outside both shells). Honest
+  boundaries: deletion is immediate — no cooling-off window, no exported data
+  archive, and no confirmation email exist; the audit events that remain are
+  site-scoped rows, readable only through admin surfaces.
 
 ### Not built at baseline
 
-- Payment gateways, invoices, and plan entitlement/site-count/trial-expiry
-  enforcement.
-- Two-factor authentication, passkeys, session/device management, token
-  revocation before expiry, or "log out all devices".
-- Account deletion workflow.
-- Account-level multi-user RBAC, invitation acceptance for users who do not
-  yet have an account, and enforcement of per-site member roles on site
-  endpoints.
-- Browser push subscription enrollment from the hub.
+- Payment gateways and invoices. (Site-count/trial-expiry enforcement at site
+  creation shipped on 2026-10-01 — see the subscription bullet under
+  "Partial"; what remains unbuilt is any paid activation path itself, cap
+  enforcement beyond `POST /sites`, and trial-expiry handling for jobs the
+  sites already run.)
+- Passkeys. (TOTP two-factor authentication shipped on 2026-10-02 — see the
+  bullet under "Implemented or materially implemented": enrollment, the login
+  second step, one-time recovery codes, and the disable flow are live. What
+  remains unbuilt: WebAuthn/passkeys, 2FA demanded at registration time, and
+  any recovery path beyond the 8 one-time codes.)
+- Account-level multi-user RBAC. (Invitation acceptance without a prior
+  account and per-site member-role enforcement on site routes shipped on
+  2026-10-01 — see the team-management bullet under "Partial"; what remains
+  unbuilt is any distinction beyond owner-vs-read for admin/viewer, shared
+  sites in the member's site list, and account-level role grants.)
+- Browser push subscription enrollment from the hub. (Web Push/VAPID
+  enrollment shipped on 2026-10-02 — see the bullet under "Implemented or
+  materially implemented". What remains unbuilt: production VAPID keys set in
+  the Coolify UI, any end-to-end push delivery verification against real
+  browsers/push services, and the legacy Alerts-page fcmToken contact path is
+  a placeholder that never created a subscription and is not wired to this
+  channel.)
 - Off-site encrypted backups and automated restore drills.
 - Staging/canary update execution and automatic file rollback.
 - Configurable synthetic checkout/form/business-journey monitoring.
@@ -513,10 +742,13 @@ Relevant files: `hub/src/pages/marketing/Landing.jsx`,
 
 **Status: resolved.** The demo CTA is removed; the secondary hero button now
 links to `/pricing`. Plan CTAs and the bottom CTA no longer promise a 14-day
-trial. Footer links are rendered as plain text instead of dead `#` anchors. The
-registration form no longer claims a free trial, and the unchecked terms
-checkbox with `#` links is removed until real terms/privacy documents exist.
-Copyright is updated to ۱۴۰۵.
+trial. Footer links are rendered as plain text instead of dead `#` anchors,
+except the two that became real on 2026-10-01: «حریم خصوصی» and «شرایط
+استفاده» now point to the draft `/privacy` and `/terms` pages (see the
+feature boundary; both carry a visible draft banner pending legal review).
+The registration form no longer claims a free trial, and the unchecked terms
+checkbox stays removed until the documents are final and explicit consent is
+wired. Copyright is updated to ۱۴۰۵.
 
 ### P1.3 — protected UI routes are not protected in the router
 
@@ -605,11 +837,16 @@ external-services/privacy disclosure. Optional external calls are acceptable;
 hidden external calls are not.
 
 **Status: resolved (counts aligned).** `PRODUCT_SPEC.md` now says "more than 130
-tools" instead of 58. The "100+ tools" copy in every translated README is
-updated to "130+ tools". README version badges have drifted again: they read
-`3.7.6` while `CB_VERSION` is `3.9.0` (verified 2026-09-29) — update the
-badges with the next release touch. The external-services/privacy disclosure
-remains in the roadmap.
+tools" instead of 58. The "130+ tools" copy landed in `README.md`,
+`README.fa.md`, `README.ru.md`, and `README.zh.md`; the ar/de/es/fr/tr
+subtitles still read "100+ tools" as of 2026-10-02 (this pass touched version
+badges only). README version badges were aligned to `CB_VERSION` `3.9.1` on
+2026-10-02 (the badge line in `README.md` and all eight translated READMEs;
+`CB_VERSION` verified at `wp-claude-bridge.php:14`) — re-check them with the
+next release touch. The external-services/privacy disclosure exists as
+`docs/PRIVACY.md` plus the draft hub `/privacy` and `/terms` pages
+(2026-10-01); keeping all three in sync with every data-flow change is the
+remaining obligation.
 
 ### P1.7 — release archive can trigger malware-upload scanners
 
@@ -674,8 +911,11 @@ These rules override visual mockups and optimistic marketing copy:
 - Rate limits are currently in process memory. Before horizontal scaling, move
   them to a shared store or document the multiplied effective limit.
 - Hub bearer tokens currently live in `localStorage` for seven days. Treat XSS as
-  session compromise. A future migration to secure, HttpOnly, SameSite cookies
-  should include CSRF design and token revocation rather than a partial switch.
+  session compromise. Since the sessions wave (2026-10-01) each token also maps
+  to a server-side `sessions` row, so a stolen token can be revoked from
+  `/app/security` — but revocation is manual and XSS-stolen tokens still work
+  until someone notices. A future migration to secure, HttpOnly, SameSite cookies
+  should include CSRF design rather than a partial switch.
 - Direct MCP query-string tokens can leak through logs/history/referrers. Prefer
   Application Passwords, OAuth, or HMAC Connector Mode and deprecate URL tokens
   carefully for compatibility.
@@ -713,6 +953,194 @@ These rules override visual mockups and optimistic marketing copy:
 
 ## Verified test/build baseline
 
+Full gate on 2026-10-02 (final gate of the 2026-10-01/02 multi-wave sprint —
+sessions, account deletion, team roles/invite-registration, entitlement,
+TOTP, uptime monitors, web push, the `3.9.1` `render_blocks` fix, and the
+draft legal pages — run after the gate's final repair round):
+
+- Full server suite with PostgreSQL (`npm test` in `server/` with
+  `CB_TEST_DATABASE_URL`): 440 tests discovered; 440 passed; 0 failed;
+  0 skipped (~13.8 s). The numbers are read from the sprint's final gate
+  output; this documentation pass did not re-run the suite. Verbatim
+  caveat, recorded because this file records provenance: the gate
+  wrapper's own status line for this pass reads «قرمز» although the
+  captured run output ends with `fail 0` / `skipped 0` and contains no
+  failing test line, and a second captured full run on the same machine
+  the same day shows the identical 440/440/0/0 counters. The counters
+  above are what the final gate output carries.
+- Server suite without PostgreSQL: the gate reports ok; its summary
+  carries no counts for this pass.
+- Plugin artifacts: build ok for both release scripts, and `php -l`
+  passed for `wp-claude-bridge.php` and both dist artifacts (all three
+  pin `CB_VERSION` `3.9.1`).
+- Hub `npm run lint` and `npm run build`: both ok.
+
+Wave-scoped verification on 2026-10-02 (review-fix wave: backup-download
+owner-only, `POST /auth/logout`, monitor-cap advisory lock, legal-page data
+sync; the full gate was NOT run in this wave, same rule as every wave below):
+
+- `CB_TEST_DATABASE_URL=… npm --prefix server test test/team-roles.test.js
+  test/sessions.test.js test/monitors.test.js` (real PostgreSQL on
+  127.0.0.1:55433): 27 tests, 27 passed, 0 failed. New pins: a member
+  (admin or viewer) gets the membership 403 on
+  `GET /sites/:id/backups/:backupId/download` before the route's own 400,
+  while the owner's minted capability token passes the same gate with no
+  Authorization header (the unpaired site answers the route's own 400);
+  logout revokes exactly the session it rode in on (other devices and the
+  registration session survive, the logged-out row leaves the active list,
+  capability-token and anonymous calls 401); and 14 concurrent monitor
+  creates end at exactly 10 rows + 4 `monitor_limit_reached` refusals (the
+  cap count is taken under a per-site transaction-level advisory lock).
+  The owner-mint test also exposed a real pre-existing bug:
+  `routes/sites.js` never imported `signToken`, so the download-token mint
+  route had answered 500 for everyone since it shipped — the import is now
+  in place and the mint is covered end to end.
+- Hub `npm run lint` passed after the account-shell header «خروج» button,
+  the api.js logout rewiring (server revoke first, token cleared in every
+  outcome), and the Terms/Privacy data-flow sync.
+- `php -l` re-passed for `wp-claude-bridge.php` and both dist artifacts (all
+  three pin `CB_VERSION` `3.9.1`, matching the committed self-hosted ZIP).
+
+Wave-scoped verification on 2026-10-02 (web-push/VAPID wave; the full gate
+was NOT run in this wave, same rule as every wave below):
+
+- `CB_TEST_DATABASE_URL=… npm --prefix server test test/push.test.js` (real
+  PostgreSQL on 127.0.0.1:55433): 13 tests, 13 passed, 0 failed — the honest
+  unconfigured state (status `{configured:false}` + reason, public-key 200
+  not an error, subscribe refused 503 and nothing stored), enrollment with no
+  endpoint URL or keys ever returned to the browser, HTTPS-endpoint/keys
+  validation, endpoint upsert (one browser, one row), unsubscribe scoping
+  (a stranger gets 404 by id and by endpoint), delivery cleanup (410 removes
+  the row, 500 keeps it), the channel's skip/accept wording, and the
+  account-deletion purge. Without `CB_TEST_DATABASE_URL`: 6 pass + 1 skipped
+  placeholder. All sending goes through the injected fake web-push
+  (`_setWebPushForTests`, mailer.test.js pattern) — no test touches a push
+  service. Neighbouring affected files re-run in the same round:
+  `alerts.test.js` + `alert-channel-status.test.js` + `emergency-flow.test.js`
+  (23/23 without a database, after the dispatcher's new channel and status
+  entry) and `account-delete.test.js` (4/4 with the database, after the
+  explicit purge).
+- Hub `npm run lint` (clean) and `npm run build` (passed) after the
+  Notifications «اعلان مرورگر» card and the api.js push methods. The service
+  worker `hub/public/sw.js` needed no change: its `push` and
+  `notificationclick` handlers already matched the sender's payload shape.
+
+Wave-scoped verification on 2026-10-02 (uptime-monitors wave; the full gate
+was NOT run in this wave, same rule as every wave below):
+
+- `CB_TEST_DATABASE_URL=… npm --prefix server test test/monitors.test.js`
+  (real PostgreSQL on 127.0.0.1:55433): 8 tests, 8 passed, 0 failed — CRUD
+  with honest validation (default expect_status 200, bad URL/scheme/status
+  refused), member reads while every write and the manual check answer 403
+  «مالک» and a stranger gets 404, the 10-per-site cap (`monitor_limit_reached`,
+  disabled monitors hold their slot), result recording with 7/30-day
+  availability (2/5 attempts → 40% with 2 failure episodes),
+  `expect_contains` catching a 200 without the expected phrase, `expect_status`
+  honoured (204), connection failure recorded as an attempt with status null,
+  «اندازه‌گیری نشده» (percent null) for sites with no recorded checks, the
+  scheduler skipping disabled monitors and monitors of tombstoned sites while
+  re-enabled ones rejoin, and 35-day retention pruning. Without
+  `CB_TEST_DATABASE_URL` the file registers one honest skipped placeholder.
+  All monitor HTTP in the tests goes through an injected global fetch fake
+  (mailer.test.js pattern) — no real network.
+- Hub `npm run lint` and `npm run build` both passed after adding the
+  «مانیتورها» tab, api.js client methods, and nav entry.
+
+Wave-scoped verification on 2026-10-01 (sessions/device-management wave; the
+full gate was NOT run in this wave, so the suite totals below still speak from
+2026-09-30):
+
+- `CB_TEST_DATABASE_URL=… npm test test/sessions.test.js` (real PostgreSQL on
+  127.0.0.1:55433): 10 tests, 10 passed, 0 failed — login mints a jti + session
+  row, revoke → 401 despite a valid signature, expired row → 401, list without
+  hashes, revoke-others, cross-user delete → 404, kind-token carve-out,
+  last_seen throttle, expired-row pruning.
+- Files touched by the `requireAuth` change, each run in the mode it supports:
+  `test/auth.test.js` + `test/auth-http.test.js` without a database (28 tests,
+  28 passed), `test/admin.test.js` + `test/offsite-backups.test.js` with the
+  database (10 tests, 10 passed), and `test/team.test.js` +
+  `test/notifications.test.js` + `test/pairing-flow.test.js` +
+  `test/auth-password-reset.test.js` with the database (26 tests, 26 passed).
+- Hub `npm run lint` and `npm run build` both passed after adding
+  `/app/security`.
+
+Wave-scoped verification on 2026-10-01 (account-deletion wave; full gate NOT
+run, same rule as above):
+
+- `CB_TEST_DATABASE_URL=… npm --prefix server test
+  test/account-delete.test.js` (real PostgreSQL on 127.0.0.1:55433): 4 tests,
+  4 passed, 0 failed — wrong password → generic 400 with the account intact,
+  per-account rate limit gating before the password check (correct password
+  cannot bypass the lockout), successful deletion → next login 401 + every
+  token 401 + signed connector register with the old secret 401 + tombstone
+  user row + audit events retained without personal data + email freed for
+  re-registration, and self-scoping (another account untouched).
+- `test/sessions.test.js` re-run with the database after the
+  `sessions.revokeAll` addition: 10 tests, 10 passed, 0 failed. Without a
+  database the new file registers one honest skipped placeholder.
+- Hub `npm run lint` and `npm run build` both passed after the Profile
+  danger-zone flow and the `/goodbye` route.
+
+Wave-scoped verification on 2026-10-01 (team-roles/invite-registration wave;
+full gate NOT run, same rule as above):
+
+- `CB_TEST_DATABASE_URL=… npm --prefix server test test/team-roles.test.js`
+  (real PostgreSQL on 127.0.0.1:55433): 6 tests, 6 passed, 0 failed — member
+  reads site views while a stranger gets 404, lower-role (admin AND viewer)
+  writes answered 403 with the Persian message BEFORE the route's own 400s
+  including the backup download-token mint, register-with-invite creates the
+  membership in one step with `effective:{level:'report'}` in the owner's
+  list, a spent token refused on both the accept endpoint and a second
+  registration, an expired invitation refused at registration and at accept,
+  and a wrong-address registration that applies and spends nothing (the
+  invited address can still use the token afterwards).
+- `test/team.test.js` + `test/pairing-flow.test.js` re-run with the database
+  after the `loadSite` membership change: 13 tests, 13 passed, 0 failed.
+- Hub `npm run lint` and `npm run build` both passed after the Team
+  effective-access/invite-link changes and the Register invite-token flow.
+
+Wave-scoped verification on 2026-10-01 (entitlement wave; full gate NOT run,
+same rule as above):
+
+- `CB_TEST_DATABASE_URL=… npm --prefix server test test/entitlement.test.js`
+  (real PostgreSQL on 127.0.0.1:55433): 4 tests, 4 passed, 0 failed — plan cap
+  ('base', limit 1: second create 402 `site_limit_reached` with the
+  subscription summary in `details`, nothing created over the cap), expired
+  trial (402 `trial_expired` while `GET /sites`, `GET /billing`,
+  `GET /billing/trial` all stay 200 and `daysLeftInTrial` is null, not 0),
+  plan without cap (آژانس, `site_limit NULL`: three creates, all 201), and a
+  tombstoned site (`status='deleted'`, the shape account deletion leaves)
+  freeing its slot for a new create. Without `CB_TEST_DATABASE_URL` the file
+  registers one honest skipped placeholder.
+- Hub `npm run lint` and `npm run build` both passed after the Billing.jsx
+  expired-trial banner/badge/usage-cap honesty changes and the mock
+  `trialState` addition.
+
+Wave-scoped verification on 2026-10-02 (TOTP two-factor wave; full gate NOT
+run, same rule as above):
+
+- `CB_TEST_DATABASE_URL=… npm --prefix server test test/totp.test.js` (real
+  PostgreSQL on 127.0.0.1:55433): 14 tests, 14 passed, 0 failed — RFC 6238
+  SHA-1 vectors (8- and 6-digit), base32 round-trip and paste-tolerant
+  decoding, exact ±1-step window, leading-zero code verified as a string,
+  pending factor not gating login, activate (wrong code 400; correct code →
+  8 recovery codes, status enabled; setup-while-active 400), login challenge
+  `{totp_required:true}` with no token, wrong-code 401, ±1-window code
+  accepted, 90-second-old code refused, a recovery code logging in exactly
+  once (case/dash-insensitive), disable refusing wrong password and wrong
+  code then restoring password-only login, and disable via recovery code.
+  Without `CB_TEST_DATABASE_URL` the file runs the pure-math half and
+  registers one honest skipped placeholder (8 pass / 1 skip).
+- Files touched by the login-gate change, each run in the mode it supports:
+  `test/auth-http.test.js` + `test/auth.test.js` without a database (28
+  tests, 28 passed — the no-DB file stubs `twoFactor.get` to null like its
+  other store stubs), and `test/account-delete.test.js` +
+  `test/sessions.test.js` with the database (14 tests, 14 passed — deletion
+  now purges the two_factor tables).
+- Hub `npm run lint` and `npm run build` both passed after the
+  Security-page 2FA section, the login second step, and the api.js client
+  methods.
+
 Verified on 2026-09-30 (after the SMTP-mail/auth wave, commit `4d7dc2d`):
 
 - Server suite with PostgreSQL (`CB_TEST_DATABASE_URL=… npm test` in
@@ -729,9 +1157,10 @@ Verified on 2026-09-30 (after the SMTP-mail/auth wave, commit `4d7dc2d`):
   not the full release gate.
 - Hub `npm run lint` and `npm run build` both passed after the auth reskin.
 - `php -l` was not re-run in this wave: `4d7dc2d` touched no plugin PHP
-  source (13 files, all under `hub/` and `server/`). Last PHP verification
-  stands from 2026-09-29: `php -l` passed for `wp-claude-bridge.php` and both
-  dist artifacts; both pin `CB_VERSION` `3.9.0`.
+  source (13 files, all under `hub/` and `server/`). PHP verification was
+  refreshed on 2026-10-02: `php -l` passed for `wp-claude-bridge.php` and both
+  dist artifacts; all three pin `CB_VERSION` `3.9.1`, matching the committed
+  `hub/public/digiwp-ai-bridge.zip`.
 
 Historical baselines: 2026-09-29 no-database run 300 discovered / 288
 passed / 12 skipped and full-PostgreSQL run 357 / 357 / 0; 2026-09-28
@@ -801,7 +1230,14 @@ unreachable, so a throwaway stack was used):
 - Caveat found: `render_blocks` silently emits self-closing markup that
   renders nothing on the front end when `content` is nested inside
   `attributes` instead of sitting at the spec level; spec-level content
-  renders correctly.
+  renders correctly. **Fixed in 3.9.1:** the shared compiler
+  (`cb_block_spec_to_markup`) now promotes a string `attributes.content` to
+  the paired block body (and strips the duplicated key from the comment JSON,
+  matching the editor's own serializer), so all three block tools
+  (`render_blocks`, `create_block_page`, `append_blocks`) accept either
+  shape; a spec with no content anywhere still compiles to a self-closing
+  comment (legitimate for void blocks) but `render_blocks` now names it in
+  `empty_blocks` and warns honestly instead of returning silent markup.
 - This was API-driven E2E over the real relay, not browser Playwright
   flows; the P1.5 Playwright gap stands.
 
@@ -873,11 +1309,20 @@ Do this before expanding the feature list:
 - Billing/trial/subscription/entitlement service with webhook reconciliation and
   idempotency.
 - Password recovery, 2FA/passkeys, device/session list, revocation, and account
-  deletion.
+  deletion. (Password-reset delivery shipped 2026-09-30; server-side sessions
+  with revocation, TOTP two-factor, and account deletion shipped on
+  2026-10-01/02 — see the feature boundary. What remains here: passkeys/
+  WebAuthn, 2FA demanded at registration, auto-revoking sessions on password
+  reset, and any 2FA recovery path beyond the 8 one-time codes.)
 - Team invitations, roles, per-site grants, and immutable permission audit.
-- Browser push subscription enrollment from the hub and end-to-end channel
-  readiness UX (the preference/contact store is live; push token enrollment and
-  readiness still use the existing `/contact` and `/alerts/readiness` paths).
+  (Invitations — including acceptance at registration — and per-site
+  read-only membership shipped on 2026-10-01; what remains: any
+  admin-beyond-read behaviour, shared sites in the member's own list, and
+  the permission audit.)
+- Browser push: what shipped on 2026-10-02 is VAPID enrollment + the owner
+  alert `web-push` channel; what remains is end-to-end channel readiness UX
+  (the readiness screen still reports the legacy FCM/Najva/`/contact` paths,
+  not the VAPID subscriptions), and real delivery verification.
 
 ### Site safety
 
@@ -885,10 +1330,12 @@ Do this before expanding the feature list:
   objectives.
 - Extend the 3.8.0 manual pipeline to WordPress background updates, plus
   canary/staging waves; core still has no automatic file rollback by design.
+- Real uptime history and SLO/incident calculations instead of snapshot-only
+  status. (HTTP-only uptime history shipped on 2026-10-02 — see the monitors
+  bullet under "Implemented or materially implemented"; what remains here is
+  SLO/incident calculation and anything beyond a plain HTTP GET.)
 - Configurable synthetic journeys: checkout, forms, cron, REST, login, SSL and
   domain expiry.
-- Real uptime history and SLO/incident calculations instead of snapshot-only
-  status.
 
 ### Scale and operability
 

@@ -18,7 +18,8 @@ if (!dsn) {
   await query(`CREATE SCHEMA IF NOT EXISTS ${TEST_SCHEMA}`)
   await init()
 
-  const { hashPassword, signToken } = await import('../src/auth.js')
+  const { hashPassword, signToken, verifyToken } = await import('../src/auth.js')
+  const { sessions: sessionsStore } = await import('../src/sessions.store.js')
   const { createApp } = await import('../src/index.js')
 
   async function makeUser({ email = null, role = 'مدیر حساب' } = {}) {
@@ -30,6 +31,17 @@ if (!dsn) {
       [id, e, 'Test User', await hashPassword('password123'), role, Date.now()]
     )
     return { id, email: e }
+  }
+
+  /**
+   * Mint an admin bearer AND the session row it now needs: requireAuth
+   * resolves a token's jti to a live sessions row, so a bare signed token is
+   * no longer a valid credential even in a test.
+   */
+  async function authHeader(user, role) {
+    const token = signToken({ sub: user.id, role })
+    await sessionsStore.create({ userId: user.id, jti: verifyToken(token).jti, device: 'test', ip: '127.0.0.1' })
+    return `Bearer ${token}`
   }
 
   function listen(app) {
@@ -58,7 +70,7 @@ if (!dsn) {
     const app = createApp()
     const { server, base } = await listen(app)
     try {
-      const res = await fetch(`${base}/admin/users`, { headers: { Authorization: `Bearer ${signToken({ sub: user.id, role: 'مدیر حساب' })}` } })
+      const res = await fetch(`${base}/admin/users`, { headers: { Authorization: await authHeader(user, 'مدیر حساب') } })
       assert.equal(res.status, 403)
     } finally {
       server.close()
@@ -70,7 +82,7 @@ if (!dsn) {
     const app = createApp()
     const { server, base } = await listen(app)
     try {
-      const res = await fetch(`${base}/admin/users`, { headers: { Authorization: `Bearer ${signToken({ sub: user.id, role: 'admin' })}` } })
+      const res = await fetch(`${base}/admin/users`, { headers: { Authorization: await authHeader(user, 'admin') } })
       assert.equal(res.status, 200)
       const body = await res.json()
       assert.ok(Array.isArray(body.users))
@@ -85,7 +97,7 @@ if (!dsn) {
     const app = createApp()
     const { server, base } = await listen(app)
     try {
-      const headers = { Authorization: `Bearer ${signToken({ sub: user.id, role: 'admin' })}` }
+      const headers = { Authorization: await authHeader(user, 'admin') }
       const list = await fetch(`${base}/admin/users`, { headers })
       assert.equal(list.status, 200)
       const listBody = await list.json()
@@ -110,7 +122,7 @@ if (!dsn) {
     const app = createApp()
     const { server, base } = await listen(app)
     try {
-      const res = await fetch(`${base}/admin/stats`, { headers: { Authorization: `Bearer ${signToken({ sub: user.id, role: 'admin' })}` } })
+      const res = await fetch(`${base}/admin/stats`, { headers: { Authorization: await authHeader(user, 'admin') } })
       assert.equal(res.status, 200)
       const body = await res.json()
       assert.equal(typeof body.users, 'number')

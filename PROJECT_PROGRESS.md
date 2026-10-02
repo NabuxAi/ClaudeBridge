@@ -1,6 +1,6 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-08-02. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-10-02. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
 
 ## Done in this pass — the server can now actually drive a site
 
@@ -1348,3 +1348,159 @@ built.
 `EMAIL_URL` is now also used for password reset emails. If you want users to be
 able to recover their own accounts, set `EMAIL_URL` (and optionally
 `EMAIL_API_KEY` / `EMAIL_FROM`).
+
+---
+
+## 2026-10-01 → 2026-10-02 — nine waves: real sessions, real deletion, per-site roles, entitlement, TOTP, uptime history, browser push, the 3.9.1 block-compiler fix, and draft legal pages
+
+Nine development waves landed in this sprint, each with wave-scoped tests; the
+full gate ran once at the end rather than per wave. Details live in
+`AGENTS.md`; this entry records what shipped, the decisions worth
+remembering, and the honest limits.
+
+### What shipped
+
+- **Sessions/device management (2026-10-01).** Every login/register token now
+  carries a random `jti`, and `requireAuth` resolves SHA-256 of that jti to a
+  live row in the `sessions` table — missing, revoked, or expired all mean
+  401. Routes: `GET /auth/sessions`, `DELETE /auth/sessions/:id`,
+  `POST /auth/sessions/revoke-others`; hub page `/app/security` with the
+  current session marked and per-device logout. Purpose-scoped tokens
+  (`payload.kind`, e.g. the 5-minute `backup_download` capability)
+  deliberately stay stateless. The review-fix wave added `POST /auth/logout`,
+  which revokes the session it rides in on, and the account-shell header
+  «خروج» button now calls it before clearing localStorage.
+- **Account deletion (2026-10-01).** `POST /account/delete` behind the live
+  session: current password, one generic 400, per-account and per-IP limiters
+  gating before the password check. Fail-safe order on success: revoke every
+  session; tombstone the user's sites (`status='deleted'`, secrets emptied —
+  every connector path dies); one personal-data-free audit event per site;
+  purge contacts, conversations, S3 targets, invitations, reset tokens, and
+  the subscription; then `users.anonymize()` rewrites the row in place
+  (email → `deleted-<hash>@invalid`, freeing the address). The tombstone is
+  deliberate: deleting the user row would CASCADE through sites → events and
+  destroy the audit trail. Hub: the Profile danger-zone dialog and a clean
+  `/goodbye` exit.
+- **Per-site member roles + invite-at-registration (2026-10-01).** One query
+  (`sites.rawWithRole`) resolves owner/admin/viewer; every GET on the site
+  and offsite-backup routes admits an active member (a stranger still gets
+  the same 404), and every non-GET answers 403 «این اقدام فقط برای مالک سایت
+  مجاز است…» before the route's own 400s. `POST /auth/register` accepts the
+  single-use `inviteToken` and attaches the membership in one step; a spent,
+  expired, or wrong-address token never fails the registration — it reports
+  `invite:{applied:false,error}` and is not spent. The review-fix wave made
+  the backup-download GET owner-only (it streams the full database dump) and
+  fixed a real pre-existing bug found by that test: the download-token mint
+  route had answered 500 for everyone because `routes/sites.js` never
+  imported `signToken`.
+- **Entitlement (2026-10-01).** `billing.canAddSite()` gates `POST /sites`
+  with 402 `trial_expired` / `site_limit_reached` before any pairing secret
+  is minted; `site_limit NULL` (آژانس) is unlimited; a tombstoned site frees
+  its slot. Billing responses carry `trialState`, and the hub renders the
+  expired state honestly instead of a fabricated «تمدید بعدی».
+- **TOTP two-factor (2026-10-02).** RFC 6238 on `node:crypto` alone — no new
+  dependency, and no QR image: the otpauth URI and secret are copyable text.
+  `two_factor` + `two_factor_recovery` tables, recovery codes stored only as
+  SHA-256 hashes; login with an active factor answers a correct password with
+  `{totp_required:true}` and prices code guessing exactly like password
+  guessing (same per-IP/per-account limiters). Disable needs the current
+  password plus a TOTP or recovery code; account deletion purges both tables;
+  the display flag is no longer writable through `PATCH /account/profile`.
+- **HTTP uptime monitors (2026-10-02).** `site_monitors` + `monitor_results`
+  and a scheduler (default every 5 minutes, `MONITOR_INTERVAL_MINUTES`)
+  running one plain GET per URL with a 10 s timeout; owner-only writes,
+  member reads; a 10-per-site cap taken under a per-site advisory lock
+  (`monitor_limit_reached`); 7/30-day availability counted by failure
+  *episodes*; `measured:false, percent:null` — never a green zero — for
+  windows with no attempts; 35-day pruning; the «مانیتورها» hub tab. Every
+  response carries the scope label: HTTP reachability, not user journeys.
+- **Browser push / Web Push VAPID (2026-10-02).** Keys come only from the
+  environment; an unconfigured deployment is the honest
+  `{configured:false, reason:…}` everywhere. `push_subscriptions` (one row
+  per browser endpoint; the capability URL and encryption keys are never
+  returned in full), four session-auth routes, and a `web-push` channel in
+  the owner alert dispatcher that reports "push service accepted" with the
+  usual honesty and deletes subscriptions on 404/410 at delivery time. Hub
+  enrollment through `Notification.requestPermission()` →
+  `PushManager.subscribe`; the existing service-worker handlers needed no
+  change.
+- **`render_blocks` content fix (`3.9.1`).** The shared block compiler now
+  promotes a string `attributes.content` to the paired block body and strips
+  the duplicated key from the comment JSON — the E2E caveat from 2026-09-30,
+  fixed once for all three block tools (`render_blocks`, `create_block_page`,
+  `append_blocks`). A spec with no content anywhere still compiles to a
+  self-closing comment (legitimate for void blocks), but `render_blocks` now
+  names it in `empty_blocks` and warns instead of returning silent markup.
+  `CB_VERSION` is `3.9.1`; both dist artifacts rebuilt; `php -l` green on
+  all three.
+- **Draft legal pages + privacy disclosure (2026-10-01).** `/terms` and
+  `/privacy` describing only behavior and data flows that exist in the code,
+  each under a visible «پیش‌نویس اولیه — پیش از انتشار نهایی نیازمند بازبینی
+  حقوقی است» banner; the footer gained these two real links.
+  `docs/PRIVACY.md` lists the nine external services verified in code
+  (mShots, WordPress.org APIs, NVD, the GitHub YARA feed, abuse.ch,
+  hash-only VirusTotal, SMTP mail, the model gateway, S3-compatible backup
+  targets) with file:line references. The review-fix wave synced the pages'
+  data-flow text with the new sessions/2FA/push reality.
+
+### Decisions worth remembering
+
+- **Deliberate breaking change:** tokens issued before the sessions wave
+  carry no `jti` and are rejected — every existing user must sign in once
+  after deploy.
+- **Membership ≠ authority.** The per-site layer only opens reads for members
+  and refuses writes; admin/viewer are both read-only there, the stored role
+  is not yet load-bearing, and the authority ladder and sensitive-tool
+  classification are untouched.
+- **Entitlement bites in exactly one place** (`POST /sites`), so sites
+  already in the product keep working after a trial ends; widening the gate
+  is a product decision, not a bug. The only unlock is the operator
+  (`/billing/request-pilot` or an internal grant) — no gateway exists to
+  pay through.
+- **Monitors default on** (a harmless GET — unlike `ASSISTANT_SWEEP`), and
+  monitor URLs are fetched with no internal-network (SSRF) guard: the same
+  trust level as the existing `site.url`/speedtest fetches, recorded rather
+  than hidden.
+- **The server never mints VAPID keys.** A deployment without them is the
+  honest off state; production keys must be set in the Coolify UI.
+- **No QR image for 2FA** — a new dependency was out of scope, so the otpauth
+  URI and secret are text the user copies into their app.
+
+### Honest limits
+
+- No browser/component tests exist anywhere (P1.5 open); every hub surface in
+  this sprint was verified by lint + build only.
+- Push delivery has never been verified end to end against a real browser;
+  production has no VAPID keys yet; the legacy Alerts-page fcmToken button is
+  still not wired to the new channel, and `/alerts/readiness` reports the
+  legacy channels only.
+- Monitor failures do not yet feed the alert/Telegram dispatch, and monitor
+  config changes write no separate audit events.
+- Deletion is immediate: no cooling-off window, no data export, no
+  confirmation email. Password reset still does not auto-revoke sessions.
+- A lost phone with zero recovery codes left has no self-service path —
+  support only.
+- The legal texts are drafts; final review by counsel is a user decision, and
+  the pages say so on a banner.
+
+### Validation (final gate, 2026-10-02)
+
+- Artifacts: both release build scripts ok; `php -l` green on the canonical
+  source and both dist artifacts (`CB_VERSION` `3.9.1` everywhere).
+- Full server suite with PostgreSQL: **440 tests, 440 passed, 0 failed,
+  0 skipped** (~13.8 s), read from the final gate output. Provenance caveat:
+  the gate wrapper's status line for this pass reads «قرمز» although the
+  captured output ends with `fail 0` / `skipped 0` and contains no failing
+  test line; a second captured full run the same day shows identical
+  counters.
+- Server suite without PostgreSQL: gate verdict ok (no counts in the gate
+  summary). Hub `npm run lint` and `npm run build`: ok. Final repair round: 2.
+
+### Needs you
+
+- Set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` in the
+  Coolify UI (like `EMAIL_SERVER`) or browser push stays honestly off — and
+  on-disk env edits will be wiped by the next deploy.
+- After deploy, expect every existing user to sign in again once (the
+  deliberate jti breaking change).
+- Legal review of the draft Terms/Privacy pages before public launch.

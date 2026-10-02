@@ -25,17 +25,25 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = useCallback(async (creds) => {
-    const { token, user: u } = await authApi.login(creds)
+    const data = await authApi.login(creds)
+    // چالش دومرحله‌ای: رمز درست بوده اما سرور هنوز نشستی صادر نکرده است.
+    // پاسخ بدون توکن، دست‌نخورده به فرم ورود برمی‌گردد تا مرحلهٔ کد را نشان
+    // دهد و همان فرم با `code` دوباره بفرستد. setToken با undefined خوانده
+    // نمی‌شود — پاک‌کردن نشستِ موجود روی چالش، اشتباه است.
+    if (data?.totp_required) return data
+    const { token, user: u } = data
     setToken(token)
     setUser(u)
     return u
   }, [])
 
   const register = useCallback(async (body) => {
-    const { token, user: u } = await authApi.register(body)
+    const { token, user: u, invite } = await authApi.register(body)
     setToken(token)
     setUser(u)
-    return u
+    // The optional team-invite outcome rides along: applied, or an honest
+    // reason it was not (expired, spent, or addressed to another email).
+    return { user: u, invite }
   }, [])
 
   const logout = useCallback(async () => {

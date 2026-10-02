@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.9.0
+ * Version: 3.9.1
  * Author: Account City
  * License: GPLv2 or later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.9.0' );
+define( 'CB_VERSION', '3.9.1' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
@@ -2083,7 +2083,7 @@ function cb_tools() {
 	// Reads inspect/preview, creates land as drafts for human review, appends
 	// edit live content in place (the edit_file precedent). Registrations stay
 	// one line each on purpose: plugin-tool-dispatch.test.js reads them line by line.
-	$block_spec_prop    = array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Registered block name, e.g. "core/heading".' ), 'attributes' => array( 'type' => 'object', 'description' => 'Block attributes; encoded into the block comment by the plugin.' ), 'content' => array( 'type' => 'string', 'description' => 'Optional saved HTML of the block (wp_kses_post applies).' ), 'inner' => array( 'type' => 'array', 'description' => 'Nested child block specs.', 'items' => array( 'type' => 'object' ) ) ), 'required' => array( 'name' ) );
+	$block_spec_prop    = array( 'type' => 'object', 'properties' => array( 'name' => array( 'type' => 'string', 'description' => 'Registered block name, e.g. "core/heading".' ), 'attributes' => array( 'type' => 'object', 'description' => 'Block attributes; encoded into the block comment by the plugin.' ), 'content' => array( 'type' => 'string', 'description' => 'Optional saved HTML of the block (wp_kses_post applies). A string attributes.content is promoted to the block body when this is absent, and never kept inside the comment JSON.' ), 'inner' => array( 'type' => 'array', 'description' => 'Nested child block specs.', 'items' => array( 'type' => 'object' ) ) ), 'required' => array( 'name' ) );
 	$elementor_widget_prop = array( 'type' => 'object', 'properties' => array( 'widget' => array( 'type' => 'string', 'description' => 'Registered Elementor widget name, e.g. "heading" (see list_elementor_widgets).' ), 'settings' => array( 'type' => 'object', 'description' => 'Widget settings; content fields may carry HTML.' ) ), 'required' => array( 'widget' ) );
 	$elementor_section_prop = array( 'type' => 'object', 'properties' => array( 'settings' => array( 'type' => 'object', 'description' => 'Section settings (background, padding…).' ), 'columns' => array( 'type' => 'array', 'description' => 'Columns of this section.', 'items' => array( 'type' => 'object', 'properties' => array( 'settings' => array( 'type' => 'object', 'description' => 'Column settings (width…).' ), 'widgets' => array( 'type' => 'array', 'description' => 'Widgets placed in this column.', 'items' => $elementor_widget_prop ) ), 'required' => array( 'widgets' ) ) ) ), 'required' => array( 'columns' ) );
 	$tools[] = array( 'name' => 'list_block_types', 'description' => 'List every block type registered on this site (name, title, category) — the palette an AI designer may compose with. About Gutenberg content blocks, not reusable-block posts (that is list_blocks). Read-only; pass search to filter by substring.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'search' => array( 'type' => 'string', 'description' => 'Optional case-insensitive substring filter on name/title.' ) ) ), 'op' => 'cb_op_list_block_types' );
@@ -4623,13 +4623,13 @@ function cb_block_specs_validate( $specs, $registry_check = false, $depth = 0 ) 
  * previews exactly what create_block_page and append_blocks write, because
  * all three come through here.
  */
-function cb_blocks_markup( $specs ) {
+function cb_blocks_markup( $specs, &$empties = null ) {
 	if ( ! is_array( $specs ) ) {
 		return '';
 	}
 	$out = array();
 	foreach ( $specs as $spec ) {
-		$markup = cb_block_spec_to_markup( is_array( $spec ) ? $spec : array(), 0 );
+		$markup = cb_block_spec_to_markup( is_array( $spec ) ? $spec : array(), 0, $empties );
 		if ( '' !== $markup ) {
 			$out[] = $markup;
 		}
@@ -4637,8 +4637,14 @@ function cb_blocks_markup( $specs ) {
 	return implode( "\n\n", $out );
 }
 
-/** One spec → its block comment(s); the recursive half of cb_blocks_markup. */
-function cb_block_spec_to_markup( $spec, $depth ) {
+/**
+ * One spec → its block comment(s); the recursive half of cb_blocks_markup.
+ * $empties, when given an array, collects the names of specs that had no
+ * content (spec level, attributes, or inner children) and therefore compiled
+ * to a self-closing comment — callers surface that honestly instead of
+ * handing back markup that only looks finished.
+ */
+function cb_block_spec_to_markup( $spec, $depth, &$empties = null ) {
 	$name = isset( $spec['name'] ) ? (string) $spec['name'] : '';
 	if ( $depth > 10 || ! cb_block_name_valid( $name ) ) {
 		return '';
@@ -4648,6 +4654,22 @@ function cb_block_spec_to_markup( $spec, $depth ) {
 	$content = '';
 	if ( isset( $spec['content'] ) && is_string( $spec['content'] ) ) {
 		$content = trim( (string) wp_kses_post( $spec['content'] ) );
+	}
+	// Clients keep putting the body inside attributes ({"content": ...}) — the
+	// shape a REST update would take. Left there, a static block such as
+	// core/paragraph compiles to a self-closing comment and renders NOTHING on
+	// the front end (found in the 2026-09-30 production E2E). So a string
+	// attributes.content is treated as the body when the spec level has none,
+	// and the duplicated key is stripped from the comment either way: the
+	// editor's own serializer never stores a sourced attribute in the comment,
+	// and leaving it there trips block validation on the next editor save.
+	// A non-string attributes value stays untouched — structured comment
+	// attributes of dynamic blocks are a legitimate other thing.
+	if ( isset( $attrs['content'] ) && is_string( $attrs['content'] ) ) {
+		if ( '' === $content ) {
+			$content = trim( (string) wp_kses_post( $attrs['content'] ) );
+		}
+		unset( $attrs['content'] );
 	}
 	$head = '<!-- wp:' . $name;
 	if ( ! empty( $attrs ) ) {
@@ -4664,6 +4686,9 @@ function cb_block_spec_to_markup( $spec, $depth ) {
 		}
 	}
 	if ( '' === $content && empty( $inner ) ) {
+		if ( is_array( $empties ) ) {
+			$empties[] = $name;
+		}
 		return $head . ' /-->';
 	}
 	$body = '';
@@ -4671,7 +4696,7 @@ function cb_block_spec_to_markup( $spec, $depth ) {
 		$body .= $content . "\n";
 	}
 	foreach ( $inner as $child ) {
-		$body .= cb_block_spec_to_markup( is_array( $child ) ? $child : array(), $depth + 1 ) . "\n";
+		$body .= cb_block_spec_to_markup( is_array( $child ) ? $child : array(), $depth + 1, $empties ) . "\n";
 	}
 	return $head . " -->\n" . rtrim( $body ) . "\n<!-- /wp:" . $name . ' -->';
 }
@@ -4716,9 +4741,10 @@ function cb_op_render_blocks( $args = array() ) {
 	if ( ! $valid[0] ) {
 		return array( 'ok' => false, 'message' => $valid[1] );
 	}
-	$markup  = cb_blocks_markup( $specs );
+	$empties = array();
+	$markup  = cb_blocks_markup( $specs, $empties );
 	$parsed  = null;
-	$warning = '';
+	$warnings = array();
 	if ( function_exists( 'parse_blocks' ) ) {
 		// Honest self-check: re-parse what we just compiled and confirm
 		// WordPress reads the same number of blocks back out of it.
@@ -4726,8 +4752,15 @@ function cb_op_render_blocks( $args = array() ) {
 			return ! empty( $b['blockName'] );
 		} ) );
 		if ( $parsed !== count( $specs ) ) {
-			$warning = 'تعداد بلوک‌های بازخوانی‌شده با ورودی یکی نیست؛ پیش از نوشتن بررسی کنید.';
+			$warnings[] = 'تعداد بلوک‌های بازخوانی‌شده با ورودی یکی نیست؛ پیش از نوشتن بررسی کنید.';
 		}
+	}
+	if ( ! empty( $empties ) ) {
+		// A spec with no content anywhere compiles to a self-closing comment
+		// that renders nothing on the front end. Void blocks (spacer, image…)
+		// are legitimate, so this is a loud warning next to the markup — not a
+		// refusal, and never a silent success that only looks finished.
+		$warnings[] = 'این بلوک‌ها هیچ محتوایی نداشتند (نه content، نه attributes.content، نه inner) و به‌صورت خودبسته (self-closing) درج شدند؛ اگر قرار است متنی نمایش دهند، روی فرانت هیچ چیزی رندر نمی‌شود: ' . implode( '، ', array_unique( $empties ) );
 	}
 	return array(
 		'ok'            => true,
@@ -4737,7 +4770,8 @@ function cb_op_render_blocks( $args = array() ) {
 		'blocks'        => count( $specs ),
 		'markup_length' => strlen( $markup ),
 		'parsed_blocks' => $parsed,
-		'warning'       => $warning,
+		'warning'       => implode( ' ', $warnings ),
+		'empty_blocks'  => array_values( array_unique( $empties ) ),
 		'markup'        => $markup,
 	);
 }

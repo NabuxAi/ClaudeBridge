@@ -20,6 +20,7 @@
 // ============================================================
 import { query, all, one, newId } from './db.js'
 import { dispatch, compose, isEmergency } from './alerts/index.js'
+import { pushSubscriptions } from './push.store.js'
 
 export { SCHEMA } from './events.schema.js'
 
@@ -217,6 +218,11 @@ export async function raiseEmergency(event) {
     phone: site.contact?.phone || null,
     fcmToken: site.contact?.fcmToken || null,
     najvaToken: site.contact?.najvaToken || null,
+    // Web Push subscriptions are their own store, not a contact field: one
+    // row per enrolled browser, with the encryption keys the payload needs.
+    // Fetched here so the channel can tell "not configured" from "no browser
+    // enrolled" up front, exactly like every other channel's skip check.
+    pushSubscriptions: await pushSubscriptions.allForUser(site.owner_id).catch(() => []),
   }
 
   const result = await dispatch(compose(event, site), to)

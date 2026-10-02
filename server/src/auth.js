@@ -1,12 +1,22 @@
 // Minimal signed-token auth for hub sessions (HMAC, no external deps).
 import crypto from 'node:crypto'
 import { config } from './config.js'
+import { sessions, tokenHash as sessionTokenHash } from './sessions.store.js'
 
 const b64url = (buf) => Buffer.from(buf).toString('base64url')
 const fromB64url = (s) => Buffer.from(s, 'base64url').toString('utf8')
 
 export function signToken(payload, ttlSeconds = 60 * 60 * 24 * 7) {
-  const body = { ...payload, exp: Math.floor(Date.now() / 1000) + ttlSeconds }
+  const body = {
+    ...payload,
+    // Random session identity. The signature alone proves who MINTED a token,
+    // not whether it is still welcome: requireAuth resolves this jti to a live
+    // row in the sessions table, which is what makes revocation and
+    // "log out other devices" possible at all. Callers that create the session
+    // row themselves (login/register) pass their own jti so both sides agree.
+    jti: payload.jti || crypto.randomBytes(16).toString('hex'),
+    exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+  }
   const p = b64url(JSON.stringify(body))
   const sig = crypto.createHmac('sha256', config.authSecret).update(p).digest('base64url')
   return `${p}.${sig}`
@@ -97,15 +107,54 @@ export function assertSecretIsReal() {
   console.warn(`WARNING: ${why}. Fine for local work; the server will refuse to start like this in production.`)
 }
 
-/** Express middleware: require a valid hub session token. */
-export function requireAuth(req, res, next) {
-  const auth = req.get('authorization') || ''
-  const m = auth.match(/Bearer\s+(.+)/i)
-  const token = m ? m[1].trim() : (typeof req.query?.token === 'string' ? req.query.token.trim() : null)
-  const payload = token ? verifyToken(token) : null
-  if (!payload) return res.status(401).json({ message: 'Unauthorized' })
-  req.user = payload
-  next()
+/**
+ * Express middleware: require a valid hub session token.
+ *
+ * Signature verification alone is not enough any more — a signature only
+ * proves a token was minted by this server, not that it has not been logged
+ * out since. So after the signature checks out, session tokens must resolve
+ * to a live row in `sessions` via SHA-256 of their jti: missing, revoked or
+ * expired all mean 401.
+ *
+ * Deliberate breaking change: tokens issued before sessions existed carry no
+ * jti and are rejected. Every user must sign in again once after this ships;
+ * that is the price of tokens a server can actually take back.
+ *
+ * The one exception is a purpose-scoped token (`payload.kind`, e.g. the
+ * five-minute `backup_download` capability): it is not a login session, has
+ * no session row, and keeps its old short-lived stateless semantics. The
+ * distinction is safe because nothing that issues a login token ever sets
+ * `kind` — only the short-lived capability issuers do.
+ *
+ * Async, and failing closed: if the session lookup itself errors (database
+ * unreachable), the request gets a 500 rather than being waved through on
+ * the strength of a signature nobody could check against the table.
+ */
+export async function requireAuth(req, res, next) {
+  try {
+    const auth = req.get('authorization') || ''
+    const m = auth.match(/Bearer\s+(.+)/i)
+    const token = m ? m[1].trim() : (typeof req.query?.token === 'string' ? req.query.token.trim() : null)
+    const payload = token ? verifyToken(token) : null
+    if (!payload) return res.status(401).json({ message: 'Unauthorized' })
+
+    if (!payload.kind) {
+      if (typeof payload.jti !== 'string' || !payload.jti) {
+        return res.status(401).json({ message: 'Unauthorized' })
+      }
+      const hash = sessionTokenHash(payload.jti)
+      const session = await sessions.findActive(hash)
+      if (!session) return res.status(401).json({ message: 'Unauthorized' })
+      req.sessionId = session.id
+      // Throttled inside the store; at most one write per minute per session.
+      await sessions.touch(hash)
+    }
+
+    req.user = payload
+    next()
+  } catch {
+    if (!res.headersSent) res.status(500).json({ message: 'server error' })
+  }
 }
 
 /** Express middleware: require an authenticated admin user. */

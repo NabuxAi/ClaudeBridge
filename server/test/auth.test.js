@@ -10,6 +10,7 @@ import {
   signToken, verifyToken, hashPassword, verifyPassword, verifyPasswordDummy, requireAuth,
 } from '../src/auth.js'
 import { config } from '../src/config.js'
+import { sessions as sessionsStore, tokenHash as sessionTokenHash } from '../src/sessions.store.js'
 
 test('a token round-trips and carries its payload', () => {
   const t = signToken({ sub: 'u_1', name: 'کاربر' })
@@ -123,7 +124,11 @@ test('hashing does not block the event loop', async () => {
   assert.ok(ticks > 0, 'the event loop was blocked for the whole of four derivations')
 })
 
-test('requireAuth rejects everything that is not a valid Bearer token', () => {
+// requireAuth is async (it consults the sessions table after the signature
+// check), so these drive it through the full promise, not just its
+// synchronous head.
+
+test('requireAuth rejects everything that is not a valid Bearer token', async () => {
   const cases = [
     undefined,
     'Bearer',
@@ -134,19 +139,67 @@ test('requireAuth rejects everything that is not a valid Bearer token', () => {
   for (const header of cases) {
     const res = makeRes()
     let nexted = false
-    requireAuth({ get: () => header }, res, () => { nexted = true })
+    await requireAuth({ get: () => header }, res, () => { nexted = true })
     assert.equal(nexted, false, `let through: ${header}`)
     assert.equal(res.statusCode, 401)
   }
 })
 
-test('requireAuth passes a valid token through and attaches the user', () => {
+test('requireAuth rejects a correctly signed token that carries no jti', async () => {
+  // A pre-sessions token: right signature, right expiry, no session identity.
+  // It must not slide through on the strength of the signature alone — that
+  // is exactly the token a server can never revoke.
+  const body = Buffer.from(
+    JSON.stringify({ sub: 'u_1', exp: Math.floor(Date.now() / 1000) + 3600 })
+  ).toString('base64url')
+  const sig = crypto.createHmac('sha256', config.authSecret).update(body).digest('base64url')
   const res = makeRes()
-  const req = { get: () => `Bearer ${signToken({ sub: 'u_9', name: 'ن' })}` }
   let nexted = false
-  requireAuth(req, res, () => { nexted = true })
-  assert.equal(nexted, true)
-  assert.equal(req.user.sub, 'u_9')
+  await requireAuth({ get: () => `Bearer ${body}.${sig}` }, res, () => { nexted = true })
+  assert.equal(nexted, false, 'a jti-less token must be rejected outright')
+  assert.equal(res.statusCode, 401)
+})
+
+test('requireAuth passes a valid token with a live session through', async () => {
+  const realFind = sessionsStore.findActive
+  const realTouch = sessionsStore.touch
+  let lookedUp = ''
+  sessionsStore.findActive = async (hash) => {
+    lookedUp = hash
+    return { id: 's_test', token_hash: hash }
+  }
+  sessionsStore.touch = async () => {}
+  try {
+    const token = signToken({ sub: 'u_9', name: 'ن' })
+    const payload = verifyToken(token)
+    const res = makeRes()
+    const req = { get: () => `Bearer ${token}` }
+    let nexted = false
+    await requireAuth(req, res, () => { nexted = true })
+    assert.equal(nexted, true)
+    assert.equal(req.user.sub, 'u_9')
+    assert.equal(req.sessionId, 's_test')
+    // The middleware must look up SHA-256 of the token's jti — not the raw
+    // jti, and not the whole token.
+    assert.equal(lookedUp, sessionTokenHash(payload.jti))
+  } finally {
+    sessionsStore.findActive = realFind
+    sessionsStore.touch = realTouch
+  }
+})
+
+test('requireAuth rejects a valid signature whose session is revoked or missing', async () => {
+  const realFind = sessionsStore.findActive
+  sessionsStore.findActive = async () => null
+  try {
+    const res = makeRes()
+    let nexted = false
+    await requireAuth({ get: () => `Bearer ${signToken({ sub: 'u_9' })}` }, res, () => { nexted = true })
+    assert.equal(nexted, false, 'a signed token without a live session must not pass')
+    assert.equal(res.statusCode, 401)
+  } finally {
+    sessionsStore.findActive = realFind
+  }
 })
 
 test('the signing secret is not the development default in this environment', () => {

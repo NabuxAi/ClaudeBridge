@@ -120,7 +120,6 @@ if (!dsn) {
 
   test('an owner sees themselves and no fake members on a fresh site', async () => {
     const { authorization: auth } = await registerUser(`owner-list-${crypto.randomUUID()}@test.local`)
-    console.log('test1 auth header', auth.slice(0, 40))
     const site = await createSite(auth, `team-list-${Date.now()}.ir`)
 
     const { status, body } = await http('GET', `/sites/${site.id}/team`, auth)

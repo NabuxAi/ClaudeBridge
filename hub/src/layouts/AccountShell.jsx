@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, Outlet } from 'react-router-dom'
+import { Link, Outlet, useNavigate } from 'react-router-dom'
 import Brand from './Brand.jsx'
 import Icon from '../lib/icons.jsx'
 import { Button, IconButton, SidebarItem } from '../components/index.js'
@@ -16,12 +16,25 @@ const BASE_NAV = [
   { to: '/app/billing', icon: 'credit-card', label: 'اشتراک و صورت‌حساب' },
   { to: '/app/team', icon: 'users', label: 'اعضای تیم' },
   { to: '/app/notifications', icon: 'bell', label: 'اعلان‌ها' },
+  { to: '/app/security', icon: 'monitor-smartphone', label: 'امنیت حساب' },
   { to: '/app/profile', icon: 'user-round', label: 'پروفایل و حساب' },
 ]
 
 export default function AccountShell() {
   const [open, setOpen] = useState(false)
-  const { user } = useAuth()
+  const [signingOut, setSigningOut] = useState(false)
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  // خروج واقعی، نه فقط پاک‌کردن توکن از مرورگر: authApi.logout نشست همین
+  // دستگاه را روی سرور باطل می‌کند (POST /auth/logout) و بعد توکن محلی پاک
+  // می‌شود. حتی اگر فراخوانی شکست بخورد، خروج محلی کامل می‌شود — کاربر
+  // نباید به‌خاطر خطای شبکه در صفحه‌ای قفل بماند که نشستش را می‌بندد.
+  const signOut = async () => {
+    if (signingOut) return
+    setSigningOut(true)
+    try { await logout() } finally { navigate('/login', { replace: true }) }
+  }
   const NAV = user?.role === 'admin'
     ? [...BASE_NAV, { to: '/admin', icon: 'shield-check', label: 'پنل ادمین' }]
     : BASE_NAV
@@ -49,6 +62,16 @@ export default function AccountShell() {
           <IconButton className="dwp-burger" icon="menu" label="منو" onClick={() => setOpen(true)} />
           <span className="dwp-spacer" />
           <Button as={Link} to="/onboarding" variant="primary" size="sm" leftIcon="plus">افزودن سایت</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon="log-out"
+            loading={signingOut}
+            disabled={signingOut}
+            onClick={signOut}
+          >
+            خروج
+          </Button>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, paddingInlineStart: 10, borderInlineStart: '1px solid var(--gd-border)' }}>
             <span className="dwp-avatar">{user?.initials || '؟'}</span>
             <span className="dwp-desktop-only">

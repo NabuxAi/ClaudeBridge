@@ -23,6 +23,9 @@ const Team = lazy(() => import('./pages/account/Team.jsx'))
 const Notifications = lazy(() => import('./pages/account/Notifications.jsx'))
 const Profile = lazy(() => import('./pages/account/Profile.jsx'))
 const Alerts = lazy(() => import('./pages/account/Alerts.jsx'))
+// حساب/امنیت: نشست‌ها و دستگاه‌های حساب (/app/security). هم‌نام صفحهٔ امنیتِ
+// هر سایت است (pages/site/Security.jsx) اما مسیر و مأموریتشان جداست.
+const AccountSecurity = lazy(() => import('./pages/account/Security.jsx'))
 // D · per-site panel
 const Overview = lazy(() => import('./pages/site/Overview.jsx'))
 const Incidents = lazy(() => import('./pages/site/Incidents.jsx'))
@@ -35,6 +38,8 @@ const Conflict = lazy(() => import('./pages/site/Conflict.jsx'))
 const Speed = lazy(() => import('./pages/site/Speed.jsx'))
 const Hosting = lazy(() => import('./pages/site/Hosting.jsx'))
 const Settings = lazy(() => import('./pages/site/Settings.jsx'))
+// مانیتورهای دسترس‌پذیری — «بررسی دسترسی HTTP، نه سفر کاربری/پرداخت»
+const Monitors = lazy(() => import('./pages/site/Monitors.jsx'))
 // E · payment
 const Pricing = lazy(() => import('./pages/billing/Pricing.jsx'))
 const Checkout = lazy(() => import('./pages/billing/Checkout.jsx'))
@@ -46,6 +51,12 @@ const AdminUsers = lazy(() => import('./pages/admin/AdminUsers.jsx'))
 const AdminUserDetail = lazy(() => import('./pages/admin/AdminUserDetail.jsx'))
 const AdminEvents = lazy(() => import('./pages/admin/AdminEvents.jsx'))
 const AdminEventDetail = lazy(() => import('./pages/admin/AdminEventDetail.jsx'))
+// G · legal (draft pages — rendered inside MarketingLayout)
+const Terms = lazy(() => import('./pages/legal/Terms.jsx'))
+const Privacy = lazy(() => import('./pages/legal/Privacy.jsx'))
+// خروج تمیز بعد از حذف حساب — عمومی و بی‌نیاز از نشست؛ عمداً بیرون از هر دو
+// layout پنل و بازاریابی است تا هیچ پوستهٔ محافظت‌شده‌ای بعد از حذف رندر نشود.
+const Goodbye = lazy(() => import('./pages/Goodbye.jsx'))
 
 function PageLoader() {
   return (
@@ -66,6 +77,9 @@ export default function App() {
       <Route element={<MarketingLayout />}>
         <Route path="/" element={<Landing />} />
         <Route path="/pricing" element={<Pricing />} />
+        {/* Draft legal pages (P1.6 / Sprint 0) — public, lazily loaded. */}
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
       </Route>
 
       {/* B · auth */}
@@ -88,6 +102,7 @@ export default function App() {
         <Route path="team" element={<Team />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="alerts" element={<Alerts />} />
+        <Route path="security" element={<AccountSecurity />} />
         <Route path="profile" element={<Profile />} />
       </Route>
 
@@ -102,6 +117,7 @@ export default function App() {
         <Route path="rescue" element={<Rescue />} />
         <Route path="conflict" element={<Conflict />} />
         <Route path="speed" element={<Speed />} />
+        <Route path="monitors" element={<Monitors />} />
         <Route path="hosting" element={<Hosting />} />
         <Route path="settings" element={<Settings />} />
       </Route>
@@ -118,6 +134,9 @@ export default function App() {
         <Route path="events" element={<AdminEvents />} />
         <Route path="events/:id" element={<AdminEventDetail />} />
       </Route>
+
+      {/* خروج تمیز بعد از حذف حساب */}
+      <Route path="/goodbye" element={<Goodbye />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

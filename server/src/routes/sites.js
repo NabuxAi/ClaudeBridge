@@ -10,6 +10,11 @@ import * as proposals from '../proposals.js'
 import * as assistant from '../assistant.js'
 import * as conversations from '../conversations.store.js'
 import { isSensitive, SENSITIVE_SET, SENSITIVE_TOOLS } from '../authority.js'
+// The backup-download capability token is minted here (`/backups/:id/token`).
+// Its import was missing, so the mint route 500'd for everyone — the
+// owner-only gate answered 403/200 correctly, but a successful mint never
+// existed until team-roles.test.js drove the owner path end to end.
+import { signToken } from '../auth.js'
 import { probeSite } from '../probe.js'
 import { analyse as analysePerf } from '../perf/recipes.js'
 import { checkInventory, slugOf } from '../intel/vulns.js'
@@ -17,6 +22,7 @@ import { REGIONS, PROVIDERS, TRAITS, needsCacheBust } from '../hosting.js'
 import { measureUrl } from '../speedtest.js'
 import { offsiteBackups } from '../offsite-backups.store.js'
 import { runOffsiteBackup } from '../offsite-backups.runner.js'
+import * as monitorsStore from '../monitors.store.js'
 
 const router = Router()
 
@@ -28,11 +34,46 @@ const humanBytes = (n) => {
   return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${u[i]}`
 }
 
-// Load the site (owned by the signed-in user) or respond 404. Returns the raw row.
+// Load the site for the signed-in user — owner OR active team member — or
+// respond 404. The owner path goes through rawForUser first (the seam other
+// callers stub); only when the row is not theirs does the membership lookup
+// run. The 404 is deliberately the same for "no such site" and "not your site
+// and not a member": existence is not disclosed to strangers. Returns the raw
+// row (incl. secret, for the relay) and records the membership role on the
+// request; mutating routes re-check it via loadOwnerSite.
 async function loadSite(req, res) {
-  const raw = await sites.rawForUser(req.params.id, req.user.sub)
-  if (!raw) { res.status(404).json({ message: 'سایت یافت نشد.' }); return null }
+  const owned = await sites.rawForUser(req.params.id, req.user.sub)
+  if (owned) {
+    req.siteRole = 'owner'
+    return owned
+  }
+  const row = await sites.rawWithRole(req.params.id, req.user.sub)
+  if (!row || !row.member_role) {
+    res.status(404).json({ message: 'سایت یافت نشد.' })
+    return null
+  }
+  const { member_role: role, ...raw } = row
+  req.siteRole = role
   return raw
+}
+
+// Membership layer for mutating routes: a non-owner member is read-only
+// (report level), so every state change, settings write, pairing action and
+// job start stays with the owner. The 403 fires BEFORE route-specific 400s
+// (unpaired site, missing confirm, …) on purpose — a member probing for what
+// would work must not get a different error map than the owner. This is
+// membership only: the sensitive-tool classification in authority.js and the
+// site's own authority level are untouched and keep applying on top.
+async function loadOwnerSite(req, res) {
+  const site = await loadSite(req, res)
+  if (!site) return null
+  if (req.siteRole !== 'owner') {
+    res.status(403).json({
+      message: 'این اقدام فقط برای مالک سایت مجاز است؛ اعضای تیم در حال حاضر فقط دسترسی مشاهده دارند.',
+    })
+    return null
+  }
+  return site
 }
 
 function concern(name) {
@@ -104,10 +145,28 @@ function concern(name) {
         }
 
         // Deliberately cleared: these were seeded numbers with no source.
-        // `hostSpace` is not measurable from here at all, and one sample is
-        // not an uptime.
-        data.uptime = null
+        // `hostSpace` is not measurable from here at all.
         data.hostSpace = null
+      }
+
+      // Uptime, from the monitors' real history — the first time this field is
+      // claimable. What used to be here was a seeded 99.98%, then a deliberate
+      // null while nothing measured uptime; both were honest for their moment.
+      // Now the 7/30-day windows are computed from recorded check attempts,
+      // and a site with no monitor history carries `measured:false` with a
+      // null percent — «اندازه‌گیری نشده», never a green zero. The scope label
+      // travels with it: this is HTTP reachability, not a checkout or login
+      // journey. A monitor URL is standalone, so this reads even before the
+      // site's own URL is recorded.
+      if (name === 'overview') {
+        try {
+          data.uptime = await monitorsStore.monitors.siteAvailability(site.id)
+        } catch (e) {
+          // A read failure must say "not measured", but never silently: a quiet
+          // catch here would turn a real bug into a healthy-looking blank.
+          console.error('overview: availability read failed:', e?.message || e)
+          data.uptime = { scope: null, days7: { measured: false, percent: null, incidents: null, checks: 0 }, days30: { measured: false, percent: null, incidents: null, checks: 0 } }
+        }
       }
       // Real scans for the security view (replace the seed when paired + live).
       //
@@ -473,7 +532,7 @@ router.get('/sites/:id/settings', concern('settings'))
  */
 router.patch('/sites/:id/update-policy', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
 
     const { policy, refused } = await sites.setPolicy(site.id, req.user.sub, req.body || {})
@@ -542,7 +601,7 @@ router.post('/sites/:id/rescue/:step', async (req, res, next) => {
     const step = RESCUE_STEPS[req.params.step]
     if (!step) return res.status(404).json({ message: 'مرحلهٔ ناشناخته.' })
 
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -590,7 +649,7 @@ router.post('/sites/:id/rescue/:step', async (req, res, next) => {
  */
 router.patch('/sites/:id/authority', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const level = String(req.body?.authority || '')
     if (!['report', 'confirm', 'auto'].includes(level)) {
@@ -610,7 +669,7 @@ router.patch('/sites/:id/authority', async (req, res, next) => {
  */
 router.post('/sites/:id/conflict', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -645,7 +704,7 @@ router.post('/sites/:id/conflict', async (req, res, next) => {
  */
 router.post('/sites/:id/scan', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -671,7 +730,7 @@ router.post('/sites/:id/scan', async (req, res, next) => {
  */
 router.post('/sites/:id/perf', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -697,7 +756,7 @@ router.post('/sites/:id/perf', async (req, res, next) => {
  */
 router.post('/sites/:id/perf/analyse', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const profile = req.body?.profile
     if (!profile || typeof profile !== 'object') {
@@ -716,7 +775,7 @@ router.post('/sites/:id/perf/analyse', async (req, res, next) => {
  */
 router.post('/sites/:id/updates/run', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -820,7 +879,7 @@ router.get('/sites/:id/backups/preflight', async (req, res, next) => {
  */
 router.post('/sites/:id/backups', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -856,7 +915,7 @@ router.post('/sites/:id/backups', async (req, res, next) => {
  */
 router.post('/sites/:id/backups/:backupId/restore', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -899,7 +958,7 @@ router.post('/sites/:id/backups/:backupId/restore', async (req, res, next) => {
  */
 router.get('/sites/:id/backups/:backupId/token', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const what = req.query.what === 'files' ? 'files' : 'db'
     const token = signToken({
@@ -917,7 +976,16 @@ router.get('/sites/:id/backups/:backupId/token', async (req, res, next) => {
 
 router.get('/sites/:id/backups/:backupId/download', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    // Owner-only, exactly like the token mint above. This route streams the
+    // whole database dump — user_pass hashes, options, content — and the
+    // membership layer only ever promised members the site *views*: the Team
+    // page's viewer label is «فقط مشاهده — گزارش‌ها و وضعیت». A dump is not a
+    // view. The capability-token path keeps working through the same gate:
+    // the token's `sub` is the owner who minted it, so loadOwnerSite resolves
+    // role 'owner' for it; a member's own session resolves to their member
+    // role and gets the same 403 as every other owner-only action, BEFORE the
+    // route's own 400s.
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -981,7 +1049,7 @@ router.get('/sites/:id/backup-policy', async (req, res, next) => {
 
 router.put('/sites/:id/backup-policy', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const patch = req.body || {}
     const updated = await sites.setBackupPolicy(site.id, req.user.sub, patch)
@@ -1004,7 +1072,7 @@ router.put('/sites/:id/backup-policy', async (req, res, next) => {
 
 router.post('/sites/:id/backups/prune', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -1035,7 +1103,7 @@ router.get('/sites/:id/offsite/targets', async (req, res, next) => {
 
 router.post('/sites/:id/offsite/targets', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const target = await offsiteBackups.create(site.id, req.body)
     events.record({
@@ -1051,7 +1119,7 @@ router.post('/sites/:id/offsite/targets', async (req, res, next) => {
 
 router.delete('/sites/:id/offsite/targets/:targetId', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     await offsiteBackups.remove(site.id, req.params.targetId)
     res.json({ ok: true })
@@ -1074,7 +1142,7 @@ router.get('/sites/:id/offsite/jobs', async (req, res, next) => {
 
 router.post('/sites/:id/offsite/sync', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: 'سایت متصل نیست.' })
@@ -1138,7 +1206,7 @@ router.get('/sites/:id/jobs/:jobId?', async (req, res, next) => {
  */
 router.post('/sites/:id/incidents/:eventId/dismiss', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const ok = await events.resolveOne(site.id, req.params.eventId)
     if (!ok) return res.status(404).json({ message: 'رخداد باز با این شناسه پیدا نشد.' })
@@ -1161,7 +1229,7 @@ router.post('/sites/:id/incidents/:eventId/dismiss', async (req, res, next) => {
  */
 router.patch('/sites/:id/hosting', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const updated = await sites.setHosting(site.id, req.user.sub, req.body || {})
 
@@ -1197,9 +1265,12 @@ router.get('/sites/:id/pairing', async (req, res, next) => {
 })
 
 // Speed test: the server fetches the site and measures TTFB/total/size.
+// POST, and owner-only like every other non-GET site route: each run makes
+// this server fire repeated requests at the customer's site, which is not
+// "reading" from the site's point of view.
 router.post('/sites/:id/speedtest', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.url) return res.status(400).json({ message: 'سایت آدرسی ندارد.' })
     const samples = Math.min(5, Math.max(1, Number(req.body?.samples) || 3))
@@ -1210,7 +1281,7 @@ router.post('/sites/:id/speedtest', async (req, res, next) => {
 // Live connection check via the signed /connector/ping.
 router.post('/sites/:id/ping', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.url || !site.secret) return res.status(400).json({ message: 'سایت هنوز برای اتصال آماده نیست.' })
     try {
@@ -1246,7 +1317,7 @@ router.get('/sites/:id/proposals', async (req, res, next) => {
 /** Decline a proposal. It keeps the row: who said no is worth knowing too. */
 router.post('/sites/:id/proposals/:proposalId/reject', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const rejected = await proposals.resolve(site.id, req.params.proposalId, 'rejected', {
       by: req.user?.sub,
@@ -1260,7 +1331,7 @@ router.post('/sites/:id/proposals/:proposalId/reject', async (req, res, next) =>
 
 router.post('/sites/:id/actions', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const { action, tool, args = {}, approved, proposalId } = req.body || {}
     const op = tool || action
@@ -1333,7 +1404,7 @@ router.post('/sites/:id/actions', async (req, res, next) => {
 
 router.post('/sites/:id/assistant', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const { message, maxToolSteps } = req.body || {}
     res.json(await assistant.answer(site, message, { maxToolSteps }))
@@ -1353,7 +1424,7 @@ router.get('/sites/:id/conversations', async (req, res, next) => {
 
 router.post('/sites/:id/conversations', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const { title } = req.body || {}
     const created = await conversations.create(site.id, req.user?.sub, title)
@@ -1373,7 +1444,7 @@ router.get('/sites/:id/conversations/:convId', async (req, res, next) => {
 
 router.patch('/sites/:id/conversations/:convId', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const { title, status } = req.body || {}
     const updated = await conversations.update(site.id, req.params.convId, { title, status })
@@ -1384,7 +1455,7 @@ router.patch('/sites/:id/conversations/:convId', async (req, res, next) => {
 
 router.delete('/sites/:id/conversations/:convId', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const ok = await conversations.deleteConv(site.id, req.params.convId)
     if (!ok) return res.status(404).json({ message: 'گفتگو یافت نشد.' })
@@ -1394,7 +1465,7 @@ router.delete('/sites/:id/conversations/:convId', async (req, res, next) => {
 
 router.post('/sites/:id/conversations/:convId/messages', async (req, res, next) => {
   try {
-    const site = await loadSite(req, res)
+    const site = await loadOwnerSite(req, res)
     if (!site) return
     const { message, maxToolSteps, waitForReply = true } = req.body || {}
     const result = await conversations.postAndProcess(site, req.params.convId, message, {

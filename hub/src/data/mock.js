@@ -74,6 +74,7 @@ export const billing = () => delay({
     plan: { id: 'pro', name: 'حرفه‌ای', price: 490000, popular: true, siteLimit: 5, features: plans()[0].features },
     status: 'trialing',
     isTrialing: true,
+    trialState: 'trialing',
     trialEndsAt: Date.now() + 12 * 24 * 60 * 60 * 1000,
     daysLeftInTrial: 12,
     currentPeriodStart: Date.now() - 2 * 24 * 60 * 60 * 1000,
@@ -91,6 +92,7 @@ export const billing = () => delay({
 export const trial = () => delay({
   status: 'trialing',
   isTrialing: true,
+  trialState: 'trialing',
   trialEndsAt: Date.now() + 12 * 24 * 60 * 60 * 1000,
   daysLeftInTrial: 12,
   cancelAtPeriodEnd: false,

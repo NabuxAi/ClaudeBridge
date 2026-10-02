@@ -18,6 +18,10 @@ import { SCHEMA as NOTIFICATIONS_SCHEMA } from './notifications.schema.js'
 import { SCHEMA as BILLING_SCHEMA } from './billing.schema.js'
 import { SCHEMA as OFFSITE_BACKUPS_SCHEMA } from './offsite-backups.schema.js'
 import { SCHEMA as CONVERSATIONS_SCHEMA } from './conversations.schema.js'
+import { SCHEMA as SESSIONS_SCHEMA } from './sessions.schema.js'
+import { SCHEMA as TWOFACTOR_SCHEMA } from './twofactor.schema.js'
+import { SCHEMA as MONITORS_SCHEMA } from './monitors.schema.js'
+import { SCHEMA as PUSH_SCHEMA } from './push.schema.js'
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 })
 
@@ -89,7 +93,7 @@ const SCHEMA = `
   -- Backup storage and retention policy per site.
   ALTER TABLE sites ADD COLUMN IF NOT EXISTS backup_policy JSONB
     NOT NULL DEFAULT '{"destination":"local","maxDaily":5,"retentionDays":30,"maxStorageMb":2048,"autoPruneOnFull":true}'::jsonb;
-` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA + CONVERSATIONS_SCHEMA
+` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA + CONVERSATIONS_SCHEMA + SESSIONS_SCHEMA + TWOFACTOR_SCHEMA + MONITORS_SCHEMA + PUSH_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */
 async function waitForDb(retries = 30) {

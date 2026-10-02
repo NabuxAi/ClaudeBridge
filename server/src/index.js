@@ -17,6 +17,8 @@ import cookbookRouter from './routes/cookbook.js'
 import sitesRouter from './routes/sites.js'
 import connectorRouter from './routes/connector.js'
 import offsiteBackupsRouter from './routes/offsite-backups.js'
+import monitorsRouter from './routes/monitors.js'
+import pushRouter from './routes/push.js'
 import adminRouter from './routes/admin.js'
 import billingRouter from './routes/billing.js'
 import notificationsRouter from './routes/notifications.js'
@@ -25,6 +27,7 @@ import { plans } from './seed.js'
 import { runDailyDigest, scheduleDailyDigest } from './digest.js'
 import { initIntel, scheduleIntel, refresh as refreshIntel } from './intel/index.js'
 import { runSweep, scheduleSweep } from './sweep.js'
+import { scheduleMonitors } from './monitors.runner.js'
 
 // Before anything binds a port: a server running on the development signing
 // secret will happily accept a session token anyone reading this repository
@@ -102,6 +105,12 @@ export function createApp() {
   app.use('/v1', requireAuth, accountRouter)
   app.use('/v1', requireAuth, sitesRouter)
   app.use('/v1', requireAuth, offsiteBackupsRouter)
+  // Uptime monitors — own router because sites.js was already large; same
+  // membership layer inside (members read, only the owner writes).
+  app.use('/v1', requireAuth, monitorsRouter)
+  // Browser push enrollment — account-scoped, session-only (subscriptions are
+  // the signed-in user's browsers, not a site's). requireAuth per route inside.
+  app.use('/v1', requireAuth, pushRouter)
   // Team and notification routers. team.js has no per-route requireAuth of its
   // own, so it is only safe behind the mount-level gate; notifications.js also
   // applies requireAuth per route.
@@ -150,7 +159,15 @@ export function createApp() {
 
   app.use((err, _req, res, _next) => {
     if (!err.status || err.status >= 500) console.error(err)
-    res.status(err.status || 500).json({ message: err.message || 'server error' })
+    // `code`/`details` ride along only when an error carries them (e.g. the
+    // billing entitlement gate's 'trial_expired' / 'site_limit_reached' plus
+    // the subscription summary behind the refusal). Errors without them —
+    // every existing httpError — render byte-for-byte as before.
+    res.status(err.status || 500).json({
+      message: err.message || 'server error',
+      ...(err.code ? { code: err.code } : {}),
+      ...(err.details != null ? { details: err.details } : {}),
+    })
   })
 
   return app
@@ -168,6 +185,7 @@ export function start() {
         scheduleDailyDigest()
         scheduleIntel()
         scheduleSweep()
+        scheduleMonitors()
       })
     })
     .catch((e) => {

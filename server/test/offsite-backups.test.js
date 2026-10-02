@@ -25,10 +25,10 @@ if (!dsn) {
   await init()
 
   const { createApp } = await import('../src/index.js')
-  const { requireAuth } = await import('../src/auth.js')
+  const { requireAuth, signToken, verifyToken } = await import('../src/auth.js')
   const { default: offsiteRouter } = await import('../src/routes/offsite-backups.js')
   const { users, sites } = await import('../src/store.js')
-  const { signToken } = await import('../src/auth.js')
+  const { sessions: sessionsStore } = await import('../src/sessions.store.js')
 
   const app = createApp()
   app.use('/v1', requireAuth, offsiteRouter)
@@ -111,6 +111,9 @@ if (!dsn) {
     const email = `offsite-${crypto.randomUUID()}@test.local`
     const user = await users.create({ email, name: 'Offsite Test', password: 'a-strong-password-123' })
     const token = signToken({ sub: user.id, name: user.name })
+    // requireAuth resolves a token's jti to a live sessions row, so the minted
+    // token needs its session written — exactly what login would have done.
+    await sessionsStore.create({ userId: user.id, jti: verifyToken(token).jti, device: 'test', ip: '127.0.0.1' })
     return { user, authorization: `Bearer ${token}`, 'content-type': 'application/json' }
   }
 
