@@ -1,0 +1,40 @@
+{
+  "limit": {
+    "invite": "Too many invitations from this address. Try again in an hour."
+  },
+  "siteAndTokenRequired": "Site ID and invitation token are required.",
+  "ownerOnly": "Only the site owner can manage members.",
+  "invalidEmail": "The email address is not valid.",
+  "invalidInviteRole": "An invitation's role must be admin or view-only.",
+  "alreadyMember": "This user is already a member of the site.",
+  "activeInviteExists": "There is already an active invitation for this email on this site.",
+  "invalidInviteLink": "This invitation link is invalid.",
+  "inviteLinkGone": "This invitation link has expired, been used, or been revoked.",
+  "inviteGone": "This invitation has expired, been used, or been revoked.",
+  "signInFirst": "Please sign in first.",
+  "inviteOtherEmail": "This invitation belongs to a different email address.",
+  "inviteOtherEmailRegister": "This invitation belongs to a different email address; register with the invited email.",
+  "youAreMember": "You are already a member of this site.",
+  "inviteSpent": "This invitation has already been used.",
+  "inviteNotFound": "No invitation with this ID was found.",
+  "invalidRole": "The role must be admin or view-only.",
+  "memberNotFound": "No member with this ID was found.",
+  "role": {
+    "owner": "Owner",
+    "admin": "Admin",
+    "viewer": "View only"
+  },
+  "effective": {
+    "full": "Full management",
+    "readOnly": "Read only"
+  },
+  "inviteMail": {
+    "subject": "Invitation to help manage {site}",
+    "intro": "You have been invited to help manage the site “{site}” with the role “{role}”.",
+    "registerText": "If you don't have an account, register with this link to join the site:",
+    "acceptText": "If you already have an account, sign in and accept the invitation with this link:",
+    "registerHtml": "If you don't have an account, <a href=\"{link}\">register with this same email</a> to join the site.",
+    "acceptHtml": "If you already have an account, sign in and <a href=\"{link}\">accept the invitation from the team page</a>.",
+    "validity": "These links are valid for {days} days and can be used only once."
+  }
+}

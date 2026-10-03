@@ -19,6 +19,11 @@
 // ============================================================
 import { config } from './config.js'
 import { pushSubscriptions } from './push.store.js'
+import { t, normalizeLocale, DEFAULT_LOCALE } from './i18n.js'
+
+/** Right-to-left scripts among the supported languages. */
+const RTL = new Set(['fa', 'ar'])
+export const dirFor = (locale) => (RTL.has(normalizeLocale(locale)) ? 'rtl' : 'ltr')
 
 // Test seam: injects a fake web-push module. Setting (or clearing) it also
 // drops the lazily imported real module, like the mailer's factory seam.
@@ -49,23 +54,30 @@ export function isPushConfigured() {
 /**
  * Send one payload to explicit subscription rows.
  *
+ * `payload.lang` is the recipient's language (their users.lang): it picks the
+ * default title and the wording of `detail`/`note`, and travels in the push
+ * body with `dir` so the service worker renders the notification the right
+ * way round (hub/public/sw.js reads data.lang / data.dir).
+ *
  * Returns what each provider said, plus which subscriptions were removed for
  * being gone (404/410) — a push service that has forgotten an endpoint will
  * never deliver to it again, so keeping the row would make every future alert
  * pay for a guaranteed failure.
  */
 export async function sendToSubscriptions(subs, payload = {}) {
+  const lang = normalizeLocale(payload.lang) || DEFAULT_LOCALE
+  const tr = (key) => t(lang, key)
   if (!isPushConfigured()) {
     return {
       ok: false, reason: 'not_configured', total: 0, accepted: 0, failed: 0, removed: 0,
-      detail: 'کلیدهای VAPID روی این سرور تنظیم نشده است (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY).',
+      detail: tr('pushSender.notConfigured'),
     }
   }
   const rows = Array.isArray(subs) ? subs : []
   if (!rows.length) {
     return {
       ok: false, reason: 'no_subscription', total: 0, accepted: 0, failed: 0, removed: 0,
-      detail: 'هیچ اشتراک مرورگری برای این کاربر ثبت نشده است.',
+      detail: tr('pushSender.noSubscription'),
     }
   }
 
@@ -73,8 +85,10 @@ export async function sendToSubscriptions(subs, payload = {}) {
   // Identifies the server to push services on every send; cheap and stateless.
   webpush.setVapidDetails(config.push.subject, config.push.publicKey, config.push.privateKey)
   const body = JSON.stringify({
-    title: payload.title || 'هشدار امنیتی',
+    title: payload.title || tr('pushSender.defaultTitle'),
     body: payload.body || '',
+    lang,
+    dir: dirFor(lang),
     url: payload.url || '/',
     ...(payload.tag ? { tag: payload.tag } : {}),
     ...(payload.severity ? { severity: payload.severity } : {}),
@@ -111,8 +125,8 @@ export async function sendToSubscriptions(subs, payload = {}) {
     failed,
     removed,
     note: accepted > 0
-      ? 'پیام توسط سرویس اعلان پذیرفته شد. نمایش و خوانده‌شدن آن تأیید نشده است.'
-      : 'هیچ‌کدام از اشتراک‌های مرورگری پیام را نپذیرفتند.',
+      ? tr('pushSender.accepted')
+      : tr('pushSender.noneAccepted'),
   }
 }
 

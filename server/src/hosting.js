@@ -21,23 +21,27 @@
 // "Other" is a first-class answer. A list of providers is always out of date,
 // and a required dropdown with no correct option is how people pick something
 // wrong — which is worse than an honest blank, because then we act on it.
+//
+// Language: labels below are `hosting.*` translation keys; hostingOptions()
+// and describe() render them for the viewer's locale.
 // ============================================================
+import { t, DEFAULT_LOCALE } from './i18n.js'
 
 export const REGIONS = [
   {
     id: 'ir',
-    label: 'ایران',
-    note: 'درخواست‌ها از سرور داخلی ما فرستاده می‌شود و آدرس بازگشتی هم داخلی است.',
+    label: 'hosting.regions.ir.label',
+    note: 'hosting.regions.ir.note',
   },
   {
     id: 'intl',
-    label: 'خارج از ایران',
-    note: 'درخواست‌ها از سرور بین‌المللی ما فرستاده می‌شود.',
+    label: 'hosting.regions.intl.label',
+    note: 'hosting.regions.intl.note',
   },
   {
     id: 'unknown',
-    label: 'نمی‌دانم',
-    note: 'با تنظیمات پیش‌فرض کار می‌کنیم. اگر بررسی‌ها کند بود یا به سایت نرسید، این را مشخص کنید.',
+    label: 'hosting.regions.unknown.label',
+    note: 'hosting.regions.unknown.note',
   },
 ]
 
@@ -51,14 +55,14 @@ export const REGIONS = [
  */
 export const PROVIDERS = [
   // Iranian
-  { id: 'iranserver', label: 'ایران سرور', region: 'ir', traits: [] },
-  { id: 'parspack', label: 'پارس‌پک', region: 'ir', traits: [] },
-  { id: 'mizban', label: 'میزبان فا', region: 'ir', traits: [] },
-  { id: 'hostiran', label: 'هاست ایران', region: 'ir', traits: [] },
-  { id: 'novin', label: 'نوین‌هاست', region: 'ir', traits: [] },
-  { id: 'iranhost', label: 'ایران‌هاست', region: 'ir', traits: [] },
-  { id: 'abrarvan', label: 'ابر آروان', region: 'ir', traits: ['cdn'] },
-  { id: 'derak', label: 'درک‌کلود', region: 'ir', traits: ['cdn'] },
+  { id: 'iranserver', label: 'hosting.providers.iranserver', region: 'ir', traits: [] },
+  { id: 'parspack', label: 'hosting.providers.parspack', region: 'ir', traits: [] },
+  { id: 'mizban', label: 'hosting.providers.mizban', region: 'ir', traits: [] },
+  { id: 'hostiran', label: 'hosting.providers.hostiran', region: 'ir', traits: [] },
+  { id: 'novin', label: 'hosting.providers.novin', region: 'ir', traits: [] },
+  { id: 'iranhost', label: 'hosting.providers.iranhost', region: 'ir', traits: [] },
+  { id: 'abrarvan', label: 'hosting.providers.abrarvan', region: 'ir', traits: ['cdn'] },
+  { id: 'derak', label: 'hosting.providers.derak', region: 'ir', traits: ['cdn'] },
   // International
   { id: 'hetzner', label: 'Hetzner', region: 'intl', traits: [] },
   { id: 'digitalocean', label: 'DigitalOcean', region: 'intl', traits: [] },
@@ -70,32 +74,32 @@ export const PROVIDERS = [
   { id: 'godaddy', label: 'GoDaddy', region: 'intl', traits: ['no-exec', 'low-memory'] },
   { id: 'wpengine', label: 'WP Engine', region: 'intl', traits: ['page-cache', 'no-exec', 'readonly-core'] },
   { id: 'kinsta', label: 'Kinsta', region: 'intl', traits: ['page-cache', 'no-exec'] },
-  { id: 'cloudflare', label: 'پشت Cloudflare', region: 'intl', traits: ['cdn'] },
+  { id: 'cloudflare', label: 'hosting.providers.cloudflare', region: 'intl', traits: ['cdn'] },
   // Always available. Never a dead end.
-  { id: 'other', label: 'موردی غیر از این‌ها', region: null, traits: [] },
+  { id: 'other', label: 'hosting.providers.other', region: null, traits: [] },
 ]
 
 /** What each trait means for what we can promise. */
 export const TRAITS = {
   'no-exec': {
-    label: 'exec() بسته است',
-    effect: 'بکاپ با mysqldump کار نمی‌کند؛ از مسیر PHP خالص استفاده می‌کنیم که کندتر است ولی همه‌جا کار می‌کند.',
+    label: 'hosting.traits.noExec.label',
+    effect: 'hosting.traits.noExec.effect',
   },
   'low-memory': {
-    label: 'حافظهٔ PHP کم',
-    effect: 'بکاپ فایل‌ها و اسکن کامل ممکن است نیمه‌کاره بماند. کارها را ریزتر تکه می‌کنیم.',
+    label: 'hosting.traits.lowMemory.label',
+    effect: 'hosting.traits.lowMemory.effect',
   },
   'page-cache': {
-    label: 'کش صفحه در سطح سرور',
-    effect: 'بررسی سرعت ممکن است به PHP نرسد و کوئری‌ای برای شمردن نباشد — که خودش خبر خوبی است، ولی گزارش خالی می‌شود.',
+    label: 'hosting.traits.pageCache.label',
+    effect: 'hosting.traits.pageCache.effect',
   },
   'readonly-core': {
-    label: 'فایل‌های هسته فقط‌خواندنی',
-    effect: 'به‌روزرسانی هسته از پنل ما انجام نمی‌شود؛ خود هاست آن را مدیریت می‌کند.',
+    label: 'hosting.traits.readonlyCore.label',
+    effect: 'hosting.traits.readonlyCore.effect',
   },
   cdn: {
-    label: 'CDN جلوی سایت',
-    effect: 'بررسی سلامت و تداخل ممکن است پاسخ کش‌شده بگیرد. برای همین به آدرس‌ها پارامتر یکتا اضافه می‌کنیم.',
+    label: 'hosting.traits.cdn.label',
+    effect: 'hosting.traits.cdn.effect',
   },
 }
 
@@ -145,23 +149,42 @@ function normaliseUrl(v) {
   }
 }
 
-/** Everything the panel needs to explain a stored profile. */
-export function describe(profile) {
+/** Provider labels that are keys; brand names written in Latin stay literal. */
+const label = (locale, v) => (typeof v === 'string' && v.startsWith('hosting.') ? t(locale, v) : v)
+
+const renderTrait = (locale, id) => ({
+  id, label: t(locale, TRAITS[id].label), effect: t(locale, TRAITS[id].effect),
+})
+
+/** The form's choices, rendered for `locale` (GET /hosting/options). */
+export function hostingOptions(locale = DEFAULT_LOCALE) {
+  return {
+    regions: REGIONS.map((r) => ({ ...r, label: t(locale, r.label), note: t(locale, r.note) })),
+    providers: PROVIDERS.map((p) => ({ ...p, label: label(locale, p.label) })),
+    traits: Object.fromEntries(Object.keys(TRAITS).map((id) => {
+      const { label: l, effect } = renderTrait(locale, id)
+      return [id, { label: l, effect }]
+    })),
+  }
+}
+
+/** Everything the panel needs to explain a stored profile, in `locale`. */
+export function describe(profile, locale = DEFAULT_LOCALE) {
   const p = normalise(profile || {})
   const known = byId.get(p.provider)
-  const traits = (known?.traits || []).map((t) => ({ id: t, ...TRAITS[t] }))
+  const traits = (known?.traits || []).map((id) => renderTrait(locale, id))
 
   return {
     ...p,
-    regionLabel: REGIONS.find((r) => r.id === p.region)?.label || null,
-    providerLabel: p.provider === 'other' ? (p.providerName || 'نامشخص') : known?.label || null,
+    regionLabel: label(locale, REGIONS.find((r) => r.id === p.region)?.label) || null,
+    providerLabel: p.provider === 'other' ? (p.providerName || t(locale, 'hosting.unnamed')) : label(locale, known?.label) || null,
     traits,
     // Said explicitly, because "no known limitations" and "we have no notes on
     // this host" look identical in a UI that just renders an empty list.
     traitsNote: known && known.id !== 'other' && traits.length === 0
-      ? 'برای این هاست محدودیت شناخته‌شده‌ای ثبت نکرده‌ایم — یعنی چیزی ندیده‌ایم، نه اینکه قطعاً محدودیتی نیست.'
+      ? t(locale, 'hosting.notes.noKnownLimits')
       : p.provider === 'other'
-        ? 'این هاست در فهرست ما نیست، پس رفتار خاصی برایش تنظیم نشده.'
+        ? t(locale, 'hosting.notes.notListed')
         : null,
   }
 }

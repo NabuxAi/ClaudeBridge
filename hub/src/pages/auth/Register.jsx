@@ -4,7 +4,8 @@ import { Button, Input } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
 import Icon from '../../lib/icons.jsx'
 import { useAuth } from '../../lib/auth.jsx'
-import { PasswordField } from './shared.jsx'
+import { AuthTitle, PasswordField } from './shared.jsx'
+import { t } from '../../lib/i18n.js'
 
 export default function Register() {
   const { register } = useAuth()
@@ -37,12 +38,12 @@ export default function Register() {
       if (res.invite && res.invite.applied === false) {
         // حساب ساخته شده و کاربر وارد شده، اما دعوت اعمال نشد. صفحه را ترک
         // نمی‌کنیم تا دلیلش دیده شود؛ ادامهٔ مسیر با دکمهٔ پایین انجام می‌شود.
-        setInviteError(res.invite.error || 'دعوت‌نامه اعمال نشد.')
+        setInviteError(res.invite.error || t('auth.register.inviteNotApplied'))
         return
       }
       nav('/onboarding')
     } catch (e2) {
-      setErr(e2?.message || 'ساخت حساب ناموفق بود. دوباره تلاش کنید.')
+      setErr(e2?.message || t('auth.register.failed'))
       // Single-use on the server, so a failed submit burns it.
       setCaptchaAnswer('')
       setCaptchaKey((k) => k + 1)
@@ -54,25 +55,25 @@ export default function Register() {
   return (
     <>
       <div className="dwp-auth-head">
-        <span className="gd-sec-head__eyebrow"><Icon name="user-plus" size={13} /> ثبت‌نام</span>
-        <h2 className="dwp-auth-title">ساخت حساب <span className="gd-gradient-text">رایگان</span></h2>
-        <p className="dwp-auth-sub">دسترسی آزمایشی — بدون نیاز به کارت بانکی.</p>
+        <span className="gd-sec-head__eyebrow"><Icon name="user-plus" size={13} /> {t('auth.register.eyebrow')}</span>
+        <h2 className="dwp-auth-title"><AuthTitle k="auth.register.title" /></h2>
+        <p className="dwp-auth-sub">{t('auth.register.sub')}</p>
       </div>
       {inviteToken && (
         <div className="gd-field__msg" style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 14 }}>
           <Icon name="user-plus" size={13} />
-          <span>شما با یک دعوت‌نامهٔ تیمی اینجایید. با همین ایمیلِ دعوت‌شده ثبت‌نام کنید تا پس از ساخت حساب، عضو سایت دعوت‌کننده شوید.</span>
+          <span>{t('auth.register.inviteNotice')}</span>
         </div>
       )}
       <form onSubmit={submit} className="dwp-auth-form">
-        <Input label="نام و نام خانوادگی" placeholder="مثلاً مریم رضایی" leftIcon="user"
+        <Input label={t('auth.register.nameLabel')} placeholder={t('auth.register.namePlaceholder')} leftIcon="user"
           value={name} onChange={(e) => setName(e.target.value)} required autoFocus autoComplete="name" />
-        <Input label="ایمیل" type="email" placeholder="you@example.com" leftIcon="mail"
+        <Input label={t('auth.shared.emailLabel')} type="email" placeholder={t('auth.shared.emailPlaceholder')} leftIcon="mail"
           value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" inputMode="email" />
         <PasswordField
           id="register-password"
-          label="رمز عبور"
-          hint="حداقل ۸ نویسه"
+          label={t('auth.shared.passwordLabel')}
+          hint={t('auth.register.passwordHint')}
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -90,25 +91,25 @@ export default function Register() {
           {/* No "14-day free trial" here: no trial clock or entitlement exists
               server-side (billing is NOT_BUILT). What this button really does
               is create a pilot account — the label must say exactly that. */}
-          ساخت حساب آزمایشی
+          {t('auth.register.submit')}
         </Button>
       </form>
       {inviteError && (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div className="gd-field__msg gd-field__msg--error">
             <Icon name="alert-circle" size={13} />
-            عضویت در سایت انجام نشد: {inviteError}
+            {t('auth.register.inviteFailed', { error: inviteError })}
           </div>
           <Button variant="secondary" fullWidth leftIcon="arrow-left" onClick={() => nav('/onboarding')}>
-            حساب ساخته شد — ورود به پنل
+            {t('auth.register.continue')}
           </Button>
         </div>
       )}
       {/* "Sign up with Google" was here with no handler and no OAuth client. */}
       <p className="dwp-auth-foot">
-        قبلاً حساب دارید؟ <Link to="/login" className="dwp-auth-link dwp-auth-link--strong">وارد شوید</Link>
+        {t('auth.register.haveAccount')} <Link to="/login" className="dwp-auth-link dwp-auth-link--strong">{t('auth.register.loginLink')}</Link>
         {inviteToken && (
-          <> — پس از ورود، لینک «پذیرش دعوت» داخل ایمیل را باز کنید.</>
+          <>{t('auth.register.inviteAfterLogin')}</>
         )}
       </p>
     </>

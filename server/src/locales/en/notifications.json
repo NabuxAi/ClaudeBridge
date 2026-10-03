@@ -1,0 +1,24 @@
+{
+  "channel": {
+    "email": {
+      "label": "Email",
+      "desc": "Alerts and the daily report to your email"
+    },
+    "sms": {
+      "label": "SMS",
+      "desc": "Important alerts to your mobile number"
+    },
+    "push": {
+      "label": "Browser notification",
+      "desc": "Instant notifications on devices that have granted permission"
+    }
+  },
+  "invalidChannel": "Invalid notification channel.",
+  "invalidContactType": "Invalid contact channel type.",
+  "invalidContactValue": "Invalid contact value.",
+  "contactNotFound": "Contact not found.",
+  "typeValueRequired": "Contact type and value are required.",
+  "limit": {
+    "contact": "Too many contacts added from this address. Try again in an hour."
+  }
+}

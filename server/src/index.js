@@ -1,11 +1,12 @@
 // ============================================================
-// DigiWP Ai Support — the واسط server.
+// DigiWP Ai Support — the relay server.
 // Sits between the hub UI and the WP Claude Bridge connectors.
 // The hub only ever talks to THIS server; this server is the only
 // thing that (HMAC-signed) talks to the managed sites' connectors.
 // ============================================================
 import { pathToFileURL } from 'node:url'
 
+import { i18nMiddleware, errorMessage } from './i18n.js'
 import express from 'express'
 import cors from 'cors'
 import { config } from './config.js'
@@ -21,6 +22,7 @@ import monitorsRouter from './routes/monitors.js'
 import pushRouter from './routes/push.js'
 import adminRouter from './routes/admin.js'
 import billingRouter from './routes/billing.js'
+import { billing } from './billing.store.js'
 import notificationsRouter from './routes/notifications.js'
 import teamRouter from './routes/team.js'
 import { plans } from './seed.js'
@@ -86,6 +88,9 @@ export function createApp() {
     verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8') },
   }))
 
+  // Every request learns its language before any router can answer.
+  app.use(i18nMiddleware)
+
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'digiwp-server', live: config.live }))
 
   // Public: hub auth + the plugin's signed register receiver.
@@ -96,7 +101,7 @@ export function createApp() {
   // trying to fix it.
   app.use('/v1', cookbookRouter)
   // Public: the price list is shown to anonymous visitors on /pricing.
-  app.get('/v1/billing/plans', (_req, res) => res.json(plans))
+  app.get('/v1/billing/plans', (req, res) => res.json(billing.localizePlans(req.locale, plans)))
   // Protected: everything the hub reads after login.
   // The real billing router must be mounted before the account router:
   // account.js keeps an honest NOT_BUILT stub for GET /billing, and Express
@@ -157,14 +162,14 @@ export function createApp() {
     } catch (e) { next(e) }
   })
 
-  app.use((err, _req, res, _next) => {
+  app.use((err, req, res, _next) => {
     if (!err.status || err.status >= 500) console.error(err)
     // `code`/`details` ride along only when an error carries them (e.g. the
     // billing entitlement gate's 'trial_expired' / 'site_limit_reached' plus
     // the subscription summary behind the refusal). Errors without them —
     // every existing httpError — render byte-for-byte as before.
     res.status(err.status || 500).json({
-      message: err.message || 'server error',
+      message: errorMessage(req.locale, err) || req.t('common.serverError'),
       ...(err.code ? { code: err.code } : {}),
       ...(err.details != null ? { details: err.details } : {}),
     })

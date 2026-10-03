@@ -1,0 +1,54 @@
+{
+  "title": "WordPress AI assistant",
+  "subtitle": "An always-on technical assistant, grounded in live logs and layered analysis",
+  "suggestions": {
+    "backup": "When was the last backup, and is it intact?",
+    "updates": "Which updates are queued?",
+    "alerts": "What alerts are open right now?",
+    "security": "How do security and the core files look?"
+  },
+  "notify": {
+    "title": "Your AI reply is ready",
+    "body": "The assistant has posted a reply about your site.",
+    "titleFor": "Assistant reply: {title}"
+  },
+  "defaultTitle": {
+    "main": "Main conversation",
+    "new": "New conversation"
+  },
+  "errors": {
+    "createFirst": "Couldn't create the first conversation.",
+    "loadList": "Couldn't load conversations.",
+    "loadMessages": "Couldn't load messages.",
+    "create": "Couldn't create a new conversation.",
+    "delete": "Couldn't delete the conversation.",
+    "saveTitle": "Couldn't save the title.",
+    "send": "Couldn't send the request: {reason}",
+    "connection": "Couldn't reach the server",
+    "notRun": "Not run."
+  },
+  "confirmDelete": "Delete this conversation?",
+  "noOpenConversation": "No conversation is open — create one or try loading again.",
+  "outcomeOk": "Completed successfully.",
+  "newConversation": "New conversation",
+  "loadingList": "Loading conversations…",
+  "emptyList": "No conversations yet.",
+  "untitled": "Untitled conversation",
+  "processing": "Processing",
+  "editTitle": "Edit title",
+  "headerFallback": "Chat with the assistant",
+  "analyzing": "Analyzing in the background…",
+  "intro": {
+    "withSite": "I'm the AI assistant connected to the multi-agent engine for <site>{site}</site>. Ask me anything about security, speed, updates, or plugin conflicts, and I'll answer by checking the site's live logs directly.",
+    "noSite": "I'm the AI assistant connected to the multi-agent engine for your site. Ask me anything about security, speed, updates, or plugin conflicts, and I'll answer by checking the site's live logs directly."
+  },
+  "loadingMessages": "Loading messages…",
+  "ran": "Actions taken: {list}",
+  "listSep": ", ",
+  "sensitive": "Sensitive",
+  "running": "Running…",
+  "approve": "Approve and run",
+  "thinking": "The assistant is reviewing the site's logs and working in the background…",
+  "inputPlaceholder": "Type your question (e.g. how does security look?)…",
+  "send": "Send message"
+}

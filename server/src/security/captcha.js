@@ -15,6 +15,7 @@
 // ============================================================
 import crypto from 'node:crypto'
 import { config } from '../config.js'
+import { formatNumber, t } from '../i18n.js'
 
 const TTL_MS = 10 * 60 * 1000
 
@@ -28,8 +29,9 @@ function sweep() {
   for (const [id, exp] of spent) if (exp < now) spent.delete(id)
 }
 
+// Persian and Arabic-Indic digits are accepted in answers (see verify()).
 const FA = '۰۱۲۳۴۵۶۷۸۹'
-const faNum = (n) => String(n).replace(/\d/g, (d) => FA[d])
+const AR = '٠١٢٣٤٥٦٧٨٩'
 
 /**
  * Build a challenge.
@@ -38,11 +40,13 @@ const faNum = (n) => String(n).replace(/\d/g, (d) => FA[d])
  * a parse, not to test anyone's arithmetic; a question a tired person gets
  * wrong at 2am is a question that locks out a real customer.
  */
-export function issue() {
+export function issue(locale) {
+  // Digits in the asker's own numerals: Persian for fa, Latin for en, …
+  const num = (n) => formatNumber(locale, n)
   const ops = [
-    () => { const a = rand(2, 9), b = rand(2, 9); return { q: `${faNum(a)} + ${faNum(b)}`, a: a + b } },
-    () => { const a = rand(5, 15), b = rand(1, 4); return { q: `${faNum(a)} − ${faNum(b)}`, a: a - b } },
-    () => { const a = rand(2, 6), b = rand(2, 6); return { q: `${faNum(a)} × ${faNum(b)}`, a: a * b } },
+    () => { const a = rand(2, 9), b = rand(2, 9); return { q: `${num(a)} + ${num(b)}`, a: a + b } },
+    () => { const a = rand(5, 15), b = rand(1, 4); return { q: `${num(a)} − ${num(b)}`, a: a - b } },
+    () => { const a = rand(2, 6), b = rand(2, 6); return { q: `${num(a)} × ${num(b)}`, a: a * b } },
   ]
   const { q, a } = ops[rand(0, ops.length - 1)]()
   const exp = Date.now() + TTL_MS
@@ -89,8 +93,10 @@ export function verify(id, answer) {
   sweep()
   if (spent.has(id)) return { ok: false, reason: 'reused' }
 
-  // Persian digits go in, so they have to be accepted coming back.
-  const given = String(answer ?? '').trim().replace(/[۰-۹]/g, (d) => String(FA.indexOf(d)))
+  // Localised digits go out, so they have to be accepted coming back.
+  const given = String(answer ?? '').trim()
+    .replace(/[۰-۹]/g, (d) => String(FA.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String(AR.indexOf(d)))
   if (!/^-?\d+$/.test(given) || Number(given) !== Number(ansStr)) {
     return { ok: false, reason: 'wrong' }
   }
@@ -99,15 +105,18 @@ export function verify(id, answer) {
   return { ok: true }
 }
 
-/** Human-readable Persian for each failure, so callers do not invent their own. */
+/** Translation key for each failure, so callers do not invent their own. */
 export const MESSAGES = {
-  missing: 'پاسخ سؤال امنیتی را وارد کنید.',
-  malformed: 'سؤال امنیتی نامعتبر است. صفحه را دوباره بارگذاری کنید.',
-  forged: 'سؤال امنیتی نامعتبر است. صفحه را دوباره بارگذاری کنید.',
-  expired: 'مهلت پاسخ به سؤال امنیتی تمام شد. سؤال تازه بگیرید.',
-  reused: 'این سؤال قبلاً استفاده شده. سؤال تازه بگیرید.',
-  wrong: 'پاسخ سؤال امنیتی درست نیست.',
+  missing: 'captcha.missing',
+  malformed: 'captcha.invalid',
+  forged: 'captcha.invalid',
+  expired: 'captcha.expired',
+  reused: 'captcha.reused',
+  wrong: 'captcha.wrong',
 }
+
+/** The failure `reason` as a sentence in `locale`. */
+export const message = (locale, reason) => t(locale, MESSAGES[reason] || MESSAGES.wrong)
 
 function rand(min, max) {
   // crypto rather than Math.random: a predictable challenge is not a challenge.

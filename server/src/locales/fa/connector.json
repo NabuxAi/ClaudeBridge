@@ -1,0 +1,7 @@
+{
+  "events": {
+    "autoUpdateMixed": "به‌روزرسانی خودکار: {done} مورد انجام شد، {failed} مورد ناموفق",
+    "autoUpdateDone": "به‌روزرسانی خودکار: {count} مورد انجام شد",
+    "updateFailed": "به‌روزرسانی ناموفق: {name}"
+  }
+}

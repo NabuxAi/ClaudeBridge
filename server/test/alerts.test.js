@@ -8,6 +8,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { dispatch, compose, isEmergency } from '../src/alerts/index.js'
+import { t } from '../src/i18n.js'
 
 /** A stand-in channel with a scripted outcome. */
 const chan = (id, outcome) => ({
@@ -58,7 +59,8 @@ test('configured channels that all break is a different answer from none configu
   })
   assert.equal(r.allFailed, true)
   assert.equal(r.nothingConfigured, false)
-  assert.match(r.note, /کار نکرد/)
+  assert.match(r.note, /None of the notification channels worked/)
+  assert.equal(r.noteKey, 'alerts.notes.allFailed')
 })
 
 test('a skip in the middle does not stop the walk', async () => {
@@ -94,7 +96,12 @@ test('a channel that throws does not take the dispatch down', async () => {
 test('delivery is never described as the person having been notified', async () => {
   const r = await dispatch({ title: 't', body: 'b' }, {}, { channels: [chan('sms', 'ok')] })
   // An SMS gateway accepting a message is not the same as a phone showing it.
-  assert.match(r.note, /تحویل و خوانده‌شدن آن تأیید نشده/)
+  // Stored English with its key, so any reader renders it in their language
+  // without the caveat being lost.
+  assert.match(r.note, /delivery and reading are not confirmed/)
+  assert.doesNotMatch(r.note, /notified/i)
+  assert.equal(r.noteKey, 'alerts.notes.accepted')
+  assert.match(t('fa', r.noteKey), /تحویل و خوانده‌شدن آن تأیید نشده/)
 })
 
 test('only open, critical, security-relevant events wake anyone', () => {
@@ -130,6 +137,23 @@ test('the message names the site in every medium', () => {
   assert.ok(m.smsBody.length <= 160, `SMS line is ${m.smsBody.length} chars — that is several messages`)
   // The email is the only channel with room for the explanation.
   assert.ok(m.emailBody.length > m.smsBody.length)
+})
+
+test('the owner reads the alert in their own language, and push knows its direction', () => {
+  const ev = { kind: 'down', severity: 'critical', title: 'Homepage unreachable' }
+  const site = { id: 's1', name: 'shop.example' }
+  const en = compose(ev, site)
+  assert.equal(en.title, 'shop.example is not responding')
+  assert.equal(en.lang, 'en')
+  assert.equal(en.dir, 'ltr')
+  const fa = compose(ev, site, 'fa')
+  assert.equal(fa.title, 'shop.example پاسخ نمی‌دهد')
+  assert.equal(fa.lang, 'fa')
+  assert.equal(fa.dir, 'rtl')
+  // An event stored with a key is re-rendered for the reader, not quoted in English.
+  const keyed = compose({ kind: 'malware', severity: 'critical', title: 'Infected file found: x.php',
+    detail: { i18n: { key: 'events.scan.infectedFile', vars: { file: 'x.php' } } } }, site, 'fa')
+  assert.match(keyed.emailBody, /فایل آلوده پیدا شد: x\.php/)
 })
 
 test('an unknown event kind still produces a sendable message', () => {

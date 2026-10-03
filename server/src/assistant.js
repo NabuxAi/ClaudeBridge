@@ -18,6 +18,18 @@ import { config } from './config.js'
 import { updatesFromStatus } from './live.js'
 import { classify, offeredTools, permits, readAuthority } from './authority.js'
 import * as proposalStore from './proposals.js'
+import { t, normalizeLocale, DEFAULT_LOCALE } from './i18n.js'
+
+/**
+ * The language a model is told to answer in, by locale code. Named in English
+ * because the system prompt is English; a bare "fa" is easy for a model to
+ * misread.
+ */
+const LANGUAGE_NAMES = {
+  en: 'English', fa: 'Persian (Farsi)', ar: 'Arabic', de: 'German', es: 'Spanish',
+  fr: 'French', tr: 'Turkish', ru: 'Russian', zh: 'Simplified Chinese',
+}
+export const languageName = (locale) => LANGUAGE_NAMES[normalizeLocale(locale) || DEFAULT_LOCALE]
 
 /**
  * The chat-completions URL for an OpenAI-compatible gateway.
@@ -41,7 +53,7 @@ export function completionsEndpoint(base) {
  * The reply goes straight onto the owner's screen, so anything the model wraps
  * around it is visible. Models asked for structure elsewhere in a conversation
  * will sometimes answer with a JSON object or a fenced block even when the
- * prompt asks for prose — and a reply rendered as {"reply": "در ..."}
+ * prompt asks for prose — and a reply rendered as {"reply": "The site ..."}
  * is not a degraded answer, it is an unreadable one.
  *
  * Only unwrapping when the payload is an object carrying a known text field
@@ -81,8 +93,10 @@ const unwrap = (raw) => {
  * blank the others, and a failure is itself a fact worth reporting — "I could
  * not reach your site" is a real answer.
  */
-export async function gatherFacts(site) {
+export async function gatherFacts(site, locale = DEFAULT_LOCALE) {
   const facts = { known: [], unknown: [] }
+  const tr = (key, vars) => t(locale, key, vars)
+  const err = (e) => e?.message || tr('assistant.facts.error')
 
   // Settled like every other probe below. This was the one unguarded call in a
   // function whose whole premise is that a failing source must not blank the
@@ -93,11 +107,11 @@ export async function gatherFacts(site) {
     facts.openAlerts = openEvents.map((e) => ({ severity: e.severity, title: e.title, kind: e.kind }))
   } catch (e) {
     facts.openAlerts = []
-    facts.unknown.push(`لاگ هشدارها خوانده نشد: ${e?.message || 'خطا'}`)
+    facts.unknown.push(tr('assistant.facts.alertsUnread', { error: err(e) }))
   }
 
   if (!site.paired || !site.url || !site.secret) {
-    facts.unknown.push('سایت هنوز به سرور ما وصل نشده، پس هیچ اطلاعات زنده‌ای از آن نداریم.')
+    facts.unknown.push(tr('assistant.facts.notConnected'))
     return facts
   }
 
@@ -113,11 +127,11 @@ export async function gatherFacts(site) {
     const d = unwrap(info.value)
     if (d) facts.site = { wp: d.wp_version || null, php: d.php_version || null, title: d.name || null }
   } else {
-    facts.unknown.push(`اطلاعات پایهٔ سایت خوانده نشد: ${info.reason?.message || 'خطا'}`)
+    facts.unknown.push(tr('assistant.facts.infoUnread', { error: err(info.reason) }))
   }
 
   if (updates.status === 'fulfilled') {
-    const live = updatesFromStatus(unwrap(updates.value))
+    const live = updatesFromStatus(unwrap(updates.value), locale)
     if (live) {
       facts.updates = {
         pending: live.queue?.length ?? 0,
@@ -127,7 +141,7 @@ export async function gatherFacts(site) {
       }
     }
   } else {
-    facts.unknown.push(`وضعیت به‌روزرسانی‌ها خوانده نشد: ${updates.reason?.message || 'خطا'}`)
+    facts.unknown.push(tr('assistant.facts.updatesUnread', { error: err(updates.reason) }))
   }
 
   if (backups.status === 'fulfilled') {
@@ -135,12 +149,12 @@ export async function gatherFacts(site) {
     if (d && Array.isArray(d.backups)) {
       facts.backups = {
         count: d.backups.length,
-        last: d.backups[0] ? new Date(d.backups[0].created_at * 1000).toLocaleString('fa-IR') : null,
+        last: d.backups[0] ? new Date(d.backups[0].created_at * 1000).toLocaleString(normalizeLocale(locale) || DEFAULT_LOCALE) : null,
         verified: d.backups[0] ? Boolean(d.backups[0].verified) : null,
       }
     }
   } else {
-    facts.unknown.push(`فهرست بکاپ‌ها خوانده نشد: ${backups.reason?.message || 'خطا'}`)
+    facts.unknown.push(tr('assistant.facts.backupsUnread', { error: err(backups.reason) }))
   }
 
   if (preflight.status === 'fulfilled') {
@@ -157,34 +171,37 @@ export async function gatherFacts(site) {
   // Named explicitly rather than left silent. These are the questions people
   // ask an assistant first, and an answer that skips the question reads as
   // "everything is fine" instead of "I cannot see that".
-  facts.unknown.push('آپ‌تایم و سرعت پاسخ سایت را نمی‌سنجیم — پایش مستمر هنوز ساخته نشده.')
+  facts.unknown.push(tr('assistant.facts.noUptime'))
 
   return facts
 }
 
-/** The briefing, in Persian, entirely from `facts`. */
-export function renderBriefing(facts) {
+/** The briefing, in the reader's language, entirely from `facts`. */
+export function renderBriefing(facts, locale = DEFAULT_LOCALE) {
   const lines = []
+  const tr = (key, vars) => t(locale, key, vars)
 
   if (facts.site) {
     const bits = []
-    if (facts.site.wp) bits.push(`وردپرس ${facts.site.wp}`)
+    if (facts.site.wp) bits.push(tr('assistant.briefing.wp', { version: facts.site.wp }))
     if (facts.site.php) bits.push(`PHP ${facts.site.php}`)
-    if (bits.length) lines.push(`سایت روی ${bits.join(' و ')} است.`)
+    if (bits.length) lines.push(tr('assistant.briefing.runsOn', { stack: bits.join(tr('assistant.briefing.and')) }))
   }
 
   if (facts.disk?.freeFormatted) {
-    lines.push(`فضای آزاد دیسک هاست: ${facts.disk.freeFormatted} (حجم تخمینی نسخه کامل: ${facts.disk.totalFull || '—'}).`)
+    lines.push(tr('assistant.briefing.disk', { free: facts.disk.freeFormatted, full: facts.disk.totalFull || '—' }))
   }
 
   if (facts.updates) {
     if (facts.updates.pending > 0) {
-      lines.push(`${faNum(facts.updates.pending)} به‌روزرسانی در صف است${facts.updates.items.length ? '؛ از جمله ' + facts.updates.items.join('، ') : ''}.`)
+      lines.push(facts.updates.items.length
+        ? tr('assistant.briefing.pendingWithItems', { count: facts.updates.pending, items: facts.updates.items.join(tr('assistant.briefing.listSep')) })
+        : tr('assistant.briefing.pending', { count: facts.updates.pending }))
     } else {
-      lines.push('همه‌چیز به‌روز است — چیزی در صف به‌روزرسانی نیست.')
+      lines.push(tr('assistant.briefing.upToDate'))
     }
     if (facts.updates.wpVersion && facts.updates.wpLatest && facts.updates.wpVersion !== facts.updates.wpLatest) {
-      lines.push(`هستهٔ وردپرس روی ${facts.updates.wpVersion} است در حالی که ${facts.updates.wpLatest} منتشر شده.`)
+      lines.push(tr('assistant.briefing.coreBehind', { current: facts.updates.wpVersion, latest: facts.updates.wpLatest }))
     }
   }
 
@@ -192,27 +209,25 @@ export function renderBriefing(facts) {
     const crit = facts.openAlerts.filter((a) => a.severity === 'critical')
     lines.push(
       crit.length
-        ? `${faNum(crit.length)} هشدار بحرانی باز دارید: ${crit.slice(0, 3).map((a) => a.title).join('؛ ')}`
-        : `${faNum(facts.openAlerts.length)} هشدار باز دارید که هیچ‌کدام بحرانی نیست.`
+        ? tr('assistant.briefing.criticalAlerts', { count: crit.length, titles: crit.slice(0, 3).map((a) => a.title).join(tr('assistant.briefing.titleSep')) })
+        : tr('assistant.briefing.openAlerts', { count: facts.openAlerts.length })
     )
   } else {
-    lines.push('هیچ هشدار بازی ثبت نشده.')
+    lines.push(tr('assistant.briefing.noAlerts'))
   }
 
   if (facts.backups) {
     lines.push(
       facts.backups.count
-        ? `آخرین بکاپ: ${facts.backups.last}${facts.backups.verified ? ' (کامل بودنش بررسی شده)' : ' — کامل بودنش تأیید نشده'}.`
-        : 'هیچ بکاپی روی سایت ثبت نشده.'
+        ? tr(facts.backups.verified ? 'assistant.briefing.lastBackupVerified' : 'assistant.briefing.lastBackupUnverified', { when: facts.backups.last })
+        : tr('assistant.briefing.noBackups')
     )
   }
 
-  if (!lines.length) lines.push('هنوز هیچ دادهٔ زنده‌ای از این سایت نداریم.')
+  if (!lines.length) lines.push(tr('assistant.briefing.noData'))
 
   return lines.join(' ')
 }
-
-const faNum = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
 
 // How many times the model may ask for a tool before we stop. A maintenance
 // question needs two or three calls; anything past that is a loop, and a loop
@@ -279,7 +294,7 @@ function toolSchemas(level) {
  * say something useful, and hiding it produces an assistant that silently does
  * nothing.
  */
-async function runToolCall(site, level, call, proposals) {
+async function runToolCall(site, level, call, proposals, locale) {
   const name = call?.function?.name || ''
   let args = {}
   try {
@@ -291,8 +306,12 @@ async function runToolCall(site, level, call, proposals) {
   // Args matter to the verdict: job_start covers seven jobs and two of them
   // (update_apply, backup_restore) are sensitive whatever the tool is called.
   const verdict = permits(level, name, args)
+  // The model reads the refusal reason in the user's language; the stored
+  // proposal keeps the English reason (proposals.reason is rendered per viewer
+  // by authority.localizeReason on the way out).
   if (!verdict.allowed) {
-    proposals.push({ tool: name, args, kind: verdict.kind, reason: verdict.reason })
+    const reason = t(locale, verdict.reasonKey)
+    proposals.push({ tool: name, args, kind: verdict.kind, reason, reasonKey: verdict.reasonKey })
 
     // Also persisted, so the approval can arrive later and from someone else.
     // Failing to record it must not turn a refusal into an error: the caller
@@ -310,7 +329,7 @@ async function runToolCall(site, level, call, proposals) {
       })
       .catch(() => {})
 
-    return { ok: false, refused: true, reason: verdict.reason }
+    return { ok: false, refused: true, reason }
   }
 
   if (!site.paired || !site.url || !site.secret) {
@@ -331,8 +350,8 @@ async function runToolCall(site, level, call, proposals) {
         siteId: site.id,
         kind: 'action',
         severity: 'info',
-        title: `دستیار اجرا کرد: ${name}`,
-        detail: { op: name, args, by: 'assistant', authority: level },
+        title: t('en', 'assistant.events.ran', { tool: name }),
+        detail: { op: name, args, by: 'assistant', authority: level, i18n: { key: 'assistant.events.ran', vars: { tool: name } } },
       }).catch(() => {})
     }
     return { ok: true, result: unwrap(result) ?? result }
@@ -350,26 +369,28 @@ async function runToolCall(site, level, call, proposals) {
  * and the model may additionally reach for the site's own tools — bounded by
  * the authority level the owner chose, which until now nothing consulted.
  */
-export async function answer(site, message, { maxToolSteps } = {}) {
-  const facts = await gatherFacts(site)
-  const briefing = renderBriefing(facts)
+export async function answer(site, message, { maxToolSteps, locale = DEFAULT_LOCALE } = {}) {
+  const tr = (key, vars) => t(locale, key, vars)
+  const facts = await gatherFacts(site, locale)
+  const briefing = renderBriefing(facts, locale)
   const refs = []
-  if (facts.updates) refs.push('صف به‌روزرسانی‌ها')
-  if (facts.openAlerts?.length) refs.push('لاگ هشدارها')
-  if (facts.backups) refs.push('فهرست بکاپ‌ها')
+  if (facts.updates) refs.push(tr('assistant.refs.updates'))
+  if (facts.openAlerts?.length) refs.push(tr('assistant.refs.alerts'))
+  if (facts.backups) refs.push(tr('assistant.refs.backups'))
+  const toolRef = (r) => tr('assistant.refs.tool', { tool: r })
 
   if (!config.assistant?.url || !config.assistant?.key) {
     return {
       reply: briefing,
       refs,
       grounded: true,
-      note: 'این خلاصه مستقیماً از خود سایت خوانده شده. پاسخ‌گویی آزاد به سؤال هنوز فعال نیست، چون مدل زبانی پیکربندی نشده است.',
+      note: tr('assistant.notes.noModel'),
       unknown: facts.unknown,
     }
   }
 
   const system = [
-    'You are a WordPress maintenance assistant. Answer in Persian (fa).',
+    `You are a WordPress maintenance assistant. Always reply in ${languageName(locale)}, the language of the site owner you are talking to.`,
     'You may ONLY use the facts given below. If the answer is not in them, say plainly that it is not measured.',
     'Never invent a number, a date, a version, a percentage, or a file name.',
     'Be brief and concrete.',
@@ -402,7 +423,7 @@ export async function answer(site, message, { maxToolSteps } = {}) {
     'authority above — you do not need to enforce it yourself.',
     'If a tool comes back refused, say what you would do and that it needs their approval. Do not pretend it ran.',
     '',
-    'Reply with plain Persian prose. Do not wrap your answer in JSON or code fences.',
+    `Reply with plain ${languageName(locale)} prose. Do not wrap your answer in JSON or code fences.`,
   ].join('\n')
 
   const level = readAuthority(site.authority)
@@ -444,10 +465,10 @@ export async function answer(site, message, { maxToolSteps } = {}) {
 
       if (!calls.length) {
         const reply = plainReply(choice?.content)
-        if (!reply) throw new Error('پاسخ خالی بود')
+        if (!reply) throw new Error('empty reply')
         return {
           reply,
-          refs: [...refs, ...ran.map((r) => `ابزار ${r}`)],
+          refs: [...refs, ...ran.map(toolRef)],
           grounded: true,
           unknown: facts.unknown,
           authority: level,
@@ -464,13 +485,13 @@ export async function answer(site, message, { maxToolSteps } = {}) {
       if (step >= budget) {
         messages.push({
           role: 'user',
-          content: 'به اندازهٔ کافی ابزار اجرا شد. حالا فقط با همان چیزی که داری پاسخ بده.',
+          content: `Enough tools have run. Answer now using only what you already have, in ${languageName(locale)}.`,
         })
         const last = await post({ model: config.assistant.model, messages, temperature: 0.2 })
         const reply = plainReply(last?.choices?.[0]?.message?.content) || briefing
         return {
           reply,
-          refs: [...refs, ...ran.map((r) => `ابزار ${r}`)],
+          refs: [...refs, ...ran.map(toolRef)],
           grounded: true,
           unknown: facts.unknown,
           authority: level,
@@ -482,7 +503,7 @@ export async function answer(site, message, { maxToolSteps } = {}) {
 
       messages.push(choice)
       for (const call of calls) {
-        const outcome = await runToolCall(site, level, call, proposals)
+        const outcome = await runToolCall(site, level, call, proposals, locale)
         if (outcome.ok) ran.push(call.function.name)
         messages.push({
           role: 'tool',
@@ -498,7 +519,7 @@ export async function answer(site, message, { maxToolSteps } = {}) {
       reply: briefing,
       refs,
       grounded: true,
-      note: `مدل زبانی در دسترس نبود (${e.message})، پس فقط خلاصهٔ واقعی سایت را می‌بینید.`,
+      note: tr('assistant.notes.modelDown', { error: e.message }),
       unknown: facts.unknown,
     }
   }

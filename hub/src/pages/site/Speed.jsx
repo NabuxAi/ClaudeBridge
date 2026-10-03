@@ -3,17 +3,18 @@ import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input, Badge, SkeletonStats, SkeletonCard } from '../../components/index.js'
-import { faNum } from '../../lib/format.js'
+import { t, digits, num, pct } from '../../lib/i18n.js'
 import { site as siteApi } from '../../lib/api.js'
 import { useTask } from '../../lib/tasks.jsx'
 
 /**
  * Speed — what makes a page slow, measured rather than guessed.
  */
+// Labels are keys, translated at render (see Findings).
 const RISK = {
-  safe: { label: 'بی‌خطر', variant: 'success', note: 'برگشت‌پذیر و بدون تغییر ظاهری' },
-  careful: { label: 'با احتیاط', variant: 'warning', note: 'برگشت‌پذیر، ولی رفتاری را تغییر می‌دهد' },
-  manual: { label: 'دستی', variant: 'neutral', note: 'نیازمند تصمیم شما یا دسترسی هاست' },
+  safe: { key: 'safe', variant: 'success' },
+  careful: { key: 'careful', variant: 'warning' },
+  manual: { key: 'manual', variant: 'neutral' },
 }
 
 export default function Speed() {
@@ -41,12 +42,12 @@ export default function Speed() {
       if (started?.id) {
         startTask({
           id: started.id,
-          title: `سنجش سرعت و کوئری‌های صفحه ${url ? '«' + url + '»' : 'اصلی'}`,
+          title: url ? t('speed.task.titleUrl', { url }) : t('speed.task.titleHome'),
           type: 'speed',
         })
       }
       poll(started.id)
-    } catch (e) { setError(e?.message || 'شروع نشد.') }
+    } catch (e) { setError(e?.message || t('speed.error.start')) }
   }
 
   function poll(jobId) {
@@ -62,10 +63,10 @@ export default function Speed() {
         fails.current += 1
         if (fails.current >= 5) {
           setStalled(true)
-          setError('خواندن وضعیت اندازه‌گیری چند بار ناموفق ماند — می‌توانید دوباره تلاش کنید.')
+          setError(t('speed.error.stalled'))
           return
         }
-        setError(`${e?.message || 'وضعیت خوانده نشد.'} — دوباره تلاش می‌کنیم…`)
+        setError(t('speed.error.retrying', { message: e?.message || t('speed.error.status') }))
         return poll(jobId)
       }
       setStalled(false)
@@ -78,7 +79,7 @@ export default function Speed() {
       if (s.state === 'done' && s.result) {
         try {
           setReport(await siteApi(siteId).analyseSpeed(s.result))
-        } catch (e) { setError(e?.message || 'تحلیل نتیجه انجام نشد.') }
+        } catch (e) { setError(e?.message || t('speed.error.analyse')) }
       }
     }, 2000)
   }
@@ -99,12 +100,12 @@ export default function Speed() {
         findings: r.findings.map((f) =>
           f.id === finding.id
             ? (remaining === null || remaining === 0
-              ? { ...f, done: parsed?.message || 'انجام شد', again: null }
-              : { ...f, done: null, again: parsed?.message || 'بخشی انجام شد — دوباره اجرا کنید.' })
+              ? { ...f, done: parsed?.message || t('speed.fix.done'), again: null }
+              : { ...f, done: null, again: parsed?.message || t('speed.fix.partial') })
             : f
         ),
       }))
-    } catch (e) { setError(e?.message || 'اجرا نشد.') } finally { setActing('') }
+    } catch (e) { setError(e?.message || t('speed.error.run')) } finally { setActing('') }
   }
 
   const running = job && !stalled && job.state !== 'done' && job.state !== 'failed'
@@ -112,22 +113,21 @@ export default function Speed() {
   return (
     <>
       <PageHead
-        title="سرعت"
-        subtitle="کوئری‌های هر صفحه و آنچه واقعاً کندش می‌کند"
+        title={t('speed.title')}
+        subtitle={t('speed.subtitle')}
       />
 
       <div style={card}>
-        <label style={label}>آدرس صفحه‌ای که می‌خواهید بررسی شود</label>
-        <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="خالی بگذارید تا صفحهٔ اصلی بررسی شود" dir="ltr" />
+        <label style={label}>{t('speed.form.urlLabel')}</label>
+        <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('speed.form.urlPlaceholder')} dir="ltr" />
         {/* Said up front because it is true and counter-intuitive: measuring
             costs the page being measured. One request, then off. */}
         <p style={hint}>
-          برای شمردن کوئری‌ها، همان یک درخواست عمداً کندتر اجرا می‌شود و بعد بلافاصله خاموش می‌شود.
-          روی بازدیدکنندگان دیگر اثری ندارد.
+          {t('speed.form.costNote')}
         </p>
         <div style={{ marginTop: 12 }}>
           <Button variant="primary" size="md" leftIcon="gauge" disabled={running} onClick={start}>
-            {running ? 'در حال اندازه‌گیری…' : 'اندازه‌گیری سرعت'}
+            {running ? t('speed.form.measuring') : t('speed.form.measure')}
           </Button>
         </div>
       </div>
@@ -137,9 +137,9 @@ export default function Speed() {
       {job && (
         <div style={{ ...card, marginTop: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 9, fontSize: 13.5, fontWeight: 700 }}>
-            <span>{job.message || 'در حال اجرا'}</span>
+            <span>{job.message || t('speed.job.running')}</span>
             <Badge variant={job.state === 'failed' ? 'danger' : job.state === 'done' ? 'success' : 'info'} appearance="soft">
-              {job.state === 'failed' ? 'ناموفق' : job.state === 'done' ? 'تمام' : `${faNum(job.progress || 0)}٪`}
+              {job.state === 'failed' ? t('speed.job.failed') : job.state === 'done' ? t('speed.job.done') : pct(job.progress || 0)}
             </Badge>
           </div>
           <div style={bar}>
@@ -167,32 +167,32 @@ function Measurements({ profile }) {
 
   return (
     <div style={{ marginTop: 20 }}>
-      <div style={sectionTitle}>اندازه‌گیری‌ها</div>
+      <div style={sectionTitle}>{t('speed.measure.title')}</div>
 
       <div className="dwp-grid dwp-grid-4">
         <Stat
-          label="حجم autoload" value={kb(s.autoload?.bytes)} unit=""
+          label={t('speed.measure.autoload')} value={kb(s.autoload?.bytes)} unit=""
           // Missing autoload data stays neutral — an absent reading is not a
           // healthy one, and the dash must not render green.
           tone={!s.autoload
             ? 'neutral'
             : s.autoload.verdict === 'bad' ? 'danger' : s.autoload.verdict === 'warn' ? 'warning' : 'success'}
-          sub={s.autoload ? `${faNum(s.autoload.count)} ردیف، روی هر درخواست` : null}
+          sub={s.autoload ? t('speed.measure.autoloadRows', { count: s.autoload.count }) : null}
         />
         <Stat
-          label="کوئری این صفحه" value={p ? faNum(p.queries) : '—'} unit=""
+          label={t('speed.measure.queries')} value={p ? digits(p.queries) : '—'} unit=""
           tone={p && p.queries > 150 ? 'warning' : 'neutral'}
-          sub={p ? `${faNum(p.query_ms)}ms صرف دیتابیس` : profile.page_error ? 'اندازه‌گیری نشد' : null}
+          sub={p ? t('speed.measure.dbTime', { ms: digits(p.query_ms) }) : profile.page_error ? t('speed.measure.notMeasured') : null}
         />
         <Stat
-          label="ساخت صفحه" value={p ? faNum(Math.round(p.generated_ms)) : '—'} unit={p ? 'ms' : ''}
+          label={t('speed.measure.generation')} value={p ? digits(Math.round(p.generated_ms)) : '—'} unit={p ? 'ms' : ''}
           tone={p && p.generated_ms > 1500 ? 'danger' : p && p.generated_ms > 800 ? 'warning' : 'neutral'}
-          sub={p?.peak_memory ? `اوج حافظه ${p.peak_memory}` : null}
+          sub={p?.peak_memory ? t('speed.measure.peakMemory', { value: p.peak_memory }) : null}
         />
         <Stat
-          label="آبجکت‌کش" value={s.object_cache?.external ? 'دارد' : 'ندارد'} unit=""
+          label={t('speed.measure.objectCache')} value={s.object_cache?.external ? t('speed.measure.present') : t('speed.measure.absent')} unit=""
           tone={s.object_cache?.external ? 'success' : 'neutral'}
-          sub={`PHP ${s.php?.version || '—'}${s.php?.opcache === false ? ' · OPcache خاموش' : ''}`}
+          sub={`PHP ${s.php?.version || '—'}${s.php?.opcache === false ? ` · ${t('speed.measure.opcacheOff')}` : ''}`}
         />
       </div>
 
@@ -205,19 +205,19 @@ function Measurements({ profile }) {
           queries means nothing until you know which plugin issued them. */}
       {p?.by_source?.length > 0 && (
         <div style={{ ...card, marginTop: 16 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 12 }}>زمان دیتابیس، به تفکیک منبع</div>
+          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 12 }}>{t('speed.sources.title')}</div>
           {p.by_source.map((row) => {
-            const pct = p.query_ms ? Math.round((row.ms / p.query_ms) * 100) : 0
+            const share = p.query_ms ? Math.round((row.ms / p.query_ms) * 100) : 0
             return (
               <div key={row.source} style={{ marginBottom: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 4 }}>
                   <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{row.source}</span>
                   <span style={{ color: 'var(--gd-text-muted)' }}>
-                    {faNum(row.queries)} کوئری · {faNum(Math.round(row.ms))}ms · {faNum(pct)}٪
+                    {t('speed.sources.row', { count: row.queries, ms: digits(Math.round(row.ms)), share: pct(share) })}
                   </span>
                 </div>
                 <div style={bar}>
-                  <div style={{ ...barFill, width: `${pct}%`, background: pct > 40 ? 'var(--gd-warning)' : 'var(--gd-primary)' }} />
+                  <div style={{ ...barFill, width: `${share}%`, background: share > 40 ? 'var(--gd-warning)' : 'var(--gd-primary)' }} />
                 </div>
               </div>
             )
@@ -227,14 +227,14 @@ function Measurements({ profile }) {
 
       {p?.repeated?.length > 0 && (
         <div style={{ ...card, marginTop: 16 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>کوئری‌های تکرارشونده</div>
+          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>{t('speed.repeated.title')}</div>
           <p style={{ ...hint, marginTop: 0, marginBottom: 12 }}>
-            یک شکل کوئری که ده‌ها بار اجرا می‌شود، تقریباً همیشه یعنی کدی داخل حلقه برای هر آیتم جداگانه به دیتابیس می‌زند.
+            {t('speed.repeated.hint')}
           </p>
           {p.repeated.map((r, i) => (
             <div key={i} style={{ padding: '9px 0', borderTop: i ? '1px solid var(--gd-border-subtle)' : 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, marginBottom: 3 }}>
-                <span style={{ fontWeight: 700 }}>{faNum(r.count)} بار</span>
+                <span style={{ fontWeight: 700 }}>{t('speed.repeated.times', { count: r.count })}</span>
                 <span style={{ color: 'var(--gd-text-muted)', fontFamily: 'var(--gd-font-mono)' }}>{r.source}</span>
               </div>
               <code style={sql}>{r.shape}</code>
@@ -245,9 +245,9 @@ function Measurements({ profile }) {
 
       {s.autoload?.largest?.length > 0 && (
         <div style={{ ...card, marginTop: 16 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>بزرگ‌ترین ردیف‌های autoload</div>
+          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>{t('speed.largest.title')}</div>
           <p style={{ ...hint, marginTop: 0, marginBottom: 12 }}>
-            این‌ها روی هر درخواست خوانده می‌شوند — نه فقط صفحات، بلکه admin-ajax و REST و کرون.
+            {t('speed.largest.hint')}
           </p>
           {s.autoload.largest.slice(0, 8).map((o, i) => (
             <div key={o.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: i ? '1px solid var(--gd-border-subtle)' : 'none', fontSize: 12.5 }}>
@@ -255,7 +255,7 @@ function Measurements({ profile }) {
               <span style={{ color: 'var(--gd-text-muted)', whiteSpace: 'nowrap' }}>{kb(o.bytes)}</span>
               {o.owner
                 ? <Badge variant="neutral" appearance="soft">{o.owner}</Badge>
-                : <Badge variant="warning" appearance="soft">بی‌صاحب</Badge>}
+                : <Badge variant="warning" appearance="soft">{t('speed.largest.orphan')}</Badge>}
             </div>
           ))}
         </div>
@@ -267,7 +267,7 @@ function Measurements({ profile }) {
 function Findings({ report, onFix, acting }) {
   return (
     <div style={{ marginTop: 22 }}>
-      <div style={sectionTitle}>راهکارها</div>
+      <div style={sectionTitle}>{t('speed.findings.title')}</div>
       <p style={{ ...hint, marginTop: 0, marginBottom: 14 }}>{report.summary}</p>
 
       {report.findings.map((f) => {
@@ -276,8 +276,8 @@ function Findings({ report, onFix, acting }) {
           <div key={f.id} style={{ ...card, marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 14.5, fontWeight: 800 }}>{f.title}</span>
-              <Badge variant={r.variant} appearance="soft">{r.label}</Badge>
-              <span style={{ fontSize: 11.5, color: 'var(--gd-text-muted)' }}>{r.note}</span>
+              <Badge variant={r.variant} appearance="soft">{t(`speed.risk.${r.key}.label`)}</Badge>
+              <span style={{ fontSize: 11.5, color: 'var(--gd-text-muted)' }}>{t(`speed.risk.${r.key}.note`)}</span>
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--gd-text-secondary)', margin: '0 0 10px', lineHeight: 1.9 }}>{f.why}</p>
             <ol style={{ margin: 0, paddingInlineStart: 18, fontSize: 12.5, lineHeight: 2 }}>
@@ -290,7 +290,7 @@ function Findings({ report, onFix, acting }) {
             {f.action && !f.done && (
               <div style={{ marginTop: 12 }}>
                 <Button variant="secondary" size="sm" leftIcon={f.again ? 'repeat' : 'sparkles'} disabled={acting === f.id} onClick={() => onFix(f)}>
-                  {acting === f.id ? 'در حال اجرا…' : f.again ? 'دوباره اجرا کن' : 'انجامش بده'}
+                  {acting === f.id ? t('speed.findings.running') : f.again ? t('speed.findings.runAgain') : t('speed.findings.run')}
                 </Button>
               </div>
             )}
@@ -329,8 +329,8 @@ function Stat({ label, value, unit, tone, sub }) {
 
 const kb = (b) => {
   if (typeof b !== 'number') return '—'
-  if (b >= 1048576) return `${faNum((b / 1048576).toFixed(1))}MB`
-  return `${faNum(Math.round(b / 1024))}KB`
+  if (b >= 1048576) return `${num(b / 1048576, { maximumFractionDigits: 1, minimumFractionDigits: 1 })}MB`
+  return `${num(Math.round(b / 1024))}KB`
 }
 
 const card = {

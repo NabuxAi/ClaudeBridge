@@ -1,0 +1,23 @@
+{
+  "mock": {
+    "twoFactor": "ورود دو مرحله‌ای در حالت نمایشی در دسترس نیست.",
+    "vapid": "کلیدهای VAPID در حالت نمایشی تنظیم نشده‌اند.",
+    "pushOff": "اعلان مرورگر در حالت نمایشی فعال نیست.",
+    "pushSubscribe": "ثبت اشتراک اعلان در حالت نمایشی در دسترس نیست.",
+    "monitors": "مانیتورها در حالت نمایشی در دسترس نیستند.",
+    "monitorCheck": "بررسی دستی مانیتور در حالت نمایشی در دسترس نیست.",
+    "monitorScope": "بررسی دسترسی HTTP، نه سفر کاربری/پرداخت",
+    "newConversation": "گفتگوی جدید",
+    "conversation": "گفتگو",
+    "backup": {
+      "db": "پایگاه داده (SQL)",
+      "dbDesc": "جداول و رکوردهای دیتابیس",
+      "plugins": "افزونه‌ها (Plugins)",
+      "pluginsDesc": "پوشه wp-content/plugins",
+      "themes": "قالب‌ها (Themes)",
+      "themesDesc": "پوشه wp-content/themes",
+      "uploads": "رسانه‌ها و آپلودها (Uploads)",
+      "uploadsDesc": "پوشه wp-content/uploads"
+    }
+  }
+}

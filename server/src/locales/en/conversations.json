@@ -1,0 +1,9 @@
+{
+  "newTitle": "New conversation",
+  "emptyMessage": "The message text cannot be empty.",
+  "noReply": "No reply was received.",
+  "replyReady": "Assistant reply ready: “{title}”",
+  "replyError": "Error getting a reply: {error}",
+  "unknownError": "unknown error",
+  "notFound": "Conversation not found."
+}

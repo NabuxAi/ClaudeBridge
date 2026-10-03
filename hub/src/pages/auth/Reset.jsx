@@ -4,7 +4,8 @@ import Icon from '../../lib/icons.jsx'
 import { Button, Input } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
 import { auth } from '../../lib/api.js'
-import { AuthSteps, IconBadge, PasswordField } from './shared.jsx'
+import { AuthSteps, AuthTitle, IconBadge, PasswordField } from './shared.jsx'
+import { t } from '../../lib/i18n.js'
 
 export default function Reset() {
   const [params] = useSearchParams()
@@ -38,7 +39,7 @@ function ForgotForm() {
         || res?.mail_configured === false
       setResult(unconfigured ? 'unconfigured' : 'sent')
     } catch (e) {
-      setError(e?.message || 'ارسال نشد.')
+      setError(e?.message || t('auth.reset.sendFailed'))
       // Single-use on the server: a failed submit burns the challenge.
       setCaptchaAnswer('')
       setCaptchaKey((k) => k + 1)
@@ -53,9 +54,9 @@ function ForgotForm() {
     return (
       <>
         <IconBadge name="alert-triangle" tone="warning" />
-        <h2 className="dwp-auth-title">ارسال ایمیل فعال نیست</h2>
+        <h2 className="dwp-auth-title">{t('auth.reset.unconfiguredTitle')}</h2>
         <p className="dwp-auth-sub dwp-auth-sub--state">
-          در حال حاضر ارسال ایمیل روی این سرویس پیکربندی نشده و لینک بازنشانی برای هیچ حسابی ارسال نمی‌شود. برای بازنشانی رمز عبور، از پشتیبانی بخواهید.
+          {t('auth.reset.unconfiguredBody')}
         </p>
         <BackToLogin />
       </>
@@ -66,9 +67,9 @@ function ForgotForm() {
     return (
       <>
         <IconBadge name="mail-check" />
-        <h2 className="dwp-auth-title">لینک ارسال شد</h2>
+        <h2 className="dwp-auth-title">{t('auth.reset.sentTitle')}</h2>
         <p className="dwp-auth-sub dwp-auth-sub--state">
-          اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی رمز عبور برای آن ارسال شده است.
+          {t('auth.reset.sentBody')}
         </p>
         <BackToLogin />
       </>
@@ -78,9 +79,9 @@ function ForgotForm() {
   return (
     <>
       <div className="dwp-auth-head">
-        <span className="gd-sec-head__eyebrow"><Icon name="key-round" size={13} /> بازیابی دسترسی</span>
-        <h2 className="dwp-auth-title">بازنشانی <span className="gd-gradient-text">رمز عبور</span></h2>
-        <p className="dwp-auth-sub">ایمیل خود را وارد کنید؛ اگر حسابی با این ایمیل داشته باشید، لینک بازنشانی برای آن ارسال می‌شود.</p>
+        <span className="gd-sec-head__eyebrow"><Icon name="key-round" size={13} /> {t('auth.reset.eyebrow')}</span>
+        <h2 className="dwp-auth-title"><AuthTitle k="auth.reset.title" /></h2>
+        <p className="dwp-auth-sub">{t('auth.reset.sub')}</p>
       </div>
       <AuthSteps current={1} />
       <form onSubmit={submit} className="dwp-auth-form">
@@ -90,9 +91,9 @@ function ForgotForm() {
             "[object Object]" / crash JSON serialization downstream. */}
         <Input
           type="email"
-          label="ایمیل"
+          label={t('auth.shared.emailLabel')}
           leftIcon="mail"
-          placeholder="you@example.com"
+          placeholder={t('auth.shared.emailPlaceholder')}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -113,7 +114,7 @@ function ForgotForm() {
           <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{error}</div>
         )}
         <Button variant="primary" size="lg" fullWidth leftIcon="send" type="submit" loading={loading}>
-          ارسال لینک بازنشانی
+          {t('auth.reset.submit')}
         </Button>
       </form>
       <BackToLogin />
@@ -131,11 +132,11 @@ function ResetForm({ token }) {
   async function submit(e) {
     e.preventDefault()
     if (password !== confirm) {
-      setError('رمز عبور و تکرار آن یکسان نیستند.')
+      setError(t('auth.reset.mismatch'))
       return
     }
     if (password.length < 8) {
-      setError('رمز عبور باید حداقل ۸ نویسه باشد.')
+      setError(t('auth.reset.tooShort'))
       return
     }
     setLoading(true)
@@ -144,7 +145,7 @@ function ResetForm({ token }) {
       await auth.resetPassword({ token, password })
       setDone(true)
     } catch (e) {
-      setError(e?.message || 'بازنشانی نشد.')
+      setError(e?.message || t('auth.reset.resetFailed'))
     } finally {
       setLoading(false)
     }
@@ -154,14 +155,14 @@ function ResetForm({ token }) {
     return (
       <>
         <IconBadge name="check-circle-2" tone="success" />
-        <h2 className="dwp-auth-title">رمز عبور <span className="gd-gradient-text">بازنشانی شد</span></h2>
+        <h2 className="dwp-auth-title"><AuthTitle k="auth.reset.doneTitle" /></h2>
         <p className="dwp-auth-sub dwp-auth-sub--state">
-          رمز عبور جدید ذخیره شد. اکنون می‌توانید وارد شوید.
+          {t('auth.reset.doneBody')}
         </p>
         {/* href (not a router Link) keeps the existing behaviour: a fresh
             document load on the login screen after the password changed. */}
         <Button variant="primary" size="lg" fullWidth rightIcon="arrow-left" href="/login">
-          ورود
+          {t('auth.reset.login')}
         </Button>
       </>
     )
@@ -170,15 +171,15 @@ function ResetForm({ token }) {
   return (
     <>
       <div className="dwp-auth-head">
-        <span className="gd-sec-head__eyebrow"><Icon name="key-round" size={13} /> بازیابی دسترسی</span>
-        <h2 className="dwp-auth-title">رمز عبور <span className="gd-gradient-text">جدید</span></h2>
-        <p className="dwp-auth-sub">لینک بازنشانی یک ساعت معتبر و یک‌بار مصرف است. رمز جدید خود را وارد کنید.</p>
+        <span className="gd-sec-head__eyebrow"><Icon name="key-round" size={13} /> {t('auth.reset.eyebrow')}</span>
+        <h2 className="dwp-auth-title"><AuthTitle k="auth.reset.newTitle" /></h2>
+        <p className="dwp-auth-sub">{t('auth.reset.newSub')}</p>
       </div>
       <AuthSteps current={2} />
       <form onSubmit={submit} className="dwp-auth-form">
         <PasswordField
           id="reset-password"
-          label="رمز عبور جدید"
+          label={t('auth.reset.newPasswordLabel')}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoFocus
@@ -186,7 +187,7 @@ function ResetForm({ token }) {
         />
         <PasswordField
           id="reset-confirm"
-          label="تکرار رمز عبور"
+          label={t('auth.reset.confirmLabel')}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           autoComplete="new-password"
@@ -195,7 +196,7 @@ function ResetForm({ token }) {
           <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{error}</div>
         )}
         <Button variant="primary" size="lg" fullWidth leftIcon="check" type="submit" loading={loading}>
-          ذخیرهٔ رمز جدید
+          {t('auth.reset.save')}
         </Button>
       </form>
     </>
@@ -206,7 +207,7 @@ function BackToLogin() {
   return (
     <p className="dwp-auth-foot">
       <Link to="/login" className="dwp-auth-link dwp-auth-link--strong dwp-auth-backlink">
-        <Icon name="arrow-right" size={15} /> بازگشت به ورود
+        <Icon name="arrow-right" size={15} /> {t('auth.reset.backToLogin')}
       </Link>
     </p>
   )

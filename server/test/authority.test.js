@@ -13,6 +13,7 @@ import {
   offeredTools,
   permits,
   readAuthority,
+  localizeReason,
 } from '../src/authority.js'
 
 test('reading is allowed at every level, including the most cautious', () => {
@@ -26,13 +27,24 @@ test('reading is allowed at every level, including the most cautious', () => {
 test('report may not change anything', () => {
   const v = permits('report', 'flush_cache')
   assert.equal(v.allowed, false)
-  assert.match(v.reason, /گزارش/, 'the refusal must say why, so the reply can say why')
+  assert.match(v.reason, /Report only/, 'the refusal must say why, so the reply can say why')
+  assert.equal(v.reasonKey, 'authority.reasons.reportOnly')
 })
 
 test('confirm turns a change into something the owner approves', () => {
   const v = permits('confirm', 'install_plugin')
   assert.equal(v.allowed, false)
-  assert.match(v.reason, /تأیید/)
+  assert.match(v.reason, /approval/)
+})
+
+test('a stored refusal reason renders in the reader\'s language, old Persian rows included', () => {
+  const v = permits('confirm', 'install_plugin')
+  assert.match(localizeReason('fa', v.reason), /تأیید/)
+  assert.equal(localizeReason('en', v.reason), v.reason)
+  // A row written before translation still renders for an English reader.
+  assert.match(localizeReason('en', 'این تغییر به تأیید شما نیاز دارد.'), /needs your approval/)
+  // Text this module never wrote is left alone.
+  assert.equal(localizeReason('fa', 'something else'), 'something else')
 })
 
 test('auto performs recoverable changes without asking', () => {

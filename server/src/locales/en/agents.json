@@ -1,0 +1,59 @@
+{
+  "specialists": {
+    "security": {
+      "name": "Security and malware specialist",
+      "role": "Intrusion analysis, core file integrity checks, malicious-signature scanning and CVE vulnerability review"
+    },
+    "performance": {
+      "name": "Speed and resource optimisation specialist",
+      "role": "Autoload size analysis, slow database queries, object cache, and WordPress table optimisation"
+    },
+    "updates": {
+      "name": "Compatibility and safe-update specialist",
+      "role": "PHP and WordPress core prerequisites, update queue coordination, post-update health checks, and backups"
+    },
+    "rescue": {
+      "name": "Conflict resolution and rescue specialist",
+      "role": "Fatal error diagnosis, binary bisect of plugin conflicts, and restoring sites that are down"
+    },
+    "ecommerce": {
+      "name": "WooCommerce store and transactions specialist",
+      "role": "Order queue monitoring, active payment gateways, Action Scheduler health, and checkout review"
+    }
+  },
+  "security": {
+    "coreModified_one": "{count} WordPress core file has been modified",
+    "coreModified_other": "{count} WordPress core files have been modified",
+    "failed": "The full security check failed: {error}"
+  },
+  "performance": {
+    "autoloadTitle": "Large autoload ({size} KB)",
+    "autoloadAction": "Clean up options left by deleted or unnecessary plugins",
+    "overheadTitle": "Database tables need optimising ({size} MB of free space)",
+    "overheadAction": "Run OPTIMIZE TABLE on the key tables",
+    "failed": "Database check failed: {error}"
+  },
+  "updates": {
+    "coreTitle": "Update WordPress core to version {version}",
+    "pluginsTitle_one": "{count} plugin needs updating",
+    "pluginsTitle_other": "{count} plugins need updating",
+    "failed": "Update check failed: {error}"
+  },
+  "rescue": {
+    "logsFailed": "Fetching the server logs failed: {error}"
+  },
+  "ecommerce": {
+    "checkFailed": "Checking the WooCommerce plugin failed: {error}"
+  },
+  "summary": {
+    "securityThreats_one": "Security: {count} suspicious item or core change was found.",
+    "securityThreats_other": "Security: {count} suspicious items or core changes were found.",
+    "securityClean": "Security: core files are intact and no known malware was found.",
+    "performanceHeavy": "Performance: autoload is large ({size} KB) and needs cleaning up.",
+    "performanceOk": "Performance: database load is within a healthy range.",
+    "updatesPending": "Updates: {count} plugins and WordPress core need updating.",
+    "updatesNone": "Updates: all plugins and WordPress core are up to date.",
+    "rescueFatal": "Rescue: a fatal error is recorded in the logs (suspect plugins: {plugins}).",
+    "listSep": ", "
+  }
+}

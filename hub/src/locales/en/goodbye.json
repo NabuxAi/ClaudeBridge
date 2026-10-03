@@ -1,0 +1,7 @@
+{
+  "title": "Your account has been deleted",
+  "body": "All sessions have been revoked, your sites are no longer monitored, and their pairing credentials have been revoked — the plugin on your sites can no longer connect to this panel. Your account's personal data has been deleted, and <strong>this cannot be undone.</strong>",
+  "again": "If you need DigiWP again in the future, you can create a new account with the same email.",
+  "home": "Home",
+  "login": "Sign in or sign up"
+}

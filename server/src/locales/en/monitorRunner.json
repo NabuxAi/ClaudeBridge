@@ -1,0 +1,8 @@
+{
+  "errors": {
+    "bodyTooLarge": "The response body was too large to check for the phrase.",
+    "phraseMissing": "The response came back, but the expected phrase was not in it.",
+    "timeout": "No response within the 10-second limit.",
+    "failed": "The request failed."
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "reasons": {
+    "sensitive": "This action is sensitive and needs your explicit approval at every authority level.",
+    "needsApproval": "This change needs your approval.",
+    "reportOnly": "Authority is set to “Report only”, so I make no changes to the site."
+  }
+}

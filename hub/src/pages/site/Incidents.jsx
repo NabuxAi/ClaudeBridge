@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Badge, AlertCard, Tabs, Provenance, SkeletonTable, SkeletonCard, NotMeasured } from '../../components/index.js'
-import { faNum } from '../../lib/format.js'
+import { t, digits } from '../../lib/i18n.js'
 import { site as siteApi } from '../../lib/api.js'
 
 // Timeline dot styling per event tone.
@@ -34,7 +34,7 @@ export default function Incidents() {
   // silently leaves a critical alert looking handled.
   const load = () => siteApi(siteId).incidents()
     .then((d) => { setData(d); setError('') })
-    .catch((e) => setError(e?.message || 'هشدارها خوانده نشد.'))
+    .catch((e) => setError(e?.message || t('incidents.loadError')))
 
   useEffect(() => {
     let alive = true
@@ -42,7 +42,7 @@ export default function Incidents() {
       .then((d) => { if (alive) { setData(d); setError('') } })
       // Without this catch a failed first load left data null forever and the
       // gate below spun the skeleton with no message at all.
-      .catch((e) => { if (alive) setError(e?.message || 'هشدارها خوانده نشد.') })
+      .catch((e) => { if (alive) setError(e?.message || t('incidents.loadError')) })
     return () => { alive = false }
   }, [siteId, attempt])
 
@@ -52,21 +52,21 @@ export default function Incidents() {
   async function dismiss(id) {
     setBusy(id)
     try { await siteApi(siteId).dismissIncident(id); await load() }
-    catch (e) { setError(e?.message || 'نادیده گرفتن هشدار انجام نشد.') }
+    catch (e) { setError(e?.message || t('incidents.dismissError')) }
     finally { setBusy('') }
   }
 
-  const head = <PageHead title="هشدارها" subtitle="رخدادها و اقدام‌های خودکار پشتیبان" />
+  const head = <PageHead title={t('incidents.title')} subtitle={t('incidents.subtitle')} />
 
   if (!data) {
     if (error) {
       return (
         <>
           {head}
-          <NotMeasured title="هشدارها خوانده نشد" reason={error} icon="alert-triangle" />
+          <NotMeasured title={t('incidents.notReadTitle')} reason={error} icon="alert-triangle" />
           <div style={{ textAlign: 'center', marginTop: 14 }}>
             <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => { setError(''); setAttempt((a) => a + 1) }}>
-              تلاش دوباره
+              {t('common.retry')}
             </Button>
           </div>
         </>
@@ -92,20 +92,20 @@ export default function Incidents() {
   const timeline = featured?.timeline || []
 
   const tabs = [
-    { key: 'all', label: 'همه', badge: faNum(list.length) },
-    { key: 'critical', label: 'بحرانی' },
-    { key: 'warning', label: 'هشدار' },
-    { key: 'resolved', label: 'حل‌شده' },
+    { key: 'all', label: t('incidents.tabs.all'), badge: digits(list.length) },
+    { key: 'critical', label: t('incidents.tabs.critical') },
+    { key: 'warning', label: t('incidents.tabs.warning') },
+    { key: 'resolved', label: t('incidents.tabs.resolved') },
   ]
 
   return (
     <>
       <PageHead
-        title="هشدارها"
-        subtitle="رخدادها و اقدام‌های خودکار پشتیبان"
+        title={t('incidents.title')}
+        subtitle={t('incidents.subtitle')}
         action={(
           <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={load}>
-            بارگیری دوباره
+            {t('incidents.reload')}
           </Button>
         )}
       />
@@ -135,7 +135,7 @@ export default function Incidents() {
                 disabled={busy === featured.id}
                 onClick={() => featured.id && dismiss(featured.id)}
               >
-                نادیده گرفتن
+                {t('incidents.ignore')}
               </Button>
             )}
           />
@@ -145,16 +145,16 @@ export default function Incidents() {
       {/* Resolution timeline */}
       {timeline.length > 0 && (
         <div style={{ marginBottom: 22 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>خط زمانی رسیدگی</div>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>{t('incidents.timeline')}</div>
           <div className="pbk-panel" style={{ padding: '20px 22px' }}>
             {timeline.map((ev, i) => {
-              const t = TONE[ev.tone] || TONE.info
+              const tone = TONE[ev.tone] || TONE.info
               const last = i === timeline.length - 1
               return (
                 <div key={i} style={{ display: 'flex', gap: 14 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '0 0 auto' }}>
-                    <span style={{ width: 30, height: 30, borderRadius: '50%', background: t.bg, color: t.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon name={t.icon} size={16} />
+                    <span style={{ width: 30, height: 30, borderRadius: '50%', background: tone.bg, color: tone.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name={tone.icon} size={16} />
                     </span>
                     {!last && <span style={{ flex: 1, width: 2, background: 'var(--gd-border-subtle)', margin: '4px 0' }} />}
                   </div>
@@ -170,11 +170,11 @@ export default function Incidents() {
       )}
 
       {/* Past incidents */}
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>رخدادهای اخیر</div>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>{t('incidents.recent')}</div>
       <div className="pbk-panel" style={{ padding: '4px 20px' }}>
         {filtered.length === 0 && (
           <div style={{ padding: '28px 0', textAlign: 'center', fontSize: 13.5, color: 'var(--gd-text-muted)', lineHeight: 1.9 }}>
-            {data.empty ? (data.emptyNote || 'هنوز رخدادی ثبت نشده.') : 'موردی در این دسته یافت نشد'}
+            {data.empty ? (data.emptyNote || t('incidents.empty')) : t('incidents.emptyFilter')}
           </div>
         )}
         {filtered.map((it, i) => {
@@ -190,12 +190,12 @@ export default function Incidents() {
               </div>
               <span style={{ fontFamily: 'var(--gd-font-mono)', fontSize: 12, color: 'var(--gd-text-muted)', whiteSpace: 'nowrap' }}>{it.time}</span>
               {it.resolved
-                ? <Badge variant="success" appearance="soft">بسته شد</Badge>
+                ? <Badge variant="success" appearance="soft">{t('incidents.closed')}</Badge>
                 : (
                   <>
-                    <Badge variant="warning" appearance="soft">باز</Badge>
+                    <Badge variant="warning" appearance="soft">{t('incidents.open')}</Badge>
                     <Button variant="ghost" size="sm" disabled={busy === it.id} onClick={() => dismiss(it.id)}>
-                      نادیده گرفتن
+                      {t('incidents.ignore')}
                     </Button>
                   </>
                 )}

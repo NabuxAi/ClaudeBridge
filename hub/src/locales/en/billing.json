@@ -1,0 +1,56 @@
+{
+  "title": "Subscription & billing",
+  "subtitle": "Plan, payment method and invoices",
+  "trialLeft_one": "{count} day left in your trial access",
+  "trialLeft_other": "{count} days left in your trial access",
+  "trialLastDay": "Today is the last day of your trial access",
+  "loadFailed": "Subscription details could not be loaded.",
+  "pilotRequested": "Trial access request recorded.",
+  "pilotNotEnabled": "Trial requests are not enabled on the server yet.",
+  "pilotFailed": "The request could not be recorded.",
+  "loadErrorTitle": "Failed to load",
+  "expired": {
+    "lead": "Your trial access has ended.",
+    "body": "Adding new sites is paused until a subscription is activated; your existing sites and all data in this account remain available. The payment gateway is not live yet — to continue, choose one of the plans below to request trial access, or contact support."
+  },
+  "notActive": {
+    "title": "Subscription and payment are not active yet",
+    "reason": "The subscription and payment system has not been built yet."
+  },
+  "planName": "{name} plan",
+  "badge": {
+    "trial": "Trial access",
+    "trialExpired": "Trial access expired",
+    "active": "Active"
+  },
+  "trialEndedOn": "Trial access ended on <date>{date}</date>. Adding new sites is paused until a subscription is activated.",
+  "nextRenewal": "Next renewal: <date>{date}</date>",
+  "noRenewal": "No renewal period on record.",
+  "perMonth": "toman / month",
+  "sitesUsed": "Sites used",
+  "usage": "{used} of {limit}",
+  "unlimited": "unlimited",
+  "capReached": "Plan capacity reached; adding new sites is blocked until the plan is upgraded.",
+  "changePlan": "Change plan",
+  "payment": {
+    "title": "Payment method",
+    "noGateway": "No gateway connected",
+    "notActive": "Payment is not active yet.",
+    "disabled": "Disabled",
+    "note": "No charges are being made right now. To activate payment, contact the sales team."
+  },
+  "plansTitle": "Plans",
+  "currentPlan": "Current plan",
+  "yourCurrentPlan": "Your current plan",
+  "submitting": "Submitting…",
+  "requestTrial": "Request trial access",
+  "downgradeTo": "Downgrade to {name}",
+  "upgradeTo": "Upgrade to {name}",
+  "invoices": {
+    "title": "Invoices",
+    "date": "Date",
+    "amount": "Amount",
+    "status": "Status",
+    "empty": "No invoices on record."
+  }
+}

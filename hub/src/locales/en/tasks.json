@@ -1,0 +1,6 @@
+{
+  "statusUnreadable": "Couldn't read the status.",
+  "pollFailed": "Reading the job status failed several times; it may still be running on the site.",
+  "processing": "Processing…",
+  "running": "Job in progress…"
+}

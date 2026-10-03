@@ -110,3 +110,9 @@
 .dwp-skeleton--button { height: 36px; width: 120px; border-radius: var(--gd-radius-md); }
 .dwp-skeleton--card { height: 110px; border-radius: var(--gd-radius-lg); }
 
+
+/* Language picker (marketing nav, auth card, panel top bars). */
+.dwp-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.dwp-lang { position: relative; display: inline-flex; align-items: center; gap: 6px; color: var(--gd-text-secondary); font-size: 13px; font-weight: 600; }
+.dwp-lang select { appearance: none; background: transparent; border: 1px solid var(--gd-border); border-radius: var(--gd-radius-md); color: inherit; font: inherit; padding: 5px 10px; cursor: pointer; }
+.dwp-lang select:focus-visible { outline: 2px solid var(--gd-primary); outline-offset: 2px; }

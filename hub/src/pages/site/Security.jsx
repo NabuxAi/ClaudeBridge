@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, MetricCard, Badge, ActivityRow, NotMeasured, SkeletonStats, SkeletonCard } from '../../components/index.js'
-import { faNum } from '../../lib/format.js'
+import { digits, dateTime, pct, t } from '../../lib/i18n.js'
 import { site as siteApi } from '../../lib/api.js'
 import { useTask } from '../../lib/tasks.jsx'
 
@@ -35,21 +35,22 @@ function SecurityBanner({ data, ssl, sslTone }) {
 
   let verdict
   if (danger) {
-    verdict = { text: 'موارد نیازمند بررسی پیدا شد', tone: 'danger', icon: 'shield-alert' }
+    verdict = { text: t('siteSecurity.verdict.danger'), tone: 'danger', icon: 'shield-alert' }
   } else if (clean) {
-    verdict = { text: 'وضعیت امنیتی: سالم', tone: 'success', icon: 'shield-check' }
+    // "Scan clean" is not "site uncompromised": the caveat travels with it.
+    verdict = { text: t('siteSecurity.verdict.clean'), tone: 'success', icon: 'shield-check', caveat: t('siteSecurity.verdict.cleanCaveat') }
   } else if (measured) {
-    const missing = [coreClean == null && 'یکپارچگی هسته', hits == null && 'اسکن بدافزار'].filter(Boolean)
+    const missing = [coreClean == null && t('siteSecurity.verdict.missingIntegrity'), hits == null && t('siteSecurity.verdict.missingScan')].filter(Boolean)
     verdict = {
-      text: 'بررسی ناتمام است',
+      text: t('siteSecurity.verdict.incomplete'),
       tone: 'neutral',
       icon: 'shield-alert',
       note: data.scanJob
-        ? 'اسکن در جریان است؛ تا پایان آن این نتیجه قطعی نیست.'
-        : `${missing.join(' و ')} هنوز اندازه‌گیری نشده؛ این نتیجه قطعی نیست.`,
+        ? t('siteSecurity.verdict.scanRunning')
+        : t('siteSecurity.verdict.missing', { items: missing.join(t('siteSecurity.verdict.missingJoin')) }),
     }
   } else {
-    verdict = { text: 'هنوز اسکن نشده', tone: 'neutral', icon: 'shield-alert', note: 'برای دیدن وضعیت واقعی، سایت باید متصل باشد.' }
+    verdict = { text: t('siteSecurity.verdict.notScanned'), tone: 'neutral', icon: 'shield-alert', note: t('siteSecurity.verdict.needsConnection') }
   }
 
   // Same tone classes as the Overview health banner: success/danger/neutral.
@@ -61,7 +62,7 @@ function SecurityBanner({ data, ssl, sslTone }) {
   const stat = (value, label, tone) => (
     <div>
       <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: value == null ? 'var(--gd-text-muted)' : tone }}>
-        {value == null ? '—' : faNum(value)}
+        {value == null ? '—' : digits(value)}
       </div>
       <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2 }}>{label}</div>
     </div>
@@ -77,15 +78,18 @@ function SecurityBanner({ data, ssl, sslTone }) {
           <div style={{ fontSize: 22, fontWeight: 800 }}>{verdict.text}</div>
           <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 9 }}>
             {verdict.note || (integrity?.checked_at
-              ? `آخرین بررسی: ${new Date(integrity.checked_at * 1000).toLocaleString('fa-IR')}`
-              : 'آخرین بررسی: هم‌اکنون')}
+              ? t('siteSecurity.verdict.lastChecked', { when: dateTime(integrity.checked_at * 1000) })
+              : t('siteSecurity.verdict.lastCheckedNow'))}
           </div>
+          {verdict.caveat && (
+            <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 4, lineHeight: 1.7 }}>{verdict.caveat}</div>
+          )}
         </div>
       </div>
       <div className="psa-banner__stats">
-        {stat(strays, 'فایل ناشناخته در هسته', strays ? 'var(--gd-danger-text)' : 'var(--gd-success)')}
-        {stat(hits, 'یافتهٔ بدافزار', hits ? 'var(--gd-danger-text)' : 'var(--gd-success)')}
-        {stat(ssl?.days ?? null, 'روز تا انقضای SSL', sslTone)}
+        {stat(strays, t('siteSecurity.stats.unknownCoreFiles'), strays ? 'var(--gd-danger-text)' : 'var(--gd-success)')}
+        {stat(hits, t('siteSecurity.stats.malwareFindings'), hits ? 'var(--gd-danger-text)' : 'var(--gd-success)')}
+        {stat(ssl?.days ?? null, t('siteSecurity.stats.sslDays'), sslTone)}
       </div>
     </div>
   )
@@ -105,7 +109,7 @@ export default function Security() {
     return siteApi(siteId)
       .security()
       .then((d) => { if (aliveRef.current) setData(d) })
-      .catch((e) => { if (aliveRef.current) setLoadError(e?.message || 'دریافت وضعیت امنیتی ممکن نشد.') })
+      .catch((e) => { if (aliveRef.current) setLoadError(e?.message || t('siteSecurity.errors.load')) })
   }, [siteId])
 
   useEffect(() => {
@@ -123,7 +127,7 @@ export default function Security() {
       if (started?.id) {
         startTask({
           id: started.id,
-          title: 'اسکن کامل بدافزار و فایل‌های هسته',
+          title: t('siteSecurity.taskTitle'),
           type: 'security',
         })
       }
@@ -133,7 +137,7 @@ export default function Security() {
       // spinning forever; now the failure surfaces and the button frees up.
       if (aliveRef.current) {
         setScanning(false)
-        setLoadError(e?.message || 'شروع اسکن ممکن نشد.')
+        setLoadError(e?.message || t('siteSecurity.errors.startScan'))
       }
     }
   }
@@ -152,7 +156,7 @@ export default function Security() {
         // scan button disabled forever with no message. Stop, say so, retry.
         if (!aliveRef.current) return
         setScanning(false)
-        setLoadError(e?.message || 'دریافت نتیجهٔ اسکن ممکن نشد؛ دوباره تلاش کنید.')
+        setLoadError(e?.message || t('siteSecurity.errors.pollScan'))
       }
     }, 3000)
   }
@@ -161,8 +165,8 @@ export default function Security() {
 
   const head = (
     <PageHead
-      title="امنیت"
-      subtitle="نگهبانی امنیتی روزانه و کنترل دسترسی"
+      title={t('siteSecurity.title')}
+      subtitle={t('siteSecurity.subtitle')}
       action={
         <Button
           variant="primary"
@@ -171,7 +175,7 @@ export default function Security() {
           disabled={isRunning}
           onClick={rescan}
         >
-          {isRunning ? 'در حال اسکن…' : 'اسکن کامل'}
+          {isRunning ? t('siteSecurity.scanning') : t('siteSecurity.scanFull')}
         </Button>
       }
     />
@@ -182,10 +186,10 @@ export default function Security() {
       return (
         <>
           {head}
-          <NotMeasured title="وضعیت امنیتی خوانده نشد" reason={loadError} icon="alert-triangle" />
+          <NotMeasured title={t('siteSecurity.notLoaded')} reason={loadError} icon="alert-triangle" />
           <div style={{ textAlign: 'center', marginTop: 14 }}>
             <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => fetchSecurity()}>
-              تلاش دوباره
+              {t('common.retry')}
             </Button>
           </div>
         </>
@@ -220,7 +224,7 @@ export default function Security() {
         <div className="psa-err" role="alert">
           <Icon name="alert-triangle" size={17} style={{ flex: '0 0 auto', marginTop: 2 }} />
           <div style={{ flex: 1 }}>{loadError}</div>
-          <Button variant="ghost" size="sm" onClick={() => fetchSecurity()}>تلاش دوباره</Button>
+          <Button variant="ghost" size="sm" onClick={() => fetchSecurity()}>{t('common.retry')}</Button>
         </div>
       )}
 
@@ -245,12 +249,12 @@ export default function Security() {
       {(data.scanJob || data.scanPending) && (
         <div className="psa-card" style={{ padding: '15px 20px', marginBottom: 18 }}>
           <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>
-            {data.scanJob ? 'اسکن بدافزار در حال اجراست' : 'هنوز اسکن بدافزاری اجرا نشده'}
+            {data.scanJob ? t('siteSecurity.scanJob.running') : t('siteSecurity.scanJob.pending')}
           </div>
           <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>
             {data.scanJob
-              ? `${data.scanJob.message || 'در حال بررسی فایل‌ها'} — ${faNum(data.scanJob.progress || 0)}٪`
-              : 'برای شروع، «اسکن کامل» را بزنید. تا وقتی اجرا نشده، نبود یافته به معنی سالم بودن نیست.'}
+              ? t('siteSecurity.scanJob.progress', { message: data.scanJob.message || t('siteSecurity.scanJob.checkingFiles'), percent: pct(data.scanJob.progress || 0) })
+              : t('siteSecurity.scanJob.pendingHint')}
           </p>
         </div>
       )}
@@ -270,7 +274,7 @@ export default function Security() {
         {(data.metrics || []).map((m) => (
           <MetricCard
             key={m.label} icon={m.icon} iconTone={m.tone}
-            label={m.label} value={faNum(m.value)} unit={m.unit}
+            label={m.label} value={digits(m.value)} unit={m.unit}
           />
         ))}
       </div>
@@ -279,13 +283,13 @@ export default function Security() {
       <div className="psa-cols">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 15, fontWeight: 700, marginBottom: 12 }}>
-            <span>رویدادهای امنیتی</span>
-            <Badge variant="info" appearance="soft" icon="history">{faNum((data.events || []).length)} رویداد</Badge>
+            <span>{t('siteSecurity.events.title')}</span>
+            <Badge variant="info" appearance="soft" icon="history">{t('siteSecurity.events.count', { count: (data.events || []).length })}</Badge>
           </div>
           <div className="psa-card psa-card--list">
             {(data.events || []).length === 0 ? (
               <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', padding: '14px 0', margin: 0, lineHeight: 1.8 }}>
-هنوز رویداد امنیتی‌ای ثبت نشده. سایت هنگام اسکن یا اقدام دیده می‌شود، نه به‌صورت پیوسته.
+                {t('siteSecurity.events.empty')}
               </p>
             ) : data.events.map((e, i) => (
               <ActivityRow key={i} icon={e.icon} tone={e.tone} label={e.label} time={e.time} divided={i < data.events.length - 1} />
@@ -294,11 +298,11 @@ export default function Security() {
         </div>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 15, fontWeight: 700, marginBottom: 12 }}>
-            <span>گواهی SSL</span>
+            <span>{t('siteSecurity.ssl.title')}</span>
             {/* The server never sends `valid` — the badge read "نامعتبر" on
                 every real certificate. Readable ⇒ the verified handshake
                 succeeded; unreadable ⇒ unknown, in neutral gray. */}
-            <Badge variant={ssl ? 'success' : 'neutral'} appearance="soft" dot>{ssl ? 'معتبر' : 'بررسی نشد'}</Badge>
+            <Badge variant={ssl ? 'success' : 'neutral'} appearance="soft" dot>{ssl ? t('siteSecurity.ssl.valid') : t('siteSecurity.ssl.notChecked')}</Badge>
           </div>
           <div className="psa-card psa-card--pad">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}>
@@ -306,17 +310,17 @@ export default function Security() {
                 <Icon name="lock-keyhole" size={20} />
               </span>
               <span className="dwp-mono" style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: sslTone }}>
-                {ssl ? faNum(ssl.days) : '—'}
+                {ssl ? digits(ssl.days) : '—'}
               </span>
             </div>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>گواهی SSL</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{t('siteSecurity.ssl.title')}</div>
             <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 3, lineHeight: 1.6 }}>
               {/* "تمدید خودکار" was asserted here. Whether a certificate
                   auto-renews is a property of the host's ACME setup, which we
                   cannot see — we only read the expiry from the handshake. */}
               {ssl
-                ? `${ssl.issuer || 'صادرکنندهٔ نامشخص'} · انقضا ${faNum(ssl.days)} روز دیگر`
-                : (data.sslError || 'گواهی خوانده نشد.')}
+                ? t('siteSecurity.ssl.expires', { issuer: ssl.issuer || t('siteSecurity.ssl.unknownIssuer'), count: ssl.days })
+                : (data.sslError || t('siteSecurity.ssl.notRead'))}
             </div>
           </div>
         </div>
@@ -332,8 +336,8 @@ export default function Security() {
             page and once a night, and nothing observes logins at all. The
             button beside it ("security report") had no handler. */}
         <div style={{ flex: 1, fontSize: 13.5, lineHeight: 1.7, color: 'var(--gd-info-text)' }}>
-          اسکن هنگام باز کردن این صفحه و یک بار در شبانه‌روز انجام می‌شود — رصد لحظه‌ای نیست.
-          یافته‌ها در «هشدارها» ثبت می‌شوند و تا وقتی اسکن بعدی نبودنشان را تأیید نکند، باز می‌مانند.
+          {t('siteSecurity.cadenceNote1')}{' '}
+          {t('siteSecurity.cadenceNote2')}
         </div>
       </div>
     </>
@@ -356,9 +360,9 @@ function VulnCard({ result, error }) {
   if (error) {
     return (
       <div className="psa-card" style={{ padding: '16px 20px', marginBottom: 18 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>آسیب‌پذیری‌های شناخته‌شده</div>
+        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 5 }}>{t('siteSecurity.vuln.title')}</div>
         <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>
-          فهرست افزونه‌ها و قالب‌ها خوانده نشد: {error}
+          {t('siteSecurity.vuln.listError', { error })}
         </p>
       </div>
     )
@@ -374,11 +378,11 @@ function VulnCard({ result, error }) {
         <Icon name={hits.length ? 'shield-alert' : 'shield-check'} size={18} style={{ color: hits.length ? 'var(--gd-danger)' : 'var(--gd-success)' }} />
         <span style={{ fontSize: 14.5, fontWeight: 800 }}>
           {hits.length
-            ? `${faNum(hits.length)} آسیب‌پذیری شناخته‌شده`
-            : 'آسیب‌پذیری شناخته‌شده‌ای پیدا نشد'}
+            ? t('siteSecurity.vuln.found', { count: hits.length })
+            : t('siteSecurity.vuln.none')}
         </span>
         <span style={{ fontSize: 11.5, color: 'var(--gd-text-muted)' }}>
-          از {faNum(result.checked)} افزونه و قالب
+          {t('siteSecurity.vuln.checked', { count: result.checked })}
         </span>
       </div>
 
@@ -387,17 +391,17 @@ function VulnCard({ result, error }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 4 }}>
             <span style={{ fontSize: 13.5, fontWeight: 700 }}>{v.name}</span>
             <Badge variant={v.severity === 'critical' ? 'danger' : v.severity === 'high' ? 'danger' : 'warning'} appearance="soft">
-              {v.severity || 'نامشخص'}{v.cvss ? ` · ${faNum(v.cvss)}` : ''}
+              {v.severity || t('common.unknown')}{v.cvss ? ` · ${digits(v.cvss)}` : ''}
             </Badge>
             {/* Stated, because it is the most common misunderstanding: an
                 inactive plugin with a known hole is still a file on disk that
                 can be requested directly. */}
-            {!v.active && <Badge variant="neutral" appearance="soft">غیرفعال، ولی روی دیسک</Badge>}
+            {!v.active && <Badge variant="neutral" appearance="soft">{t('siteSecurity.vuln.inactiveOnDisk')}</Badge>}
           </div>
           <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', lineHeight: 1.9 }}>
             <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{v.cve}</span>
-            {' · '}نصب‌شده <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{v.installed}</span>
-            {v.fixedIn && <> · اصلاح در <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{v.fixedIn}</span></>}
+            {' · '}{t('siteSecurity.vuln.installed')} <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{v.installed}</span>
+            {v.fixedIn && <> · {t('siteSecurity.vuln.fixedIn')} <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{v.fixedIn}</span></>}
           </div>
           {v.summary && (
             <p style={{ fontSize: 12, color: 'var(--gd-text-secondary)', margin: '5px 0 0', lineHeight: 1.8 }}>{v.summary}</p>
@@ -411,7 +415,7 @@ function VulnCard({ result, error }) {
       {unsure.length > 0 && (
         <details style={{ marginTop: 10, borderTop: '1px solid var(--gd-border-subtle)', paddingTop: 10 }}>
           <summary style={{ fontSize: 12.5, cursor: 'pointer', color: 'var(--gd-text-secondary)' }}>
-            {faNum(unsure.length)} مورد که قابل مقایسه نبود
+            {t('siteSecurity.vuln.uncomparable', { count: unsure.length })}
           </summary>
           <ul style={{ margin: '8px 0 0', paddingInlineStart: 18, fontSize: 12, color: 'var(--gd-text-muted)', lineHeight: 1.9 }}>
             {unsure.slice(0, 12).map((v, i) => (
@@ -437,11 +441,11 @@ function CoreIntegrityCard({ result, error }) {
     return shell(
       <>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 15, fontWeight: 700, marginBottom: 6 }}>
-          <Icon name="shield-alert" size={18} style={{ color: 'var(--gd-warning)' }} /> یکپارچگی هستهٔ وردپرس
+          <Icon name="shield-alert" size={18} style={{ color: 'var(--gd-warning)' }} /> {t('siteSecurity.integrity.title')}
         </div>
         <p style={{ fontSize: 13, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.7 }}>
-          بررسی انجام نشد: {error || result?.error || 'پاسخی از سایت نیامد.'}
-          {' '}تا وقتی این بررسی اجرا نشود، دربارهٔ سالم بودن فایل‌های هسته چیزی نمی‌دانیم.
+          {t('siteSecurity.integrity.notRun', { reason: error || result?.error || t('siteSecurity.integrity.noResponse') })}
+          {' '}{t('siteSecurity.integrity.unknownWhileNotRun')}
         </p>
       </>
     )
@@ -455,7 +459,7 @@ function CoreIntegrityCard({ result, error }) {
   const stat = (n, label, danger) => (
     <div>
       <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: n > 0 ? (danger ? 'var(--gd-danger-text)' : 'var(--gd-warning-text)') : 'var(--gd-success)' }}>
-        {faNum(n)}
+        {digits(n)}
       </div>
       <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2 }}>{label}</div>
     </div>
@@ -470,35 +474,34 @@ function CoreIntegrityCard({ result, error }) {
           </span>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800 }}>
-              {clean ? 'هستهٔ وردپرس دست‌نخورده است' : 'هستهٔ وردپرس با نسخهٔ رسمی یکی نیست'}
+              {clean ? t('siteSecurity.integrity.clean') : t('siteSecurity.integrity.dirty')}
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 4 }}>
-              {faNum(result.files_known)} فایل با نسخهٔ رسمی {faNum(result.version)} ({result.locale}) مقایسه شد
+              {t('siteSecurity.integrity.compared', { files: result.files_known, version: digits(result.version), locale: result.locale })}
             </div>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 260, display: 'flex', gap: 30, paddingInlineStart: 24, borderInlineStart: '1px solid var(--gd-border-subtle)' }}>
-          {stat(nNew, 'فایل ناشناخته در هسته', true)}
-          {stat(nMod, 'فایل تغییریافته', false)}
-          {stat(nMiss, 'فایل گم‌شده', false)}
+          {stat(nNew, t('siteSecurity.stats.unknownCoreFiles'), true)}
+          {stat(nMod, t('siteSecurity.stats.modified'), false)}
+          {stat(nMiss, t('siteSecurity.stats.missing'), false)}
         </div>
       </div>
 
       {nNew > 0 && (
         <div style={{ marginTop: 16, padding: '12px 14px', background: 'var(--gd-danger-bg)', border: '1px solid var(--gd-danger)', borderRadius: 'var(--gd-radius-md)' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gd-danger-text)', marginBottom: 6 }}>
-            فایل‌هایی که وردپرس هرگز منتشرشان نکرده
+            {t('siteSecurity.integrity.unexpectedTitle')}
           </div>
           <p style={{ fontSize: 12.5, color: 'var(--gd-danger-text)', margin: '0 0 8px', lineHeight: 1.7, opacity: 0.9 }}>
-            بدافزار معمولاً هسته را ویرایش نمی‌کند، چون با آپدیت بعدی از بین می‌رود. فایل تازه‌ای
-            جایی می‌گذارد که کسی نگاه نمی‌کند.
+            {t('siteSecurity.integrity.unexpectedBody')}
           </p>
           <ul style={{ margin: 0, paddingInlineStart: 18, fontSize: 12.5, fontFamily: 'var(--gd-font-mono)', color: 'var(--gd-danger-text)', lineHeight: 1.9 }}>
             {result.unexpected.slice(0, 12).map((f) => <li key={f}>{f}</li>)}
           </ul>
           {nNew > 12 && (
             <div style={{ fontSize: 12, color: 'var(--gd-danger-text)', marginTop: 6, opacity: 0.8 }}>
-              و {faNum(nNew - 12)} مورد دیگر
+              {t('siteSecurity.integrity.more', { count: nNew - 12 })}
             </div>
           )}
         </div>
@@ -506,9 +509,9 @@ function CoreIntegrityCard({ result, error }) {
 
       {nMod > 0 && (
         <div style={{ marginTop: 12, fontSize: 12.5, color: 'var(--gd-text-muted)', lineHeight: 1.8 }}>
-          <b style={{ color: 'var(--gd-warning-text)' }}>تغییریافته:</b>{' '}
-          <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{result.modified.slice(0, 6).join('، ')}</span>
-          {nMod > 6 && ` و ${faNum(nMod - 6)} مورد دیگر`}
+          <b style={{ color: 'var(--gd-warning-text)' }}>{t('siteSecurity.integrity.modifiedLabel')}</b>{' '}
+          <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{result.modified.slice(0, 6).join(t('siteSecurity.integrity.listSep'))}</span>
+          {nMod > 6 && t('siteSecurity.integrity.modifiedMore', { count: nMod - 6 })}
         </div>
       )}
     </>

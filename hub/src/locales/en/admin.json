@@ -1,0 +1,85 @@
+{
+  "details": "Details",
+  "prev": "Previous",
+  "next": "Next",
+  "range": "{from}–{to} of {total}",
+  "cols": {
+    "time": "Time",
+    "site": "Site",
+    "kind": "Type",
+    "severity": "Severity",
+    "title": "Title"
+  },
+  "dashboard": {
+    "title": "Admin dashboard",
+    "subtitle": "System-wide statistics",
+    "loadFailed": "Couldn't load statistics.",
+    "users": "Users",
+    "usersHint": "Registered",
+    "sites": "Sites",
+    "paired": "{n} connected",
+    "openAlerts": "Open alerts",
+    "openAlertsHint": "Need attention",
+    "events24h": "Events, 24 hours",
+    "events24hHint": "Last 24 hours",
+    "events7d": "Events, 7 days",
+    "events7dHint": "Last week"
+  },
+  "events": {
+    "title": "Events",
+    "subtitle": "System log across all sites",
+    "loadFailed": "Couldn't load events.",
+    "userId": "User ID",
+    "siteId": "Site ID",
+    "allKinds": "All types",
+    "allSeverities": "All severities",
+    "kinds": {
+      "malware": "Malware",
+      "update": "Update",
+      "backup": "Backup",
+      "policy": "Policy",
+      "rescue": "Rescue",
+      "action": "Action"
+    },
+    "empty": "No events match these filters."
+  },
+  "event": {
+    "title": "Event details",
+    "loadFailed": "Couldn't load the event.",
+    "status": "Status",
+    "closed": "Closed",
+    "open": "Open",
+    "user": "User",
+    "detail": "Details"
+  },
+  "user": {
+    "title": "User details",
+    "loadFailed": "Couldn't load the user.",
+    "account": "Account information",
+    "email": "Email:",
+    "role": "Role:",
+    "plan": "Plan:",
+    "registered": "Registered:",
+    "sites": "Sites ({n})",
+    "noSites": "No sites registered."
+  },
+  "users": {
+    "title": "User management",
+    "subtitle": "View and manage user accounts",
+    "loadFailed": "Couldn't load users.",
+    "roleFailed": "Couldn't change the role.",
+    "search": "Search by name or email…",
+    "cols": {
+      "name": "Name",
+      "email": "Email",
+      "role": "Role",
+      "plan": "Plan",
+      "sites": "Sites",
+      "registered": "Registered"
+    },
+    "noMatch": "No user matches that search.",
+    "empty": "No users registered yet.",
+    "demote": "Remove admin",
+    "promote": "Make admin"
+  }
+}

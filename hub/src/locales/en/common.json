@@ -1,0 +1,23 @@
+{
+  "language": "Language",
+  "loading": "Loading…",
+  "menu": "Menu",
+  "retry": "Try again",
+  "back": "Back",
+  "cancel": "Cancel",
+  "close": "Close",
+  "save": "Save",
+  "saving": "Saving…",
+  "delete": "Delete",
+  "edit": "Edit",
+  "copy": "Copy",
+  "copied": "Copied",
+  "yes": "Yes",
+  "no": "No",
+  "unknown": "Unknown",
+  "notMeasured": "Not measured",
+  "tagline": "Smart WordPress care",
+  "time": {
+    "justNow": "just now"
+  }
+}

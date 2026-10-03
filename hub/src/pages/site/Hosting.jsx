@@ -4,6 +4,7 @@ import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input, Select, Badge, SkeletonStats, SkeletonCard } from '../../components/index.js'
 import { site as siteApi, account } from '../../lib/api.js'
+import { t } from '../../lib/i18n.js'
 
 /**
  * Where this site is hosted.
@@ -49,13 +50,13 @@ export default function Hosting() {
       .catch((e) => {
         if (!alive) return
         setOptions(null); setForm(null); setDescribed(null)
-        setLoadError(e?.message || 'بارگذاری تنظیمات میزبانی انجام نشد.')
+        setLoadError(e?.message || t('hosting.error.load'))
         setLoadedFor(siteId)
       })
     return () => { alive = false }
   }, [siteId, attempt])
 
-  const head = <PageHead title="میزبانی" subtitle="محل سایت و مسیر ارتباط ما با آن" />
+  const head = <PageHead title={t('hosting.title')} subtitle={t('hosting.subtitle')} />
 
   // A failed first load must say so and offer a way back — never an eternal
   // skeleton that looks like slowness.
@@ -66,7 +67,7 @@ export default function Hosting() {
         <div className="gd-card gd-card--e-sm gd-card--p-md dwp-error-row">
           <Icon name="alert-circle" size={17} style={{ color: 'var(--gd-danger)' }} />
           <span style={{ fontSize: 13.5, color: 'var(--gd-danger-text)', flex: 1 }}>{loadError}</span>
-          <Button variant="secondary" size="sm" onClick={() => setAttempt((a) => a + 1)}>تلاش دوباره</Button>
+          <Button variant="secondary" size="sm" onClick={() => setAttempt((a) => a + 1)}>{t('common.retry')}</Button>
         </div>
       </>
     )
@@ -112,7 +113,7 @@ export default function Hosting() {
       let valid = false
       try { valid = ['http:', 'https:'].includes(new URL(cb).protocol) } catch { valid = false }
       if (!valid) {
-        setError('آدرس بازگشت نامعتبر است — باید با http:// یا https:// شروع شود.')
+        setError(t('hosting.error.callbackInvalid'))
         return
       }
     }
@@ -132,9 +133,9 @@ export default function Hosting() {
         callbackUrl: h.callbackUrl || '',
       }))
       setServerUrl(res.serverUrl || '')
-      setSaved('ذخیره شد.')
+      setSaved(t('hosting.saved'))
     } catch (e) {
-      setError(e?.message || 'ذخیره نشد.')
+      setError(e?.message || t('hosting.error.save'))
     } finally { setSaving(false) }
   }
 
@@ -144,8 +145,8 @@ export default function Hosting() {
 
       <div className="gd-card gd-card--e-sm gd-card--p-md">
         <Field
-          label="سایت روی کدام کشور میزبانی می‌شود؟"
-          hint="اگر درخواست‌های ما از سرور نامناسبی برود، ممکن است اصلاً به سایت نرسد و ما آن را «خاموش» ببینیم."
+          label={t('hosting.region.label')}
+          hint={t('hosting.region.hint')}
         >
           <Select value={form.region} onChange={(e) => changeRegion(e.target.value)}>
             {options.regions.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
@@ -153,32 +154,32 @@ export default function Hosting() {
           <p style={hint}>{options.regions.find((r) => r.id === form.region)?.note}</p>
         </Field>
 
-        <Field label="شرکت میزبان" hint="اگر در فهرست نبود، «موردی غیر از این‌ها» را بزنید و نامش را بنویسید.">
+        <Field label={t('hosting.provider.label')} hint={t('hosting.provider.hint')}>
           <Select value={form.provider} onChange={(e) => set('provider')(e.target.value)}>
             {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </Select>
         </Field>
 
         {form.provider === 'other' && (
-          <Field label="نام شرکت میزبان">
-            <Input value={form.providerName} onChange={(e) => set('providerName')(e.target.value)} placeholder="مثلاً هاست محلی شهر شما" />
+          <Field label={t('hosting.provider.nameLabel')}>
+            <Input value={form.providerName} onChange={(e) => set('providerName')(e.target.value)} placeholder={t('hosting.provider.namePlaceholder')} />
           </Field>
         )}
 
         <Field
-          label="درخواست‌های ما از کدام سرور برود؟"
-          hint="پیش‌فرض از روی کشور تعیین می‌شود. اگر بررسی‌ها به سایت نمی‌رسد، دستی عوضش کنید."
+          label={t('hosting.egress.label')}
+          hint={t('hosting.egress.hint')}
         >
           <Select value={form.egress} onChange={(e) => set('egress')(e.target.value)}>
-            <option value="auto">خودکار (بر اساس کشور)</option>
-            <option value="ir">سرور داخلی</option>
-            <option value="intl">سرور بین‌المللی</option>
+            <option value="auto">{t('hosting.egress.auto')}</option>
+            <option value="ir">{t('hosting.egress.ir')}</option>
+            <option value="intl">{t('hosting.egress.intl')}</option>
           </Select>
         </Field>
 
         <Field
-          label="آدرسی که سایت باید به ما درخواست بدهد"
-          hint="خالی یعنی آدرس پیش‌فرض. اگر آدرس پیش‌فرض از داخل سایت شما در دسترس نیست، اینجا آدرس دیگری بگذارید — نیازی به جفت‌کردن دوباره نیست."
+          label={t('hosting.callback.label')}
+          hint={t('hosting.callback.hint')}
         >
           <Input value={form.callbackUrl} onChange={(e) => set('callbackUrl')(e.target.value)} placeholder="https://api.digiwp.com/v1" dir="ltr" />
         </Field>
@@ -187,16 +188,16 @@ export default function Hosting() {
           {saved && <span style={{ fontSize: 12.5, color: 'var(--gd-success)' }}>{saved}</span>}
           {error && <span style={{ fontSize: 12.5, color: 'var(--gd-danger-text)' }}>{error}</span>}
           <Button variant="primary" size="md" leftIcon="check" disabled={saving} onClick={save}>
-            {saving ? 'در حال ذخیره…' : 'ذخیره'}
+            {saving ? t('common.saving') : t('common.save')}
           </Button>
         </div>
       </div>
 
       {serverUrl && (
         <div className="gd-card gd-card--e-sm gd-card--p-md" style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>آدرس فعلی بازگشت</div>
+          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>{t('hosting.current.title')}</div>
           <p style={{ ...hint, marginTop: 0 }}>
-            افزونهٔ روی سایت شما دفعهٔ بعد که تنظیمات را می‌خواند، این آدرس را می‌گیرد.
+            {t('hosting.current.hint')}
           </p>
           <code style={mono}>{serverUrl}</code>
         </div>
@@ -208,14 +209,14 @@ export default function Hosting() {
         <div className="gd-card gd-card--e-sm gd-card--p-md" style={{ marginTop: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 700, marginBottom: 10 }}>
             <Icon name="info" size={16} style={{ color: 'var(--gd-text-muted)' }} />
-            محدودیت‌های شناخته‌شدهٔ این هاست
+            {t('hosting.traits.title')}
           </div>
-          {described.traits.map((t) => (
-            <div key={t.id} style={{ padding: '9px 0', borderTop: '1px solid var(--gd-border-subtle)' }}>
+          {described.traits.map((trait) => (
+            <div key={trait.id} style={{ padding: '9px 0', borderTop: '1px solid var(--gd-border-subtle)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, marginBottom: 3 }}>
-                <Badge variant="warning" appearance="soft">{t.label}</Badge>
+                <Badge variant="warning" appearance="soft">{trait.label}</Badge>
               </div>
-              <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>{t.effect}</p>
+              <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>{trait.effect}</p>
             </div>
           ))}
         </div>

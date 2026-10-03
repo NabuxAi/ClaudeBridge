@@ -12,10 +12,17 @@
 // accepted by a gateway that never delivers. So a dispatch records what was
 // attempted and what each provider said, and the panel presents that as
 // evidence rather than as "the customer has been notified".
+//
+// Language: compose() writes the owner's message in their users.lang; the
+// operator's Telegram copy can be composed separately in
+// config.operatorLocale and passed as `opsMsg`. The dispatch record itself
+// (note, skip reasons) is evidence stored in alert_deliveries: English, with
+// its key beside it.
 // ============================================================
 import { ORDER, telegramOps } from './channels.js'
 import { config } from '../config.js'
-import { isPushConfigured } from '../push.js'
+import { isPushConfigured, dirFor } from '../push.js'
+import { t, normalizeLocale, DEFAULT_LOCALE } from '../i18n.js'
 
 /**
  * Send one emergency alert.
@@ -25,7 +32,7 @@ import { isPushConfigured } from '../push.js'
  * false sends everywhere at once, which is right for a confirmed compromise —
  * at that point waking someone twice is cheaper than waking them not at all.
  */
-export async function dispatch(msg, to, { stopOnFirstSuccess = true, channels = ORDER } = {}) {
+export async function dispatch(msg, to, { stopOnFirstSuccess = true, channels = ORDER, opsMsg = msg } = {}) {
   const attempts = []
   let delivered = null
 
@@ -38,7 +45,7 @@ export async function dispatch(msg, to, { stopOnFirstSuccess = true, channels = 
     try {
       r = await ch.send(msg, to)
     } catch (e) {
-      r = { channel: ch.id, ok: false, error: `خطای غیرمنتظره: ${e.message}` }
+      r = { channel: ch.id, ok: false, error: t('en', 'alerts.fail.unexpected', { error: e.message }) }
     }
     attempts.push(r)
 
@@ -55,13 +62,16 @@ export async function dispatch(msg, to, { stopOnFirstSuccess = true, channels = 
   // never opened still leaves a compromised site running.
   let ops
   try {
-    ops = await telegramOps(msg)
+    ops = await telegramOps(opsMsg)
   } catch (e) {
     ops = { channel: 'telegram-ops', ok: false, error: e.message }
   }
 
   const tried = attempts.filter((a) => !a.skipped)
   const skipped = attempts.filter((a) => a.skipped)
+  const noteKey = delivered
+    ? 'alerts.notes.accepted'
+    : tried.length === 0 ? 'alerts.notes.nothingConfigured' : 'alerts.notes.allFailed'
 
   return {
     delivered,
@@ -73,14 +83,11 @@ export async function dispatch(msg, to, { stopOnFirstSuccess = true, channels = 
     nothingConfigured: tried.length === 0,
     allFailed: tried.length > 0 && !delivered,
     attempts,
-    skipped: skipped.map((s) => ({ channel: s.channel, why: s.error })),
+    skipped: skipped.map((s) => ({ channel: s.channel, why: s.error, whyKey: s.errorKey || null })),
     ops,
     // Never "notified". Accepted by a provider is as far as our knowledge goes.
-    note: delivered
-      ? 'پیام توسط سرویس پذیرفته شد. تحویل و خوانده‌شدن آن تأیید نشده است.'
-      : tried.length === 0
-        ? 'هیچ راه اطلاع‌رسانی‌ای برای این کاربر تنظیم نشده بود.'
-        : 'هیچ‌کدام از راه‌های اطلاع‌رسانی کار نکرد.',
+    note: t('en', noteKey),
+    noteKey,
   }
 }
 
@@ -92,48 +99,49 @@ export async function dispatch(msg, to, { stopOnFirstSuccess = true, channels = 
  * one action; the email carries the whole explanation because it is the only
  * channel with room for it.
  */
-export function compose(event, site) {
-  const name = site?.title || site?.name || 'سایت شما'
+export function compose(event, site, locale = DEFAULT_LOCALE) {
+  const lang = normalizeLocale(locale) || DEFAULT_LOCALE
+  const tr = (key, vars) => t(lang, key, vars)
+  const name = site?.title || site?.name || tr('alerts.compose.yourSite')
   const panel = config.publicPanelUrl ? `${config.publicPanelUrl}/site/${site?.id || ''}` : null
+  // The event's own title, in this reader's language when the row carries a
+  // key (events.i18nTitle), else as stored.
+  const what = event?.detail?.i18n?.key ? tr(event.detail.i18n.key, event.detail.i18n.vars) : event.title
+  const v = { name, what }
 
   const templates = {
     malware: {
-      title: `هشدار امنیتی: ${name}`,
-      body: `فایل آلوده روی ${name} پیدا شد. تا بررسی نشود، احتمال دسترسی مهاجم به سایت وجود دارد.`,
-      smsBody: `فایل آلوده روی ${name} پیدا شد. لطفاً همین حالا پنل را ببینید.`,
+      title: tr('alerts.compose.malware.title', v),
+      body: tr('alerts.compose.malware.body', v),
+      smsBody: tr('alerts.compose.malware.sms', v),
       emailBody:
-        `روی ${name} فایلی پیدا شد که با امضای بدافزارهای شناخته‌شده مطابقت دارد.\n\n` +
-        `${event.title}\n\n` +
-        'این یعنی احتمالاً کسی به سایت دسترسی نوشتن داشته. تا وقتی منشأ آن پیدا نشده، ' +
-        'عوض کردن رمزها به‌تنهایی کافی نیست.\n\n' +
-        (panel ? `جزئیات و عملیات نجات: ${panel}\n` : ''),
+        tr('alerts.compose.malware.email', v) +
+        (panel ? `${tr('alerts.compose.malware.panel', { url: panel })}\n` : ''),
     },
     core_integrity: {
-      title: `فایل هستهٔ دستکاری‌شده: ${name}`,
-      body: `فایلی در هستهٔ وردپرس ${name} با نسخهٔ رسمی یکی نیست.`,
-      smsBody: `فایل هستهٔ ${name} دستکاری شده. پنل را ببینید.`,
-      emailBody:
-        `یک یا چند فایل هستهٔ وردپرس روی ${name} با نسخهٔ رسمی همان نسخه تفاوت دارند.\n\n` +
-        `${event.title}\n\n` +
-        'فایل هسته بدون دلیل عوض نمی‌شود. این تقریباً همیشه یعنی چیزی آن را نوشته است.\n\n' +
-        (panel ? `${panel}\n` : ''),
+      title: tr('alerts.compose.coreIntegrity.title', v),
+      body: tr('alerts.compose.coreIntegrity.body', v),
+      smsBody: tr('alerts.compose.coreIntegrity.sms', v),
+      emailBody: tr('alerts.compose.coreIntegrity.email', v) + (panel ? `${panel}\n` : ''),
     },
     down: {
-      title: `${name} پاسخ نمی‌دهد`,
-      body: `آخرین بررسی ما به ${name} نرسید.`,
-      smsBody: `${name} پاسخ نمی‌دهد.`,
-      emailBody: `آخرین بررسی ما به ${name} نرسید.\n\n${event.title}\n\n` + (panel ? `${panel}\n` : ''),
+      title: tr('alerts.compose.down.title', v),
+      body: tr('alerts.compose.down.body', v),
+      smsBody: tr('alerts.compose.down.sms', v),
+      emailBody: tr('alerts.compose.down.email', v) + (panel ? `${panel}\n` : ''),
     },
   }
 
-  const t = templates[event.kind] || {
-    title: `هشدار: ${name}`,
-    body: event.title,
-    smsBody: `${name}: ${event.title}`.slice(0, 140),
-    emailBody: `${event.title}\n\n` + (panel ? `${panel}\n` : ''),
+  const text = templates[event.kind] || {
+    title: tr('alerts.compose.generic.title', v),
+    body: what,
+    smsBody: `${name}: ${what}`.slice(0, 140),
+    emailBody: `${what}\n\n` + (panel ? `${panel}\n` : ''),
   }
 
-  return { ...t, url: panel, severity: event.severity || 'critical' }
+  // lang/dir ride along so every channel can render the text the right way
+  // round (the web-push payload carries them to the service worker).
+  return { ...text, url: panel, severity: event.severity || 'critical', lang, dir: dirFor(lang) }
 }
 
 /**

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { site as siteApi } from './api.js'
+import { t } from './i18n.js'
 
 const TaskContext = createContext({
   activeTask: null,
@@ -30,7 +31,7 @@ export function TaskProvider({ children, siteId }) {
       let s
       try {
         s = await siteApi(siteId).job(jobId)
-        if (!s || s.ok === false || !s.state) throw new Error(s?.message || 'وضعیت خوانده نشد.')
+        if (!s || s.ok === false || !s.state) throw new Error(s?.message || t('tasks.statusUnreadable'))
         fails = 0
       } catch {
         fails += 1
@@ -41,7 +42,7 @@ export function TaskProvider({ children, siteId }) {
             ? {
                 ...curr,
                 state: 'failed',
-                message: 'خواندن وضعیت عملیات چند بار ناموفق ماند؛ اجرای آن روی سایت ممکن است همچنان در جریان باشد.',
+                message: t('tasks.pollFailed'),
               }
             : curr))
         }
@@ -50,7 +51,7 @@ export function TaskProvider({ children, siteId }) {
 
       setActiveTask(() => ({
         id: jobId,
-        title: taskMeta.title || s.message || 'در حال پردازش…',
+        title: taskMeta.title || s.message || t('tasks.processing'),
         type: taskMeta.type || s.type || 'job',
         state: s.state || 'running', // 'running' | 'done' | 'failed' | 'detached'
         progress: s.progress || (s.state === 'done' ? 100 : 30),
@@ -73,7 +74,7 @@ export function TaskProvider({ children, siteId }) {
     const { id, title, type = 'general', progress = 5 } = task
     setActiveTask({
       id,
-      title: title || 'عملیات در حال اجرا…',
+      title: title || t('tasks.running'),
       type,
       state: 'running',
       progress,

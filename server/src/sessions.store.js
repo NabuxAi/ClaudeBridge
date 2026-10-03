@@ -9,6 +9,7 @@
 // ============================================================
 import crypto from 'node:crypto'
 import { one, all, newId } from './db.js'
+import { httpError, t } from './i18n.js'
 
 /** Sessions live exactly as long as the tokens they authorize. */
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -29,9 +30,23 @@ export const tokenHash = (jti) => crypto.createHash('sha256').update(String(jti)
  * absent — it is an internal lookup key, not something any client needs —
  * and `current` marks the session the request itself arrived on.
  */
-const publicSession = (s, currentHash = null) => s && ({
+/**
+ * The stored device summary in `locale`. New rows hold "Browser · OS" (or ''
+ * when unrecognised, routes/auth.js deviceSummary); rows written before the
+ * i18n change hold the Persian rendering, which is parsed the same way.
+ */
+const LEGACY_UNKNOWN = 'دستگاه ناشناس'
+export function deviceLabel(device, locale) {
+  const d = String(device || '').trim()
+  if (!d || d === LEGACY_UNKNOWN) return t(locale, 'auth.device.unknown')
+  const parts = d.split(/ · | روی /)
+  if (parts.length === 2) return t(locale, 'auth.device.on', { browser: parts[0], os: parts[1] })
+  return d
+}
+
+const publicSession = (s, currentHash = null, locale) => s && ({
   id: s.id,
-  device: s.device || 'دستگاه ناشناس',
+  device: deviceLabel(s.device, locale),
   ip: s.ip || null,
   createdAt: s.created_at === undefined ? null : Number(s.created_at),
   lastSeenAt: s.last_seen_at === undefined ? null : Number(s.last_seen_at),
@@ -53,9 +68,7 @@ export const sessions = {
    */
   async create({ userId, jti, device = '', ip = '', ttlMs = SESSION_TTL_MS }) {
     if (!userId || !jti) {
-      const e = new Error('کاربر و شناسه نشست برای ساخت نشست لازم است.')
-      e.status = 400
-      throw e
+      throw httpError(400, 'auth.sessionArgsRequired')
     }
     const hash = tokenHash(jti)
     const now = Date.now()
@@ -103,7 +116,7 @@ export const sessions = {
    * Revoked and expired sessions are not returned: the page answers
    * "which devices are signed in now", not a forensic history.
    */
-  async listForUser(userId, currentJtiHash = null) {
+  async listForUser(userId, currentJtiHash = null, locale) {
     const rows = await all(
       'SELECT * FROM sessions WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2',
       [userId, Date.now()]
@@ -112,7 +125,7 @@ export const sessions = {
       .sort((a, b) =>
         Number(b.token_hash === currentJtiHash) - Number(a.token_hash === currentJtiHash)
         || Number(b.last_seen_at) - Number(a.last_seen_at))
-      .map((r) => publicSession(r, currentJtiHash))
+      .map((r) => publicSession(r, currentJtiHash, locale))
   },
 
   /** Revoke one session, but only if it belongs to this user. Returns the row or null. */

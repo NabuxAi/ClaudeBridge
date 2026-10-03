@@ -79,7 +79,7 @@ test('core is never auto-rolled-back, and that is deliberate', () => {
     )
     // And the core failure branch says why it stops instead of rolling back.
     assert.ok(
-      job.includes('applied_health_failed') && job.includes('بازگردانی خودکار هسته انجام نمی‌شود'),
+      job.includes('applied_health_failed') && job.includes('Core is not rolled back automatically'),
       `${p}: a core health failure must stop and say so, not roll back over a migrated database`,
     )
     // The manual rollback tool refuses core for the same reason.

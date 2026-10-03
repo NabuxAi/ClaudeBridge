@@ -129,8 +129,14 @@ if (!dsn) {
     // Identical, deliberately vague answer either way — the endpoint never
     // says whether the failure was an absent password or a wrong one.
     assert.equal(missing.body.message, wrong.body.message)
-    assert.match(wrong.body.message, /رمز عبور/)
-    assert.ok(!/درست است|درست بود/.test(wrong.body.message.replace('نادرست است', '')))
+    assert.equal(wrong.body.message, 'Incorrect password.')
+    // The same refusal in Persian with Accept-Language: fa.
+    const wrongFa = await fetch(API + '/account/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${u.token}`, 'Accept-Language': 'fa' },
+      body: JSON.stringify({ password: 'not-the-password' }),
+    })
+    assert.equal((await wrongFa.json()).message, 'رمز عبور نادرست است.')
 
     // Nothing happened: the session is alive, the site is untouched.
     assert.equal((await get('/auth/me', `Bearer ${u.token}`)).status, 200)
@@ -192,7 +198,7 @@ if (!dsn) {
     // 2 · The next login with the same email + password fails, generically.
     const next = await login(u.email)
     assert.equal(next.status, 401)
-    assert.equal(next.body.message, 'ایمیل یا رمز عبور نادرست است.')
+    assert.equal(next.body.message, 'Incorrect email or password.')
 
     // 3 · The pairing credentials are gone from the row…
     const siteRow = (await query('SELECT * FROM sites WHERE id = $1', [site.id])).rows[0]
@@ -213,7 +219,7 @@ if (!dsn) {
     assert.ok(row, 'the user row survives as a tombstone')
     assert.match(row.email, /^deleted-[0-9a-f]{12}@invalid$/)
     assert.ok(!row.email.includes('test.local'), 'the original address must be gone from the row')
-    assert.equal(row.name, 'حساب حذف‌شده')
+    assert.equal(row.name, 'Deleted account')
     assert.ok(!row.pass_hash.startsWith('scrypt$'), 'the stored hash must not verify any password')
     // contact is NOT NULL by schema; the tombstone resets it to the neutral
     // all-null shape — no phone, no push token survives.

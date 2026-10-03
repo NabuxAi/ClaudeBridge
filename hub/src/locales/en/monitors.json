@@ -1,0 +1,67 @@
+{
+  "title": "Monitors",
+  "scopeLabel": "HTTP reachability check, not a user/payment journey",
+  "scopeFallback": "HTTP reachability check",
+  "scopeNote": "Each monitor is one address that the server checks every few minutes with a plain HTTP request — no JavaScript runs and nothing logs in. That is the whole scope: {scope}.",
+  "add": "Add monitor",
+  "loadFailedTitle": "Could not read the monitors",
+  "notMeasured": "Not measured",
+  "confirmDelete": "The monitor “{label}” and its check history will be deleted. Continue?",
+  "error": {
+    "load": "Could not read the monitors.",
+    "save": "Not saved.",
+    "delete": "Not deleted.",
+    "toggle": "Could not change the status.",
+    "check": "The check did not run."
+  },
+  "form": {
+    "editTitle": "Edit monitor",
+    "newTitle": "New monitor",
+    "intro": "The full address (with https) to check every few minutes with a plain GET — for example the homepage, a health page, or the cart URL. This is one HTTP request, not a real user visit.",
+    "label": "Label",
+    "labelHint": "e.g. “Homepage” or “Cart”",
+    "url": "Address",
+    "urlHint": "e.g. https://example.com/",
+    "expectStatus": "Expected status code",
+    "expectStatusHint": "Default {status}",
+    "expectContains": "Text expected in the response",
+    "expectContainsHint": "Optional — a {status} response without this text counts as a failure",
+    "update": "Update"
+  },
+  "metric": {
+    "avail7": "7-day availability",
+    "avail30": "30-day availability",
+    "checksRecorded_one": "{count} recorded check",
+    "checksRecorded_other": "{count} recorded checks",
+    "noChecks": "No checks recorded yet",
+    "incidents7": "Outages in the last 7 days",
+    "incidentsHint": "Each continuous stretch of downtime counts as one outage",
+    "noDataHint": "Without data, a number would mean nothing",
+    "active": "Active monitors",
+    "activeHint": "Maximum per site"
+  },
+  "list": {
+    "title": "Monitor list",
+    "monitor": "Monitor",
+    "lastCheck": "Last check",
+    "status": "Status",
+    "empty": "No monitors added yet. Add an address to have our server check its HTTP availability — until then there is no availability figure at all, and “not measured” is the honest state.",
+    "mustContain": "Must contain:",
+    "enabled": "Active",
+    "disabled": "Off — not being checked",
+    "checking": "Checking…",
+    "checkNow": "Check now",
+    "disable": "Turn checking off",
+    "enable": "Turn checking on",
+    "notChecked": "Not checked yet"
+  },
+  "result": {
+    "ok": "{status} in {ms}ms",
+    "code": "Code {status}",
+    "noResponse": "No response",
+    "incidents_one": "{count} outage",
+    "incidents_other": "{count} outages",
+    "checks_one": "{count} check",
+    "checks_other": "{count} checks"
+  }
+}

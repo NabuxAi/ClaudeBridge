@@ -1,0 +1,55 @@
+{
+  "regions": {
+    "ir": {
+      "label": "Iran",
+      "note": "Requests are sent from our server inside Iran, and the callback address is inside Iran too."
+    },
+    "intl": {
+      "label": "Outside Iran",
+      "note": "Requests are sent from our international server."
+    },
+    "unknown": {
+      "label": "I don't know",
+      "note": "We use the default settings. If checks are slow or cannot reach the site, specify this."
+    }
+  },
+  "providers": {
+    "iranserver": "IranServer",
+    "parspack": "ParsPack",
+    "mizban": "MizbanFa",
+    "hostiran": "HostIran",
+    "novin": "NovinHost",
+    "iranhost": "IranHost",
+    "abrarvan": "ArvanCloud",
+    "derak": "DerakCloud",
+    "cloudflare": "Behind Cloudflare",
+    "other": "Something else"
+  },
+  "traits": {
+    "noExec": {
+      "label": "exec() is disabled",
+      "effect": "Backups cannot use mysqldump; we use the pure-PHP path instead, which is slower but works everywhere."
+    },
+    "lowMemory": {
+      "label": "Low PHP memory",
+      "effect": "File backups and full scans may stop halfway. We split the work into smaller chunks."
+    },
+    "pageCache": {
+      "label": "Server-level page cache",
+      "effect": "The speed check may never reach PHP, leaving no queries to count — which is good news in itself, but the report comes back empty."
+    },
+    "readonlyCore": {
+      "label": "Read-only core files",
+      "effect": "Core updates are not done from our panel; the host manages them."
+    },
+    "cdn": {
+      "label": "CDN in front of the site",
+      "effect": "Health and conflict checks may get a cached response, so we add a unique parameter to the URLs."
+    }
+  },
+  "unnamed": "Unspecified",
+  "notes": {
+    "noKnownLimits": "We have no known limitations recorded for this host — that means we have not seen any, not that there definitely are none.",
+    "notListed": "This host is not on our list, so no special behaviour is configured for it."
+  }
+}

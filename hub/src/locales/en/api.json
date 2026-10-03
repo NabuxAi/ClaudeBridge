@@ -1,0 +1,23 @@
+{
+  "mock": {
+    "twoFactor": "Two-factor sign-in isn't available in demo mode.",
+    "vapid": "VAPID keys aren't configured in demo mode.",
+    "pushOff": "Browser notifications aren't enabled in demo mode.",
+    "pushSubscribe": "Notification subscriptions aren't available in demo mode.",
+    "monitors": "Monitors aren't available in demo mode.",
+    "monitorCheck": "Manual monitor checks aren't available in demo mode.",
+    "monitorScope": "HTTP reachability check, not a user or payment journey",
+    "newConversation": "New conversation",
+    "conversation": "Conversation",
+    "backup": {
+      "db": "Database (SQL)",
+      "dbDesc": "Database tables and records",
+      "plugins": "Plugins",
+      "pluginsDesc": "The wp-content/plugins folder",
+      "themes": "Themes",
+      "themesDesc": "The wp-content/themes folder",
+      "uploads": "Media and uploads",
+      "uploadsDesc": "The wp-content/uploads folder"
+    }
+  }
+}

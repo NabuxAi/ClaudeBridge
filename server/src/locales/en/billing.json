@@ -1,0 +1,71 @@
+{
+  "plans": {
+    "base": {
+      "name": "Basic",
+      "features": [
+        "1 site",
+        "Automatic core, plugin and theme updates",
+        "Database backup on the site itself",
+        "Daily security scan"
+      ]
+    },
+    "pro": {
+      "name": "Professional",
+      "features": [
+        "5 sites",
+        "Everything in Basic",
+        "Core file integrity check",
+        "Plugin and theme conflict check",
+        "Rescue operations"
+      ]
+    },
+    "agency": {
+      "name": "Agency",
+      "features": [
+        "Unlimited sites",
+        "Everything in Professional",
+        "Daily security report on Telegram"
+      ]
+    }
+  },
+  "catalog": {
+    "base": {
+      "features": [
+        "1 site",
+        "Automatic core, plugin and theme updates",
+        "Database backup on the site itself",
+        "Daily security scan"
+      ]
+    },
+    "pro": {
+      "features": [
+        "5 sites",
+        "Everything in Basic",
+        "Core file integrity check",
+        "Plugin and theme conflict check",
+        "Rescue operations"
+      ]
+    },
+    "agency": {
+      "features": [
+        "Unlimited sites",
+        "Everything in Professional",
+        "Manage client sites from one panel"
+      ]
+    }
+  },
+  "planNotFound": "Plan not found.",
+  "planIdRequired": "A plan ID is required.",
+  "userIdRequired": "A user ID is required.",
+  "noGateway": "No payment gateway is connected yet and no card is stored.",
+  "noInvoices": "No invoices are issued because the payment system does not exist yet.",
+  "webhookRecorded": "Payment is not active yet, but the plan/trial change was recorded.",
+  "limit": {
+    "pilot": "Too many trial-access requests from this address. Try again in an hour.",
+    "webhook": "Too many webhooks received from this address."
+  },
+  "trialExpired": "Your trial access has ended; adding new sites is paused until a subscription is activated. Payment is not available yet — to continue, request trial access from the subscription page or contact support.",
+  "siteLimitReached_one": "The “{plan}” plan is full ({count} site). Upgrade your plan to add more sites. Payment is not available yet — contact support to upgrade.",
+  "siteLimitReached_other": "The “{plan}” plan is full ({count} sites). Upgrade your plan to add more sites. Payment is not available yet — contact support to upgrade.",
+  "siteLimitReached": "The “{plan}” plan is full ({count} sites). Upgrade your plan to add more sites. Payment is not available yet — contact support to upgrade."
+}

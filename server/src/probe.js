@@ -12,6 +12,7 @@
 // beat nine convincing ones.
 // ============================================================
 import tls from 'node:tls'
+import { t, DEFAULT_LOCALE } from './i18n.js'
 
 /**
  * Fetch a URL and time it.
@@ -49,7 +50,7 @@ export function certificate(hostname, port = 443, timeoutMs = 10000) {
       const socket = tls.connect({ host: hostname, port, servername: hostname, timeout: timeoutMs }, () => {
         const cert = socket.getPeerCertificate()
         socket.end()
-        if (!cert || !cert.valid_to) return done({ ok: false, error: 'گواهی خوانده نشد' })
+        if (!cert || !cert.valid_to) return done({ ok: false, error: 'certificate could not be read', code: 'unreadable' })
         const expires = new Date(cert.valid_to)
         done({
           ok: true,
@@ -71,14 +72,15 @@ export function certificate(hostname, port = 443, timeoutMs = 10000) {
  *
  * Homepage and wp-login only. Cart, payment gateway and contact form were on
  * the old list — we have no idea what URLs those are on any given site, and a
- * green tick beside "درگاه پرداخت" that nothing tested is worse than no tick.
+ * green tick beside "payment gateway" that nothing tested is worse than no tick.
  *
  * wp-login is expected to answer 200: a 200 means WordPress is serving, and a
  * 403 usually means someone has locked it down deliberately, which is reported
  * rather than called a failure.
  */
-export async function probeSite(siteUrl, { cacheBust = false } = {}) {
+export async function probeSite(siteUrl, { cacheBust = false, locale = DEFAULT_LOCALE } = {}) {
   if (!siteUrl) return null
+  const tr = (key, vars) => t(locale, key, vars)
   let base
   try { base = new URL(siteUrl) } catch { return null }
 
@@ -91,28 +93,28 @@ export async function probeSite(siteUrl, { cacheBust = false } = {}) {
   const [home, login, cert] = await Promise.all([
     timedGet(base.origin + '/' + bust),
     timedGet(new URL('/wp-login.php' + bust, base.origin).href),
-    base.protocol === 'https:' ? certificate(base.hostname) : Promise.resolve({ ok: false, error: 'سایت روی https نیست' }),
+    base.protocol === 'https:' ? certificate(base.hostname) : Promise.resolve({ ok: false, error: 'site is not served over https', code: 'not_https' }),
   ])
 
   const services = [
     {
-      label: 'صفحهٔ اصلی',
+      label: tr('probe.services.home'),
       ok: home.ok,
-      detail: home.ok ? `${home.status} در ${home.ms}ms` : (home.error || `کد ${home.status}`),
+      detail: home.ok ? tr('probe.detail.answered', { status: String(home.status), ms: home.ms }) : (home.error || tr('probe.detail.code', { status: String(home.status) })),
     },
     {
-      label: 'صفحهٔ ورود مدیریت',
+      label: tr('probe.services.login'),
       ok: login.ok || login.status === 403,
       detail: login.status === 403
-        ? 'دسترسی بسته شده (۴۰۳) — احتمالاً عمدی'
-        : login.ok ? `${login.status} در ${login.ms}ms` : (login.error || `کد ${login.status}`),
+        ? tr('probe.detail.loginLocked')
+        : login.ok ? tr('probe.detail.answered', { status: String(login.status), ms: login.ms }) : (login.error || tr('probe.detail.code', { status: String(login.status) })),
     },
     {
-      label: 'گواهی SSL',
+      label: tr('probe.services.ssl'),
       ok: cert.ok && cert.daysLeft > 0,
       detail: cert.ok
-        ? `${cert.daysLeft} روز اعتبار${cert.issuer ? ` — ${cert.issuer}` : ''}`
-        : (cert.error || 'خوانده نشد'),
+        ? tr(cert.issuer ? 'probe.detail.certDaysIssuer' : 'probe.detail.certDays', { count: cert.daysLeft, issuer: cert.issuer || '' })
+        : (cert.code ? tr(`probe.cert.${cert.code}`) : cert.error || tr('probe.cert.unreadable')),
     },
   ]
 

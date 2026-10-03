@@ -1,0 +1,29 @@
+{
+  "title": "نمای کلی",
+  "subtitle": "وضعیت لحظه‌ای سایت شما",
+  "checking": "در حال بررسی…",
+  "checkAgain": "بررسی دوباره",
+  "loadError": "بررسی سایت ممکن نشد.",
+  "notReadTitle": "وضعیت سایت خوانده نشد",
+  "recheckFailed": "بررسی دوباره ممکن نشد: {error}",
+  "banner": {
+    "ok": "سایت پاسخ می‌دهد",
+    "down": "سایت پاسخ نداد",
+    "unknown": "بررسی انجام نشد",
+    "notChecked": "بررسی نشد",
+    "noResponse": "پاسخی از بررسی دریافت نشد.",
+    "checkedOnOpen": "بررسی‌شده هنگام باز کردن این صفحه"
+  },
+  "recentEvents": "رخدادهای اخیر",
+  "noEvents": "هنوز رخدادی ثبت نشده. سایت فقط هنگام اسکن یا اقدام دیده می‌شود.",
+  "ssl": {
+    "title": "گواهی SSL",
+    "remaining": "اعتبار باقی‌مانده",
+    "days_one": "{count} روز",
+    "days_other": "{count} روز",
+    "issuerExpiry": "صادرکننده: {issuer} · انقضا: {expires}",
+    "notRead": "گواهی خوانده نشد.",
+    "notReadReason": "گواهی خوانده نشد: {error}."
+  },
+  "authorityNote": "سطح اختیار در تنظیمات تعیین می‌شود."
+}

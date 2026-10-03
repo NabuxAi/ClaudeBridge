@@ -1,19 +1,20 @@
 // ============================================================
-// Updates & Compatibility Specialist Sub-Agent (عامل تخصصی به‌روزرسانی امن)
+// Updates & Compatibility Specialist Sub-Agent
 // ============================================================
 import * as connector from '../../connector.js'
+import { t } from '../../i18n.js'
 import { updatesFromStatus } from '../../live.js'
 
 export const UPDATES_AGENT = {
   id: 'updates',
-  name: 'متخصص سازگاری و به‌روزرسانی امن',
-  role: 'بررسی پیش‌نیازهای نسخه PHP و هسته وردپرس، هماهنگی صف آپدیت، اعتبارسنجی سلامت پس از آپدیت و تهیه بکاپ',
-  systemPrompt: `شما «عامل تخصصی به‌روزرسانی و سازگاری وردپرس» هستید.
-وظیفه شما:
-۱. تحلیل صف به‌روزرسانی‌های معلق (هسته، افزونه‌ها و قالب‌ها).
-۲. بررسی سازگاری نسخه PHP فعال با نیازمندی‌های افزونه‌های جدید.
-۳. تضمین ثبت اسنپ‌شات/بکاپ قبل از اجرای هرگونه تغییر.
-۴. اعتبارسنجی سلامت سایت پس از به‌روزرسانی (بررسی پاسخ صفحه اصلی و wp-login.php).`,
+  nameKey: 'agents.specialists.updates.name',
+  roleKey: 'agents.specialists.updates.role',
+  systemPrompt: `You are the WordPress updates and compatibility specialist agent.
+Your job:
+1. Analyse the queue of pending updates (core, plugins and themes).
+2. Check that the active PHP version meets the requirements of the new plugin versions.
+3. Make sure a snapshot/backup is recorded before any change runs.
+4. Verify the site's health after an update (check the homepage and wp-login.php respond).`,
 
   tools: [
     'update_status',
@@ -24,7 +25,7 @@ export const UPDATES_AGENT = {
     'health_check',
   ],
 
-  async analyze(target, _options = {}) {
+  async analyze(target, options = {}) {
     const findings = {
       core: { current: null, latest: null, updateAvailable: false },
       plugins: { total: 0, pending: 0, items: [] },
@@ -37,7 +38,7 @@ export const UPDATES_AGENT = {
       const statusRes = await connector.callTool(target, 'update_status', {}).catch((err) => ({ error: err.message }))
       if (statusRes && !statusRes.error) {
         const raw = statusRes?.content?.[0]?.text ? JSON.parse(statusRes.content[0].text) : statusRes
-        const live = updatesFromStatus(raw)
+        const live = updatesFromStatus(raw, options.locale)
         if (live) {
           findings.core.current = live.wpVersion
           findings.core.latest = live.wpLatest
@@ -53,14 +54,14 @@ export const UPDATES_AGENT = {
           if (findings.core.updateAvailable) {
             findings.recommendations.push({
               type: 'core_update',
-              title: `به‌روزرسانی هسته وردپرس به نسخه ${live.wpLatest}`,
+              title: t(options.locale, 'agents.updates.coreTitle', { version: live.wpLatest }),
               risk: 'medium',
             })
           }
           if (findings.plugins.pending > 0) {
             findings.recommendations.push({
               type: 'plugin_updates',
-              title: `${findings.plugins.pending} افزونه نیازمند به‌روزرسانی هستند`,
+              title: t(options.locale, 'agents.updates.pluginsTitle', { count: findings.plugins.pending }),
               items: findings.plugins.items.map((p) => p.name),
               risk: 'low',
             })
@@ -68,7 +69,7 @@ export const UPDATES_AGENT = {
         }
       }
     } catch (e) {
-      findings.recommendations.push({ type: 'error', title: `خطا در بررسی آپدیت‌ها: ${e.message}` })
+      findings.recommendations.push({ type: 'error', title: t(options.locale, 'agents.updates.failed', { error: e.message }) })
     }
 
     return findings

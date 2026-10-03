@@ -1,5 +1,5 @@
 // ============================================================
-// Safety, Classification & Rollback Controller (سطح کنترل ایمنی و مهار ریسک)
+// Safety, Classification & Rollback Controller
 // ============================================================
 import { classify, permits } from '../authority.js'
 

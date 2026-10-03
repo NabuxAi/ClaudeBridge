@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { i18nMiddleware } from '../i18n.js'
 import { requireAuth } from '../auth.js'
 import { pushSubscriptions, validateSubscription } from '../push.store.js'
 import { isPushConfigured } from '../push.js'
@@ -6,6 +7,9 @@ import { limiter, clientIp } from '../security/ratelimit.js'
 import { config } from '../config.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 
 const ip = (req) => clientIp(req, { trustProxy: config.trustProxy })
 
@@ -28,10 +32,10 @@ router.get('/push/status', requireAuth, async (req, res, next) => {
       // One deployment-level reason for the honest off state; the UI renders
       // it verbatim rather than inventing its own explanation.
       ...(configured ? {} : {
-        reason: 'کلیدهای VAPID روی این سرور تنظیم نشده است (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY).',
+        reason: req.t('push.noVapidReason'),
       }),
       subscriptions: await pushSubscriptions.listForUser(req.user.sub),
-      scope: 'اعلان مرورگر، مستقیم از سرور؛ پذیرش سرویس به معنی دیده‌شدن نیست.',
+      scope: req.t('push.scope'),
     })
   } catch (e) { next(e) }
 })
@@ -43,7 +47,7 @@ router.get('/push/public-key', requireAuth, (req, res) => {
     // normal state the panel renders rather than an exception.
     return res.json({
       configured: false,
-      message: 'اعلان مرورگر روی این سرور فعال نیست: کلیدهای VAPID تنظیم نشده‌اند.',
+      message: req.t('push.notConfigured'),
     })
   }
   // The public half is exactly what the browser needs for
@@ -54,7 +58,7 @@ router.get('/push/public-key', requireAuth, (req, res) => {
 
 const subscribeLimit = limiter('push-subscribe', {
   limit: 30, windowMs: 60 * 60 * 1000, keyFn: ip,
-  message: 'ثبت اشتراک اعلان از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+  message: 'push.limit.subscribe',
 })
 
 /**
@@ -68,7 +72,7 @@ router.post('/push/subscribe', requireAuth, subscribeLimit, async (req, res, nex
   try {
     if (!isPushConfigured()) {
       return res.status(503).json({
-        message: 'اعلان مرورگر روی این سرور فعال نیست: کلیدهای VAPID تنظیم نشده‌اند.',
+        message: req.t('push.notConfigured'),
       })
     }
     const sub = validateSubscription(req.body)
@@ -86,10 +90,10 @@ router.post('/push/unsubscribe', requireAuth, async (req, res, next) => {
   try {
     const { id, endpoint } = req.body || {}
     if (!id && !endpoint) {
-      return res.status(400).json({ message: 'شناسه یا نشانی اشتراک لازم است.' })
+      return res.status(400).json({ message: req.t('push.idOrEndpointRequired') })
     }
     const removed = await pushSubscriptions.remove(req.user.sub, { id, endpoint })
-    if (!removed) return res.status(404).json({ message: 'اشتراک پیدا نشد.' })
+    if (!removed) return res.status(404).json({ message: req.t('push.notFound') })
     res.json({ ok: true })
   } catch (e) { next(e) }
 })

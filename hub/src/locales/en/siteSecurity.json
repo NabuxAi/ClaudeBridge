@@ -1,0 +1,87 @@
+{
+  "title": "Security",
+  "subtitle": "Daily security watch and access control",
+  "scanFull": "Full scan",
+  "scanning": "Scanning…",
+  "verdict": {
+    "danger": "Findings need review",
+    "clean": "Security status: no findings",
+    "incomplete": "Check incomplete",
+    "notScanned": "Not scanned yet",
+    "scanRunning": "A scan is running; this result isn't final until it finishes.",
+    "missing": "{items} not measured yet; this result isn't final.",
+    "missingIntegrity": "Core integrity",
+    "missingScan": "Malware scan",
+    "missingJoin": " and ",
+    "needsConnection": "The site must be connected to show its real status.",
+    "cleanCaveat": "A clean scan is not proof the site is uncompromised — these checks are signature- and checksum-based.",
+    "lastChecked": "Last checked: {when}",
+    "lastCheckedNow": "Last checked: just now"
+  },
+  "stats": {
+    "unknownCoreFiles": "Unknown files in core",
+    "malwareFindings": "Malware findings",
+    "sslDays": "Days until SSL expiry",
+    "modified": "Modified files",
+    "missing": "Missing files"
+  },
+  "errors": {
+    "load": "Couldn't load the security status.",
+    "startScan": "Couldn't start the scan.",
+    "pollScan": "Couldn't fetch the scan result; please try again."
+  },
+  "taskTitle": "Full malware and core-file scan",
+  "notLoaded": "Security status couldn't be read",
+  "scanJob": {
+    "running": "Malware scan in progress",
+    "pending": "No malware scan has run yet",
+    "checkingFiles": "Checking files",
+    "progress": "{message} — {percent}",
+    "pendingHint": "Press “Full scan” to start. Until a scan runs, having no findings does not mean the site is clean."
+  },
+  "events": {
+    "title": "Security events",
+    "count_one": "{count} event",
+    "count_other": "{count} events",
+    "empty": "No security events recorded yet. The site is observed during scans and actions, not continuously."
+  },
+  "ssl": {
+    "title": "SSL certificate",
+    "valid": "Valid",
+    "notChecked": "Not checked",
+    "unknownIssuer": "Unknown issuer",
+    "expires_one": "{issuer} · expires in {count} day",
+    "expires_other": "{issuer} · expires in {count} days",
+    "notRead": "The certificate couldn't be read."
+  },
+  "cadenceNote1": "Scans run when you open this page and once a day — this is not real-time monitoring.",
+  "cadenceNote2": "Findings are recorded under “Alerts” and stay open until a later scan confirms they're gone.",
+  "vuln": {
+    "title": "Known vulnerabilities",
+    "listError": "Couldn't read the list of plugins and themes: {error}",
+    "found_one": "{count} known vulnerability",
+    "found_other": "{count} known vulnerabilities",
+    "none": "No known vulnerabilities found",
+    "checked": "across {count} plugins and themes",
+    "inactiveOnDisk": "Inactive, but still on disk",
+    "installed": "installed",
+    "fixedIn": "fixed in",
+    "uncomparable_one": "{count} item couldn't be compared",
+    "uncomparable_other": "{count} items couldn't be compared"
+  },
+  "integrity": {
+    "title": "WordPress core integrity",
+    "notRun": "Check didn't run: {reason}",
+    "noResponse": "The site didn't respond.",
+    "unknownWhileNotRun": "Until this check runs, we know nothing about whether the core files are intact.",
+    "clean": "WordPress core is untouched",
+    "dirty": "WordPress core doesn't match the official release",
+    "compared": "{files} files compared with the official {version} release ({locale})",
+    "unexpectedTitle": "Files WordPress never shipped",
+    "unexpectedBody": "Malware rarely edits core files, because the next update would wipe it out. It drops a new file somewhere nobody looks.",
+    "more": "and {count} more",
+    "modifiedLabel": "Modified:",
+    "modifiedMore": " and {count} more",
+    "listSep": ", "
+  }
+}

@@ -1,4 +1,5 @@
 // Persistent store backed by PostgreSQL (src/db.js). All methods are async.
+import { httpError, normalizeLocale, DEFAULT_LOCALE, t } from './i18n.js'
 import crypto from 'node:crypto'
 import { one, all, newId } from './db.js'
 import { hashPassword } from './auth.js'
@@ -38,16 +39,37 @@ const publicSite = (s) => s && ({
   pendingUpdates: null,
 })
 
+// Stored legacy values (Persian schema defaults, kept for compatibility —
+// no destructive migration): users.role 'مدیر حساب' is the non-admin role,
+// users.plan holds a plan display name. Both are served with a translated
+// label next to the raw value.
+const LEGACY_ACCOUNT_MANAGER = 'مدیر حساب'
+const DELETED_NAME = 'Deleted account'
+const PLAN_ID_BY_NAME = { 'پایه': 'base', 'حرفه‌ای': 'pro', 'آژانس': 'agency', base: 'base', pro: 'pro', agency: 'agency' }
+export const planIdFromName = (name) => PLAN_ID_BY_NAME[String(name || '').trim()] || null
+
 export const users = {
-  async create({ email, name, password }) {
+  /** The public user plus display labels in `locale` (roleLabel, planId, planLabel, display name of a tombstone). */
+  withLabels(locale, u) {
+    if (!u) return u
+    const planId = planIdFromName(u.plan)
+    return {
+      ...u,
+      roleLabel: t(locale, u.role === 'admin' ? 'account.role.admin' : 'account.role.accountManager'),
+      planId,
+      planLabel: planId ? t(locale, `billing.plans.${planId}.name`) : u.plan,
+      ...(u.name === DELETED_NAME || u.name === 'حساب حذف‌شده' ? { name: t(locale, 'account.deletedName') } : {}),
+    }
+  },
+  async create({ email, name, password, lang }) {
     email = String(email || '').trim().toLowerCase()
-    if (!email || !password) throw httpError(400, 'ایمیل و رمز عبور لازم است.')
-    if (String(password).length < 8) throw httpError(400, 'رمز عبور باید حداقل ۸ نویسه باشد.')
-    if (await one('SELECT 1 FROM users WHERE email = $1', [email])) throw httpError(409, 'این ایمیل قبلاً ثبت شده است.')
+    if (!email || !password) throw httpError(400, 'account.emailPasswordRequired')
+    if (String(password).length < 8) throw httpError(400, 'common.passwordTooShort', { min: 8 })
+    if (await one('SELECT 1 FROM users WHERE email = $1', [email])) throw httpError(409, 'account.emailTaken')
     const id = newId('u_')
     const row = await one(
-      `INSERT INTO users (id, email, name, pass_hash, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [id, email, name || email.split('@')[0], await hashPassword(password), Date.now()]
+      `INSERT INTO users (id, email, name, pass_hash, lang, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [id, email, name || email.split('@')[0], await hashPassword(password), normalizeLocale(lang) || DEFAULT_LOCALE, Date.now()]
     )
     return publicUser(row)
   },
@@ -60,7 +82,7 @@ export const users = {
   /** Emergency contact details. Merged, so writing a push token keeps the phone. */
   async setContact(id, patch) {
     const row = await one('SELECT contact FROM users WHERE id = $1', [id])
-    if (!row) throw httpError(404, 'کاربر پیدا نشد.')
+    if (!row) throw httpError(404, 'common.userNotFound')
     const merged = { ...(row.contact || {}), ...patch }
     const updated = await one('UPDATE users SET contact = $2 WHERE id = $1 RETURNING contact', [id, JSON.stringify(merged)])
     return updated.contact
@@ -84,9 +106,9 @@ export const users = {
   },
 
   async updatePassword(id, password) {
-    if (!password || String(password).length < 8) throw httpError(400, 'رمز عبور باید حداقل ۸ نویسه باشد.')
+    if (!password || String(password).length < 8) throw httpError(400, 'common.passwordTooShort', { min: 8 })
     const row = await one('UPDATE users SET pass_hash = $2 WHERE id = $1 RETURNING *', [id, await hashPassword(password)])
-    if (!row) throw httpError(404, 'کاربر پیدا نشد.')
+    if (!row) throw httpError(404, 'common.userNotFound')
     return publicUser(row)
   },
 
@@ -132,9 +154,11 @@ export const users = {
   },
 
   async setRole(id, role) {
-    if (!['admin', 'مدیر حساب'].includes(role)) throw httpError(400, 'نقش نامعتبر است.')
+    // 'account_manager' is the language-neutral name of the stored legacy value.
+    if (role === 'account_manager') role = LEGACY_ACCOUNT_MANAGER
+    if (!['admin', LEGACY_ACCOUNT_MANAGER].includes(role)) throw httpError(400, 'account.invalidRole')
     const row = await one('UPDATE users SET role = $2 WHERE id = $1 RETURNING *', [id, role])
-    if (!row) throw httpError(404, 'کاربر پیدا نشد.')
+    if (!row) throw httpError(404, 'common.userNotFound')
     return publicUser(row)
   },
 
@@ -162,7 +186,7 @@ export const users = {
    */
   async anonymize(id) {
     const row = await one('SELECT * FROM users WHERE id = $1', [id])
-    if (!row) throw httpError(404, 'کاربر پیدا نشد.')
+    if (!row) throw httpError(404, 'common.userNotFound')
     const deletedEmail =
       'deleted-' + crypto.createHash('sha256').update(String(id)).digest('hex').slice(0, 12) + '@invalid'
     return one(
@@ -171,7 +195,7 @@ export const users = {
              contact = '{"phone":null,"fcmToken":null,"najvaToken":null}'::jsonb, two_factor = false
         WHERE id = $1
        RETURNING *`,
-      [id, deletedEmail, 'حساب حذف‌شده', 'deleted:' + crypto.randomBytes(32).toString('hex')]
+      [id, deletedEmail, DELETED_NAME, 'deleted:' + crypto.randomBytes(32).toString('hex')]
     )
   },
 }
@@ -270,10 +294,10 @@ export const sites = {
   ),
 
   async add(userId, { name, title }) {
-    if (!name) throw httpError(400, 'دامنهٔ سایت لازم است.')
+    if (!name) throw httpError(400, 'sites.domainRequired')
     const clean = String(name).replace(/^https?:\/\//, '').replace(/\/$/, '')
     const id = slug(clean) || newId('s_')
-    if (await one('SELECT 1 FROM sites WHERE id = $1', [id])) throw httpError(409, 'این سایت قبلاً افزوده شده است.')
+    if (await one('SELECT 1 FROM sites WHERE id = $1', [id])) throw httpError(409, 'sites.alreadyAdded')
     const site = {
       id, user_id: userId, name: clean, title: title || clean, status: 'checking', authority: 'report',
       url: name.startsWith('http') ? name : `https://${clean}`,
@@ -356,7 +380,7 @@ export const sites = {
    */
   async setPolicy(id, userId, patch) {
     const row = await one('SELECT policy FROM sites WHERE id = $1 AND user_id = $2', [id, userId])
-    if (!row) throw httpError(404, 'سایت پیدا نشد.')
+    if (!row) throw httpError(404, 'common.siteMissing')
     const { policy, refused } = applyPolicyChange(row.policy, patch)
     const saved = await one(
       'UPDATE sites SET policy = $2 WHERE id = $1 RETURNING *',
@@ -370,7 +394,7 @@ export const sites = {
       'UPDATE sites SET authority = $3 WHERE id = $1 AND user_id = $2 RETURNING *',
       [id, userId, authority]
     )
-    if (!row) throw httpError(404, 'سایت پیدا نشد.')
+    if (!row) throw httpError(404, 'common.siteMissing')
     return publicSite(row)
   },
 
@@ -382,7 +406,7 @@ export const sites = {
    */
   async setHosting(id, userId, patch) {
     const row = await one('SELECT hosting FROM sites WHERE id = $1 AND user_id = $2', [id, userId])
-    if (!row) throw httpError(404, 'سایت پیدا نشد.')
+    if (!row) throw httpError(404, 'common.siteMissing')
     const merged = normaliseHosting({ ...(row.hosting || {}), ...(patch || {}) })
     const updated = await one(
       'UPDATE sites SET hosting = $3 WHERE id = $1 AND user_id = $2 RETURNING *',
@@ -403,7 +427,7 @@ export const sites = {
   /** Storage destination, daily limits, and retention policy for backups. */
   async setBackupPolicy(id, userId, patch) {
     const row = await one('SELECT backup_policy FROM sites WHERE id = $1 AND user_id = $2', [id, userId])
-    if (!row) throw httpError(404, 'سایت پیدا نشد.')
+    if (!row) throw httpError(404, 'common.siteMissing')
     const merged = { ...(row.backup_policy || {}), ...(patch || {}) }
     const updated = await one(
       'UPDATE sites SET backup_policy = $3 WHERE id = $1 AND user_id = $2 RETURNING *',
@@ -415,10 +439,11 @@ export const sites = {
 
 // ---- Team members and invitations ---------------------------
 
+// Role display names: translation keys, rendered per request.
 const ROLE_LABEL = {
-  owner: 'مالک',
-  admin: 'مدیر',
-  viewer: 'فقط مشاهده',
+  owner: 'team.role.owner',
+  admin: 'team.role.admin',
+  viewer: 'team.role.viewer',
 }
 
 const VALID_ROLES = Object.keys(ROLE_LABEL)
@@ -429,41 +454,46 @@ const VALID_ROLES = Object.keys(ROLE_LABEL)
  * makes every non-owner member read-only at that layer — the site's authority
  * level (report/confirm/auto) stays a separate, owner-set setting and the
  * sensitive-tool classification is untouched. The panel must render this
- * effective access, not the promise carried by the role name, or a «مدیر»
+ * effective access, not the promise carried by the role name, or an "admin"
  * badge would advertise writes the server answers with 403.
  */
 const EFFECTIVE_ACCESS = {
-  owner: { level: 'owner', label: 'مدیریت کامل' },
-  admin: { level: 'report', label: 'فقط خواندن' },
-  viewer: { level: 'report', label: 'فقط خواندن' },
+  owner: { level: 'owner', label: 'team.effective.full' },
+  admin: { level: 'report', label: 'team.effective.readOnly' },
+  viewer: { level: 'report', label: 'team.effective.readOnly' },
+}
+const roleLabel = (locale, role) => (ROLE_LABEL[role] ? t(locale, ROLE_LABEL[role]) : role)
+const effectiveOf = (locale, role) => {
+  const e = EFFECTIVE_ACCESS[role] || EFFECTIVE_ACCESS.viewer
+  return { level: e.level, label: t(locale, e.label) }
 }
 
-const publicMember = (m) => m && ({
+const publicMember = (m, locale) => m && ({
   id: m.id,
   userId: m.user_id,
   name: m.name || m.invited_email || '?',
   email: m.email || m.invited_email,
   role: m.role,
-  roleLabel: ROLE_LABEL[m.role] || m.role,
-  effective: EFFECTIVE_ACCESS[m.role] || EFFECTIVE_ACCESS.viewer,
+  roleLabel: roleLabel(locale, m.role),
+  effective: effectiveOf(locale, m.role),
   initials: (m.name || m.invited_email || '?').trim().charAt(0),
   status: m.status,
   joinedAt: Number(m.created_at),
 })
 
-const publicInvitation = (i) => i && ({
+const publicInvitation = (i, locale) => i && ({
   id: i.id,
   email: i.email,
   role: i.role,
-  roleLabel: ROLE_LABEL[i.role] || i.role,
+  roleLabel: roleLabel(locale, i.role),
   createdAt: Number(i.created_at),
   expiresAt: Number(i.expires_at),
 })
 
 async function requireSiteOwner(siteId, userId) {
   const site = await one('SELECT id, user_id, name, title FROM sites WHERE id = $1', [siteId])
-  if (!site) throw httpError(404, 'سایت پیدا نشد.')
-  if (site.user_id !== userId) throw httpError(403, 'فقط مالک سایت می‌تواند اعضا را مدیریت کند.')
+  if (!site) throw httpError(404, 'common.siteMissing')
+  if (site.user_id !== userId) throw httpError(403, 'team.ownerOnly')
   return site
 }
 
@@ -472,7 +502,7 @@ export const team = {
   VALID_ROLES,
 
   /** Everything the team UI needs for one site. */
-  async list(siteId, userId) {
+  async list(siteId, userId, locale) {
     const site = await requireSiteOwner(siteId, userId)
 
     const ownerRow = await one(
@@ -511,9 +541,9 @@ export const team = {
         role: 'owner',
         status: 'active',
         created_at: ownerRow?.created_at || site.created_at,
-      }),
-      members: memberRows.map(publicMember),
-      invitations: invitationRows.map(publicInvitation),
+      }, locale),
+      members: memberRows.map((m) => publicMember(m, locale)),
+      invitations: invitationRows.map((i) => publicInvitation(i, locale)),
     }
   },
 
@@ -523,24 +553,24 @@ export const team = {
    * Returns the public invitation and the raw token (for the email). The raw
    * token is never stored; only its SHA-256 hash lives in the database.
    */
-  async invite(siteId, ownerId, { email, role = 'viewer' }) {
+  async invite(siteId, ownerId, { email, role = 'viewer', locale } = {}) {
     const site = await requireSiteOwner(siteId, ownerId)
     const normalized = String(email || '').trim().toLowerCase()
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-      throw httpError(400, 'آدرس ایمیل معتبر نیست.')
+      throw httpError(400, 'team.invalidEmail')
     }
     if (!VALID_ROLES.includes(role) || role === 'owner') {
-      throw httpError(400, 'نقش دعوت‌نامه باید مدیر یا فقط مشاهده باشد.')
+      throw httpError(400, 'team.invalidInviteRole')
     }
 
-    const existingUser = await one('SELECT id FROM users WHERE email = $1', [normalized])
+    const existingUser = await one('SELECT id, lang FROM users WHERE email = $1', [normalized])
     if (existingUser) {
       const already = await one(
         `SELECT 1 FROM team_members
           WHERE site_id = $1 AND user_id = $2 AND status = 'active'`,
         [siteId, existingUser.id]
       )
-      if (already) throw httpError(409, 'این کاربر قبلاً عضو سایت است.')
+      if (already) throw httpError(409, 'team.alreadyMember')
     }
 
     const raw = crypto.randomBytes(32).toString('hex')
@@ -556,7 +586,7 @@ export const team = {
         [id, siteId, normalized, role, ownerId, tokenHash, expiresAt, now]
       )
     } catch (e) {
-      if (e.code === '23505') throw httpError(409, 'دعوت‌نامهٔ فعالی برای این ایمیل روی این سایت وجود دارد.')
+      if (e.code === '23505') throw httpError(409, 'team.activeInviteExists')
       throw e
     }
 
@@ -567,25 +597,29 @@ export const team = {
     // whichever is opened first wins and the other reports it as spent.
     const registerUrl = `${publicPanelUrl}/register?invite=${raw}&email=${encodeURIComponent(normalized)}`
     const acceptUrl = `${publicPanelUrl}/app/team?accept=${raw}&site=${siteId}`
+    // The invitee's own language when they already have an account; the
+    // inviter's request language otherwise.
+    const lang = existingUser?.lang || locale
+    const vars = { site: site.name, role: roleLabel(lang, role), days: 7 }
     const mailResult = await sendMail({
       to: normalized,
-      subject: `دعوت به همکاری در مدیریت سایت ${site.name}`,
-      text: `شما برای همکاری در مدیریت سایت «${site.name}» با نقش «${ROLE_LABEL[role]}» دعوت شده‌اید.\n\nاگر حساب ندارید، با این لینک ثبت‌نام کنید و عضو سایت شوید:\n${registerUrl}\n\nاگر قبلاً حساب دارید، پس از ورود با این لینک دعوت را بپذیرید:\n${acceptUrl}\n\nاین لینک‌ها ۷ روز معتبرند و فقط یک‌بار قابل استفاده‌اند.`,
-      html: `<p>شما برای همکاری در مدیریت سایت «${site.name}» با نقش «${ROLE_LABEL[role]}» دعوت شده‌اید.</p><p>اگر حساب ندارید، <a href="${registerUrl}">با همین ایمیل ثبت‌نام کنید</a> تا عضو سایت شوید.</p><p>اگر قبلاً حساب دارید، پس از ورود <a href="${acceptUrl}">دعوت را از صفحهٔ تیم بپذیرید</a>.</p><p>این لینک‌ها ۷ روز معتبرند و فقط یک‌بار قابل استفاده‌اند.</p>`,
+      subject: t(lang, 'team.inviteMail.subject', vars),
+      text: `${t(lang, 'team.inviteMail.intro', vars)}\n\n${t(lang, 'team.inviteMail.registerText')}\n${registerUrl}\n\n${t(lang, 'team.inviteMail.acceptText')}\n${acceptUrl}\n\n${t(lang, 'team.inviteMail.validity', vars)}`,
+      html: `<p>${t(lang, 'team.inviteMail.intro', vars)}</p><p>${t(lang, 'team.inviteMail.registerHtml', { link: registerUrl })}</p><p>${t(lang, 'team.inviteMail.acceptHtml', { link: acceptUrl })}</p><p>${t(lang, 'team.inviteMail.validity', vars)}</p>`,
     })
 
     return {
       invitation: publicInvitation({
         id, email: normalized, role, created_at: now, expires_at: expiresAt,
-      }),
+      }, locale),
       raw, // caller may log or return; here it is returned only for tests
       mail: { ok: mailResult.ok, reason: mailResult.reason || null },
     }
   },
 
   /** Spend an invitation and add the user to the site. */
-  async accept(siteId, rawToken, userId) {
-    if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'لینک دعوت نامعتبر است.')
+  async accept(siteId, rawToken, userId, locale) {
+    if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'team.invalidInviteLink')
     const tokenHash = crypto.createHash('sha256').update(String(rawToken)).digest('hex')
 
     const invitation = await one(
@@ -594,12 +628,12 @@ export const team = {
           AND expires_at > $3`,
       [tokenHash, siteId, Date.now()]
     )
-    if (!invitation) throw httpError(400, 'لینک دعوت منقضی، استفاده‌شده یا لغو شده است.')
+    if (!invitation) throw httpError(400, 'team.inviteLinkGone')
 
     const user = await one('SELECT id, email FROM users WHERE id = $1', [userId])
-    if (!user) throw httpError(401, 'ابتدا وارد شوید.')
+    if (!user) throw httpError(401, 'team.signInFirst')
     if (user.email !== invitation.email) {
-      throw httpError(403, 'این دعوت‌نامه متعلق به ایمیل دیگری است.')
+      throw httpError(403, 'team.inviteOtherEmail')
     }
 
     const existing = await one(
@@ -607,7 +641,7 @@ export const team = {
         WHERE site_id = $1 AND user_id = $2 AND status = 'active'`,
       [siteId, userId]
     )
-    if (existing) throw httpError(409, 'شما قبلاً عضو این سایت هستید.')
+    if (existing) throw httpError(409, 'team.youAreMember')
 
     const memberId = newId('tm_')
     const now = Date.now()
@@ -621,7 +655,7 @@ export const team = {
     return publicMember({
       id: memberId, user_id: user.id, name: user.name, email: user.email,
       role: invitation.role, invited_email: invitation.email, status: 'active', created_at: now,
-    })
+    }, locale)
   },
 
   /**
@@ -640,8 +674,8 @@ export const team = {
    * must not fail the account itself — registration reports it and the owner
    * can re-invite.
    */
-  async acceptOnRegister(rawToken, user) {
-    if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'لینک دعوت نامعتبر است.')
+  async acceptOnRegister(rawToken, user, locale) {
+    if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'team.invalidInviteLink')
     const tokenHash = crypto.createHash('sha256').update(String(rawToken)).digest('hex')
     const invitation = await one(
       `SELECT * FROM invitations
@@ -649,9 +683,9 @@ export const team = {
           AND expires_at > $2`,
       [tokenHash, Date.now()]
     )
-    if (!invitation) throw httpError(400, 'دعوت‌نامه منقضی، استفاده‌شده یا لغو شده است.')
+    if (!invitation) throw httpError(400, 'team.inviteGone')
     if (user.email !== invitation.email) {
-      throw httpError(403, 'این دعوت‌نامه متعلق به ایمیل دیگری است؛ با همان ایمیلِ دعوت‌شده ثبت‌نام کنید.')
+      throw httpError(403, 'team.inviteOtherEmailRegister')
     }
 
     const now = Date.now()
@@ -659,7 +693,7 @@ export const team = {
       'UPDATE invitations SET used_at = $2 WHERE id = $1 AND used_at IS NULL RETURNING id',
       [invitation.id, now]
     )
-    if (!spent) throw httpError(400, 'دعوت‌نامه قبلاً استفاده شده است.')
+    if (!spent) throw httpError(400, 'team.inviteSpent')
 
     const memberId = newId('tm_')
     await one(
@@ -670,7 +704,7 @@ export const team = {
     return publicMember({
       id: memberId, user_id: user.id, name: user.name, email: user.email,
       role: invitation.role, invited_email: invitation.email, status: 'active', created_at: now,
-    })
+    }, locale)
   },
 
   /** Owner cancels a pending invitation. */
@@ -682,15 +716,15 @@ export const team = {
        RETURNING *`,
       [invitationId, siteId, Date.now()]
     )
-    if (!row) throw httpError(404, 'دعوت‌نامه‌ای با این شناسه پیدا نشد.')
+    if (!row) throw httpError(404, 'team.inviteNotFound')
     return { ok: true }
   },
 
   /** Owner changes a member's role. */
-  async updateRole(siteId, ownerId, memberId, role) {
+  async updateRole(siteId, ownerId, memberId, role, locale) {
     await requireSiteOwner(siteId, ownerId)
     if (!VALID_ROLES.includes(role) || role === 'owner') {
-      throw httpError(400, 'نقش باید مدیر یا فقط مشاهده باشد.')
+      throw httpError(400, 'team.invalidRole')
     }
     // Four values were bound for three placeholders: a Date.now() sat at $3 for
     // an updated_at column team_members does not have. PostgreSQL cannot infer a
@@ -702,9 +736,9 @@ export const team = {
        RETURNING *`,
       [memberId, siteId, role]
     )
-    if (!row) throw httpError(404, 'عضوی با این شناسه پیدا نشد.')
+    if (!row) throw httpError(404, 'team.memberNotFound')
     const user = await one('SELECT name, email FROM users WHERE id = $1', [row.user_id])
-    return publicMember({ ...row, name: user?.name, email: user?.email })
+    return publicMember({ ...row, name: user?.name, email: user?.email }, locale)
   },
 
   /** Owner removes a member from the site. */
@@ -716,7 +750,7 @@ export const team = {
        RETURNING *`,
       [memberId, siteId]
     )
-    if (!row) throw httpError(404, 'عضوی با این شناسه پیدا نشد.')
+    if (!row) throw httpError(404, 'team.memberNotFound')
     return { ok: true }
   },
 }
@@ -725,8 +759,5 @@ function slug(v) {
   return String(v).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40)
 }
 
-export function httpError(status, message) {
-  const e = new Error(message)
-  e.status = status
-  return e
-}
+// Errors carry translation keys (see i18n.js); re-exported for existing importers.
+export { httpError }

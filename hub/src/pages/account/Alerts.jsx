@@ -3,6 +3,7 @@ import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input, Badge } from '../../components/index.js'
 import { account } from '../../lib/api.js'
+import { t } from '../../lib/i18n.js'
 
 /**
  * Emergency contact.
@@ -42,8 +43,8 @@ export default function Alerts() {
     try {
       await account.setContact({ phone })
       await load()
-      setSaved('ذخیره شد.')
-    } catch (e) { setError(e?.message || 'ذخیره نشد.') } finally { setSaving(false) }
+      setSaved(t('alerts.saved'))
+    } catch (e) { setError(e?.message || t('alerts.saveFailed')) } finally { setSaving(false) }
   }
 
   /**
@@ -55,37 +56,37 @@ export default function Alerts() {
    * of leaving a switch that looks on.
    */
   async function enablePush() {
-    setPushState('در حال درخواست اجازه…')
+    setPushState(t('alerts.push.requesting'))
     try {
       if (!('Notification' in window)) {
-        return setPushState('این مرورگر از اعلان پشتیبانی نمی‌کند.')
+        return setPushState(t('alerts.push.unsupported'))
       }
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') {
-        return setPushState('اجازهٔ اعلان داده نشد. بدون آن، اعلان مرورگر کار نمی‌کند.')
+        return setPushState(t('alerts.push.denied'))
       }
       const reg = await navigator.serviceWorker?.getRegistration()
-      if (!reg) return setPushState('سرویس‌ورکر ثبت نشده؛ صفحه را دوباره بارگذاری کنید.')
+      if (!reg) return setPushState(t('alerts.push.noWorker'))
 
       const sub = await reg.pushManager.getSubscription()
       const token = sub ? JSON.stringify(sub) : null
-      if (!token) return setPushState('اشتراک اعلان ساخته نشد.')
+      if (!token) return setPushState(t('alerts.push.noSubscription'))
 
       await account.setContact({ fcmToken: token })
       await load()
-      setPushState('اعلان مرورگر فعال شد.')
+      setPushState(t('alerts.push.enabled'))
     } catch (e) {
-      setPushState(e?.message || 'فعال‌سازی اعلان انجام نشد.')
+      setPushState(e?.message || t('alerts.push.failed'))
     }
   }
 
-  if (!readiness) return <PageHead title="هشدار اضطراری" subtitle="اگر سایتی هک شود، چطور به شما خبر می‌دهیم" />
+  if (!readiness) return <PageHead title={t('alerts.title')} subtitle={t('alerts.subtitle')} />
 
   const tone = readiness.readyCount === 0 ? 'danger' : readiness.readyCount === 1 ? 'warning' : 'success'
 
   return (
     <>
-      <PageHead title="هشدار اضطراری" subtitle="اگر سایتی هک شود، چطور به شما خبر می‌دهیم" />
+      <PageHead title={t('alerts.title')} subtitle={t('alerts.subtitle')} />
 
       <div style={{
         background: `var(--gd-${tone}-bg)`, border: `1px solid var(--gd-${tone})`,
@@ -93,18 +94,18 @@ export default function Alerts() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14.5, fontWeight: 800, marginBottom: 5 }}>
           <Icon name={readiness.readyCount === 0 ? 'alert-octagon' : readiness.readyCount === 1 ? 'alert-triangle' : 'shield-check'} size={18} />
-          {readiness.readyCount === 0 ? 'هیچ راه اطلاع‌رسانی فعالی ندارید' : `${faNum(readiness.readyCount)} راه فعال`}
+          {readiness.readyCount === 0 ? t('alerts.readiness.none') : t('alerts.readiness.count', { count: readiness.readyCount })}
         </div>
         <p style={{ fontSize: 12.5, margin: 0, lineHeight: 1.9 }}>{readiness.verdict}</p>
       </div>
 
       <div style={card}>
-        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 4 }}>راه‌های اطلاع‌رسانی</div>
+        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 4 }}>{t('alerts.channels.title')}</div>
         {/* Both halves are shown, because "we have no key" and "you gave us no
             number" are different problems with different fixes, and a single
             red dot would hide which one this is. */}
         <p style={{ ...hint, marginTop: 0, marginBottom: 12 }}>
-          هر راه دو طرف دارد: سرویس باید روی سرور ما تنظیم باشد و اطلاعات تماس شما هم ثبت شده باشد.
+          {t('alerts.channels.hint')}
         </p>
         {readiness.channels.map((c, i) => (
           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: i ? '1px solid var(--gd-border-subtle)' : 'none' }}>
@@ -117,21 +118,21 @@ export default function Alerts() {
               {c.why && <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 2 }}>{c.why}</div>}
             </div>
             <Badge variant={c.ready ? 'success' : 'neutral'} appearance="soft">
-              {c.ready ? 'فعال' : 'غیرفعال'}
+              {c.ready ? t('alerts.channels.active') : t('alerts.channels.inactive')}
             </Badge>
           </div>
         ))}
       </div>
 
       <div style={{ ...card, marginTop: 16 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 4 }}>شمارهٔ موبایل</div>
+        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 4 }}>{t('alerts.phone.title')}</div>
         <p style={{ ...hint, marginTop: 0, marginBottom: 10 }}>
-          پیامک وقتی به کار می‌آید که گوشی اینترنت ندارد یا اپ نصب نیست — یعنی دقیقاً وقتی بقیهٔ راه‌ها جواب نمی‌دهند.
+          {t('alerts.phone.hint')}
         </p>
         <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="۰۹۱۲۳۴۵۶۷۸۹" dir="ltr" style={{ flex: '1 1 200px' }} />
+          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={t('alerts.phone.placeholder')} dir="ltr" style={{ flex: '1 1 200px' }} />
           <Button variant="secondary" size="md" disabled={saving} onClick={savePhone}>
-            {saving ? 'در حال ذخیره…' : 'ذخیره'}
+            {saving ? t('common.saving') : t('common.save')}
           </Button>
         </div>
         {saved && <p style={{ ...hint, color: 'var(--gd-success)' }}>{saved}</p>}
@@ -139,26 +140,23 @@ export default function Alerts() {
       </div>
 
       <div style={{ ...card, marginTop: 16 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 4 }}>اعلان مرورگر</div>
+        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 4 }}>{t('alerts.push.title')}</div>
         <p style={{ ...hint, marginTop: 0, marginBottom: 10 }}>
-          سریع‌ترین راه است. اگر این پنل را به صفحهٔ اصلی گوشی اضافه کنید، اعلان مثل یک اپ می‌آید.
+          {t('alerts.push.hint')}
         </p>
         <Button variant="secondary" size="md" leftIcon="bell" onClick={enablePush}>
-          فعال‌سازی اعلان روی این دستگاه
+          {t('alerts.push.enable')}
         </Button>
         {pushState && <p style={hint}>{pushState}</p>}
       </div>
 
       {/* The honest caveat, kept next to the controls rather than buried. */}
       <p style={{ ...hint, marginTop: 16 }}>
-        وقتی هشداری فرستاده می‌شود، ما فقط می‌دانیم سرویس آن را پذیرفته — نه اینکه به دست شما رسیده یا خوانده شده.
-        به همین دلیل بیش از یک راه اهمیت دارد.
+        {t('alerts.caveat')}
       </p>
     </>
   )
 }
-
-const faNum = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
 
 const card = {
   background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)',

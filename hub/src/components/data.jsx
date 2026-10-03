@@ -1,9 +1,11 @@
 import Icon from '../lib/icons.jsx'
+import { t, pct as fmtPct } from '../lib/i18n.js'
 
+// Values are i18n keys; translated at render.
 const STATUS_LABELS = {
-  healthy: 'سالم', warning: 'هشدار', critical: 'بحرانی',
-  checking: 'در حال بررسی', info: 'اطلاع', offline: 'آفلاین',
-  unknown: 'نامشخص',
+  healthy: 'components.status.healthy', warning: 'components.status.warning', critical: 'components.status.critical',
+  checking: 'components.status.checking', info: 'components.status.info', offline: 'components.status.offline',
+  unknown: 'components.status.unknown',
 }
 
 export function StatusPill({ status, label, pulse, size = 'md', className = '', children }) {
@@ -13,7 +15,7 @@ export function StatusPill({ status, label, pulse, size = 'md', className = '', 
   // An unrecognized value is unknown (neutral gray), never silently green.
   const key = STATUS_LABELS[status] ? status : 'unknown'
   const doPulse = pulse === undefined ? key === 'checking' : pulse
-  const text = children != null ? children : label != null ? label : STATUS_LABELS[key]
+  const text = children != null ? children : label != null ? label : t(STATUS_LABELS[key])
   return (
     <span className={['gd-status', `gd-status--${key}`, `gd-status--${size}`, className].filter(Boolean).join(' ')}>
       <span className={'gd-status__dot' + (doPulse ? ' gd-status__dot--pulse' : '')} />
@@ -88,7 +90,7 @@ export function ProgressBar({ value = 0, max = 100, tone = 'primary', size = 'md
       {(label || showValue) && (
         <div className="gd-progress__head">
           <span>{label}</span>
-          {showValue && <span className="gd-progress__val">{valueText != null ? valueText : `${Math.round(pct)}٪`}</span>}
+          {showValue && <span className="gd-progress__val">{valueText != null ? valueText : fmtPct(Math.round(pct))}</span>}
         </div>
       )}
       <div className="gd-progress__track" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>

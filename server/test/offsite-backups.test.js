@@ -264,7 +264,7 @@ if (!dsn) {
       method: 'POST', headers: auth, body: JSON.stringify({ targetId: created.body.id }),
     })
     assert.equal(trigger.status, 400)
-    assert.ok(trigger.body.message.includes('وصل نشده'))
+    assert.ok(trigger.body.message.includes('not connected'), trigger.body.message)
   })
 
   test.after(async () => {

@@ -1,9 +1,9 @@
 {
-  "name": "DigiWP Ai Support — پشتیبان هوشمند وردپرس",
+  "name": "DigiWP Ai Support — Smart WordPress Care",
   "short_name": "DigiWP",
-  "description": "پایش امنیتی و به‌روزرسانی خودکار سایت‌های وردپرسی",
-  "lang": "fa",
-  "dir": "rtl",
+  "description": "Security monitoring and automatic updates for WordPress sites",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",

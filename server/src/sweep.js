@@ -39,14 +39,16 @@ import * as events from './events.js'
  * not push toward acting — an unattended run is the wrong moment to be
  * enthusiastic.
  */
+// English, like every model prompt here; the reply language is the owner's
+// and is set in the system prompt by assistant.answer({ locale }).
 export const SWEEP_PROMPT = [
-  'این یک بررسی خودکار روزانه است؛ کسی پشت آن منتظر نیست.',
-  'وضعیت سایت را بررسی کن: به‌روزرسانی‌های معوق، آخرین بکاپ، و هر چیزی که در',
-  'خواندن‌ها غیرعادی است.',
-  'اگر همه چیز سالم است، همان را کوتاه بگو — گزارشِ «مشکلی نیست» یک نتیجهٔ درست است.',
-  'اگر کاری لازم است، همان ابزار را صدا بزن. توضیح‌دادنِ کار به‌جای درخواستش',
-  'چیزی برای تأیید کردن باقی نمی‌گذارد.',
-  'چیزی را که لازم نیست تغییر نده.',
+  'This is an automatic daily check; nobody is waiting on it.',
+  'Check the state of the site: pending updates, the latest backup, and anything',
+  'unusual in the readings.',
+  'If everything is healthy, say so briefly — a "no problems" report is a correct result.',
+  'If something needs doing, call that tool. Describing the work instead of requesting it',
+  'leaves nothing to approve.',
+  'Do not change anything that does not need changing.',
 ].join('\n')
 
 /**
@@ -64,7 +66,8 @@ export async function sweepSite(site, { maxToolSteps = config.sweep.maxToolSteps
   const name = site?.title || site?.name || (id ? String(id) : 'unknown site')
 
   try {
-    const answer = await assistant.answer(site, SWEEP_PROMPT, { maxToolSteps })
+    // The owner's language: the reply and any proposal reason are read by them.
+    const answer = await assistant.answer(site, SWEEP_PROMPT, { maxToolSteps, locale: site?.lang || undefined })
 
     // `answer` already persists proposals, writes the audit trail for anything
     // it performed, and raises the event that puts a waiting approval in the
@@ -97,7 +100,9 @@ export async function sweepSite(site, { maxToolSteps = config.sweep.maxToolSteps
 export async function runSweep({ maxSites = config.sweep.maxSites, trigger = 'scheduled' } = {}) {
   const startedAt = Date.now()
   const rows = await all(
-    'SELECT id, name, title, url, secret, site_key, paired, authority FROM sites WHERE paired = true ORDER BY id',
+    `SELECT s.id, s.name, s.title, s.url, s.secret, s.site_key, s.paired, s.authority, s.user_id, u.lang
+       FROM sites s LEFT JOIN users u ON u.id = s.user_id
+      WHERE s.paired = true ORDER BY s.id`,
   )
 
   const targets = rows.slice(0, maxSites)
@@ -119,8 +124,7 @@ export async function runSweep({ maxSites = config.sweep.maxSites, trigger = 'sc
         siteId: targets[0].id,
         kind: 'sweep_failed',
         severity: 'warning',
-        title: 'بررسی خودکار روزانه روی هیچ سایتی موفق نبود',
-        detail: { sites: targets.length, errors: failed.map((f) => f.error).slice(0, 5) },
+        ...events.i18nTitle('events.sweep.allFailed', {}, { sites: targets.length, errors: failed.map((f) => f.error).slice(0, 5) }),
         fingerprint: 'sweep-failed:all',
       })
       .catch(() => {})

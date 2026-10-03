@@ -1,0 +1,69 @@
+{
+  "head": {
+    "title": "Risk-assessed updates",
+    "subtitle": "Each update's risk is estimated from the type of version change, without taking the live site offline",
+    "recheck": "Check again"
+  },
+  "kind": {
+    "plugin": "Plugin",
+    "theme": "Theme",
+    "core": "Core"
+  },
+  "status": {
+    "auto": "Ready to run automatically",
+    "confirm": "Needs your approval"
+  },
+  "errors": {
+    "load": "Couldn't load the update status",
+    "run": "The update didn't run."
+  },
+  "itemAll": "all items",
+  "itemLowRisk_one": "{count} low-risk item",
+  "itemLowRisk_other": "{count} low-risk items",
+  "task": "Update {item}",
+  "loadFailed": {
+    "title": "Couldn't read the update status",
+    "noResponse": "No response was received from the server."
+  },
+  "unavailableTitle": "Risk-assessed updates",
+  "readFailed": "The update list couldn't be read from the site.",
+  "readFailedWith": "The update list couldn't be read from the site: {error}.",
+  "readFailedNote": "Until it can be read, we can't tell whether anything is out of date.",
+  "stats": {
+    "queue": "Awaiting review",
+    "auto": "Low risk · automatic",
+    "confirm": "Needs your approval"
+  },
+  "checklist": {
+    "risk": "Risk is estimated from the type of version change",
+    "snapshot": "A database safety snapshot is taken before the change",
+    "tested": "Compatibility and files are checked one item at a time"
+  },
+  "featured": {
+    "title": "Needs your approval — sensitive action",
+    "subtitle": "High-risk changes always need your approval before they run",
+    "itemTitle": "{type} “{name}”",
+    "current": "Current version",
+    "next": "New version",
+    "approve": "Approve and update"
+  },
+  "queue": {
+    "title": "Update queue",
+    "titleCount": "Update queue ({count})",
+    "runLowRisk_one": "Run {count} low-risk item",
+    "runLowRisk_other": "Run {count} low-risk items",
+    "colItem": "Item",
+    "colVersion": "Version",
+    "colRisk": "Risk",
+    "colStatus": "Status",
+    "versionChange": "{from} → {to}",
+    "emptyFailed": "The list couldn't be read from the site, so we can't tell whether anything is queued.",
+    "empty": "Nothing in the update queue; all plugins and core are up to date.",
+    "run": "Run"
+  },
+  "done": {
+    "title": "Completed",
+    "empty": "A record of each completed update will appear here after it runs.",
+    "toVersion": "to version <mono>{version}</mono>"
+  }
+}

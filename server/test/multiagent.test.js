@@ -89,14 +89,21 @@ test('orchestrator deterministic summary formats all domain findings accurately'
   }
 
   const summary = orchestrator.renderDeterministicSummary(sampleResults)
-  assert.match(summary, /امنیت:/)
-  assert.match(summary, /1 مورد مشکوک/)
-  assert.match(summary, /عملکرد:/)
-  assert.match(summary, /1200 KB/)
-  assert.match(summary, /به‌روزرسانی:/)
-  assert.match(summary, /3 افزونه/)
-  assert.match(summary, /عملیات نجات:/)
+  assert.match(summary, /Security:/)
+  assert.match(summary, /1 suspicious item/)
+  assert.match(summary, /Performance:/)
+  assert.match(summary, /1,200 KB/)
+  assert.match(summary, /Updates:/)
+  assert.match(summary, /3 plugins/)
+  assert.match(summary, /Rescue:/)
   assert.match(summary, /woocommerce-gateway-stripe/)
+
+  // The same summary for a Persian reader, digits and all.
+  const fa = orchestrator.renderDeterministicSummary(sampleResults, 'fa')
+  assert.match(fa, /امنیت:/)
+  assert.match(fa, /۱ مورد مشکوک/)
+  assert.match(fa, /عملیات نجات:/)
+  assert.match(fa, /woocommerce-gateway-stripe/)
 })
 
 test('orchestrator runs audit with simulated connector responses', async () => {

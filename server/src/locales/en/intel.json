@@ -1,0 +1,14 @@
+{
+  "vulns": {
+    "noFixedVersion": "The original advisory does not name a fixed version",
+    "noInstalledVersion": "The installed version could not be read",
+    "note": "This check runs against our own CVE database, built from NVD, and reports only entries whose slug has been matched against the WordPress directory. An empty result means nothing confirmed was found in this database — not that the plugins are definitely safe.",
+    "adviceUpdate": "Update to version {version} or later.",
+    "adviceUnknown": "The fixed version is not known; check the developer's site."
+  },
+  "threat": {
+    "known": "This file is in known malware databases.",
+    "notKnown": "Not known to external databases — which does not mean it is clean, only that it has not been reported before.",
+    "noSources": "No external source is configured; only our own database was checked."
+  }
+}

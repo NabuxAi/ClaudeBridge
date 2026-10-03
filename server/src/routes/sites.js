@@ -4,12 +4,12 @@ import { sites } from '../store.js'
 import { siteData } from '../seed.js'
 import * as connector from '../connector.js'
 import { describePolicy, policyForConnector } from '../policy.js'
-import { PROVENANCE, updatesFromStatus } from '../live.js'
+import { provenanceFor, updatesFromStatus } from '../live.js'
 import * as events from '../events.js'
 import * as proposals from '../proposals.js'
 import * as assistant from '../assistant.js'
 import * as conversations from '../conversations.store.js'
-import { isSensitive, SENSITIVE_SET, SENSITIVE_TOOLS } from '../authority.js'
+import { isSensitive, SENSITIVE_SET, SENSITIVE_TOOLS, localizeReason } from '../authority.js'
 // The backup-download capability token is minted here (`/backups/:id/token`).
 // Its import was missing, so the mint route 500'd for everyone — the
 // owner-only gate answered 403/200 correctly, but a successful mint never
@@ -18,20 +18,25 @@ import { signToken } from '../auth.js'
 import { probeSite } from '../probe.js'
 import { analyse as analysePerf } from '../perf/recipes.js'
 import { checkInventory, slugOf } from '../intel/vulns.js'
-import { REGIONS, PROVIDERS, TRAITS, needsCacheBust } from '../hosting.js'
+import { hostingOptions, needsCacheBust, describe as describeHosting } from '../hosting.js'
 import { measureUrl } from '../speedtest.js'
 import { offsiteBackups } from '../offsite-backups.store.js'
 import { runOffsiteBackup } from '../offsite-backups.runner.js'
 import * as monitorsStore from '../monitors.store.js'
+import { t, errorMessage, formatNumber, httpError, i18nMiddleware } from '../i18n.js'
+import { eventTitle, i18nTitle } from '../event-text.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 
-const humanBytes = (n) => {
-  if (!n) return '۰'
+const humanBytes = (n, locale) => {
+  if (!n) return formatNumber(locale, 0)
   const u = ['B', 'KB', 'MB', 'GB']
   let i = 0
   while (n >= 1024 && i < u.length - 1) { n /= 1024; i++ }
-  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${u[i]}`
+  return `${formatNumber(locale, Number(n.toFixed(n < 10 && i > 0 ? 1 : 0)))} ${u[i]}`
 }
 
 // Load the site for the signed-in user — owner OR active team member — or
@@ -49,7 +54,7 @@ async function loadSite(req, res) {
   }
   const row = await sites.rawWithRole(req.params.id, req.user.sub)
   if (!row || !row.member_role) {
-    res.status(404).json({ message: 'سایت یافت نشد.' })
+    res.status(404).json({ message: req.t('common.siteNotFound') })
     return null
   }
   const { member_role: role, ...raw } = row
@@ -69,7 +74,7 @@ async function loadOwnerSite(req, res) {
   if (!site) return null
   if (req.siteRole !== 'owner') {
     res.status(403).json({
-      message: 'این اقدام فقط برای مالک سایت مجاز است؛ اعضای تیم در حال حاضر فقط دسترسی مشاهده دارند.',
+      message: req.t('common.ownerOnly'),
     })
     return null
   }
@@ -91,7 +96,7 @@ function concern(name) {
           config.live && site.paired && site.secret
             ? connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'site_info', {})
             : Promise.resolve(null),
-          probeSite(site.url, { cacheBust: needsCacheBust(site.hosting) }),
+          probeSite(site.url, { cacheBust: needsCacheBust(site.hosting), locale: req.locale }),
           events.list(site.id, 12),
         ])
 
@@ -110,25 +115,25 @@ function concern(name) {
           data.status = p.reachable ? 'healthy' : 'down'
           data.metrics = []
           if (data.info?.wp_version) {
-            data.metrics.push({ label: 'وردپرس', value: data.info.wp_version, unit: '', icon: 'boxes', tone: 'neutral' })
+            data.metrics.push({ label: req.t('sites.metric.wordpress'), value: data.info.wp_version, unit: '', icon: 'boxes', tone: 'neutral' })
           }
           if (data.info?.php_version) {
             data.metrics.push({ label: 'PHP', value: data.info.php_version, unit: '', icon: 'code', tone: 'neutral' })
           }
           if (p.responseMs != null) {
             data.metrics.push({
-              label: 'پاسخ همین حالا', value: String(p.responseMs), unit: 'ms', icon: 'gauge',
+              label: req.t('sites.metric.responseNow'), value: String(p.responseMs), unit: 'ms', icon: 'gauge',
               tone: p.responseMs > 2000 ? 'warning' : 'primary',
             })
           }
           if (p.cert?.ok) {
             data.metrics.push({
-              label: 'اعتبار SSL', value: String(p.cert.daysLeft), unit: 'روز', icon: 'lock',
+              label: req.t('sites.metric.ssl'), value: String(p.cert.daysLeft), unit: req.t('sites.unit.days'), icon: 'lock',
               tone: p.cert.daysLeft < 14 ? 'danger' : p.cert.daysLeft < 30 ? 'warning' : 'success',
             })
           }
         } else {
-          data.probeError = checked.reason?.message || 'بررسی انجام نشد'
+          data.probeError = errorMessage(req.locale, checked.reason) || req.t('sites.probeFailed')
         }
 
         // The activity feed, from the event log. What used to be here was a
@@ -138,8 +143,9 @@ function concern(name) {
           data.report = recent.value.map((e) => ({
             icon: e.severity === 'critical' ? 'alert-octagon' : e.severity === 'warning' ? 'alert-triangle' : 'info',
             tone: e.resolved_at ? 'done' : e.severity === 'critical' ? 'danger' : e.severity === 'warning' ? 'warning' : 'info',
-            label: e.title,
-            time: new Date(Number(e.created_at)).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+            label: eventTitle(req.locale, e),
+            time: clock(req.locale, e.created_at),
+            at: Number(e.created_at),
           }))
           data.reportEmpty = recent.value.length === 0
         }
@@ -160,7 +166,7 @@ function concern(name) {
       // site's own URL is recorded.
       if (name === 'overview') {
         try {
-          data.uptime = await monitorsStore.monitors.siteAvailability(site.id)
+          data.uptime = await monitorsStore.monitors.siteAvailability(site.id, req.locale)
         } catch (e) {
           // A read failure must say "not measured", but never silently: a quiet
           // catch here would turn a real bug into a healthy-looking blank.
@@ -235,7 +241,7 @@ function concern(name) {
           for (const t of unwrap(themes)?.themes || []) {
             inventory.push({ slug: t.stylesheet || t.slug, version: t.version, kind: 'theme', name: t.name, active: t.active })
           }
-          data.vulns = await checkInventory(inventory)
+          data.vulns = await checkInventory(inventory, { locale: req.locale })
         } catch (e) { data.vulnsError = e.message }
 
         // Security-relevant entries from the event log. This view used to say
@@ -247,18 +253,19 @@ function concern(name) {
             .map((e) => ({
               icon: e.severity === 'critical' ? 'alert-octagon' : e.severity === 'warning' ? 'alert-triangle' : 'info',
               tone: e.resolved_at ? 'done' : e.severity === 'critical' ? 'danger' : e.severity === 'warning' ? 'warning' : 'info',
-              label: e.title,
-              time: new Date(Number(e.created_at)).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+              label: eventTitle(req.locale, e),
+              time: clock(req.locale, e.created_at),
+              at: Number(e.created_at),
             }))
         } catch { /* the rest of the view still stands */ }
 
         // The certificate, from a real handshake rather than a claim.
         try {
-          const probe = await probeSite(site.url, { cacheBust: needsCacheBust(site.hosting) })
+          const probe = await probeSite(site.url, { cacheBust: needsCacheBust(site.hosting), locale: req.locale })
           if (probe?.cert?.ok) {
             data.ssl = { days: probe.cert.daysLeft, issuer: probe.cert.issuer, expiresAt: probe.cert.expiresAt }
           } else {
-            data.sslError = probe?.cert?.error || 'گواهی خوانده نشد'
+            data.sslError = probe?.cert?.error || req.t('sites.certUnreadable')
           }
         } catch (e) { data.sslError = e.message }
 
@@ -269,31 +276,31 @@ function concern(name) {
         data.metrics = []
         if (data.integrity?.ok) {
           data.metrics.push({
-            label: 'فایل ناشناخته در هسته', value: String(data.integrity.unexpected.length),
+            label: req.t('sites.metric.unexpectedCore'), value: String(data.integrity.unexpected.length),
             unit: '', icon: 'file-check-2',
             tone: data.integrity.unexpected.length ? 'danger' : 'success',
           })
           data.metrics.push({
-            label: 'فایل تغییریافتهٔ هسته', value: String(data.integrity.modified.length),
+            label: req.t('sites.metric.modifiedCore'), value: String(data.integrity.modified.length),
             unit: '', icon: 'file-check-2',
             tone: data.integrity.modified.length ? 'warning' : 'success',
           })
         }
         if (data.vulns) {
           data.metrics.push({
-            label: 'آسیب‌پذیری شناخته‌شده', value: String(data.vulns.vulnerable.length),
+            label: req.t('sites.metric.knownVulns'), value: String(data.vulns.vulnerable.length),
             unit: '', icon: 'shield-alert',
             tone: data.vulns.vulnerable.length ? 'danger' : 'success',
           })
         }
         if (data.scan) {
           data.metrics.push({
-            label: 'یافتهٔ بدافزار', value: String(data.scan.hits?.length ?? 0),
+            label: req.t('sites.metric.malware'), value: String(data.scan.hits?.length ?? 0),
             unit: '', icon: 'shield-check',
             tone: (data.scan.hits?.length ?? 0) ? 'danger' : 'success',
           })
           data.metrics.push({
-            label: 'فایل اسکن‌شده', value: String(data.scan.scanned ?? 0),
+            label: req.t('sites.metric.scanned'), value: String(data.scan.scanned ?? 0),
             unit: '', icon: 'search', tone: 'neutral',
           })
         }
@@ -310,7 +317,7 @@ function concern(name) {
           )
           const text = raw?.content?.[0]?.text
           const status = typeof text === 'string' ? JSON.parse(text) : raw
-          const live = updatesFromStatus(status)
+          const live = updatesFromStatus(status, req.locale)
           if (live) {
             data.queue = live.queue
             data.done = live.done
@@ -337,20 +344,26 @@ function concern(name) {
           if (live && Array.isArray(live.backups)) {
             data.list = live.backups.map((b) => ({
               id: b.id,
-              when: new Date(b.created_at * 1000).toLocaleString('fa-IR'),
-              type: b.label === 'scheduled' ? 'خودکار روزانه' : 'دستی',
-              size: humanBytes(b.db_bytes + (b.files_bytes || 0)),
+              when: new Date(b.created_at * 1000).toLocaleString(intlOf(req.locale)),
+              // Machine fields beside the rendered ones, so the hub can
+              // format per language: label ('scheduled' | 'pre-update' |
+              // 'manual' …) and the epoch-ms timestamp.
+              label: b.label || 'manual',
+              createdAt: b.created_at * 1000,
+              type: b.label === 'scheduled' ? req.t('sites.backup.scheduled') : req.t('sites.backup.manual'),
+              size: humanBytes(b.db_bytes + (b.files_bytes || 0), req.locale),
               // Verified means the dump ends the way a complete dump ends —
               // not that a backup file merely exists.
               verified: Boolean(b.verified),
               db: true,
               files: Boolean(b.files_file),
             }))
-            data.totalSize = humanBytes(live.bytes)
+            data.totalSize = humanBytes(live.bytes, req.locale)
             data.location = live.dir
             data.lastBackup = live.backups[0]
-              ? new Date(live.backups[0].created_at * 1000).toLocaleString('fa-IR')
+              ? new Date(live.backups[0].created_at * 1000).toLocaleString(intlOf(req.locale))
               : null
+            data.lastBackupAt = live.backups[0] ? live.backups[0].created_at * 1000 : null
             data.empty = live.backups.length === 0
           }
         } catch (e) { data.backupsError = e.message }
@@ -361,14 +374,14 @@ function concern(name) {
       // or did; nothing is generated to make the page look inhabited.
       if (name === 'incidents') {
         const rows = await events.list(site.id, 60)
-        data.list = rows.map(toIncident)
-        data.featured = await featuredIncident(site.id, rows)
+        data.list = rows.map((ev) => toIncident(ev, req.locale))
+        data.featured = await featuredIncident(site.id, rows, req.locale)
         data.empty = rows.length === 0
         // An empty log is not a clean bill of health, and the view has to be
         // able to say which it is. Sites are only observed when scanned, so
         // "nothing recorded" is the honest phrase.
         data.emptyNote = rows.length === 0
-          ? 'هنوز رخدادی ثبت نشده. این یعنی چیزی مشاهده نشده، نه اینکه سایت قطعاً سالم بوده — سایت فقط هنگام اسکن دیده می‌شود.'
+          ? req.t('sites.incidentsEmpty')
           : null
       }
 
@@ -380,15 +393,15 @@ function concern(name) {
           data.provenance = {
             live: [],
             unavailable: !site.url
-              ? 'آدرس سایت ثبت نشده.'
-              : 'سایت هنوز به سرور ما وصل نشده — افزونهٔ واسط را نصب و جفت کنید.',
+              ? req.t('sites.noUrl')
+              : req.t('common.siteNotPairedYet'),
           }
           return res.json(data)
         }
       } else if (!config.live && ['updates', 'security', 'backups'].includes(name)) {
         data.provenance = {
           live: [],
-          unavailable: 'حالت زنده روی این سرور خاموش است (LIVE=1)، پس چیزی از سایت خوانده نمی‌شود.',
+          unavailable: req.t('common.liveOff'),
         }
         return res.json(data)
       }
@@ -396,7 +409,7 @@ function concern(name) {
       // Say where this view's numbers come from — and, more importantly, which
       // of them have no source yet. A panel that cannot distinguish measured
       // from invented teaches people to trust none of it.
-      if (PROVENANCE[name]) data.provenance = PROVENANCE[name]
+      { const prov = provenanceFor(name, req.locale); if (prov) data.provenance = prov }
 
       if (name === 'settings') {
         const c = site.connector || null
@@ -406,40 +419,46 @@ function concern(name) {
         data.authority = site.authority
         // The three auto-update switches, each with whether safe mode is
         // currently holding it down, plus what the last run actually did.
-        data.updatePolicy = describePolicy(site.policy)
+        data.updatePolicy = describePolicy(site.policy, req.locale)
         data.updateState = site.update_state || null
         // The always-human actions, derived from authority.js itself so the
         // panel's card cannot drift from what the relay actually refuses.
-        data.sensitive = SENSITIVE_TOOLS.map((t) => SENSITIVE_LABELS[t] || t)
+        data.sensitive = SENSITIVE_TOOLS.map((tool) => (SENSITIVE_LABELS.includes(tool) ? req.t(`sites.sensitive.${tool}`) : tool))
       }
       res.json(data)
     } catch (e) { next(e) }
   }
 }
 
-/** Relative Persian time. The log stores epoch ms; people read "۲ روز پیش". */
-function faWhen(ms) {
+const INTL = { en: 'en-US', fa: 'fa-IR', ar: 'ar', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', tr: 'tr-TR', ru: 'ru-RU', zh: 'zh-CN' }
+const intlOf = (locale) => INTL[locale] || 'en-US'
+
+/** Hour:minute of an epoch-ms timestamp in the reader's locale. */
+const clock = (locale, ms) =>
+  new Date(Number(ms)).toLocaleTimeString(intlOf(locale), { hour: '2-digit', minute: '2-digit' })
+
+/** Relative time in the reader's language. The log stores epoch ms; people read "2 days ago". */
+function relWhen(locale, ms) {
   const diff = Date.now() - Number(ms)
   const min = Math.round(diff / 60000)
-  if (min < 1) return 'همین حالا'
-  if (min < 60) return `${faDigits(min)} دقیقه پیش`
+  if (min < 1) return t(locale, 'sites.when.now')
+  if (min < 60) return t(locale, 'sites.when.minutes', { count: min })
   const hr = Math.round(min / 60)
-  if (hr < 24) return `${faDigits(hr)} ساعت پیش`
+  if (hr < 24) return t(locale, 'sites.when.hours', { count: hr })
   const day = Math.round(hr / 24)
-  if (day === 1) return 'دیروز'
-  if (day < 31) return `${faDigits(day)} روز پیش`
-  return new Date(Number(ms)).toLocaleDateString('fa-IR')
+  if (day === 1) return t(locale, 'sites.when.yesterday')
+  if (day < 31) return t(locale, 'sites.when.days', { count: day })
+  return new Date(Number(ms)).toLocaleDateString(intlOf(locale))
 }
 
-const faDigits = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
-
 /** One event as the alerts list renders it. */
-function toIncident(ev) {
+function toIncident(ev, locale) {
   return {
     id: ev.id,
     severity: ev.severity,
-    title: ev.title,
-    time: faWhen(ev.created_at),
+    title: eventTitle(locale, ev),
+    time: relWhen(locale, ev.created_at),
+    at: Number(ev.created_at),
     resolved: Boolean(ev.resolved_at),
     kind: ev.kind,
   }
@@ -452,64 +471,55 @@ function toIncident(ev) {
  * longest outranks one that appeared five minutes ago. If nothing is open,
  * there is no featured alert — an empty hero beats a manufactured one.
  */
-async function featuredIncident(siteId, rows) {
+async function featuredIncident(siteId, rows, locale) {
   const open = rows.filter((r) => !r.resolved_at && r.severity === 'critical')
   if (!open.length) return null
   const ev = open[open.length - 1]
 
   const past = ev.fingerprint ? await events.history(siteId, ev.fingerprint) : [ev]
   const timeline = past.map((p) => ({
-    t: new Date(Number(p.created_at)).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
-    label: p.resolved_at ? `${p.title} — برطرف شد` : p.title,
+    t: clock(locale, p.created_at),
+    at: Number(p.created_at),
+    label: p.resolved_at ? t(locale, 'sites.incident.resolvedSuffix', { title: eventTitle(locale, p) }) : eventTitle(locale, p),
     tone: p.resolved_at ? 'done' : p.severity === 'critical' ? 'danger' : 'warning',
   }))
 
   const d = ev.detail || {}
   const fields = [
-    { label: 'نوع', value: KIND_LABEL[ev.kind] || ev.kind },
-    { label: 'اولین مشاهده', value: faWhen(ev.created_at) },
+    { label: t(locale, 'sites.incident.kind'), value: KIND_LABEL.includes(ev.kind) ? t(locale, `sites.kind.${ev.kind}`) : ev.kind },
+    { label: t(locale, 'sites.incident.firstSeen'), value: relWhen(locale, ev.created_at) },
   ]
-  if (d.file) fields.push({ label: 'فایل', value: d.file, mono: true })
-  if (d.rule) fields.push({ label: 'قاعدهٔ منطبق', value: d.rule, mono: true })
-  fields.push({ label: 'وضعیت', value: 'هنوز باز است', tone: 'danger' })
+  if (d.file) fields.push({ label: t(locale, 'sites.incident.file'), value: d.file, mono: true })
+  if (d.rule) fields.push({ label: t(locale, 'sites.incident.rule'), value: d.rule, mono: true })
+  fields.push({ label: t(locale, 'sites.incident.status'), value: t(locale, 'sites.incident.stillOpen'), tone: 'danger' })
 
   return {
     id: ev.id,
     severity: ev.severity,
-    title: ev.title,
-    time: faWhen(ev.created_at),
+    title: eventTitle(locale, ev),
+    time: relWhen(locale, ev.created_at),
+    at: Number(ev.created_at),
     // Deliberately not "we fixed it": nothing here acts on its own. This
     // states what was seen and leaves the decision where it belongs.
-    desc: 'این مورد در اسکن دیده شد و هنوز باز است. تا وقتی اسکن بعدی نبودنش را تأیید نکند، حل‌شده علامت نمی‌خورد.',
+    desc: t(locale, 'sites.incident.desc'),
     fields,
     timeline,
   }
 }
 
-const KIND_LABEL = {
-  malware: 'بدافزار',
-  scan_failed: 'اسکن ناموفق',
-  policy: 'تغییر سیاست',
-  rescue: 'عملیات نجات',
-  conflict: 'بررسی تداخل',
-  action: 'اقدام حساس',
-}
+// Event kinds with a display label (sites.kind.<kind>); others show the id.
+const KIND_LABEL = ['malware', 'scan_failed', 'policy', 'rescue', 'conflict', 'action']
 
 /**
- * Persian display names for the always-sensitive tools. The SET itself comes
- * from authority.js — only the labels live here. A tool that joins
- * SENSITIVE_TOOLS without a label is shown as its tool id rather than a guess.
+ * Display names for the always-sensitive tools live in sites.sensitive.<tool>.
+ * The SET itself comes from authority.js — only the labels live here. A tool
+ * that joins SENSITIVE_TOOLS without a label is shown as its tool id rather
+ * than a guess.
  */
-const SENSITIVE_LABELS = {
-  delete_plugin: 'حذف افزونه',
-  delete_theme: 'حذف قالب',
-  activate_theme: 'فعال‌سازی قالب',
-  edit_file: 'ویرایش فایل',
-  delete_file: 'حذف فایل',
-  db_query: 'اجرای کوئری دیتابیس',
-  rescue_rotate_keys: 'چرخش کلیدهای امنیتی',
-  create_plugin: 'ساخت افزونه',
-}
+const SENSITIVE_LABELS = [
+  'delete_plugin', 'delete_theme', 'activate_theme', 'edit_file',
+  'delete_file', 'db_query', 'rescue_rotate_keys', 'create_plugin',
+]
 
 router.get('/sites/:id/overview', concern('overview'))
 router.get('/sites/:id/incidents', concern('incidents'))
@@ -555,11 +565,11 @@ router.patch('/sites/:id/update-policy', async (req, res, next) => {
     }
 
     res.json({
-      ...describePolicy(policy),
+      ...describePolicy(policy, req.locale),
       pushed,
       refused,
       message: refused.length
-        ? 'حالت ایمنی روشن است؛ به‌روزرسانی خودکار خاموش نشد.'
+        ? req.t('sites.safeModeRefused')
         : null,
     })
 
@@ -568,8 +578,7 @@ router.patch('/sites/:id/update-policy', async (req, res, next) => {
     // question after a break-in.
     await events.record({
       siteId: site.id, kind: 'policy', severity: 'info',
-      title: 'سیاست به‌روزرسانی تغییر کرد',
-      detail: { policy, refused, pushed },
+      ...i18nTitle('sites.events.policyChanged', null, { policy, refused, pushed }),
     })
   } catch (e) { next(e) }
 })
@@ -599,18 +608,18 @@ const RESCUE_STEPS = {
 router.post('/sites/:id/rescue/:step', async (req, res, next) => {
   try {
     const step = RESCUE_STEPS[req.params.step]
-    if (!step) return res.status(404).json({ message: 'مرحلهٔ ناشناخته.' })
+    if (!step) return res.status(404).json({ message: req.t('sites.unknownStep') })
 
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     // Key rotation logs every user out, including the owner. That is not
     // something to trigger from a mis-click.
     if (step.confirm && !req.body?.confirm) {
       return res.status(400).json({
-        message: 'این مرحله همهٔ کاربران را از سایت خارج می‌کند. برای اجرا confirm=true بفرستید.',
+        message: req.t('sites.rotateConfirm'),
       })
     }
 
@@ -631,12 +640,11 @@ router.post('/sites/:id/rescue/:step', async (req, res, next) => {
     if (step.writes) {
       events.record({
         siteId: site.id, kind: 'rescue', severity: 'info',
-        title: `عملیات نجات — مرحلهٔ «${req.params.step}» اجرا شد`,
-        detail: { step: req.params.step, queued: Boolean(step.job) },
+        ...i18nTitle('sites.events.rescueStep', { step: req.params.step }, { step: req.params.step, queued: Boolean(step.job) }),
       }).catch(() => {})
     }
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -653,7 +661,7 @@ router.patch('/sites/:id/authority', async (req, res, next) => {
     if (!site) return
     const level = String(req.body?.authority || '')
     if (!['report', 'confirm', 'auto'].includes(level)) {
-      return res.status(400).json({ message: 'سطح اختیار نامعتبر است.' })
+      return res.status(400).json({ message: req.t('sites.invalidAuthority') })
     }
     const saved = await sites.setAuthority(site.id, req.user.sub, level)
     res.json({ authority: saved.authority })
@@ -672,10 +680,10 @@ router.post('/sites/:id/conflict', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     if (!req.body?.url) {
-      return res.status(400).json({ message: 'آدرس صفحهٔ خراب لازم است.' })
+      return res.status(400).json({ message: req.t('sites.brokenUrlRequired') })
     }
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },
@@ -687,11 +695,10 @@ router.post('/sites/:id/conflict', async (req, res, next) => {
 
     events.record({
       siteId: site.id, kind: 'conflict', severity: 'info',
-      title: 'بررسی تداخل شروع شد',
-      detail: { url: req.body.url },
+      ...i18nTitle('sites.events.conflictStarted', null, { url: req.body.url }),
     }).catch(() => {})
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -707,7 +714,7 @@ router.post('/sites/:id/scan', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },
@@ -717,7 +724,7 @@ router.post('/sites/:id/scan', async (req, res, next) => {
     const text = raw?.content?.[0]?.text
     res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -733,7 +740,7 @@ router.post('/sites/:id/perf', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },
@@ -743,7 +750,7 @@ router.post('/sites/:id/perf', async (req, res, next) => {
     const text = raw?.content?.[0]?.text
     res.json({ queued: true, job: typeof text === 'string' ? JSON.parse(text) : raw })
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -760,9 +767,9 @@ router.post('/sites/:id/perf/analyse', async (req, res, next) => {
     if (!site) return
     const profile = req.body?.profile
     if (!profile || typeof profile !== 'object') {
-      return res.status(400).json({ message: 'گزارش سرعت لازم است.' })
+      return res.status(400).json({ message: req.t('sites.perfProfileRequired') })
     }
-    res.json(analysePerf(profile))
+    res.json(analysePerf(profile, { t: req.t }))
   } catch (e) { next(e) }
 })
 
@@ -778,7 +785,7 @@ router.post('/sites/:id/updates/run', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     // The updates panel filters its batch to low-risk items on the client; a
     // client is not trusted to do that. A single named item passes unchanged —
@@ -800,7 +807,7 @@ router.post('/sites/:id/updates/run', async (req, res, next) => {
         {}
       )
       const statusText = statusRaw?.content?.[0]?.text
-      const pending = updatesFromStatus(typeof statusText === 'string' ? JSON.parse(statusText) : statusRaw)?.queue || []
+      const pending = updatesFromStatus(typeof statusText === 'string' ? JSON.parse(statusText) : statusRaw, req.locale)?.queue || []
       const find = (it) => {
         const type = String(it?.type || '')
         const name = String(it?.name || '')
@@ -816,9 +823,9 @@ router.post('/sites/:id/updates/run', async (req, res, next) => {
         return res.status(400).json({
           message: requested
             ? (matched.length === 0
-              ? 'هیچ‌کدام از موارد ارسالی در صف به‌روزرسانی سایت پیدا نشد؛ فهرست آپدیت‌ها را دوباره بگیرید.'
-              : 'موارد انتخاب‌شده نیازمند تأیید شماست؛ هر مورد پرریسک باید جداگانه تأیید و اجرا شود.')
-            : 'مورد کم‌ریسکی در صف نیست؛ موارد پرریسک نیازمند تأیید جداگانهٔ شماست.',
+              ? req.t('sites.updates.noneMatched')
+              : req.t('sites.updates.needApproval'))
+            : req.t('sites.updates.noLowRisk'),
         })
       }
       items = safe.map((p) => (p.id === 'core'
@@ -835,11 +842,10 @@ router.post('/sites/:id/updates/run', async (req, res, next) => {
 
     events.record({
       siteId: site.id, kind: 'update', severity: 'info',
-      title: `به‌روزرسانی دستی ${items.length} مورد شروع شد`,
-      detail: { items, by: req.user?.sub || null },
+      ...i18nTitle('sites.events.manualUpdate', { count: items.length }, { items, by: req.user?.sub || null }),
     }).catch(() => {})
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -856,10 +862,10 @@ router.get('/sites/:id/backups/preflight', async (req, res, next) => {
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       // No measurement exists for a site we cannot reach. This used to answer
-      // with fixed numbers (۵GB free, ۲۸۰MB backup) behind ok:true — a
+      // with fixed numbers (5GB free, 280MB backup) behind ok:true — a
       // fabricated preflight on exactly the screen where the customer decides
       // what a backup will overwrite. Fail like every other route does.
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },
@@ -870,7 +876,7 @@ router.get('/sites/:id/backups/preflight', async (req, res, next) => {
     const result = typeof text === 'string' ? JSON.parse(text) : raw
     res.json(result)
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -882,7 +888,7 @@ router.post('/sites/:id/backups', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     const sections = Array.isArray(req.body?.sections) && req.body.sections.length > 0
       ? req.body.sections
@@ -897,11 +903,10 @@ router.post('/sites/:id/backups', async (req, res, next) => {
 
     events.record({
       siteId: site.id, kind: 'backup', severity: 'info',
-      title: 'بکاپ دستی شروع شد',
-      detail: { sections, files: sections.length > 1 },
+      ...i18nTitle('sites.events.manualBackup', null, { sections, files: sections.length > 1 }),
     }).catch(() => {})
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -918,11 +923,11 @@ router.post('/sites/:id/backups/:backupId/restore', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     if (!req.body?.confirm) {
       return res.status(400).json({
-        message: 'بازگردانی، دیتابیس فعلی را با نسخهٔ قدیمی جایگزین می‌کند و هر تغییری پس از آن بکاپ از بین می‌رود. برای اجرا confirm=true بفرستید.',
+        message: req.t('sites.restoreConfirm'),
       })
     }
     const raw = await connector.callTool(
@@ -935,11 +940,10 @@ router.post('/sites/:id/backups/:backupId/restore', async (req, res, next) => {
 
     events.record({
       siteId: site.id, kind: 'backup', severity: 'warning',
-      title: `بازگردانی دیتابیس از بکاپ ${req.params.backupId} شروع شد`,
-      detail: { backupId: req.params.backupId, by: req.user?.sub || null },
+      ...i18nTitle('sites.events.restoreStarted', { id: req.params.backupId }, { backupId: req.params.backupId, by: req.user?.sub || null }),
     }).catch(() => {})
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -979,7 +983,7 @@ router.get('/sites/:id/backups/:backupId/download', async (req, res, next) => {
     // Owner-only, exactly like the token mint above. This route streams the
     // whole database dump — user_pass hashes, options, content — and the
     // membership layer only ever promised members the site *views*: the Team
-    // page's viewer label is «فقط مشاهده — گزارش‌ها و وضعیت». A dump is not a
+    // page's viewer label is "view only — reports and status". A dump is not a
     // view. The capability-token path keeps working through the same gate:
     // the token's `sub` is the owner who minted it, so loadOwnerSite resolves
     // role 'owner' for it; a member's own session resolves to their member
@@ -988,7 +992,7 @@ router.get('/sites/:id/backups/:backupId/download', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     const target = { url: site.url, secret: site.secret, siteKey: site.site_key }
     const what = req.query.what === 'files' ? 'files' : 'db'
@@ -1015,13 +1019,13 @@ router.get('/sites/:id/backups/:backupId/download', async (req, res, next) => {
       if (part.chunk) res.write(Buffer.from(part.chunk, 'base64'))
       if (part.eof) break
       // A slice that read nothing but is not eof would loop forever.
-      if (!part.read) throw new Error('خواندن فایل متوقف شد')
+      if (!part.read) throw httpError(502, 'sites.readStalled')
       offset = part.offset + part.read
     }
     res.end()
   } catch (e) {
     if (res.headersSent) return res.destroy()
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -1075,15 +1079,14 @@ router.post('/sites/:id/backups/prune', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     const raw = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'backup_prune', req.body || {})
     const text = raw?.content?.[0]?.text
     const result = typeof text === 'string' ? JSON.parse(text) : raw
     events.record({
       siteId: site.id, kind: 'backup', severity: 'info',
-      title: 'پاک‌سازی بکاپ‌های قدیمی اجرا شد',
-      detail: result,
+      ...i18nTitle('sites.events.pruneRan', null, result),
     }).catch(() => {})
     res.json(result)
   } catch (e) { next(e) }
@@ -1108,12 +1111,11 @@ router.post('/sites/:id/offsite/targets', async (req, res, next) => {
     const target = await offsiteBackups.create(site.id, req.body)
     events.record({
       siteId: site.id, kind: 'policy', severity: 'info',
-      title: 'مقصد پشتیبان‌گیری ابری جدید افزوده شد',
-      detail: { endpoint: target.endpoint, bucket: target.bucket },
+      ...i18nTitle('sites.events.offsiteTargetAdded', null, { endpoint: target.endpoint, bucket: target.bucket }),
     }).catch(() => {})
     res.status(201).json(target)
   } catch (e) {
-    res.status(e.status || 400).json({ message: e.message })
+    res.status(e.status || 400).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -1124,7 +1126,7 @@ router.delete('/sites/:id/offsite/targets/:targetId', async (req, res, next) => 
     await offsiteBackups.remove(site.id, req.params.targetId)
     res.json({ ok: true })
   } catch (e) {
-    res.status(e.status || 404).json({ message: e.message })
+    res.status(e.status || 404).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -1145,12 +1147,12 @@ router.post('/sites/:id/offsite/sync', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
 
     const targets = await offsiteBackups.listTargets(site.id)
     if (!targets.length) {
-      return res.status(400).json({ message: 'هیچ مقصد پشتیبان ابری (S3) تنظیم نشده است.' })
+      return res.status(400).json({ message: req.t('sites.noOffsiteTarget') })
     }
 
     const targetId = req.body?.targetId || targets[0].id
@@ -1165,13 +1167,12 @@ router.post('/sites/:id/offsite/sync', async (req, res, next) => {
 
     events.record({
       siteId: site.id, kind: 'backup', severity: 'info',
-      title: 'همگام‌سازی پشتیبان ابری شروع شد',
-      detail: { targetId: target.id, jobId: job.id },
+      ...i18nTitle('sites.events.offsiteSyncStarted', null, { targetId: target.id, jobId: job.id }),
     }).catch(() => {})
 
     res.json({ queued: true, job })
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -1181,7 +1182,7 @@ router.get('/sites/:id/jobs/:jobId?', async (req, res, next) => {
     const site = await loadSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
-      return res.status(400).json({ message: 'سایت متصل نیست.' })
+      return res.status(400).json({ message: req.t('common.siteNotPaired') })
     }
     const raw = await connector.callTool(
       { url: site.url, secret: site.secret, siteKey: site.site_key },
@@ -1191,7 +1192,7 @@ router.get('/sites/:id/jobs/:jobId?', async (req, res, next) => {
     const text = raw?.content?.[0]?.text
     res.json(typeof text === 'string' ? JSON.parse(text) : raw)
   } catch (e) {
-    res.status(e.status || 502).json({ message: e.message })
+    res.status(e.status || 502).json({ message: errorMessage(req.locale, e) })
   }
 })
 
@@ -1209,11 +1210,10 @@ router.post('/sites/:id/incidents/:eventId/dismiss', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     const ok = await events.resolveOne(site.id, req.params.eventId)
-    if (!ok) return res.status(404).json({ message: 'رخداد باز با این شناسه پیدا نشد.' })
+    if (!ok) return res.status(404).json({ message: req.t('sites.openEventNotFound') })
     await events.record({
       siteId: site.id, kind: 'action', severity: 'info',
-      title: 'یک هشدار دستی نادیده گرفته شد',
-      detail: { eventId: req.params.eventId, by: req.user?.sub || null },
+      ...i18nTitle('sites.events.alertDismissed', null, { eventId: req.params.eventId, by: req.user?.sub || null }),
     })
     res.json({ ok: true })
   } catch (e) { next(e) }
@@ -1235,17 +1235,16 @@ router.patch('/sites/:id/hosting', async (req, res, next) => {
 
     events.record({
       siteId: site.id, kind: 'policy', severity: 'info',
-      title: 'تنظیمات میزبانی سایت تغییر کرد',
-      detail: { hosting: updated.hosting, by: req.user?.sub || null },
+      ...i18nTitle('sites.events.hostingChanged', null, { hosting: updated.hosting, by: req.user?.sub || null }),
     }).catch(() => {})
 
-    res.json({ hosting: updated.hosting, serverUrl: publicApiBase(req, updated) })
+    res.json({ hosting: describeHosting(updated.hosting, req.locale), serverUrl: publicApiBase(req, updated) })
   } catch (e) { next(e) }
 })
 
 /** The choices the panel offers, with what each one actually changes. */
-router.get('/hosting/options', (_req, res) => {
-  res.json({ regions: REGIONS, providers: PROVIDERS, traits: TRAITS })
+router.get('/hosting/options', (req, res) => {
+  res.json(hostingOptions(req.locale))
 })
 
 router.get('/sites/:id/pairing', async (req, res, next) => {
@@ -1272,7 +1271,7 @@ router.post('/sites/:id/speedtest', async (req, res, next) => {
   try {
     const site = await loadOwnerSite(req, res)
     if (!site) return
-    if (!site.url) return res.status(400).json({ message: 'سایت آدرسی ندارد.' })
+    if (!site.url) return res.status(400).json({ message: req.t('sites.noUrlShort') })
     const samples = Math.min(5, Math.max(1, Number(req.body?.samples) || 3))
     res.json(await measureUrl(site.url, samples))
   } catch (e) { next(e) }
@@ -1283,13 +1282,13 @@ router.post('/sites/:id/ping', async (req, res, next) => {
   try {
     const site = await loadOwnerSite(req, res)
     if (!site) return
-    if (!site.url || !site.secret) return res.status(400).json({ message: 'سایت هنوز برای اتصال آماده نیست.' })
+    if (!site.url || !site.secret) return res.status(400).json({ message: req.t('sites.notReadyToPair') })
     try {
       const out = await connector.ping({ url: site.url, secret: site.secret, siteKey: site.site_key })
       await sites.markPaired(site.id, { version: out.version })
       res.json({ ok: true, connector: out })
     } catch (e) {
-      res.status(e.status || 502).json({ ok: false, message: e.message })
+      res.status(e.status || 502).json({ ok: false, message: errorMessage(req.locale, e) })
     }
   } catch (e) { next(e) }
 })
@@ -1310,7 +1309,8 @@ router.get('/sites/:id/proposals', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)
     if (!site) return
-    res.json({ proposals: await proposals.pending(site.id) })
+    const list = await proposals.pending(site.id)
+    res.json({ proposals: list.map((p) => ({ ...p, reason: localizeReason(req.locale, p.reason) })) })
   } catch (e) { next(e) }
 })
 
@@ -1323,7 +1323,7 @@ router.post('/sites/:id/proposals/:proposalId/reject', async (req, res, next) =>
       by: req.user?.sub,
     })
     if (!rejected) {
-      return res.status(409).json({ ok: false, message: 'این پیشنهاد پیش‌تر تعیین تکلیف شده است.' })
+      return res.status(409).json({ ok: false, message: req.t('sites.proposalSettled') })
     }
     res.json({ ok: true, proposal: rejected })
   } catch (e) { next(e) }
@@ -1335,13 +1335,13 @@ router.post('/sites/:id/actions', async (req, res, next) => {
     if (!site) return
     const { action, tool, args = {}, approved, proposalId } = req.body || {}
     const op = tool || action
-    if (!op) return res.status(400).json({ message: 'action/tool لازم است.' })
+    if (!op) return res.status(400).json({ message: req.t('sites.actionRequired') })
     // isSensitive rather than the name-only Set: job_start is one tool covering
     // seven jobs, and update_apply / backup_restore are sensitive while a scan
     // is not. A name-only check let the dangerous two through as merely
     // mutating the moment they became reachable from the tool schema.
     if (isSensitive(op, args) && !approved) {
-      return res.status(202).json({ ok: false, requiresApproval: true, message: 'این اقدام حساس است و به تأیید شما نیاز دارد.' })
+      return res.status(202).json({ ok: false, requiresApproval: true, message: req.t('sites.needsApproval') })
     }
 
     // Approving a stored proposal claims it BEFORE the tool runs. The UPDATE
@@ -1355,7 +1355,7 @@ router.post('/sites/:id/actions', async (req, res, next) => {
       if (!claimed) {
         return res.status(409).json({
           ok: false,
-          message: 'این پیشنهاد پیش‌تر تعیین تکلیف شده است.',
+          message: req.t('sites.proposalSettled'),
         })
       }
     }
@@ -1369,8 +1369,7 @@ router.post('/sites/:id/actions', async (req, res, next) => {
         if (SENSITIVE.has(op)) {
           events.record({
             siteId: site.id, kind: 'action', severity: 'warning',
-            title: `اقدام حساس اجرا شد: ${op}`,
-            detail: { op, args, approved: Boolean(approved) },
+            ...i18nTitle('sites.events.sensitiveRan', { op }, { op, args, approved: Boolean(approved) }),
           }).catch(() => {})
         }
         if (claimed) {
@@ -1388,17 +1387,16 @@ router.post('/sites/:id/actions', async (req, res, next) => {
           }).catch(() => {})
           events.record({
             siteId: site.id, kind: 'action', severity: 'warning',
-            title: `اقدام تأییدشده اجرا نشد: ${op}`,
-            detail: { op, args, proposalId: claimed.id, error: e.message },
+            ...i18nTitle('sites.events.approvedFailed', { op }, { op, args, proposalId: claimed.id, error: e.message }),
             // Tied to the proposal so this sits with the decision it belongs
             // to rather than becoming a loose alert nobody can place.
             fingerprint: `proposal-failed:${claimed.id}`,
           }).catch(() => {})
         }
-        return res.status(e.status || 502).json({ ok: false, message: e.message })
+        return res.status(e.status || 502).json({ ok: false, message: errorMessage(req.locale, e) })
       }
     }
-    res.json({ ok: true, relayed: false, action: op, note: 'شبیه‌سازی — سایت به‌صورت زنده جفت نشده است.' })
+    res.json({ ok: true, relayed: false, action: op, note: req.t('sites.simulated') })
   } catch (e) { next(e) }
 })
 
@@ -1407,7 +1405,7 @@ router.post('/sites/:id/assistant', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     const { message, maxToolSteps } = req.body || {}
-    res.json(await assistant.answer(site, message, { maxToolSteps }))
+    res.json(await assistant.answer(site, message, { maxToolSteps, locale: req.locale }))
   } catch (e) { next(e) }
 })
 
@@ -1418,7 +1416,7 @@ router.get('/sites/:id/conversations', async (req, res, next) => {
     const site = await loadSite(req, res)
     if (!site) return
     const list = await conversations.list(site.id)
-    res.json({ conversations: list })
+    res.json({ conversations: list.map((c) => conversations.localize(req.locale, c)) })
   } catch (e) { next(e) }
 })
 
@@ -1428,7 +1426,7 @@ router.post('/sites/:id/conversations', async (req, res, next) => {
     if (!site) return
     const { title } = req.body || {}
     const created = await conversations.create(site.id, req.user?.sub, title)
-    res.status(201).json(created)
+    res.status(201).json(conversations.localize(req.locale, created))
   } catch (e) { next(e) }
 })
 
@@ -1437,8 +1435,8 @@ router.get('/sites/:id/conversations/:convId', async (req, res, next) => {
     const site = await loadSite(req, res)
     if (!site) return
     const conv = await conversations.get(site.id, req.params.convId)
-    if (!conv) return res.status(404).json({ message: 'گفتگو یافت نشد.' })
-    res.json(conv)
+    if (!conv) return res.status(404).json({ message: req.t('conversations.notFound') })
+    res.json(conversations.localize(req.locale, conv))
   } catch (e) { next(e) }
 })
 
@@ -1448,8 +1446,8 @@ router.patch('/sites/:id/conversations/:convId', async (req, res, next) => {
     if (!site) return
     const { title, status } = req.body || {}
     const updated = await conversations.update(site.id, req.params.convId, { title, status })
-    if (!updated) return res.status(404).json({ message: 'گفتگو یافت نشد.' })
-    res.json(updated)
+    if (!updated) return res.status(404).json({ message: req.t('conversations.notFound') })
+    res.json(conversations.localize(req.locale, updated))
   } catch (e) { next(e) }
 })
 
@@ -1458,7 +1456,7 @@ router.delete('/sites/:id/conversations/:convId', async (req, res, next) => {
     const site = await loadOwnerSite(req, res)
     if (!site) return
     const ok = await conversations.deleteConv(site.id, req.params.convId)
-    if (!ok) return res.status(404).json({ message: 'گفتگو یافت نشد.' })
+    if (!ok) return res.status(404).json({ message: req.t('conversations.notFound') })
     res.json({ ok: true })
   } catch (e) { next(e) }
 })
@@ -1471,6 +1469,7 @@ router.post('/sites/:id/conversations/:convId/messages', async (req, res, next) 
     const result = await conversations.postAndProcess(site, req.params.convId, message, {
       userId: req.user?.sub,
       maxToolSteps,
+      locale: req.locale,
     })
 
     if (waitForReply && result.backgroundPromise) {
@@ -1480,7 +1479,7 @@ router.post('/sites/:id/conversations/:convId/messages', async (req, res, next) 
         new Promise((r) => setTimeout(r, 29000)),
       ])
       const fullConv = await conversations.get(site.id, req.params.convId)
-      return res.json(fullConv)
+      return res.json(conversations.localize(req.locale, fullConv))
     }
 
     res.status(202).json({

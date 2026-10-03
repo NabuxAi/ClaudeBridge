@@ -1,22 +1,23 @@
 // ============================================================
-// Security Specialist Sub-Agent (عامل تخصصی امنیت و سلامت کد)
+// Security Specialist Sub-Agent
 // ============================================================
 import * as connector from '../../connector.js'
+import { t } from '../../i18n.js'
 
 export const SECURITY_AGENT = {
   id: 'security',
-  name: 'متخصص امنیت و تشخیص بدافزار',
-  role: 'تحلیل نفوذ، اعتبارسنجی یکپارچگی فایل‌های هسته، اسکن امضا‌های مخرب و بررسی آسیب‌پذیری‌های CVE',
-  systemPrompt: `شما «عامل تخصصی امنیت وردپرس» هستید.
-وظیفه شما:
-۱. تحلیل گزارش‌های امنیتی، اسکن کدهای مخرب (YARA/Signatures) و فایل‌های تغییریافته هسته وردپرس.
-۲. تطبیق نسخه‌های افزونه‌ها و قالب‌ها با پایگاه‌های داده آسیب‌پذیری (CVE/NVD/WPScan).
-۳. بررسی دسترسی‌های مشکوک، کاربران مدیر ناشناس و فایل‌های آپلود شده خطرناک (مانند فایلهای PHP در پوشه uploads).
-۴. ارائه راهکار رفع خطر با اولویت ایزوله‌سازی و حفظ پایداری سایت.
+  nameKey: 'agents.specialists.security.name',
+  roleKey: 'agents.specialists.security.role',
+  systemPrompt: `You are the WordPress security specialist agent.
+Your job:
+1. Analyse security reports, scans for malicious code (YARA/signatures) and modified WordPress core files.
+2. Match plugin and theme versions against vulnerability databases (CVE/NVD/WPScan).
+3. Review suspicious access, unknown administrator accounts and dangerous uploaded files (such as PHP files in the uploads folder).
+4. Propose remediation that prioritises isolating the threat and keeping the site stable.
 
-قوانین امنیتی:
-- هیچ‌گاه تغییری مخرب بدون ثبت پیشنهاد (Proposal) ایجاد نکنید.
-- گزارش‌ها باید شفاف، مستند به لاگ واقعی و به زبان فارسی روان باشند.`,
+Security rules:
+- Never make a destructive change without recording a proposal.
+- Reports must be clear, backed by real logs, and written fluently in the site owner's language.`,
   
   tools: [
     'security_scan',
@@ -46,7 +47,7 @@ export const SECURITY_AGENT = {
           findings.score -= Math.min(30, payload.modified_files.length * 10)
           findings.threats.push({
             type: 'core_tampering',
-            title: `${payload.modified_files.length} فایل از هسته اصلی وردپرس تغییر یافته است`,
+            title: t(options.locale, 'agents.security.coreModified', { count: payload.modified_files.length }),
             details: payload.modified_files.slice(0, 5),
           })
         }
@@ -62,7 +63,7 @@ export const SECURITY_AGENT = {
         }
       }
     } catch (e) {
-      findings.warnings.push(`بررسی کامل امنیتی با خطا مواجه شد: ${e.message}`)
+      findings.warnings.push(t(options.locale, 'agents.security.failed', { error: e.message }))
     }
 
     findings.score = Math.max(0, findings.score)

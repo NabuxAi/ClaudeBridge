@@ -1,5 +1,6 @@
 import Icon from '../lib/icons.jsx'
 import { IconButton, Button } from './actions.jsx'
+import { t } from '../lib/i18n.js'
 
 const ALERT_ICON = { critical: 'alert-octagon', warning: 'alert-triangle', info: 'info', success: 'check-circle-2' }
 
@@ -31,7 +32,7 @@ export function AlertCard({
         {children}
         {actions && <div className="gd-alert__actions">{actions}</div>}
       </div>
-      {onDismiss && <span className="gd-alert__dismiss"><IconButton icon="x" label="بستن" size="sm" onClick={onDismiss} /></span>}
+      {onDismiss && <span className="gd-alert__dismiss"><IconButton icon="x" label={t('common.close')} size="sm" onClick={onDismiss} /></span>}
     </div>
   )
 }
@@ -49,7 +50,7 @@ export function Dialog({
             {title && <div className="gd-dialog__title">{title}</div>}
             {desc && <div className="gd-dialog__desc">{desc}</div>}
           </div>
-          <span className="gd-dialog__close"><IconButton icon="x" label="بستن" size="sm" onClick={onClose} /></span>
+          <span className="gd-dialog__close"><IconButton icon="x" label={t('common.close')} size="sm" onClick={onClose} /></span>
         </div>
         {children && <div className="gd-dialog__body">{children}</div>}
         {footer && <div className="gd-dialog__footer">{footer}</div>}
@@ -67,7 +68,7 @@ export function Toast({ tone = 'info', title, desc, onClose, icon }) {
         <div className="gd-toast__title">{title}</div>
         {desc && <div className="gd-toast__desc">{desc}</div>}
       </div>
-      {onClose && <span className="gd-toast__close"><IconButton icon="x" label="بستن" size="sm" onClick={onClose} /></span>}
+      {onClose && <span className="gd-toast__close"><IconButton icon="x" label={t('common.close')} size="sm" onClick={onClose} /></span>}
     </div>
   )
 }

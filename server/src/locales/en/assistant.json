@@ -1,0 +1,47 @@
+{
+  "facts": {
+    "error": "error",
+    "alertsUnread": "The alert log could not be read: {error}",
+    "notConnected": "The site is not connected to our server yet, so we have no live information about it.",
+    "infoUnread": "The site's basic information could not be read: {error}",
+    "updatesUnread": "The update status could not be read: {error}",
+    "backupsUnread": "The backup list could not be read: {error}",
+    "noUptime": "We do not measure the site's uptime or response speed here — continuous monitoring is not part of this briefing."
+  },
+  "briefing": {
+    "wp": "WordPress {version}",
+    "and": " and ",
+    "runsOn": "The site runs on {stack}.",
+    "disk": "Free disk space on the host: {free} (estimated size of a full backup: {full}).",
+    "listSep": ", ",
+    "titleSep": "; ",
+    "pending_one": "{count} update is queued.",
+    "pending_other": "{count} updates are queued.",
+    "pendingWithItems_one": "{count} update is queued: {items}.",
+    "pendingWithItems_other": "{count} updates are queued, including {items}.",
+    "upToDate": "Everything is up to date — nothing is waiting in the update queue.",
+    "coreBehind": "WordPress core is on {current} while {latest} has been released.",
+    "criticalAlerts_one": "You have {count} open critical alert: {titles}",
+    "criticalAlerts_other": "You have {count} open critical alerts: {titles}",
+    "openAlerts_one": "You have {count} open alert, and it is not critical.",
+    "openAlerts_other": "You have {count} open alerts, none of them critical.",
+    "noAlerts": "No open alerts are recorded.",
+    "lastBackupVerified": "Last backup: {when} (checked for completeness).",
+    "lastBackupUnverified": "Last backup: {when} — its completeness has not been verified.",
+    "noBackups": "No backup is recorded on the site.",
+    "noData": "We have no live data from this site yet."
+  },
+  "refs": {
+    "updates": "Update queue",
+    "alerts": "Alert log",
+    "backups": "Backup list",
+    "tool": "Tool {tool}"
+  },
+  "notes": {
+    "noModel": "This summary was read directly from the site. Free-form answers to questions are not available yet, because no language model is configured.",
+    "modelDown": "The language model was unavailable ({error}), so you are seeing only the site's real summary."
+  },
+  "events": {
+    "ran": "Assistant ran: {tool}"
+  }
+}

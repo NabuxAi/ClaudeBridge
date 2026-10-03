@@ -134,8 +134,19 @@ test('the model is sent the fixed sweep prompt, not anything from outside', asyn
 test('the sweep asks for a check and does not push toward changing things', async () => {
   // Wording is the only thing standing between "look at this site" and "tidy
   // this site up" once the authority level allows acting.
-  assert.match(sweep.SWEEP_PROMPT, /بررسی/)
-  assert.match(sweep.SWEEP_PROMPT, /تغییر نده/)
+  assert.match(sweep.SWEEP_PROMPT, /Check the state of the site/)
+  assert.match(sweep.SWEEP_PROMPT, /Do not change anything that does not need changing/)
+})
+
+test('the sweep reply is asked for in the owner\'s language', async () => {
+  const h = harness({ turns: [say('سالم است.')] })
+  await sweep.sweepSite(site({ lang: 'fa' }))
+  const system = h.sentToModel[0].messages.find((m) => m.role === 'system')
+  assert.match(system.content, /Always reply in Persian \(Farsi\)/)
+
+  const h2 = harness({ turns: [say('Healthy.')] })
+  await sweep.sweepSite(site())
+  assert.match(h2.sentToModel[0].messages.find((m) => m.role === 'system').content, /Always reply in English/)
 })
 
 test('the site name in a result never comes back undefined', async () => {

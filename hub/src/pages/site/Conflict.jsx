@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input, Badge } from '../../components/index.js'
-import { faNum } from '../../lib/format.js'
+import { digits, pct, t } from '../../lib/i18n.js'
 import { site as siteApi } from '../../lib/api.js'
 import { useTask } from '../../lib/tasks.jsx'
 
@@ -39,13 +39,13 @@ export default function Conflict() {
       if (started?.id) {
         startTask({
           id: started.id,
-          title: `بررسی تداخل افزونه‌ها روی صفحه ${url}`,
+          title: t('conflict.taskTitle', { url }),
           type: 'conflict',
         })
       }
       poll(started.id)
     } catch (e) {
-      setError(e?.message || 'شروع نشد.')
+      setError(e?.message || t('conflict.errors.notStarted'))
     }
   }
 
@@ -61,16 +61,16 @@ export default function Conflict() {
         s = await siteApi(siteId).job(jobId)
         // A job the site no longer knows answers HTTP 200 {ok:false} — without
         // this check the poll would never terminate.
-        if (!s || s.ok === false || !s.state) throw new Error(s?.message || 'وضعیت خوانده نشد.')
+        if (!s || s.ok === false || !s.state) throw new Error(s?.message || t('conflict.errors.statusUnread'))
         fails.current = 0
       } catch (e) {
         fails.current = (fails.current || 0) + 1
         if (fails.current >= 5) {
           setStalled(true)
-          setError('خواندن وضعیت بررسی چند بار ناموفق ماند — بررسی روی سایت ادامه دارد و می‌توانید دوباره تلاش کنید.')
+          setError(t('conflict.errors.pollGaveUp'))
           return
         }
-        setError(`${e?.message || 'وضعیت خوانده نشد.'} — دوباره تلاش می‌کنیم…`)
+        setError(t('conflict.errors.retrying', { reason: e?.message || t('conflict.errors.statusUnread') }))
         return poll(jobId)
       }
       setStalled(false)
@@ -95,18 +95,16 @@ export default function Conflict() {
   return (
     <>
       <PageHead
-        title="بررسی تداخل"
-        subtitle="پیدا کردن افزونه یا قالبی که یک صفحه را خراب کرده"
+        title={t('conflict.title')}
+        subtitle={t('conflict.subtitle')}
       />
 
       <div style={{ background: 'var(--gd-warning-bg)', border: '1px solid var(--gd-warning)', borderRadius: 'var(--gd-radius-lg)', padding: '14px 18px', marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 700, color: 'var(--gd-warning-text)', marginBottom: 5 }}>
-          <Icon name="alert-triangle" size={16} /> این بررسی روی سایت زنده انجام می‌شود
+          <Icon name="alert-triangle" size={16} /> {t('conflict.liveWarning.title')}
         </div>
         <p style={{ fontSize: 12.5, color: 'var(--gd-warning-text)', margin: 0, lineHeight: 1.9, opacity: 0.92 }}>
-          افزونه‌ها گروه‌گروه خاموش و دوباره روشن می‌شوند تا مقصر پیدا شود. بازدیدکننده‌ای که
-          وسط کار وارد شود، سایت را در همان حالت می‌بیند. در پایان همه‌چیز — حتی اگر خطایی رخ
-          دهد — به حالت اول برمی‌گردد. بهتر است در ساعت کم‌ترافیک اجرا شود.
+          {t('conflict.liveWarning.body')}
         </p>
       </div>
 
@@ -114,31 +112,31 @@ export default function Conflict() {
         <div style={{ display: 'grid', gap: 12 }}>
           <div>
             <label style={{ display: 'block', fontSize: 12.5, color: 'var(--gd-text-muted)', marginBottom: 6 }}>
-              آدرس صفحهٔ خراب
+              {t('conflict.form.url')}
             </label>
             <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/checkout" dir="ltr" />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 12.5, color: 'var(--gd-text-muted)', marginBottom: 6 }}>
-              متنی که در حالت سالم باید دیده شود <span style={{ opacity: 0.7 }}>(اختیاری، ولی دقت را زیاد می‌کند)</span>
+              {t('conflict.form.expect')} <span style={{ opacity: 0.7 }}>{t('conflict.form.expectOptional')}</span>
             </label>
-            <Input value={expect} onChange={(e) => setExpect(e.target.value)} placeholder="تکمیل خرید" />
+            <Input value={expect} onChange={(e) => setExpect(e.target.value)} placeholder={t('conflict.form.expectPlaceholder')} />
             <p style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', margin: '6px 0 0', lineHeight: 1.7 }}>
-              بدون این، فقط کد وضعیت بررسی می‌شود — صفحه‌ای که ۲۰۰ می‌دهد ولی خالی است، سالم حساب می‌شود.
+              {t('conflict.form.expectHint')}
             </p>
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 12.5, color: 'var(--gd-text-muted)', marginBottom: 6 }}>
-              متنی که نشانهٔ خرابی است <span style={{ opacity: 0.7 }}>(اختیاری)</span>
+              {t('conflict.form.forbid')} <span style={{ opacity: 0.7 }}>{t('conflict.form.optional')}</span>
             </label>
             <Input value={forbid} onChange={(e) => setForbid(e.target.value)} placeholder="Fatal error" dir="ltr" />
             <p style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', margin: '6px 0 0', lineHeight: 1.7 }}>
-              خطای PHP اغلب با کد ۲۰۰ برمی‌گردد. اگر متن خطا را اینجا بگذارید، صفحه با دیدن آن خراب حساب می‌شود.
+              {t('conflict.form.forbidHint')}
             </p>
           </div>
           <div>
             <Button variant="primary" size="md" disabled={running || !url.trim()} onClick={start} leftIcon="search">
-              {running ? 'در حال بررسی…' : 'شروع بررسی'}
+              {running ? t('conflict.form.running') : t('conflict.form.start')}
             </Button>
           </div>
         </div>
@@ -150,7 +148,7 @@ export default function Conflict() {
           {stalled && job?.id && (
             <div>
               <Button size="sm" variant="secondary" style={{ marginTop: 8 }} onClick={resumePoll}>
-                تلاش دوباره
+                {t('common.retry')}
               </Button>
             </div>
           )}
@@ -169,9 +167,9 @@ function JobProgress({ job }) {
   return (
     <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: '16px 20px', marginBottom: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-        <span style={{ fontSize: 13.5, fontWeight: 700 }}>{job.message || 'در حال اجرا'}</span>
+        <span style={{ fontSize: 13.5, fontWeight: 700 }}>{job.message || t('conflict.job.running')}</span>
         <Badge variant={failed ? 'danger' : done ? 'success' : 'info'} appearance="soft">
-          {failed ? 'ناموفق' : done ? 'تمام' : `${faNum(job.progress || 0)}٪`}
+          {failed ? t('conflict.job.failed') : done ? t('conflict.job.done') : pct(job.progress || 0)}
         </Badge>
       </div>
       <div style={{ height: 6, borderRadius: 3, background: 'var(--gd-bg-inset)', overflow: 'hidden' }}>
@@ -199,7 +197,7 @@ function ConflictResult({ result }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
           <Icon name={culprit ? 'alert-triangle' : 'info'} size={20} style={{ color: culprit ? 'var(--gd-danger)' : 'var(--gd-text-muted)' }} />
           <span style={{ fontSize: 15.5, fontWeight: 800 }}>
-            {culprit ? (culprit.kind === 'theme' ? 'قالب مقصر است' : 'افزونهٔ مقصر پیدا شد') : 'مقصری پیدا نشد'}
+            {culprit ? (culprit.kind === 'theme' ? t('conflict.result.themeCulprit') : t('conflict.result.pluginCulprit')) : t('conflict.result.noCulprit')}
           </span>
         </div>
         <p style={{ fontSize: 13, margin: 0, lineHeight: 1.9 }}>{result.verdict}</p>
@@ -213,13 +211,13 @@ function ConflictResult({ result }) {
       {result.theme && (
         <Row
           icon="palette"
-          title="بررسی قالب"
+          title={t('conflict.result.themeTitle')}
           body={
             result.theme.tested
               ? result.theme.is_cause
-                ? `با قالب پیش‌فرض «${result.theme.compared}» صفحه سالم شد — یعنی قالب «${result.theme.current}» مقصر است.`
-                : `با قالب پیش‌فرض «${result.theme.compared}» هم صفحه خراب ماند، پس قالب «${result.theme.current}» مقصر نیست.`
-              : `بررسی نشد: ${result.theme.reason}`
+                ? t('conflict.result.themeIsCause', { compared: result.theme.compared, current: result.theme.current })
+                : t('conflict.result.themeNotCause', { compared: result.theme.compared, current: result.theme.current })
+              : t('conflict.result.themeNotTested', { reason: result.theme.reason })
           }
         />
       )}
@@ -227,16 +225,16 @@ function ConflictResult({ result }) {
       {result.bisect && (
         <Row
           icon="git-branch"
-          title="جست‌وجوی دودویی"
-          body={`مقصر با ${faNum(result.bisect.tested)} مرحله پیدا شد. در هر مرحله نیمی از افزونه‌ها خاموش شدند و بقیه روشن ماندند — تا تداخل بین دو افزونه هم قابل بازتولید بماند.`}
+          title={t('conflict.result.bisectTitle')}
+          body={t('conflict.result.bisectBody', { count: result.bisect.tested })}
           extra={
             result.bisect.rounds?.length > 0 && (
               <ul style={{ margin: '8px 0 0', paddingInlineStart: 18, fontSize: 12, lineHeight: 1.9, color: 'var(--gd-text-muted)' }}>
                 {result.bisect.rounds.map((r, i) => (
                   <li key={i}>
-                    <span style={mono}>{faNum(r.disabled.length)}</span> افزونه خاموش →{' '}
-                    {r.healthy ? <b style={{ color: 'var(--gd-success)' }}>صفحه سالم شد</b> : 'همچنان خراب'}
-                    {r.status ? ` (${faNum(r.status)})` : ''}
+                    <span style={mono}>{digits(r.disabled.length)}</span> {t('conflict.result.roundDisabled')}{' '}
+                    {r.healthy ? <b style={{ color: 'var(--gd-success)' }}>{t('conflict.result.roundHealthy')}</b> : t('conflict.result.roundBroken')}
+                    {r.status ? ` (${digits(r.status)})` : ''}
                   </li>
                 ))}
               </ul>
@@ -252,8 +250,8 @@ function ConflictResult({ result }) {
         <Row
           icon="alert-triangle"
           tone="danger"
-          title="بررسی ناتمام ماند"
-          body={`${result.error} — نتیجهٔ بالا کامل نیست.`}
+          title={t('conflict.result.incompleteTitle')}
+          body={t('conflict.result.incompleteBody', { error: result.error })}
         />
       )}
 
@@ -261,21 +259,23 @@ function ConflictResult({ result }) {
           run this, so "we put it back" is read back from the site, not assumed. */}
       <Row
         icon={result.restored ? 'check' : 'alert-triangle'}
-        title="بازگردانی"
+        title={t('conflict.result.restoreTitle')}
         tone={result.restored ? 'success' : 'danger'}
         body={
           result.restored
-            ? `افزونه‌های فعال و قالب دوباره خوانده شدند و با حالت اول یکی هستند. وضعیت صفحه پس از بازگردانی: ${
-                result.final_health?.healthy
-                  ? 'سالم'
+            ? t('conflict.result.restored', {
+                state: result.final_health?.healthy
+                  ? t('conflict.result.stateHealthy')
                   : result.final_health
-                    ? `همان خرابی اولیه${result.final_health?.status ? ` (${faNum(result.final_health.status)})` : ''}`
+                    ? (result.final_health?.status
+                      ? t('conflict.result.stateBrokenStatus', { status: digits(result.final_health.status) })
+                      : t('conflict.result.stateBroken'))
                     : // The site never re-measured the page (e.g. the healthy-baseline
                       // short-circuit) — saying "still broken" would contradict the
                       // verdict above, so the missing reading stays missing.
-                      '— (اندازه‌گیری نشد)'
-              }.`
-            : `بازگردانی کامل نشد — سایت را دستی بررسی کنید. ${result.restore_error || ''}`
+                      t('conflict.result.stateUnmeasured'),
+              })
+            : t('conflict.result.notRestored', { error: result.restore_error || '' })
         }
       />
     </div>

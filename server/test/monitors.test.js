@@ -48,7 +48,9 @@ if (!dsn) {
   const send = async (method, path, body, auth) => {
     const res = await realFetch(API + path, {
       method,
-      headers: { 'Content-Type': 'application/json', ...(auth ? { authorization: auth.authorization } : {}) },
+      // Persian on purpose: these tests pin the reviewed Persian wording
+      // (the English default is pinned in the i18n test below).
+      headers: { 'Content-Type': 'application/json', 'Accept-Language': 'fa', ...(auth ? { authorization: auth.authorization } : {}) },
       body: body != null ? JSON.stringify(body) : undefined,
     })
     const data = await res.json().catch(() => ({}))

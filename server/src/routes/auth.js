@@ -9,21 +9,26 @@ import { config } from '../config.js'
 import * as captcha from '../security/captcha.js'
 import { hit, clear, peek, clientIp, limiter } from '../security/ratelimit.js'
 import { sendMail, isMailerConfigured } from '../mailer.js'
+import { t, errorMessage, i18nMiddleware } from '../i18n.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 
 const ip = (req) => clientIp(req, { trustProxy: config.trustProxy })
 const emailOf = (req) => String(req.body?.email || '').trim().toLowerCase() || 'none'
 
 /**
- * A short human-readable summary of the signing-in device, stored with the
- * session so the security page can say "Chrome روی Windows" instead of a
- * 300-character user-agent. Genuinely unrecognised clients say so rather
- * than inventing a device name.
+ * A short summary of the signing-in device, stored with the session so the
+ * security page can say "Chrome on Windows" instead of a 300-character
+ * user-agent. Stored language-neutral ("Chrome · Windows", or '' when
+ * unrecognised); sessions.store renders it in the reader's language, so a
+ * genuinely unrecognised client says so rather than inventing a device name.
  */
 export function deviceSummary(ua) {
   const s = String(ua || '')
-  if (!s) return 'دستگاه ناشناس'
+  if (!s) return ''
   const browser =
     (/Edg\//.test(s) && 'Edge') ||
     (/OPR\//.test(s) && 'Opera') ||
@@ -39,8 +44,7 @@ export function deviceSummary(ua) {
     (/Mac OS X|Macintosh/.test(s) && 'macOS') ||
     (/Linux/.test(s) && 'Linux') ||
     ''
-  if (!browser && !os) return 'دستگاه ناشناس'
-  return [browser, os].filter(Boolean).join(' روی ')
+  return [browser, os].filter(Boolean).join(' · ')
 }
 
 /**
@@ -82,7 +86,7 @@ const requireSession = (req, res, next) => {
 router.get(
   '/auth/captcha',
   limiter('captcha', { limit: 60, windowMs: 10 * 60 * 1000, keyFn: ip }),
-  (_req, res) => res.json(captcha.issue())
+  (req, res) => res.json(captcha.issue(req.locale))
 )
 
 /**
@@ -103,7 +107,7 @@ router.get('/auth/challenge-state', (req, res) => {
 
 const registerLimit = limiter('register', {
   limit: 5, windowMs: 60 * 60 * 1000, keyFn: ip,
-  message: 'تعداد ثبت‌نام از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+  message: 'auth.limit.register',
 })
 
 // Registration always demands a captcha: there is no prior failure to key off,
@@ -119,28 +123,28 @@ router.post('/auth/register', registerLimit, async (req, res, next) => {
     const { name, email, password, captchaId, captchaAnswer, inviteToken } = req.body || {}
 
     const c = captcha.verify(captchaId, captchaAnswer)
-    if (!c.ok) return res.status(400).json({ message: captcha.MESSAGES[c.reason], captchaRequired: true })
+    if (!c.ok) return res.status(400).json({ message: captcha.message(req.locale, c.reason), captchaRequired: true })
 
-    const user = await users.create({ name, email, password })
+    const user = await users.create({ name, email, password, lang: req.locale })
 
     let invite = null
     if (inviteToken) {
       try {
-        invite = { applied: true, member: await team.acceptOnRegister(inviteToken, user) }
+        invite = { applied: true, member: await team.acceptOnRegister(inviteToken, user, req.locale) }
       } catch (e) {
-        invite = { applied: false, error: e.status ? e.message : 'اعمال دعوت‌نامه انجام نشد.' }
+        invite = { applied: false, error: e.status ? errorMessage(req.locale, e) : req.t('auth.inviteFailed') }
         if (!e.status) console.warn('register: invite application failed unexpectedly:', e.message)
       }
     }
 
     const token = await issueSessionToken(req, user)
-    res.status(201).json({ token, user, invite })
+    res.status(201).json({ token, user: users.withLabels(req.locale, user), invite })
   } catch (e) { next(e) }
 })
 
 const loginLimit = limiter('login', {
   limit: 20, windowMs: 15 * 60 * 1000, keyFn: ip,
-  message: 'تلاش‌های ورود از این آدرس بیش از حد است. کمی صبر کنید.',
+  message: 'auth.limit.login',
 })
 
 /**
@@ -171,7 +175,7 @@ router.post('/auth/login', loginLimit, async (req, res, next) => {
     if (peek(failKey).count >= config.security.captchaAfterFailures) {
       const c = captcha.verify(captchaId, captchaAnswer)
       if (!c.ok) {
-        return res.status(400).json({ message: captcha.MESSAGES[c.reason], captchaRequired: true })
+        return res.status(400).json({ message: captcha.message(req.locale, c.reason), captchaRequired: true })
       }
     }
 
@@ -181,7 +185,7 @@ router.post('/auth/login', loginLimit, async (req, res, next) => {
     if (!acct.allowed) {
       res.setHeader('Retry-After', String(acct.retryAfter))
       return res.status(429).json({
-        message: 'ورود به این حساب موقتاً قفل شده است. کمی بعد دوباره تلاش کنید.',
+        message: req.t('auth.accountLocked'),
         retryAfter: acct.retryAfter,
       })
     }
@@ -195,7 +199,7 @@ router.post('/auth/login', loginLimit, async (req, res, next) => {
       const fails = hit(failKey, { limit: 1_000_000, windowMs: 15 * 60 * 1000 })
       const failures = 1_000_000 - fails.remaining
       return res.status(401).json({
-        message: 'ایمیل یا رمز عبور نادرست است.',
+        message: req.t('auth.badCredentials'),
         // Says what the next attempt needs, without the error itself revealing
         // anything about whether the account exists.
         captchaRequired: failures >= config.security.captchaAfterFailures,
@@ -228,7 +232,7 @@ router.post('/auth/login', loginLimit, async (req, res, next) => {
         // wrong" would be a lie. It stays enumeration-safe anyway —
         // only someone holding the password can ever read it.
         return res.status(401).json({
-          message: 'کد ورود دو مرحله‌ای درست نیست.',
+          message: req.t('auth.badLoginCode'),
           captchaRequired: failures >= config.security.captchaAfterFailures,
         })
       }
@@ -243,7 +247,7 @@ router.post('/auth/login', loginLimit, async (req, res, next) => {
 
     const user = await users.byId(row.id)
     const token = await issueSessionToken(req, user)
-    res.json({ token, user })
+    res.json({ token, user: users.withLabels(req.locale, user) })
   } catch (e) { next(e) }
 })
 
@@ -252,7 +256,7 @@ router.get('/auth/me', requireAuth, async (req, res, next) => {
   try {
     const user = await users.byId(req.user.sub)
     if (!user) return res.status(401).json({ message: 'Unauthorized' })
-    res.json(user)
+    res.json(users.withLabels(req.locale, user))
   } catch (e) { next(e) }
 })
 
@@ -260,26 +264,26 @@ router.get('/auth/me', requireAuth, async (req, res, next) => {
 // The owner's own sessions only, and never with hashes: `token_hash` is the
 // server's lookup key, and a list response is not the place to teach an XSS
 // what a session identifier looks like. `current` on each row is the only
-// thing the client needs to mark "این دستگاه".
+// thing the client needs to mark "this device".
 
 router.get('/auth/sessions', requireAuth, requireSession, async (req, res, next) => {
   try {
-    const list = await sessions.listForUser(req.user.sub, sessionTokenHash(req.user.jti))
+    const list = await sessions.listForUser(req.user.sub, sessionTokenHash(req.user.jti), req.locale)
     res.json({ sessions: list })
   } catch (e) { next(e) }
 })
 
-// "خروج" for one device. Scoped to req.user.sub, so another user's session id
+// "Log out" for one device. Scoped to req.user.sub, so another user's session id
 // is indistinguishable from a made-up one: both are a plain 404.
 router.delete('/auth/sessions/:id', requireAuth, requireSession, async (req, res, next) => {
   try {
     const row = await sessions.revoke(req.params.id, req.user.sub)
-    if (!row) return res.status(404).json({ message: 'نشست پیدا نشد.' })
+    if (!row) return res.status(404).json({ message: req.t('auth.sessionNotFound') })
     res.json({ ok: true })
   } catch (e) { next(e) }
 })
 
-// "خروج از دستگاه‌های دیگر" — everything but the session this request rode
+// "Log out other devices" — everything but the session this request rode
 // in on, so the user does not log themselves out of the device they are
 // holding.
 router.post('/auth/sessions/revoke-others', requireAuth, requireSession, async (req, res, next) => {
@@ -289,7 +293,7 @@ router.post('/auth/sessions/revoke-others', requireAuth, requireSession, async (
   } catch (e) { next(e) }
 })
 
-// "خروج" — the daily-exit path the header button rides. Clearing the browser's
+// "Log out" — the daily-exit path the header button rides. Clearing the browser's
 // localStorage alone left the session row live until its 7-day expiry, so a
 // token copied off a shared device kept working after the person left. Here
 // the session this request rode in on is revoked server-side; the client then
@@ -321,7 +325,7 @@ router.post('/auth/logout', requireAuth, requireSession, async (req, res, next) 
 const totpActionLimit = limiter('2fa', {
   limit: 20, windowMs: 15 * 60 * 1000,
   keyFn: (req) => req.user?.sub || ip(req),
-  message: 'تلاش‌های ورود دو مرحله‌ای بیش از حد است. کمی بعد دوباره تلاش کنید.',
+  message: 'auth.limit.twoFactor',
 })
 
 // Disable re-proves the password, so it gets the tighter treatment the other
@@ -329,7 +333,7 @@ const totpActionLimit = limiter('2fa', {
 const totpDisableLimit = limiter('2fa-disable', {
   limit: 10, windowMs: 15 * 60 * 1000,
   keyFn: (req) => req.user?.sub || ip(req),
-  message: 'تلاش‌های غیرفعال‌سازی ورود دو مرحله‌ای بیش از حد است. کمی بعد دوباره تلاش کنید.',
+  message: 'auth.limit.twoFactorDisable',
 })
 
 /** Whether this account has the factor on, a setup in flight, and codes left. */
@@ -355,7 +359,7 @@ router.post('/auth/2fa/setup', requireAuth, requireSession, totpActionLimit, asy
   try {
     const existing = await twoFactor.get(req.user.sub)
     if (existing?.status === 'active') {
-      return res.status(400).json({ message: 'ورود دو مرحله‌ای همین حالا فعال است؛ برای تغییر، ابتدا آن را غیرفعال کنید.' })
+      return res.status(400).json({ message: req.t('auth.twoFactor.alreadyActive') })
     }
     const secret = generateSecret()
     await twoFactor.setPending(req.user.sub, secret)
@@ -378,11 +382,11 @@ router.post('/auth/2fa/activate', requireAuth, requireSession, totpActionLimit, 
   try {
     const tf = await twoFactor.get(req.user.sub)
     if (!tf || tf.status !== 'pending') {
-      return res.status(400).json({ message: 'راه‌اندازی ورود دو مرحله‌ای در جریان نیست؛ ابتدا آن را شروع کنید.' })
+      return res.status(400).json({ message: req.t('auth.twoFactor.notPending') })
     }
     const code = String(req.body?.code || '').trim()
     if (!verifyTotp(tf.secret, code, { window: 1 })) {
-      return res.status(400).json({ message: 'کد وارد شده درست نیست؛ کد شش‌رقمیِ فعلی اپلیکیشن را وارد کنید.' })
+      return res.status(400).json({ message: req.t('auth.twoFactor.badActivationCode') })
     }
     const { codes } = await twoFactor.activate(req.user.sub)
     res.json({ ok: true, recoveryCodes: codes })
@@ -402,17 +406,17 @@ router.post('/auth/2fa/disable', requireAuth, requireSession, totpDisableLimit, 
     const row = await users.byIdRaw(req.user.sub)
     if (!row) return res.status(401).json({ message: 'Unauthorized' })
     if (!password || !(await verifyPassword(String(password), row.pass_hash))) {
-      return res.status(400).json({ message: 'رمز عبور نادرست است.' })
+      return res.status(400).json({ message: req.t('auth.wrongPassword') })
     }
 
     const tf = await twoFactor.get(req.user.sub)
     if (!tf || tf.status !== 'active') {
-      return res.status(400).json({ message: 'ورود دو مرحله‌ای فعال نیست.' })
+      return res.status(400).json({ message: req.t('auth.twoFactor.notActive') })
     }
     const codeOk = verifyTotp(tf.secret, String(code || '').trim(), { window: 1 })
       || await twoFactor.consumeRecoveryCode(req.user.sub, code)
     if (!codeOk) {
-      return res.status(400).json({ message: 'کد تأیید دو مرحله‌ای درست نیست.' })
+      return res.status(400).json({ message: req.t('auth.twoFactor.badCode') })
     }
     await twoFactor.disable(req.user.sub)
     res.json({ ok: true })
@@ -421,7 +425,7 @@ router.post('/auth/2fa/disable', requireAuth, requireSession, totpDisableLimit, 
 
 const forgotLimit = limiter('forgot-password', {
   limit: 5, windowMs: 60 * 60 * 1000, keyFn: ip,
-  message: 'تعداد درخواست‌های بازنشانی از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+  message: 'auth.limit.forgot',
 })
 
 /**
@@ -442,7 +446,7 @@ router.post('/auth/forgot-password', forgotLimit, async (req, res, next) => {
   try {
     const { email, captchaId, captchaAnswer } = req.body || {}
     const c = captcha.verify(captchaId, captchaAnswer)
-    if (!c.ok) return res.status(400).json({ message: captcha.MESSAGES[c.reason], captchaRequired: true })
+    if (!c.ok) return res.status(400).json({ message: captcha.message(req.locale, c.reason), captchaRequired: true })
 
     const mailConfigured = isMailerConfigured()
 
@@ -452,11 +456,14 @@ router.post('/auth/forgot-password', forgotLimit, async (req, res, next) => {
     if (row) {
       const { raw } = await passwordResets.create(row.id)
       const link = `${config.publicPanelUrl || 'http://localhost:8080'}/reset?token=${raw}`
+      // The mail speaks the account's own language (users.lang), not the
+      // requester's: the response below is what the requester reads.
+      const lang = row.lang
       const mail = await sendMail({
         to: row.email,
-        subject: 'بازنشانی رمز عبور DigiWP',
-        text: `برای بازنشانی رمز عبور روی این لینک کلیک کنید:\n${link}\n\nاین لینک یک ساعت معتبر است و فقط یک‌بار قابل استفاده است.`,
-        html: `<p>برای بازنشانی رمز عبور روی این لینک کلیک کنید:</p><p><a href="${link}">${link}</a></p><p>این لینک یک ساعت معتبر است و فقط یک‌بار قابل استفاده است.</p>`,
+        subject: t(lang, 'auth.resetMail.subject'),
+        text: `${t(lang, 'auth.resetMail.intro')}\n${link}\n\n${t(lang, 'auth.resetMail.validity')}`,
+        html: `<p>${t(lang, 'auth.resetMail.intro')}</p><p><a href="${link}">${link}</a></p><p>${t(lang, 'auth.resetMail.validity')}</p>`,
       })
       // The response must stay vague or the delivery outcome becomes an
       // account-existence oracle, so a failed send is visible to the operator
@@ -470,15 +477,15 @@ router.post('/auth/forgot-password', forgotLimit, async (req, res, next) => {
       ok: true,
       mailConfigured,
       message: mailConfigured
-        ? 'اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی ارسال شده است.'
-        : 'ارسال ایمیل روی این سرور پیکربندی نشده است؛ برای بازنشانی رمز عبور با پشتیبانی تماس بگیرید.',
+        ? req.t('auth.forgot.sent')
+        : req.t('auth.forgot.mailNotConfigured'),
     })
   } catch (e) { next(e) }
 })
 
 const resetLimit = limiter('reset-password', {
   limit: 10, windowMs: 60 * 60 * 1000, keyFn: ip,
-  message: 'تعداد تلاش‌های بازنشانی از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+  message: 'auth.limit.reset',
 })
 
 /**
@@ -490,16 +497,16 @@ const resetLimit = limiter('reset-password', {
 router.post('/auth/reset-password', resetLimit, async (req, res, next) => {
   try {
     const { token, password } = req.body || {}
-    if (!token || String(token).length < 32) return res.status(400).json({ message: 'لینک بازنشانی نامعتبر است.' })
-    if (!password || String(password).length < 8) return res.status(400).json({ message: 'رمز عبور باید حداقل ۸ نویسه باشد.' })
+    if (!token || String(token).length < 32) return res.status(400).json({ message: req.t('auth.reset.invalidLink') })
+    if (!password || String(password).length < 8) return res.status(400).json({ message: req.t('common.passwordTooShort', { min: 8 }) })
 
     const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex')
     const pr = await passwordResets.find(tokenHash)
-    if (!pr) return res.status(400).json({ message: 'لینک بازنشانی منقضی یا استفاده شده است.' })
+    if (!pr) return res.status(400).json({ message: req.t('auth.reset.expired') })
 
     await users.updatePassword(pr.user_id, password)
     await passwordResets.markUsed(pr.id)
-    res.json({ ok: true, message: 'رمز عبور بازنشانی شد. اکنون می‌توانید وارد شوید.' })
+    res.json({ ok: true, message: req.t('auth.reset.done') })
   } catch (e) { next(e) }
 })
 

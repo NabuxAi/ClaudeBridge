@@ -2,10 +2,28 @@
 import * as connector from './connector.js'
 import { uploadToS3 } from './s3-upload.js'
 import { offsiteBackups } from './offsite-backups.store.js'
+import { t } from './i18n.js'
 
 function unwrap(raw) {
   const text = raw?.content?.[0]?.text
   return typeof text === 'string' ? JSON.parse(text) : raw
+}
+
+// A failed job's `error` is stored in English on the job row (this runs after
+// the response, with no reader); localizeJobError() renders the messages
+// written here — and their pre-translation Persian — for the viewer.
+const ERROR_KEYS = ['targetNotFound', 'noBackups', 'readStalled'].map((k) => `offsiteRunner.errors.${k}`)
+const LEGACY_ERRORS = {
+  'هدف پشتیبان یافت نشد.': 'offsiteRunner.errors.targetNotFound',
+  'هیچ بکاپی روی سایت یافت نشد.': 'offsiteRunner.errors.noBackups',
+  'خواندن فایل بکاپ متوقف شد.': 'offsiteRunner.errors.readStalled',
+}
+
+/** A stored job error in `locale`; provider/connector text is kept as written. */
+export function localizeJobError(locale, error) {
+  if (!error) return error
+  const key = LEGACY_ERRORS[error] || ERROR_KEYS.find((k) => t('en', k) === error)
+  return key ? t(locale, key) : error
 }
 
 /**
@@ -31,7 +49,7 @@ export async function runOffsiteBackup(site, target, jobId) {
 
   try {
     const targetWithSecret = await offsiteBackups.getTargetWithSecret(site.id, target.id)
-    if (!targetWithSecret) throw new Error('هدف پشتیبان یافت نشد.')
+    if (!targetWithSecret) throw new Error(t('en', 'offsiteRunner.errors.targetNotFound'))
 
     const siteConn = { url: site.url, secret: site.secret, siteKey: site.site_key }
 
@@ -39,7 +57,7 @@ export async function runOffsiteBackup(site, target, jobId) {
     const listRaw = await connector.callTool(siteConn, 'backup_list', {})
     const list = unwrap(listRaw)
     const backups = Array.isArray(list?.backups) ? list.backups : []
-    if (!backups.length) throw new Error('هیچ بکاپی روی سایت یافت نشد.')
+    if (!backups.length) throw new Error(t('en', 'offsiteRunner.errors.noBackups'))
     const backup = backups[0]
 
     // 2. Pull the database dump slice by slice from the site.
@@ -51,7 +69,7 @@ export async function runOffsiteBackup(site, target, jobId) {
       if (part?.error) throw new Error(part.error)
       if (part?.chunk) chunks.push(Buffer.from(part.chunk, 'base64'))
       if (part?.eof) break
-      if (!part?.read) throw new Error('خواندن فایل بکاپ متوقف شد.')
+      if (!part?.read) throw new Error(t('en', 'offsiteRunner.errors.readStalled'))
       offset = part.offset + part.read
     }
     const payload = Buffer.concat(chunks)

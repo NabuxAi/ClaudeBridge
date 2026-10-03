@@ -4,17 +4,24 @@
 // missing, a default trialing subscription is created idempotently. All
 // returned shapes are plain objects with no secrets.
 import { one, all, newId } from './db.js'
-import { httpError } from './store.js'
+import { httpError, planIdFromName } from './store.js'
+import { t, hasKey } from './i18n.js'
 
 const TRIAL_DAYS = 14
 
-const publicPlan = (p) => p && ({
+// Plan names/features are stored in the seed language (Persian reference
+// data, billing.schema.js); the served text comes from the locale files by
+// plan id, with the stored text as the fallback for an unknown plan.
+const planText = (locale, id, field, stored, group = 'plans') =>
+  hasKey(`billing.${group}.${id}.${field}`) ? t(locale, `billing.${group}.${id}.${field}`) : stored
+
+const publicPlan = (p, locale) => p && ({
   id: p.id,
-  name: p.name,
+  name: planText(locale, p.id, 'name', p.name),
   price: Number(p.price),
   popular: !!p.popular,
   siteLimit: p.site_limit == null ? null : Number(p.site_limit),
-  features: p.features || [],
+  features: planText(locale, p.id, 'features', p.features || []),
 })
 
 // Trial state, spelled out instead of derivable: a raw status of 'trialing'
@@ -26,7 +33,7 @@ const publicPlan = (p) => p && ({
 const trialStateOf = (s, isTrialing) =>
   isTrialing ? 'trialing' : s.status === 'trialing' ? 'expired' : 'ended'
 
-const publicSubscription = (s, plan, siteLimit, sitesUsed) => {
+const publicSubscription = (s, plan, siteLimit, sitesUsed, locale) => {
   if (!s) return null
   const now = Date.now()
   const trialEndsAt = s.trial_ends_at ? Number(s.trial_ends_at) : null
@@ -35,7 +42,7 @@ const publicSubscription = (s, plan, siteLimit, sitesUsed) => {
     ? Math.max(0, Math.ceil((trialEndsAt - now) / (24 * 60 * 60 * 1000)))
     : null
   return {
-    plan: plan ? publicPlan(plan) : { id: s.plan, name: s.plan },
+    plan: plan ? publicPlan(plan, locale) : { id: s.plan, name: s.plan },
     status: s.status,
     isTrialing,
     trialState: trialStateOf(s, isTrialing),
@@ -53,13 +60,26 @@ const publicSubscription = (s, plan, siteLimit, sitesUsed) => {
 
 export const billing = {
   /** All active plans, ordered by price. */
-  async plans() {
-    return (await all('SELECT * FROM plans ORDER BY price ASC')).map(publicPlan)
+  async plans(locale) {
+    return (await all('SELECT * FROM plans ORDER BY price ASC')).map((p) => publicPlan(p, locale))
+  },
+
+  /**
+   * The static public price list (seed.js `plans`) with name/features in
+   * `locale`. Its feature lines differ from the database rows' (agency), so
+   * they have their own keys under billing.catalog.
+   */
+  localizePlans(locale, list) {
+    return list.map((p) => ({
+      ...p,
+      name: planText(locale, p.id, 'name', p.name),
+      features: planText(locale, p.id, 'features', p.features, 'catalog'),
+    }))
   },
 
   /** A single plan by id, or null. */
-  async planById(id) {
-    return publicPlan(await one('SELECT * FROM plans WHERE id = $1', [id]))
+  async planById(id, locale) {
+    return publicPlan(await one('SELECT * FROM plans WHERE id = $1', [id]), locale)
   },
 
   /** Number of sites this user owns. Tombstoned sites (status 'deleted') do
@@ -103,12 +123,12 @@ export const billing = {
   },
 
   /** Current subscription + plan + entitlement summary for the user. */
-  async forUser(userId) {
+  async forUser(userId, locale) {
     const s = await this.ensure(userId)
     const plan = await one('SELECT * FROM plans WHERE id = $1', [s.plan])
     const sitesUsed = await this.siteCount(userId)
     const siteLimit = plan?.site_limit == null ? null : Number(plan.site_limit)
-    return publicSubscription(s, plan, siteLimit, sitesUsed)
+    return publicSubscription(s, plan, siteLimit, sitesUsed, locale)
   },
 
   /**
@@ -138,16 +158,16 @@ export const billing = {
    *
    * Blocked states (402, because nothing is broken or forbidden — the account
    * simply has no entitlement), each with a machine-readable `code` so the hub
-   * can react without parsing Persian:
+   * can react without parsing the message text:
    *   trial_expired       — the trial window is over and no gateway exists to
    *                         replace it. Adding is blocked; READING everything
    *                         the account already has stays open.
    *   site_limit_reached  — sites_used >= plan.site_limit. A plan with
-   *                         site_limit NULL (آژانس) is unlimited by contract.
+   *                         site_limit NULL (agency) is unlimited by contract.
    * When allowed, returns the same honest summary the billing endpoints serve
    * so the caller can log the decision against real numbers.
    */
-  async canAddSite(userId) {
+  async canAddSite(userId, locale) {
     const s = await this.ensure(userId)
     const plan = await one('SELECT * FROM plans WHERE id = $1', [s.plan])
     const sitesUsed = await this.siteCount(userId)
@@ -155,23 +175,18 @@ export const billing = {
     const now = Date.now()
     const trialEndsAt = s.trial_ends_at ? Number(s.trial_ends_at) : null
     const isTrialing = s.status === 'trialing' && trialEndsAt && trialEndsAt > now
-    const subscription = publicSubscription(s, plan, siteLimit, sitesUsed)
+    const subscription = publicSubscription(s, plan, siteLimit, sitesUsed, locale)
 
     if (s.status === 'trialing' && (!trialEndsAt || trialEndsAt <= now)) {
-      const e = httpError(
-        402,
-        'دسترسی آزمایشی شما به پایان رسیده است؛ افزودن سایت جدید تا فعال‌سازی اشتراک متوقف است. درگاه پرداخت هنوز فعال نیست — برای ادامه از صفحهٔ اشتراک درخواست دسترسی آزمایشی ثبت کنید یا با پشتیبانی تماس بگیرید.'
-      )
-      e.code = 'trial_expired'
+      const e = httpError(402, 'billing.trialExpired', null, 'trial_expired')
       e.details = { subscription }
       throw e
     }
     if (siteLimit != null && sitesUsed >= siteLimit) {
-      const e = httpError(
-        402,
-        `ظرفیت پلن «${plan?.name || s.plan}» (${faDigits(siteLimit)} سایت) تکمیل شده است. برای افزودن سایت بیشتر، پلن خود را ارتقا دهید. درگاه پرداخت هنوز فعال نیست — برای ارتقا با پشتیبانی تماس بگیرید.`
-      )
-      e.code = 'site_limit_reached'
+      const e = httpError(402, 'billing.siteLimitReached', {
+        plan: plan ? planText(locale, plan.id, 'name', plan.name) : s.plan,
+        count: siteLimit,
+      }, 'site_limit_reached')
       e.details = { subscription }
       throw e
     }
@@ -185,9 +200,9 @@ export const billing = {
    * so the account is usable immediately. The plan change is also written back
    * to users.plan so legacy paths stay consistent.
    */
-  async requestPilot(userId, planId) {
+  async requestPilot(userId, planId, locale) {
     const plan = await one('SELECT * FROM plans WHERE id = $1', [planId])
-    if (!plan) throw httpError(404, 'پلن پیدا نشد.')
+    if (!plan) throw httpError(404, 'billing.planNotFound')
 
     const s = await this.ensure(userId)
     const now = Date.now()
@@ -205,7 +220,7 @@ export const billing = {
     )
 
     await one('UPDATE users SET plan = $2 WHERE id = $1', [userId, plan.name])
-    return this.forUser(userId)
+    return this.forUser(userId, locale)
   },
 
   /**
@@ -215,12 +230,12 @@ export const billing = {
    * happened, but it does persist an explicit plan or trial change sent by a
    * trusted internal caller.
    */
-  async applyChange(userId, { plan: planId, trialDays, cancelAtPeriodEnd } = {}) {
+  async applyChange(userId, { plan: planId, trialDays, cancelAtPeriodEnd } = {}, locale) {
     const s = await this.ensure(userId)
     let targetPlan = s.plan
     if (planId) {
       const plan = await one('SELECT * FROM plans WHERE id = $1', [planId])
-      if (!plan) throw httpError(404, 'پلن پیدا نشد.')
+      if (!plan) throw httpError(404, 'billing.planNotFound')
       targetPlan = planId
     }
 
@@ -251,13 +266,7 @@ export const billing = {
 
     const plan = await one('SELECT * FROM plans WHERE id = $1', [targetPlan])
     await one('UPDATE users SET plan = $2 WHERE id = $1', [userId, plan?.name || targetPlan])
-    return this.forUser(userId)
+    return this.forUser(userId, locale)
   },
 }
 
-const faDigits = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
-
-function planIdFromName(name) {
-  const map = { 'پایه': 'base', 'حرفه‌ای': 'pro', 'آژانس': 'agency' }
-  return map[String(name || '').trim()] || null
-}

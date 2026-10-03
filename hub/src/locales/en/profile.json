@@ -1,0 +1,44 @@
+{
+  "title": "Profile & account settings",
+  "subtitle": "Account details",
+  "loadFailed": "The profile could not be loaded.",
+  "loadFailedTitle": "Profile failed to load",
+  "saved": "Saved.",
+  "saveFailed": "Could not save.",
+  "avatarNote": "Your profile picture is generated from the initials of your name.",
+  "fields": {
+    "name": "Full name",
+    "email": "Email",
+    "lang": "Panel language",
+    "timezone": "Time zone"
+  },
+  "tz": {
+    "tehran": "Tehran (GMT+3:30)",
+    "dubai": "Dubai (GMT+4)",
+    "utc": "UTC"
+  },
+  "saveProfile": "Save profile",
+  "security": {
+    "title": "Account security",
+    "body": "Signed-in devices, signing out of any of them, and two-factor sign-in are managed in <link>Account security</link>. Changing your password inside the panel has not been built yet; to change it, use “Forgot password” on the sign-in page."
+  },
+  "delete": {
+    "phrase": "delete account",
+    "title": "Delete account",
+    "zoneDesc": "All sites stop being monitored, sessions are revoked and the account's personal data is permanently deleted. This cannot be undone.",
+    "open": "Delete account…",
+    "irreversible": "This cannot be undone.",
+    "intro": "Deleting your account:",
+    "items": {
+      "sites": "Immediately stops monitoring all your sites and invalidates each one's pairing credentials; the plugin on the site will no longer connect to this panel.",
+      "sessions": "Signs out every session on the account (any device) at once.",
+      "personal": "Removes your email, name, phone number and notification tokens from the account. Your email address is released, and you can sign up again with it later.",
+      "audit": "Keeps the event history, without personal data, for audit."
+    },
+    "confirm": "To confirm, type <strong>“{phrase}”</strong> and enter your current password:",
+    "password": "Current password",
+    "deleting": "Deleting…",
+    "submit": "Delete account permanently",
+    "failed": "Account deletion failed. Please try again."
+  }
+}

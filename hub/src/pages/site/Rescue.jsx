@@ -3,7 +3,8 @@ import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Badge } from '../../components/index.js'
-import { faNum } from '../../lib/format.js'
+import { digits, num, t } from '../../lib/i18n.js'
+import Trans from '../../components/Trans.jsx'
 import { site as siteApi } from '../../lib/api.js'
 import { useTask } from '../../lib/tasks.jsx'
 
@@ -22,47 +23,42 @@ import { useTask } from '../../lib/tasks.jsx'
  *   rotate-keys logs every user out, including whoever is running the rescue,
  *               so it asks for confirmation in the UI as well as the API.
  */
+// Title/description live in rescue.steps.<key>.{title,desc}, translated at render.
 const STEPS = [
   {
     id: 'backup',
-    title: 'عکس‌برداری',
-    desc: 'بکاپ کامل دیتابیس، پیش از هر تغییر. بکاپ خودش آلوده است — هدفش برگرداندن سایت نیست، امکان بازگشت است.',
+    key: 'backup',
     icon: 'database-backup',
     writes: true,
   },
   {
     id: 'inventory',
-    title: 'فهرست‌برداری',
-    desc: 'هر افزونه و قالب در یکی از سه دسته: قابل جایگزینی از مخزن، نیازمند فایل سالم از سازنده، یا پوشه‌ای که اصلاً افزونه نیست.',
+    key: 'inventory',
     icon: 'list-checks',
     writes: false,
   },
   {
     id: 'leftovers',
-    title: 'شکار باقی‌مانده‌ها',
-    desc: 'جاهایی که نصب مجدد هسته پوشش نمی‌دهد: فایل PHP در uploads، drop-inها، mu-plugins.',
+    key: 'leftovers',
     icon: 'search',
     writes: false,
   },
   {
     id: 'db-audit',
-    title: 'بازرسی دیتابیس',
-    desc: 'کاربران مدیر، دسترسی‌های پنهان، آپشن‌های آلوده و کرون‌های مشکوک. فقط گزارش — هیچ چیزی حذف نمی‌شود.',
+    key: 'dbAudit',
     icon: 'database',
     writes: false,
   },
   {
     id: 'rotate-keys',
-    title: 'چرخش کلیدها',
-    desc: 'اگر مهاجم به دیتابیس رسیده باشد، هش رمزها و توکن نشست‌ها را دارد. بدون این مرحله، همهٔ کارهای بالا تا فردا باطل است.',
+    key: 'rotateKeys',
     icon: 'key-round',
     writes: true,
     confirm: true,
   },
   {
     id: 'verify',
-    title: 'تأیید',
-    desc: 'هستهٔ سالم، اسکن خالی، و هیچ فایل بحرانی باقی‌نمانده. کمتر از این سه، ادعاست نه نتیجه.',
+    key: 'verify',
     icon: 'shield-check',
     writes: false,
   },
@@ -85,10 +81,7 @@ export default function Rescue() {
 
   async function run(step) {
     if (step.confirm) {
-      const ok = window.confirm(
-        'چرخش کلیدها همهٔ کاربران را از سایت خارج می‌کند — از جمله خود شما.\n\n' +
-          'یک نسخهٔ پشتیبان از wp-config.php نگه داشته می‌شود. ادامه می‌دهید؟'
-      )
+      const ok = window.confirm(t('rescue.confirmRotate'))
       if (!ok) return
     }
     setBusy(step.id)
@@ -100,14 +93,14 @@ export default function Rescue() {
       // for an id the site never issued.
       const jobId = res?.queued ? res.result?.id : null
       if (jobId) {
-        startTask({ id: jobId, title: `عملیات نجات: ${step.title}`, type: 'rescue' })
+        startTask({ id: jobId, title: t('rescue.taskTitle', { step: t(`rescue.steps.${step.key}.title`) }), type: 'rescue' })
         pollJob(step.id, jobId)
       } else if (res?.queued) {
         // Queued, but the site answered without a job id (e.g. an outdated
         // plugin refused the job type). The outcome is genuinely not available.
         setErrors((er) => ({
           ...er,
-          [step.id]: res.result?.message || 'اجرا در صف رفت ولی شناسهٔ وضعیتی برنگشت — بعداً دوباره اجرا کنید.',
+          [step.id]: res.result?.message || t('rescue.errors.queuedNoId'),
         }))
         setBusy((b) => (b === step.id ? '' : b))
       } else {
@@ -115,7 +108,7 @@ export default function Rescue() {
         setBusy((b) => (b === step.id ? '' : b))
       }
     } catch (e) {
-      setErrors((er) => ({ ...er, [step.id]: e?.message || 'اجرا نشد.' }))
+      setErrors((er) => ({ ...er, [step.id]: e?.message || t('rescue.errors.notRun') }))
       setBusy((b) => (b === step.id ? '' : b))
     }
   }
@@ -132,7 +125,7 @@ export default function Rescue() {
         s = await siteApi(siteId).job(jobId)
         // A job the site no longer knows answers HTTP 200 {ok:false} — without
         // this check the poll would never terminate.
-        if (!s || s.ok === false || !s.state) throw new Error(s?.message || 'وضعیت خوانده نشد.')
+        if (!s || s.ok === false || !s.state) throw new Error(s?.message || t('rescue.errors.statusUnread'))
         fails.current[stepId] = 0
       } catch {
         fails.current[stepId] = (fails.current[stepId] || 0) + 1
@@ -140,7 +133,7 @@ export default function Rescue() {
           delete timers.current[stepId]
           setErrors((er) => ({
             ...er,
-            [stepId]: 'خواندن وضعیت مرحله چند بار ناموفق ماند. اجرای آن روی سایت ادامه دارد — بعداً دوباره اجرا کنید.',
+            [stepId]: t('rescue.errors.pollGaveUp'),
           }))
           setBusy((b) => (b === stepId ? '' : b))
           return
@@ -152,7 +145,7 @@ export default function Rescue() {
         setResults((r) => ({ ...r, [stepId]: s.result }))
         setBusy((b) => (b === stepId ? '' : b))
       } else if (s.state === 'failed') {
-        setErrors((er) => ({ ...er, [stepId]: s.message || 'اجرا روی سایت ناموفق بود.' }))
+        setErrors((er) => ({ ...er, [stepId]: s.message || t('rescue.errors.failedOnSite') }))
         setBusy((b) => (b === stepId ? '' : b))
       } else {
         pollJob(stepId, jobId)
@@ -163,19 +156,17 @@ export default function Rescue() {
   return (
     <>
       <PageHead
-        title="عملیات نجات"
-        subtitle="بازیابی سایتی که آلودگی‌اش از حد اطمینان به فایل‌ها گذشته است"
+        title={t('rescue.title')}
+        subtitle={t('rescue.subtitle')}
       />
 
       {/* The premise, stated once. Without it the steps look arbitrary. */}
       <div style={{ background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: '16px 20px', marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 700, marginBottom: 6 }}>
-          <Icon name="info" size={17} style={{ color: 'var(--gd-primary)' }} /> چرا جایگزینی، نه پاک‌سازی
+          <Icon name="info" size={17} style={{ color: 'var(--gd-primary)' }} /> {t('rescue.premise.title')}
         </div>
         <p style={{ fontSize: 13, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>
-          نمی‌شود ثابت کرد یک فایل PHP تمیز است — یک بک‌دور خوب از کد سالم قابل تفکیک نیست.
-          ولی می‌شود ثابت کرد یک فایل با نسخهٔ رسمی <b>یکسان</b> است. برای همین اینجا فایل‌ها
-          پاک‌سازی نمی‌شوند، جایگزین می‌شوند؛ و هرچه منبع رسمی ندارد، تصمیمِ شماست نه حذف خودکار.
+          <Trans k="rescue.premise.body" />
         </p>
       </div>
 
@@ -207,18 +198,18 @@ function StepCard({ index, step, busy, result, error, onRun }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 14.5, fontWeight: 700 }}>
-              {faNum(index)}. {step.title}
+              {digits(index)}. {t(`rescue.steps.${step.key}.title`)}
             </span>
             {step.writes ? (
-              <Badge variant="warning" appearance="soft">می‌نویسد</Badge>
+              <Badge variant="warning" appearance="soft">{t('rescue.badge.writes')}</Badge>
             ) : (
-              <Badge variant="neutral" appearance="soft">فقط خواندن</Badge>
+              <Badge variant="neutral" appearance="soft">{t('rescue.badge.readOnly')}</Badge>
             )}
           </div>
-          <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '5px 0 0', lineHeight: 1.8 }}>{step.desc}</p>
+          <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '5px 0 0', lineHeight: 1.8 }}>{t(`rescue.steps.${step.key}.desc`)}</p>
         </div>
         <Button variant={done ? 'secondary' : 'primary'} size="sm" disabled={busy} onClick={onRun}>
-          {busy ? 'در حال اجرا…' : done ? 'اجرای دوباره' : 'اجرا'}
+          {busy ? t('rescue.running') : done ? t('rescue.runAgain') : t('rescue.run')}
         </Button>
       </div>
 
@@ -246,14 +237,17 @@ function StepResult({ step, result }) {
 
   if (step === 'backup') {
     const b = result?.backup
-    if (!b) return box(result?.message || 'بکاپ گرفته نشد.', 'danger')
+    if (!b) return box(result?.message || t('rescue.result.backupFailed'), 'danger')
     return box(
       <>
-        دیتابیس ذخیره شد: {faNum(b.tables)} جدول، {faNum(b.rows)} ردیف،{' '}
-        {faNum((b.db_bytes / 1048576).toFixed(1))} مگابایت.{' '}
+        {t('rescue.result.backupSaved', {
+          tables: b.tables,
+          rows: b.rows,
+          mb: num(b.db_bytes / 1048576, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+        })}{' '}
         {b.verified
-          ? <b style={{ color: 'var(--gd-success)' }}>دامپ کامل تأیید شد.</b>
-          : <b style={{ color: 'var(--gd-danger-text)' }}>دامپ ناقص است — به این بکاپ تکیه نکنید.</b>}
+          ? <b style={{ color: 'var(--gd-success)' }}>{t('rescue.result.dumpVerified')}</b>
+          : <b style={{ color: 'var(--gd-danger-text)' }}>{t('rescue.result.dumpIncomplete')}</b>}
       </>
     )
   }
@@ -263,22 +257,22 @@ function StepResult({ step, result }) {
     return box(
       <>
         <div>
-          <b>{faNum(c.repo || 0)}</b> مورد از مخزن قابل جایگزینی ·{' '}
-          <b>{faNum(c.foreign || 0)}</b> مورد نیازمند فایل از سازنده ·{' '}
+          <b>{digits(c.repo || 0)}</b> {t('rescue.result.invRepo')} ·{' '}
+          <b>{digits(c.foreign || 0)}</b> {t('rescue.result.invForeign')} ·{' '}
           <b style={{ color: (c.orphan || 0) > 0 ? 'var(--gd-danger-text)' : undefined }}>
-            {faNum(c.orphan || 0)}
+            {digits(c.orphan || 0)}
           </b>{' '}
-          پوشهٔ بدون هدر افزونه
+          {t('rescue.result.invOrphan')}
         </div>
         {result.foreign?.length > 0 && (
           <div style={{ marginTop: 8 }}>
-            نیازمند آپلود: <span style={mono}>{result.foreign.map((f) => f.slug).join('، ')}</span>
+            {t('rescue.result.needsUpload')} <span style={mono}>{result.foreign.map((f) => f.slug).join(t('rescue.listSep'))}</span>
           </div>
         )}
         {result.orphan?.length > 0 && (
           <div style={{ marginTop: 8, color: 'var(--gd-danger-text)' }}>
-            پوشه‌های مشکوک: <span style={mono}>{result.orphan.map((o) => o.slug).join('، ')}</span>
-            {' '}— اینها اغلب خودِ بک‌دورند، ولی حذفشان بدون بررسی سایت را می‌شکند.
+            {t('rescue.result.suspectFolders')} <span style={mono}>{result.orphan.map((o) => o.slug).join(t('rescue.listSep'))}</span>
+            {' '}{t('rescue.result.suspectFoldersNote')}
           </div>
         )}
         {result.note && <div style={{ marginTop: 8, opacity: 0.85 }}>{result.note}</div>}
@@ -292,9 +286,9 @@ function StepResult({ step, result }) {
     return box(
       <>
         <b style={{ color: critical ? 'var(--gd-danger-text)' : 'var(--gd-success)' }}>
-          {faNum(c.critical || 0)} مورد بحرانی
+          {t('rescue.result.critical', { count: c.critical || 0 })}
         </b>{' '}
-        · {faNum(c.review || 0)} مورد نیازمند بررسی
+        · {t('rescue.result.review', { count: c.review || 0 })}
         {result.findings?.length > 0 && (
           <ul style={{ margin: '8px 0 0', paddingInlineStart: 18 }}>
             {result.findings.slice(0, 10).map((f) => (
@@ -315,22 +309,22 @@ function StepResult({ step, result }) {
     const opts = result?.suspect_options || []
     return box(
       <>
-        <div>{faNum((result?.admins || []).length)} حساب مدیر</div>
+        <div>{t('rescue.result.admins', { count: (result?.admins || []).length })}</div>
         {hidden.length > 0 && (
           <div style={{ marginTop: 8, color: 'var(--gd-danger-text)' }}>
-            <b>{faNum(hidden.length)} کاربر با دسترسی مدیر بدون نقش مدیر:</b>{' '}
-            <span style={mono}>{hidden.map((h) => h.login).join('، ')}</span>
+            <b>{t('rescue.result.hiddenAdmins', { count: hidden.length })}</b>{' '}
+            <span style={mono}>{hidden.map((h) => h.login).join(t('rescue.listSep'))}</span>
           </div>
         )}
         {opts.length > 0 && (
           <div style={{ marginTop: 8, color: 'var(--gd-danger-text)' }}>
-            <b>{faNum(opts.length)} آپشن مشکوک:</b>{' '}
-            <span style={mono}>{opts.map((o) => `${o.option} (${o.marker})`).join('، ')}</span>
+            <b>{t('rescue.result.suspectOptions', { count: opts.length })}</b>{' '}
+            <span style={mono}>{opts.map((o) => `${o.option} (${o.marker})`).join(t('rescue.listSep'))}</span>
           </div>
         )}
         {(result?.suspect_cron || []).length > 0 && (
           <div style={{ marginTop: 8, color: 'var(--gd-danger-text)' }}>
-            کرون مشکوک: <span style={mono}>{result.suspect_cron.map((c) => c.hook).join('، ')}</span>
+            {t('rescue.result.suspectCron')} <span style={mono}>{result.suspect_cron.map((c) => c.hook).join(t('rescue.listSep'))}</span>
           </div>
         )}
         <div style={{ marginTop: 8, opacity: 0.85 }}>{result?.note}</div>
@@ -340,11 +334,11 @@ function StepResult({ step, result }) {
   }
 
   if (step === 'rotate-keys') {
-    if (!result?.ok) return box(result?.message || 'انجام نشد.', 'danger')
+    if (!result?.ok) return box(result?.message || t('rescue.result.rotateFailed'), 'danger')
     return box(
       <>
         {result.message}
-        {result.backup && <div style={{ marginTop: 6 }}>نسخهٔ پشتیبان: <span style={mono}>{result.backup}</span></div>}
+        {result.backup && <div style={{ marginTop: 6 }}>{t('rescue.result.rotateBackup')} <span style={mono}>{result.backup}</span></div>}
       </>
     )
   }
@@ -356,9 +350,13 @@ function StepResult({ step, result }) {
           {result?.verdict}
         </b>
         <div style={{ marginTop: 8 }}>
-          هسته: {result?.integrity?.clean ? 'سالم' : `${faNum(result?.integrity?.unexpected?.length || 0)} فایل ناشناخته`}
-          {' · '}اسکن: {faNum(result?.scan?.hits?.length || 0)} یافته
-          {' · '}باقی‌مانده بحرانی: {faNum(result?.leftovers?.counts?.critical || 0)}
+          {t('rescue.result.core', {
+            value: result?.integrity?.clean
+              ? t('rescue.result.coreClean')
+              : t('rescue.result.coreUnknown', { count: result?.integrity?.unexpected?.length || 0 }),
+          })}
+          {' · '}{t('rescue.result.scan', { count: result?.scan?.hits?.length || 0 })}
+          {' · '}{t('rescue.result.leftoverCritical', { count: result?.leftovers?.counts?.critical || 0 })}
         </div>
       </>,
       result?.clean ? 'subtle' : 'danger'

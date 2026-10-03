@@ -1,0 +1,91 @@
+{
+  "draftBanner": "Initial draft — requires legal review before final publication",
+  "draftFooter": "Initial draft — requires legal review before final publication. Before final publication, the text above will be reviewed by legal counsel and may change.",
+  "title": "DigiWP Ai Support Terms of Use",
+  "updated": "Draft version — last updated: {date}",
+  "sections": [
+    {
+      "h": "1. Acceptance of terms",
+      "ps": [
+        "These terms set out the framework for your use of the DigiWP Ai Support service. By creating an account or using the panel, you agree to use the service under these terms. This text is at the draft stage; after the final legal review, the definitive version will be published on this page with a new date."
+      ]
+    },
+    {
+      "h": "2. Description of the service",
+      "ps": [
+        "DigiWP Ai Support has three parts: a plugin on your WordPress site, a relay server, and this web panel. The plugin connects your site to the relay server using cryptographically signed requests, and through that same server the panel reads your site's status and — only within the authority level you set yourself — performs corrective operations.",
+        "The current service includes: site status and health monitoring; plugin and theme update management through a transactional pipeline (file snapshots, a health check after each wave, automatic rollback on failure); database backups; malware scanning; core file integrity checks; rescue operations and conflict detection; and a smart assistant that relies on your site's real data."
+      ]
+    },
+    {
+      "h": "3. Current state of the service — what you should know",
+      "ps": [
+        "The service is in a pilot-access phase: payment and invoicing are not active yet, and choosing a plan currently only records a “pilot access request”.",
+        "The service's known limitations, stated plainly:"
+      ],
+      "list": [
+        "By default, backups are stored on the managed site itself; a local backup alone does not guarantee recovery after a disaster.",
+        "A “scan with no findings” does not mean the site is definitively uninfected; the current scan is signature- and pattern-based.",
+        "“Update completed” does not mean the site is still working; correctness after each wave is measured with health checks (homepage, login, REST, cron), and WordPress's automatic background updates do not go through this pipeline.",
+        "Current availability monitoring is a simple HTTP request to the addresses you define yourself for each site (up to 10 addresses); user journeys such as contact forms, payment gateways, or checkout flows are not monitored, there are no complete uptime statistics, and no SLA is offered.",
+        "Two-step sign-in (TOTP) and session management are provided: you can see your account's active sessions, revoke the session of any device, and enable two-step sign-in with one-time recovery codes. Its limitation, stated plainly: there is no other recovery path — if you lose both your phone and all your recovery codes, there is no automatic recovery."
+      ]
+    },
+    {
+      "h": "4. Account and security",
+      "ps": [
+        "You are responsible for providing accurate information and for keeping your password safe. Your password is stored as a hash, and its plain text cannot be recovered by us.",
+        "Your sign-in session is held as a token in your browser (localStorage), valid for up to 7 days, and is tied on the server to a revocable session: from the “Account security” page you can see the devices that are signed in, revoke the session of any device — or of all other devices — and the “Sign out” button closes that device's session on the server. Even so, until a session is revoked, anyone with access to the token in your browser can use it; if you suspect unauthorized access, revoke sessions from that page and change your password immediately."
+      ]
+    },
+    {
+      "h": "5. Authority level and operation approval",
+      "ps": [
+        "For each site, you set the authority level: “Report only” (reading only), “With approval” (preparing an exact proposal and waiting for your approval), or “Automatic” (performing reversible operations without you being present).",
+        "Destructive or high-risk operations — such as restoring a database, deleting or editing files, and activating a theme — require explicit human approval at every authority level. Each approval can be used only once, and every operation that is proposed, performed, failed, or rejected is recorded in the site's history."
+      ]
+    },
+    {
+      "h": "6. Data and external services",
+      "ps": [
+        "You own your site's data. Data passes through the relay server, and some external services — mostly optional — are involved, such as the WordPress.com screenshot service, the WordPress.org APIs, the NVD vulnerability database, malware signature feeds, and the email server. The complete, precise list of “what data goes where” is on the privacy page."
+      ]
+    },
+    {
+      "h": "7. Service availability",
+      "ps": [
+        "The service is provided “as is”. We do not guarantee that it will be uninterrupted, error-free, or permanently available; access may be limited or interrupted for maintenance or changes. We do not announce any “guaranteed uptime” figure or percentage, because complete continuous measurement does not exist in the current service."
+      ]
+    },
+    {
+      "h": "8. Disclaimer and limitation of liability",
+      "ps": [
+        "This service does not replace human decision-making about updating, restoring, or deleting content; the final decision always rests with the site owner. A “clean scan” does not guarantee the site's security. To the maximum extent permitted by applicable law, our liability for direct damage arising from use of the service is limited; we accept no liability for indirect damage or for loss of revenue or data. The final scope and wording of this section are subject to legal review."
+      ]
+    },
+    {
+      "h": "9. Stopping use",
+      "ps": [
+        "You can stop using the service at any time; the plugin is on your own site, and removing or deactivating it is up to you. If these terms are violated or the service is used maliciously, we may restrict account access temporarily or permanently."
+      ]
+    },
+    {
+      "h": "10. Changes to the terms",
+      "ps": [
+        "These terms may change. A new version will be published on this page with a new date, and continuing to use the service after publication means accepting the new version."
+      ]
+    },
+    {
+      "h": "11. Governing law",
+      "ps": [
+        "This draft has been prepared on the basis of the current laws of the Islamic Republic of Iran. The final determination of the governing law and the forum for resolving disputes is subject to legal review before publication."
+      ]
+    },
+    {
+      "h": "12. Contact us",
+      "ps": [
+        "A public support channel (a support email address or phone number) has not been set up yet; this page deliberately shows no contact address so that we do not publish a fake one. Until final publication, communication takes place through your registered account in the panel."
+      ]
+    }
+  ]
+}

@@ -130,7 +130,7 @@ test('the widget listing says Elementor is off instead of touching its API', () 
     const manager = op.indexOf('widgets_manager')
     assert.ok(gated !== -1 && manager !== -1 && gated < manager,
       `${p}: list_elementor_widgets must check Elementor availability before the widgets manager`)
-    assert.ok(op.includes("'ok' => false") && op.includes('المنتور روی این سایت فعال نیست'),
+    assert.ok(op.includes("'ok' => false") && op.includes('Elementor is not active on this site'),
       `${p}: the inactive-Elementor answer must be an honest failure, not invented data`)
     // The two Elementor writers refuse honestly on the same gate before they
     // write anything.
@@ -147,8 +147,8 @@ test('the widget listing says Elementor is off instead of touching its API', () 
 
 test('append tools validate the post before writing to it', () => {
   const cases = [
-    { op: 'cb_op_append_blocks', write: 'wp_update_post(', missing: 'نوشته‌ای با این شناسه پیدا نشد' },
-    { op: 'cb_op_elementor_section_append', write: 'cb_elementor_write_document(', missing: 'برگه‌ای با این شناسه پیدا نشد' },
+    { op: 'cb_op_append_blocks', write: 'wp_update_post(', missing: 'No post was found with this ID' },
+    { op: 'cb_op_elementor_section_append', write: 'cb_elementor_write_document(', missing: 'No page was found with this ID' },
   ]
   for (const { p, src } of sources) {
     for (const { op, write, missing } of cases) {
@@ -220,7 +220,7 @@ test('the compiler reads content from both the spec level and attributes.content
       `${p}: render_blocks must collect content-less specs from the shared compiler`,
     )
     assert.ok(
-      op.includes("'empty_blocks'") && op.includes('خودبسته'),
+      op.includes("'empty_blocks'") && op.includes('self-closing'),
       `${p}: a content-less spec must be answered with an honest warning, not silent self-closing markup`,
     )
   }
@@ -242,6 +242,11 @@ const HARNESS = `<?php
 function wp_kses_post( $s ) { return $s; }
 function wp_json_encode( $v, $f = 0 ) { return json_encode( $v, $f ); }
 function sanitize_text_field( $s ) { return trim( strip_tags( (string) $s ) ); }
+// i18n passes through untouched: the harness runs the compiler before any
+// translation is loaded, so the source strings are exactly what a site with
+// no translation pack sees.
+function __( $s, $d = null ) { return $s; }
+function _x( $s, $c, $d = null ) { return $s; }
 function parse_blocks( $m ) {
 	// Minimal top-level stub of WP's parser: walks block comments pairwise so
 	// the op's parse-count self-check behaves like it does on a real site

@@ -1,9 +1,14 @@
 import { Router } from 'express'
+import { i18nMiddleware } from '../i18n.js'
 import { sites, users } from '../store.js'
 import * as events from '../events.js'
+import { localizeEvent } from '../event-text.js'
 import { query } from '../db.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 
 router.get('/stats', async (req, res, next) => {
   try {
@@ -45,7 +50,7 @@ router.get('/users', async (req, res, next) => {
       users.listWithSiteCounts({ limit, offset, search }),
       users.count({ search }),
     ])
-    res.json({ users: list, total, limit, offset })
+    res.json({ users: list.map((u) => users.withLabels(req.locale, u)), total, limit, offset })
   } catch (e) { next(e) }
 })
 
@@ -55,18 +60,18 @@ router.get('/users/:id', async (req, res, next) => {
       users.byId(req.params.id),
       sites.listByUser(req.params.id),
     ])
-    if (!user) return res.status(404).json({ message: 'کاربر پیدا نشد.' })
-    res.json({ user, sites: userSites })
+    if (!user) return res.status(404).json({ message: req.t('common.userNotFound') })
+    res.json({ user: users.withLabels(req.locale, user), sites: userSites })
   } catch (e) { next(e) }
 })
 
 router.patch('/users/:id/role', async (req, res, next) => {
   try {
     if (req.params.id === req.user.sub) {
-      return res.status(400).json({ message: 'نمی‌توانید نقش خود را تغییر دهید.' })
+      return res.status(400).json({ message: req.t('admin.ownRole') })
     }
     const updated = await users.setRole(req.params.id, req.body.role)
-    res.json(updated)
+    res.json(users.withLabels(req.locale, updated))
   } catch (e) { next(e) }
 })
 
@@ -86,15 +91,15 @@ router.get('/events', async (req, res, next) => {
       events.listAll(filters, limit, offset),
       events.countAll(filters),
     ])
-    res.json({ events: list, total, limit, offset })
+    res.json({ events: list.map((e) => localizeEvent(req.locale, e)), total, limit, offset })
   } catch (e) { next(e) }
 })
 
 router.get('/events/:id', async (req, res, next) => {
   try {
     const event = await events.byId(req.params.id)
-    if (!event) return res.status(404).json({ message: 'رویداد پیدا نشد.' })
-    res.json(event)
+    if (!event) return res.status(404).json({ message: req.t('admin.eventNotFound') })
+    res.json(localizeEvent(req.locale, event))
   } catch (e) { next(e) }
 })
 

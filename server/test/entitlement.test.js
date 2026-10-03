@@ -5,6 +5,7 @@
 // freeing when a site is tombstoned (status 'deleted').
 // The payment gateway itself stays NOT_BUILT — nothing here pretends a
 // payment path exists.
+import { errorMessage } from '../src/i18n.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
@@ -54,9 +55,9 @@ if (!dsn) {
     })
     app.use('/v1', billingRouter)
     app.use('/v1', accountRouter)
-    app.use((err, _req, res, _next) => {
+    app.use((err, req, res, _next) => {
       res.status(err.status || 500).json({
-        message: err.message || 'server error',
+        message: errorMessage(req.locale, err) || 'server error',
         ...(err.code ? { code: err.code } : {}),
         ...(err.details != null ? { details: err.details } : {}),
       })
@@ -116,7 +117,12 @@ if (!dsn) {
       assert.equal(second.status, 402)
       const body = await second.json()
       assert.equal(body.code, 'site_limit_reached')
-      assert.ok(body.message.includes('ظرفیت پلن'))
+      assert.ok(body.message.includes('plan is full'), body.message)
+      // The same refusal in the caller's language: Persian plan name and digits.
+      const secondFa = await addSite(base, { ...H, 'Accept-Language': 'fa' }, 'https://cap-two.example.com')
+      const faBody = await secondFa.json()
+      assert.equal(secondFa.status, 402)
+      assert.ok(faBody.message.includes('ظرفیت پلن «پایه» (۱ سایت)'), faBody.message)
       assert.equal(body.details?.subscription?.sitesUsed, 1)
       assert.equal(body.details?.subscription?.sitesLimit, 1)
       // Nothing was created over the cap.
@@ -142,7 +148,7 @@ if (!dsn) {
       assert.equal(refused.status, 402)
       const body = await refused.json()
       assert.equal(body.code, 'trial_expired')
-      assert.ok(body.message.includes('دسترسی آزمایشی'))
+      assert.ok(body.message.includes('trial access has ended'), body.message)
       assert.equal(body.details?.subscription?.trialState, 'expired')
       assert.equal(await billing.siteCount(user.id), 0)
 

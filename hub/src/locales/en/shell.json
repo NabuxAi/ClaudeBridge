@@ -1,0 +1,60 @@
+{
+  "addSite": "Add site",
+  "signOut": "Sign out",
+  "account": {
+    "brandSub": "Account",
+    "seePlans": "See plans and pricing",
+    "nav": {
+      "dashboard": "Account dashboard",
+      "sites": "My sites",
+      "alerts": "Emergency alerts",
+      "billing": "Subscription & billing",
+      "team": "Team members",
+      "notifications": "Notifications",
+      "security": "Account security",
+      "profile": "Profile & account",
+      "admin": "Admin panel"
+    }
+  },
+  "admin": {
+    "brandSub": "Admin panel",
+    "backToAccount": "Back to your account",
+    "nav": {
+      "dashboard": "Admin dashboard",
+      "users": "Users",
+      "events": "Events"
+    }
+  },
+  "site": {
+    "backToSites": "Back to all sites",
+    "authorityMode": "Authority mode",
+    "authorityHint": "Low-risk work runs automatically; sensitive actions wait for your approval.",
+    "askAssistant": "Ask the assistant",
+    "nav": {
+      "overview": "Overview",
+      "incidents": "Alerts",
+      "updates": "Updates",
+      "security": "Security",
+      "backups": "Backups",
+      "speed": "Speed",
+      "monitors": "Monitors",
+      "conflict": "Conflict check",
+      "rescue": "Rescue",
+      "assistant": "Smart assistant",
+      "hosting": "Hosting",
+      "settings": "Settings"
+    },
+    "loadError": {
+      "title": "Couldn't load your sites",
+      "text": "We don't know this site's status — neither healthy nor in trouble. Until the connection is back, no figure is read from the site."
+    },
+    "notFound": {
+      "title": "No site found at this address",
+      "text": "The id <mono>{siteId}</mono> doesn't belong to any of your sites, so this page shows no site's status or authority."
+    },
+    "empty": {
+      "title": "You haven't added a site yet",
+      "text": "Add your site first to see its status, backups, and security."
+    }
+  }
+}

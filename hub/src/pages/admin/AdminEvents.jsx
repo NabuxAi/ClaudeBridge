@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import { Button, Input, Select, Badge, SkeletonTable } from '../../components/index.js'
 import { admin } from '../../lib/api.js'
-import { faNum } from '../../lib/format.js'
+import { t, digits, dateTime } from '../../lib/i18n.js'
 
 const LIMIT = 25
 
@@ -17,7 +17,7 @@ export default function AdminEvents() {
     const params = { limit: LIMIT, offset, ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) }
     admin.events(params)
       .then(setData)
-      .catch((e) => setError(e?.message || 'بارگذاری رویدادها انجام نشد.'))
+      .catch((e) => setError(e?.message || t('admin.events.loadFailed')))
   }
 
   useEffect(() => {
@@ -32,25 +32,25 @@ export default function AdminEvents() {
 
   return (
     <>
-      <PageHead title="رویدادها" subtitle="گزارش سیستمی همهٔ سایت‌ها" />
+      <PageHead title={t('admin.events.title')} subtitle={t('admin.events.subtitle')} />
       {error && <p style={{ color: 'var(--gd-danger-text)', marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Input value={filters.userId} onChange={(e) => setFilter('userId', e.target.value)} placeholder="شناسه کاربر" />
-        <Input value={filters.siteId} onChange={(e) => setFilter('siteId', e.target.value)} placeholder="شناسه سایت" />
+        <Input value={filters.userId} onChange={(e) => setFilter('userId', e.target.value)} placeholder={t('admin.events.userId')} />
+        <Input value={filters.siteId} onChange={(e) => setFilter('siteId', e.target.value)} placeholder={t('admin.events.siteId')} />
         <Select value={filters.kind} onChange={(e) => setFilter('kind', e.target.value)}>
-          <option value="">همه انواع</option>
-          <option value="malware">بدافزار</option>
-          <option value="update">آپدیت</option>
-          <option value="backup">بکاپ</option>
-          <option value="policy">سیاست</option>
-          <option value="rescue">نجات</option>
-          <option value="action">اقدام</option>
+          <option value="">{t('admin.events.allKinds')}</option>
+          <option value="malware">{t('admin.events.kinds.malware')}</option>
+          <option value="update">{t('admin.events.kinds.update')}</option>
+          <option value="backup">{t('admin.events.kinds.backup')}</option>
+          <option value="policy">{t('admin.events.kinds.policy')}</option>
+          <option value="rescue">{t('admin.events.kinds.rescue')}</option>
+          <option value="action">{t('admin.events.kinds.action')}</option>
         </Select>
         <Select value={filters.severity} onChange={(e) => setFilter('severity', e.target.value)}>
-          <option value="">همه شدت‌ها</option>
-          <option value="critical">بحرانی</option>
-          <option value="warning">هشدار</option>
-          <option value="info">اطلاع</option>
+          <option value="">{t('admin.events.allSeverities')}</option>
+          <option value="critical">{t('components.status.critical')}</option>
+          <option value="warning">{t('components.status.warning')}</option>
+          <option value="info">{t('components.status.info')}</option>
         </Select>
       </div>
       {/* .gd-table scrolls its own overflow instead of clipping it — on phones
@@ -61,11 +61,11 @@ export default function AdminEvents() {
           <table>
             <thead>
               <tr>
-                <th>زمان</th>
-                <th>سایت</th>
-                <th>نوع</th>
-                <th>شدت</th>
-                <th>عنوان</th>
+                <th>{t('admin.cols.time')}</th>
+                <th>{t('admin.cols.site')}</th>
+                <th>{t('admin.cols.kind')}</th>
+                <th>{t('admin.cols.severity')}</th>
+                <th>{t('admin.cols.title')}</th>
                 <th />
               </tr>
             </thead>
@@ -73,13 +73,13 @@ export default function AdminEvents() {
               {data.events.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: 'center', color: 'var(--gd-text-muted)', whiteSpace: 'normal' }}>
-                    رویدادی با این فیلترها ثبت نشده.
+                    {t('admin.events.empty')}
                   </td>
                 </tr>
               )}
               {data.events.map((e) => (
                 <tr key={e.id}>
-                  <td style={{ color: 'var(--gd-text-muted)' }}>{new Date(Number(e.created_at)).toLocaleString('fa-IR')}</td>
+                  <td style={{ color: 'var(--gd-text-muted)' }}>{dateTime(Number(e.created_at))}</td>
                   <td>{e.site_name || e.site_id}</td>
                   <td>{e.kind}</td>
                   <td>
@@ -87,7 +87,7 @@ export default function AdminEvents() {
                   </td>
                   <td>{e.title}</td>
                   <td style={{ textAlign: 'end' }}>
-                    <Button as={Link} to={`/admin/events/${e.id}`} variant="ghost" size="sm">جزئیات</Button>
+                    <Button as={Link} to={`/admin/events/${e.id}`} variant="ghost" size="sm">{t('admin.details')}</Button>
                   </td>
                 </tr>
               ))}
@@ -96,11 +96,11 @@ export default function AdminEvents() {
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-        <Button variant="secondary" size="sm" disabled={offset === 0} onClick={() => setOffset((o) => Math.max(0, o - LIMIT))}>قبلی</Button>
+        <Button variant="secondary" size="sm" disabled={offset === 0} onClick={() => setOffset((o) => Math.max(0, o - LIMIT))}>{t('admin.prev')}</Button>
         <span style={{ fontSize: 13, color: 'var(--gd-text-muted)' }}>
-          {faNum(offset + 1)} تا {faNum(Math.min(offset + LIMIT, data?.total || 0))} از {faNum(data?.total || 0)}
+          {t('admin.range', { from: digits(offset + 1), to: digits(Math.min(offset + LIMIT, data?.total || 0)), total: digits(data?.total || 0) })}
         </span>
-        <Button variant="secondary" size="sm" disabled={!data || offset + LIMIT >= data.total} onClick={() => setOffset((o) => o + LIMIT)}>بعدی</Button>
+        <Button variant="secondary" size="sm" disabled={!data || offset + LIMIT >= data.total} onClick={() => setOffset((o) => o + LIMIT)}>{t('admin.next')}</Button>
       </div>
     </>
   )

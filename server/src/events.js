@@ -21,8 +21,38 @@
 import { query, all, one, newId } from './db.js'
 import { dispatch, compose, isEmergency } from './alerts/index.js'
 import { pushSubscriptions } from './push.store.js'
+import { t } from './i18n.js'
+import { config } from './config.js'
 
 export { SCHEMA } from './events.schema.js'
+
+/**
+ * Translatable event text.
+ *
+ * Titles are stored rendered in English (the column every old reader uses)
+ * and the key that produced them travels in `detail.i18n = { key, vars }`, so
+ * the read path can render the title in each viewer's language. Rows written
+ * before translation have no key and keep their stored title.
+ *
+ *   events.record({ siteId, kind, ...i18nTitle('events.scan.unreachable', {}, detail) })
+ *
+ * `detail` must be a plain object to carry the key; anything else is kept as
+ * it was and the event simply stays in English. (event-text.js has the same
+ * helper for routes; this one also tolerates a non-object detail, which some
+ * scan reports are.)
+ */
+export function i18nTitle(key, vars, detail = {}) {
+  const title = t('en', key, vars)
+  if (detail !== null && typeof detail === 'object' && !Array.isArray(detail)) {
+    return { title, detail: { ...detail, i18n: { key, vars: vars || {} } } }
+  }
+  return { title, detail }
+}
+
+// The read side (render a stored row per viewer) lives in event-text.js,
+// shared with the routes; re-exported so callers of this module need only one
+// import.
+export { eventTitle as titleFor, localizeEvent } from './event-text.js'
 
 
 /**
@@ -208,7 +238,7 @@ export async function history(siteId, fingerprint) {
  */
 export async function raiseEmergency(event) {
   const site = await one(
-    'SELECT s.*, u.id AS owner_id, u.email, u.contact FROM sites s JOIN users u ON u.id = s.user_id WHERE s.id = $1',
+    'SELECT s.*, u.id AS owner_id, u.email, u.contact, u.lang AS owner_lang FROM sites s JOIN users u ON u.id = s.user_id WHERE s.id = $1',
     [event.site_id]
   )
   if (!site) return null
@@ -225,7 +255,10 @@ export async function raiseEmergency(event) {
     pushSubscriptions: await pushSubscriptions.allForUser(site.owner_id).catch(() => []),
   }
 
-  const result = await dispatch(compose(event, site), to)
+  // The owner reads it in their own language; our ops channel in ours.
+  const result = await dispatch(compose(event, site, site.owner_lang), to, {
+    opsMsg: compose(event, site, config.operatorLocale),
+  })
 
   await query(
     `INSERT INTO alert_deliveries (id, event_id, site_id, user_id, delivered, attempts, created_at)

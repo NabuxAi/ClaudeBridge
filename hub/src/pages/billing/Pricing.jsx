@@ -1,65 +1,66 @@
 import { useEffect, useState } from 'react'
 import Icon from '../../lib/icons.jsx'
 import { Button } from '../../components/index.js'
-import { faMoney } from '../../lib/format.js'
+import { t, num } from '../../lib/i18n.js'
 import { account } from '../../lib/api.js'
 
 // Marketing copy per plan id. Feature lists are kept honest: only capabilities
 // that exist in the product are listed. Prices come from the API so the page
 // stays data-driven.
+// Strings are i18n keys (pricing.*), translated at render.
 const PLAN_DETAILS = {
   base: {
-    subtitle: 'برای یک وب‌سایت شخصی یا فروشگاه',
-    cta: 'درخواست دسترسی آزمایشی',
+    subtitle: 'pricing.plans.base.subtitle',
+    cta: 'pricing.pilotCta',
     variant: 'secondary',
     features: [
-      { t: '۱ سایت وردپرس' },
-      { t: 'به‌روزرسانی خودکار هسته، افزونه و قالب' },
-      { t: 'حالت ایمنی: قفل روی به‌روزرسانی خودکار' },
-      { t: 'بکاپ دیتابیس روی خود سایت' },
-      { t: 'اسکن بدافزار روزانه' },
+      { t: 'pricing.plans.base.f1' },
+      { t: 'pricing.plans.base.f2' },
+      { t: 'pricing.plans.base.f3' },
+      { t: 'pricing.plans.base.f4' },
+      { t: 'pricing.plans.base.f5' },
     ],
   },
   pro: {
-    subtitle: 'برای فریلنسرها و کسب‌وکارهای در حال رشد',
-    cta: 'درخواست دسترسی آزمایشی',
+    subtitle: 'pricing.plans.pro.subtitle',
+    cta: 'pricing.pilotCta',
     variant: 'primary',
     features: [
-      { t: 'همهٔ امکانات پایه، به‌علاوهٔ:', head: true },
-      { t: 'تا ۵ سایت وردپرس' },
-      { t: 'بررسی یکپارچگی فایل‌های هسته' },
-      { t: 'بررسی تداخل افزونه و قالب' },
-      { t: 'عملیات نجات' },
-      { t: 'دستیار مبتنی بر داده‌های واقعی سایت' },
+      { t: 'pricing.plans.pro.head', head: true },
+      { t: 'pricing.plans.pro.f1' },
+      { t: 'pricing.plans.pro.f2' },
+      { t: 'pricing.plans.pro.f3' },
+      { t: 'pricing.plans.pro.f4' },
+      { t: 'pricing.plans.pro.f5' },
     ],
   },
   agency: {
-    subtitle: 'برای آژانس‌ها و مدیریت سایت مشتریان',
+    subtitle: 'pricing.plans.agency.subtitle',
     // Same pilot request the other plans make — no real sales contact exists
-    // yet, and a "تماس با تیم فروش" button that only requests a pilot would be
+    // yet, and a "contact sales" button that only requests a pilot would be
     // a label lying about its destination. Revisit when a support address is.
-    cta: 'درخواست دسترسی آزمایشی',
+    cta: 'pricing.pilotCta',
     variant: 'secondary',
     features: [
-      { t: 'همهٔ امکانات حرفه‌ای، به‌علاوهٔ:', head: true },
-      { t: 'سایت نامحدود' },
-      // No "گزارش تلگرام" here: the daily digest goes to the operator's fixed
+      { t: 'pricing.plans.agency.head', head: true },
+      { t: 'pricing.plans.agency.f1' },
+      // No Telegram report here: the daily digest goes to the operator's fixed
       // TELEGRAM_CHAT_ID, not to site owners — same reason Landing omits it.
-      { t: 'مدیریت سایت‌های مشتری از یک پنل' },
+      { t: 'pricing.plans.agency.f2' },
     ],
   },
 }
 
-// Feature-comparison rows. A cell is a string, { t, mono }, or { icon }.
+// Feature-comparison rows. A cell is an i18n key string, { n, mono }, or { icon }.
 const ROWS = [
-  { label: 'تعداد سایت', base: { t: '۱', mono: true }, pro: { t: '۵', mono: true }, agency: 'نامحدود' },
-  { label: 'به‌روزرسانی خودکار', base: { icon: 'check' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
-  { label: 'اسکن بدافزار', base: 'روزانه', pro: 'روزانه', agency: 'روزانه' },
-  { label: 'بکاپ دیتابیس', base: 'روی خود سایت', pro: 'روی خود سایت', agency: 'روی خود سایت' },
-  { label: 'بررسی یکپارچگی هسته', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
-  { label: 'بررسی تداخل', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
-  { label: 'عملیات نجات', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
-  { label: 'پشتیبانی', base: 'تیکت', pro: 'تیکت', agency: 'اولویت‌دار' },
+  { label: 'pricing.rows.sites', base: { n: 1, mono: true }, pro: { n: 5, mono: true }, agency: 'pricing.cells.unlimited' },
+  { label: 'pricing.rows.autoUpdates', base: { icon: 'check' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
+  { label: 'pricing.rows.malwareScan', base: 'pricing.cells.daily', pro: 'pricing.cells.daily', agency: 'pricing.cells.daily' },
+  { label: 'pricing.rows.dbBackup', base: 'pricing.cells.onSite', pro: 'pricing.cells.onSite', agency: 'pricing.cells.onSite' },
+  { label: 'pricing.rows.integrity', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
+  { label: 'pricing.rows.conflict', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
+  { label: 'pricing.rows.rescue', base: { icon: 'minus' }, pro: { icon: 'check' }, agency: { icon: 'check' } },
+  { label: 'pricing.rows.support', base: 'pricing.cells.ticket', pro: 'pricing.cells.ticket', agency: 'pricing.cells.priority' },
 ]
 
 const TRUST = []
@@ -80,7 +81,7 @@ function ValueCell({ v, pro, last }) {
       </div>
     )
   }
-  const text = typeof v === 'string' ? v : v.t
+  const text = typeof v === 'string' ? t(v) : num(v.n)
   const textStyle = {
     ...style,
     ...(pro ? { fontWeight: 700 } : {}),
@@ -91,9 +92,7 @@ function ValueCell({ v, pro, last }) {
 
 function formatTrial(days) {
   if (days == null) return null
-  return days === 0 ? 'امروز آخرین روز دسترسی آزمایشی است'
-    : days === 1 ? '۱ روز دسترسی آزمایشی باقی مانده'
-    : `${days} روز دسترسی آزمایشی باقی مانده`
+  return days === 0 ? t('pricing.trial.lastDay') : t('pricing.trial.daysLeft', { count: days })
 }
 
 export default function Pricing() {
@@ -107,12 +106,12 @@ export default function Pricing() {
   useEffect(() => {
     let alive = true
     Promise.all([account.plans(), account.trial()])
-      .then(([p, t]) => {
+      .then(([p, tr]) => {
         if (!alive) return
         setPlans(p)
-        setTrial(t)
+        setTrial(tr)
       })
-      .catch((e) => alive && setError(e?.message || 'بارگذاری طرح‌ها انجام نشد.'))
+      .catch((e) => alive && setError(e?.message || t('pricing.loadFailed')))
     return () => { alive = false }
   }, [])
 
@@ -121,7 +120,7 @@ export default function Pricing() {
     setRequestOk(null)
     try {
       const res = await account.requestPilot(planId)
-      setRequestOk({ planId, message: 'درخواست دسترسی آزمایشی ثبت شد.' })
+      setRequestOk({ planId, message: t('pricing.requestOk') })
       if (res?.subscription) {
         setTrial({
           status: res.subscription.status,
@@ -132,7 +131,7 @@ export default function Pricing() {
         })
       }
     } catch (e) {
-      setRequestOk({ planId, error: e?.message || 'ثبت درخواست انجام نشد.' })
+      setRequestOk({ planId, error: e?.message || t('pricing.requestFailed') })
     } finally {
       setRequesting(null)
     }
@@ -157,9 +156,9 @@ export default function Pricing() {
     return (
       <div style={{ background: 'var(--gd-bg-app)', color: 'var(--gd-text)', minHeight: '60vh', padding: 40, textAlign: 'center' }}>
         <Icon name="alert-triangle" size={32} style={{ color: 'var(--gd-warning)', marginBottom: 12 }} />
-        <div style={{ fontSize: 16, fontWeight: 700 }}>خطا در بارگذاری</div>
+        <div style={{ fontSize: 16, fontWeight: 700 }}>{t('pricing.loadError')}</div>
         <div style={{ fontSize: 14, color: 'var(--gd-text-secondary)', marginTop: 8 }}>{error}</div>
-        <Button variant="secondary" size="sm" onClick={() => window.location.reload()} style={{ marginTop: 16 }}>تلاش دوباره</Button>
+        <Button variant="secondary" size="sm" onClick={() => window.location.reload()} style={{ marginTop: 16 }}>{t('common.retry')}</Button>
       </div>
     )
   }
@@ -173,10 +172,10 @@ export default function Pricing() {
       {/* Hero */}
       <div style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto', padding: '46px 24px 10px' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, color: 'var(--gd-success-text)', background: 'var(--gd-success-bg)', border: '1px solid var(--gd-success-border)', borderRadius: 999, padding: '6px 13px' }}>
-          <Icon name="info" size={14} /> صفحهٔ قیمت‌گذاری — پرداخت هنوز فعال نیست
+          <Icon name="info" size={14} /> {t('pricing.badge')}
         </span>
-        <h1 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-.02em', margin: '18px 0 0', lineHeight: 1.2 }}>پلنی که با کسب‌وکار شما بزرگ می‌شود</h1>
-        <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: '12px 0 0' }}>از یک فروشگاه تا ده‌ها سایت مشتری — همیشه یک پلن مناسب دارید. هر زمان تغییر یا لغو کنید.</p>
+        <h1 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-.02em', margin: '18px 0 0', lineHeight: 1.2 }}>{t('pricing.title')}</h1>
+        <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: '12px 0 0' }}>{t('pricing.lead')}</p>
         {trial?.isTrialing && (
           <div style={{ marginTop: 16, fontSize: 13.5, color: 'var(--gd-success-text)', background: 'var(--gd-success-bg)', border: '1px solid var(--gd-success-border)', borderRadius: 'var(--gd-radius-lg)', padding: '10px 16px', display: 'inline-block' }}>
             <Icon name="sparkles" size={15} style={{ marginInlineEnd: 8 }} />
@@ -188,10 +187,10 @@ export default function Pricing() {
       {/* Billing cycle toggle */}
       <div style={{ display: 'flex', justifyContent: 'center', margin: '24px 0 6px' }}>
         <div style={{ display: 'inline-flex', background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border)', borderRadius: 999, padding: 4, gap: 3 }}>
-          <button type="button" style={toggleOption(!isYearly)} onClick={() => setCycle('monthly')}>پرداخت ماهانه</button>
+          <button type="button" style={toggleOption(!isYearly)} onClick={() => setCycle('monthly')}>{t('pricing.monthly')}</button>
           <button type="button" style={toggleOption(isYearly)} onClick={() => setCycle('yearly')}>
-            پرداخت سالانه
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-success-text)', background: 'var(--gd-success-bg)', borderRadius: 999, padding: '2px 8px' }}>۲ ماه رایگان</span>
+            {t('pricing.yearly')}
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-success-text)', background: 'var(--gd-success-bg)', borderRadius: 999, padding: '2px 8px' }}>{t('pricing.yearlyBonus', { n: 2 })}</span>
           </button>
         </div>
       </div>
@@ -199,23 +198,23 @@ export default function Pricing() {
       {/* Plan cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 20, alignItems: 'start', maxWidth: 1120, margin: '0 auto', padding: '28px 40px 8px' }}>
         {plans.map((plan) => {
-          const detail = PLAN_DETAILS[plan.id] || { subtitle: '', cta: 'انتخاب پلن', variant: 'secondary', features: [] }
+          const detail = PLAN_DETAILS[plan.id] || { subtitle: null, cta: 'pricing.choosePlan', variant: 'secondary', features: [] }
           const monthly = plan.price
           const yearly = plan.price * 10
           const monthlyEquiv = Math.round(yearly / 12 / 1000) * 1000
-          const big = isYearly ? faMoney(yearly) : faMoney(monthly)
-          const unit = isYearly ? 'تومان / سال' : 'تومان / ماه'
-          const sub = isYearly ? `معادل ${faMoney(monthlyEquiv)} تومان در ماه` : null
+          const big = isYearly ? num(yearly) : num(monthly)
+          const unit = isYearly ? t('pricing.perYear') : t('pricing.perMonth')
+          const sub = isYearly ? t('pricing.monthlyEquiv', { amount: num(monthlyEquiv) }) : null
           const requested = requestOk?.planId === plan.id
           const busy = requesting === plan.id
           return (
             <div key={plan.id} style={{ background: 'var(--gd-bg-surface)', border: plan.popular ? '2px solid var(--gd-primary)' : '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', padding: 26, boxShadow: plan.popular ? 'var(--gd-shadow-lg)' : 'var(--gd-shadow-xs)', position: 'relative', display: 'flex', flexDirection: 'column', gap: 16 }}>
               {plan.popular && (
-                <span style={{ position: 'absolute', top: -12, insetInlineStart: 26, background: 'var(--gd-primary)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '4px 12px' }}>محبوب‌ترین</span>
+                <span style={{ position: 'absolute', top: -12, insetInlineStart: 26, background: 'var(--gd-primary)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '4px 12px' }}>{t('pricing.popular')}</span>
               )}
               <div>
                 <div style={{ fontSize: 17, fontWeight: 800 }}>{plan.name}</div>
-                <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 3 }}>{detail.subtitle}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 3 }}>{detail.subtitle ? t(detail.subtitle) : ''}</div>
               </div>
               <div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
@@ -232,7 +231,7 @@ export default function Pricing() {
                 leftIcon={busy ? 'loader' : undefined}
                 onClick={() => requestPilot(plan.id)}
               >
-                {busy ? 'در حال ثبت…' : detail.cta}
+                {busy ? t('pricing.submitting') : t(detail.cta)}
               </Button>
               {requested && (
                 <div style={{ fontSize: 12.5, color: requestOk.error ? 'var(--gd-danger)' : 'var(--gd-success-text)', textAlign: 'center' }}>
@@ -246,7 +245,7 @@ export default function Pricing() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 11, fontSize: 13.5, color: 'var(--gd-text-secondary)' }}>
                 {detail.features.map((f) => (
                   <span key={f.t} style={{ display: 'flex', gap: 9, ...(f.head ? { fontWeight: 600, color: 'var(--gd-text)' } : {}) }}>
-                    <Icon name="check" size={17} style={{ color: f.head ? 'var(--gd-primary)' : 'var(--gd-success)', flex: '0 0 auto' }} /> {f.t}
+                    <Icon name="check" size={17} style={{ color: f.head ? 'var(--gd-primary)' : 'var(--gd-success)', flex: '0 0 auto' }} /> {t(f.t)}
                   </span>
                 ))}
               </div>
@@ -257,18 +256,18 @@ export default function Pricing() {
 
       {/* Feature comparison table */}
       <div style={{ maxWidth: 1120, margin: '0 auto', padding: '34px 40px 10px' }}>
-        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14 }}>مقایسهٔ کامل امکانات</div>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14 }}>{t('pricing.compare')}</div>
         <div style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', boxShadow: 'var(--gd-shadow-xs)', overflow: 'hidden' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 1fr' }}>
-            <div style={{ padding: '14px 20px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', fontSize: 12.5, fontWeight: 700, color: 'var(--gd-text-muted)' }}>قابلیت</div>
-            <div style={{ padding: '14px 16px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', textAlign: 'center', fontSize: 13.5, fontWeight: 800 }}>پایه</div>
-            <div style={{ padding: '14px 16px', background: 'var(--gd-primary-subtle)', borderBottom: '1px solid var(--gd-primary-border)', textAlign: 'center', fontSize: 13.5, fontWeight: 800, color: 'var(--gd-primary)' }}>حرفه‌ای</div>
-            <div style={{ padding: '14px 16px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', textAlign: 'center', fontSize: 13.5, fontWeight: 800 }}>آژانس</div>
+            <div style={{ padding: '14px 20px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', fontSize: 12.5, fontWeight: 700, color: 'var(--gd-text-muted)' }}>{t('pricing.feature')}</div>
+            <div style={{ padding: '14px 16px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', textAlign: 'center', fontSize: 13.5, fontWeight: 800 }}>{t('pricing.cols.base')}</div>
+            <div style={{ padding: '14px 16px', background: 'var(--gd-primary-subtle)', borderBottom: '1px solid var(--gd-primary-border)', textAlign: 'center', fontSize: 13.5, fontWeight: 800, color: 'var(--gd-primary)' }}>{t('pricing.cols.pro')}</div>
+            <div style={{ padding: '14px 16px', background: 'var(--gd-bg-subtle)', borderBottom: '1px solid var(--gd-border)', textAlign: 'center', fontSize: 13.5, fontWeight: 800 }}>{t('pricing.cols.agency')}</div>
             {ROWS.map((row, i) => {
               const last = i === ROWS.length - 1
               return (
                 <div key={row.label} style={{ display: 'contents' }}>
-                  <div style={{ padding: '13px 20px', borderBottom: last ? 'none' : '1px solid var(--gd-border-subtle)', fontSize: 13, color: 'var(--gd-text-secondary)' }}>{row.label}</div>
+                  <div style={{ padding: '13px 20px', borderBottom: last ? 'none' : '1px solid var(--gd-border-subtle)', fontSize: 13, color: 'var(--gd-text-secondary)' }}>{t(row.label)}</div>
                   <ValueCell v={row.base} last={last} />
                   <ValueCell v={row.pro} pro last={last} />
                   <ValueCell v={row.agency} last={last} />

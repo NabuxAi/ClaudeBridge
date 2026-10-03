@@ -1,0 +1,34 @@
+{
+  "mkt": {
+    "features": "Features",
+    "authority": "Authority levels",
+    "pricing": "Pricing",
+    "login": "Sign in",
+    "register": "Create account"
+  },
+  "footer": {
+    "blurb": "Smart WordPress care: monitoring, safe updates, and healthy backups on autopilot — all through your own server.",
+    "product": "Product",
+    "company": "Company",
+    "support": "Support",
+    "about": "About us",
+    "blog": "Blog",
+    "contact": "Contact",
+    "guide": "Guide",
+    "status": "Service status",
+    "privacy": "Privacy",
+    "terms": "Terms of use",
+    "copyright": "© {year} DigiWP Ai Support — all rights reserved."
+  },
+  "auth": {
+    "title": "Your site, <hl>always up to date</hl> and watched by a daily scan.",
+    "points": [
+      "Automatic updates with a safety mode",
+      "Malware scanning and core integrity checks",
+      "Database backups you can restore"
+    ],
+    "previewTag": "Panel preview",
+    "previewTitle": "Your site's status",
+    "previewSub": "Shown here once your site is connected"
+  }
+}

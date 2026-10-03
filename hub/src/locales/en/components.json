@@ -1,0 +1,37 @@
+{
+  "captcha": {
+    "label": "Security question",
+    "answer": "Answer",
+    "refresh": "New question",
+    "loadFailed": "The security question didn't load — the server can't be reached."
+  },
+  "status": {
+    "healthy": "Healthy",
+    "warning": "Warning",
+    "critical": "Critical",
+    "checking": "Checking",
+    "info": "Info",
+    "offline": "Offline",
+    "unknown": "Unknown"
+  },
+  "authority": {
+    "report": "Report only",
+    "confirm": "With approval",
+    "auto": "Automatic"
+  },
+  "notMeasured": {
+    "noNumbers": "We show no number here, so it can't be mistaken for real data."
+  },
+  "provenance": {
+    "measured": "Measured from the site",
+    "colon": ": ",
+    "listSep": ", "
+  },
+  "task": {
+    "detached": "The panel stopped showing progress; the job may still be running on the site.",
+    "error": "Error",
+    "done": "Done",
+    "detach": "Stop watching",
+    "resume": "Resume watching"
+  }
+}

@@ -7,6 +7,7 @@ import AccountShell from './layouts/AccountShell.jsx'
 import SiteShell from './layouts/SiteShell.jsx'
 import ProtectedRoute from './lib/ProtectedRoute.jsx'
 import AdminRoute from './lib/AdminRoute.jsx'
+import { t } from './lib/i18n.js'
 
 // A · marketing
 const Landing = lazy(() => import('./pages/marketing/Landing.jsx'))
@@ -60,11 +61,11 @@ const Goodbye = lazy(() => import('./pages/Goodbye.jsx'))
 
 function PageLoader() {
   return (
-    <div dir="rtl" style={{
+    <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'var(--gd-bg-app)', color: 'var(--gd-text-secondary)', fontFamily: 'var(--gd-font-sans)',
     }}>
-      <span>در حال بارگذاری…</span>
+      <span>{t('common.loading')}</span>
     </div>
   )
 }

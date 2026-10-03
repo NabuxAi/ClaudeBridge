@@ -628,7 +628,8 @@ export const analyseSpeed = async (id, profile) => {
   // exactly the kind of fake this pass exists to remove, so it is a copy of the
   // rules rather than a second set of them.
   const { analyse } = await import('../lib/perf-recipes.js')
-  return delay(analyse(profile || demoProfile))
+  const { t } = await import('../lib/i18n.js')
+  return delay(analyse(profile || demoProfile, { t }))
 }
 
 export { demoProfile }

@@ -359,6 +359,31 @@ for UI convenience.
   review has happened yet — the banners say exactly that — and no support
   address or channel is invented anywhere in the pages.
 - Plugin manifest/update channel and two release variants.
+- Multi-language surface — hub, server, and plugin (2026-10-04 i18n wave):
+  the hub speaks through `hub/src/lib/i18n.js` + `I18nProvider` + `Trans`
+  (keys are `<namespace>.<path>` into `hub/src/locales/<lang>/*.json`;
+  English is bundled eagerly and is both the default and the fallback, the
+  active language persists in localStorage under `digiwp.lang`, and switching
+  remounts the app so `t()` inside render is always current). The server
+  (`server/src/i18n.js`) resolves locale three ways: request-scoped text from
+  the hub's `Accept-Language` (`req.locale`/`req.t`), background text
+  (emails/alerts) from the recipient's stored `users.lang`, and
+  operator-only text (Telegram digest, logs) from `config.operatorLocale`;
+  errors thrown deep in stores carry `{key, vars}` and render in the
+  caller's language while `err.message` stays English for logs. Stored
+  events keep their row immutable: new events write an English title plus
+  `detail.i18n = {key, vars}` and the read side re-renders per reader
+  (`server/src/event-text.js`); rows written before this wave keep their
+  stored text. The plugin's user-facing strings moved to `__()`/`_x()` with
+  the template `languages/wp-claude-bridge.pot`. Pinned in
+  `server/test/i18n-background.test.js`; the string-pin tests
+  (`design-tools.test.js`, `safe-update-pipeline.test.js`) now pin the
+  English source strings and the compiler PHP-harness stubs `__`/`_x` as
+  identity. Honest boundaries: only `en` and `fa` dictionaries exist for
+  hub and server — the other seven registered languages (ar, de, es, fr,
+  tr, ru, zh) fall back to English keys; the plugin has a `.pot` template
+  but no compiled `.po`/`.mo` translations yet, so a site with no
+  translation pack sees the English source strings.
 
 ### Partial, limited, or easy to misdescribe
 
@@ -952,6 +977,22 @@ These rules override visual mockups and optimistic marketing copy:
   but durable jobs/locks are required before multi-instance scaling.
 
 ## Verified test/build baseline
+
+Full gate on 2026-10-04 (i18n wave — hub/server/plugin multi-language
+surface; the wave's own first run was red: five string-pin tests still
+expected the plugin's pre-i18n Persian literals, and the compiler PHP
+harness died on the now-`__()`-wrapped strings — repaired by pinning the
+English source strings and stubbing `__`/`_x` as identity, then re-gated):
+
+- Full server suite with PostgreSQL (throwaway `postgres:16` on
+  127.0.0.1:55433, `CB_TEST_DATABASE_URL`): 456 tests discovered; 456
+  passed; 0 failed; 0 skipped. Without the database: 357 discovered;
+  338 passed; 0 failed; 19 skipped for `CB_TEST_DATABASE_URL`.
+- Plugin artifacts rebuilt first (`scripts/build-digiwp-ai-bridge.sh`,
+  `scripts/build-wporg-bridge.sh`) per the ordering requirement, then
+  `php -l` passed for `wp-claude-bridge.php` and both dist artifacts
+  (all three pin `CB_VERSION` `3.9.1`).
+- Hub `npm run lint` and `npm run build`: both ok.
 
 Full gate on 2026-10-02 (final gate of the 2026-10-01/02 multi-wave sprint —
 sessions, account deletion, team roles/invite-registration, entitlement,

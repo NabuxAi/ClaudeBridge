@@ -1,0 +1,31 @@
+{
+  "steps": {
+    "connect": "Connect site",
+    "pair": "Pair connector",
+    "firstCheck": "First check"
+  },
+  "copy": "Copy",
+  "copied": "Copied",
+  "copyFailed": "Copy failed",
+  "input": {
+    "title": "Connect your first site",
+    "sub": "Enter your WordPress site's address. We'll create a unique “connection key” for you to enter in the connector plugin — from then on, everything runs only through your server.",
+    "urlLabel": "Site address",
+    "urlPlaceholder": "https://example.com",
+    "pluginNote": "Install the <b>DigiWp Ai Bridge</b> plugin and turn on “Connector Mode”. The plugin accepts only commands signed by your server and does nothing on the site on its own.",
+    "download": "Download the DigiWp Ai Bridge plugin",
+    "submit": "Create connection key",
+    "later": "Later",
+    "failed": "Could not add the site."
+  },
+  "pair": {
+    "title": "Pair the connector",
+    "sub": "On <b>{name}</b>: go to <mono>Tools → DigiWp Ai Bridge → Hub Connector Mode</mono> and enter these two values. This secret is shown only this once.",
+    "serverUrl": "Hub server URL",
+    "secret": "Shared secret",
+    "stepsTitle": "Steps",
+    "verify": "Check connection",
+    "toPanel": "Go to the site panel",
+    "failed": "The connection isn't established yet. Check the connector settings and try again."
+  }
+}

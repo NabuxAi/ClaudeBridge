@@ -1,0 +1,12 @@
+{
+  "limit": {
+    "target": "Too many off-site backup target changes from this address.",
+    "job": "Too many off-site backup starts from this address."
+  },
+  "targetIdRequired": "targetId is required.",
+  "targetNotFound": "Backup target not found.",
+  "liveOff": "Live mode is off on this server (LIVE=1), so the backup file cannot be read from the site.",
+  "noKey": "The off-site backup encryption key is not configured on the server.",
+  "badCipher": "The stored encryption is invalid.",
+  "fieldsRequired": "The S3 endpoint, bucket name, Access Key ID and Secret Access Key are required."
+}

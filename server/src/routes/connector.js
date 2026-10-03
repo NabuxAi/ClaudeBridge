@@ -1,12 +1,17 @@
 import { Router } from 'express'
+import { i18nMiddleware } from '../i18n.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import * as events from '../events.js'
+import { i18nTitle } from '../event-text.js'
 import { sites } from '../store.js'
 import { verifySignature } from '../connector.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 
 // Plugin self-update manifest (public). The DigiWp Ai Bridge connector polls this
 // to discover + auto-install newer versions straight from the server.
@@ -92,18 +97,16 @@ router.post('/connector/report', async (req, res, next) => {
     // a single unresolved problem, and closes itself the night it succeeds.
     await events.record({
       siteId: match.id, kind: 'update', severity: failed.length ? 'warning' : 'info',
-      title: failed.length
-        ? `به‌روزرسانی خودکار: ${faCount(items.length - failed.length)} مورد انجام شد، ${faCount(failed.length)} مورد ناموفق`
-        : `به‌روزرسانی خودکار: ${faCount(items.length)} مورد انجام شد`,
-      detail: { summary, unknown: unknown.length },
+      ...(failed.length
+        ? i18nTitle('connector.events.autoUpdateMixed', { done: items.length - failed.length, failed: failed.length }, { summary, unknown: unknown.length })
+        : i18nTitle('connector.events.autoUpdateDone', { count: items.length }, { summary, unknown: unknown.length })),
     })
 
     const failedNames = new Set(failed.map((f) => f.name))
     for (const f of failed) {
       await events.record({
         siteId: match.id, kind: 'update_failed', severity: 'warning',
-        title: `به‌روزرسانی ناموفق: ${f.name}`,
-        detail: f,
+        ...i18nTitle('connector.events.updateFailed', { name: f.name }, f),
         fingerprint: `update:failed:${f.name}`,
       })
     }
@@ -117,7 +120,5 @@ router.post('/connector/report', async (req, res, next) => {
     res.json({ ok: true })
   } catch (e) { next(e) }
 })
-
-const faCount = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
 
 export default router

@@ -1,0 +1,125 @@
+{
+  "size": { "mb": "{n} MB", "kb": "{n} KB" },
+  "summary": {
+    "found_one": "{count} improvement found.",
+    "found_other": "{count} improvements found.",
+    "none": "Nothing we checked crossed its threshold. That means we found no problem in what we measured — not that the site is necessarily fast."
+  },
+  "recipes": {
+    "autoload-oversized": {
+      "title": "Autoloaded options are too large",
+      "why": "Every autoloaded row in the options table is read and unserialized on every request — not just pages, but admin-ajax, REST and cron too. That cost is paid on every visit, every time."
+    },
+    "autoload-orphans": {
+      "title": "Orphaned autoload rows",
+      "why": "Plugins usually leave their options behind when they are deleted. Those rows are read on every request forever, without any code using them."
+    },
+    "no-object-cache": {
+      "title": "No external object cache",
+      "why": "Without Redis or Memcached, every option and query result cached in memory is lost at the end of the request, and the next request starts from zero."
+    },
+    "n-plus-one": {
+      "title": "One query runs over and over",
+      "why": "When the same query shape runs dozens of times on one page, it almost always means code inside a loop is hitting the database once per item. This is the pattern that makes a page slower and slower as content grows."
+    },
+    "heavy-plugin": {
+      "title": "One plugin takes most of the database time",
+      "why": "When one plugin owns the dominant share of a page's query time, that is the right place to start — not generic speed settings."
+    },
+    "slow-query": {
+      "title": "Slow query",
+      "why": "A single query that takes more than 50 ms on its own usually lacks an index or scans a table that has grown very large."
+    },
+    "expired-transients": {
+      "title": "Expired transients have piled up",
+      "why": "Without an external object cache, expired transients stay in the options table. A bigger table means slower autoload reads."
+    },
+    "revision-bloat": {
+      "title": "A large pile of post revisions",
+      "why": "Every edit creates a row in the posts table. Hundreds of thousands of revision rows do not slow pages themselves, but they make every query on posts and every backup heavier."
+    },
+    "cron-backlog": {
+      "title": "Scheduled tasks are falling behind",
+      "why": "WordPress runs cron on visitor requests. When the queue falls behind, the next visitor pays for that work — and they are the one whose page loads slowly."
+    },
+    "old-php": {
+      "title": "PHP version is outdated",
+      "why": "Every major PHP release since 7 has made the same code run noticeably faster. This is the cheapest improvement available."
+    },
+    "no-opcache": {
+      "title": "OPcache is off",
+      "why": "Without OPcache, PHP recompiles every file on every request. Turning it on does not change how the site behaves."
+    },
+    "page-served-from-cache": {
+      "title": "This page never reached PHP",
+      "why": "A cache layer served the page as static output. For visitors, that is the best possible case."
+    }
+  },
+  "steps": {
+    "autoloadOversized": {
+      "total": "{size} in total across {count} autoloaded rows.",
+      "intro": "Look at the largest ones and do one of these three things for each:",
+      "removed": "1) If it belongs to a plugin that is no longer installed, delete the row.",
+      "active": "2) If it belongs to an active plugin, you usually want to set its autoload to no — not delete it.",
+      "cache": "3) If it is a cache, it is better moved to a transient or the object cache — that is a change the plugin itself has to make.",
+      "orphans_one": "{count} row has no identifiable owner; such rows are usually left over from deleted plugins and are the safest to remove.",
+      "orphans_other": "{count} rows have no identifiable owner; these are usually left over from deleted plugins and are the safest to remove."
+    },
+    "autoloadOrphans": {
+      "total": "{count} large rows with no known owner, {size} in total.",
+      "backup": "Back up the database before deleting anything — this tool can do that for you.",
+      "unsure": "If you are not sure what a row belongs to, set its autoload to no instead of deleting it: the speed effect is the same and it is reversible."
+    },
+    "noObjectCache": {
+      "install": "If your host offers Redis, install and activate the Redis Object Cache plugin.",
+      "needsRedis": "This requires a Redis service on the host — without it, the plugin does nothing.",
+      "shared": "It is usually unavailable on shared hosting; in that case, ignore this item."
+    },
+    "nPlusOne": {
+      "worst": "Worst case: one query shape ran {count} times, {ms} ms in total.",
+      "source": "Source: {source}",
+      "noSource": "The source could not be identified.",
+      "owner": "The plugin or theme itself has to fix this — usually with one batched query instead of a query inside a loop.",
+      "thirdParty": "If it is a third-party plugin, check for a newer version or report it to the developer."
+    },
+    "heavyPlugin": {
+      "share": "{source} alone takes {share}% of this page's query time ({queries} queries, {ms} ms).",
+      "settings": "Start with that plugin's own settings: many plugins have an option to limit their work to the pages that need it.",
+      "conflict": "With “Conflict check” you can see how the page loads without this plugin."
+    },
+    "slowQuery": {
+      "slowest": "Slowest: {ms} ms from {source}.",
+      "postmeta": "If it runs on postmeta, it is usually a meta_query without a suitable index.",
+      "cleanup": "Cleaning up orphaned meta and optimizing tables is sometimes enough; otherwise the code that owns the query has to be fixed."
+    },
+    "expiredTransients": {
+      "count": "{count} expired transients can be removed.",
+      "safe": "Removing them is safe: they have expired, so no code relies on them any more, and they are rebuilt if needed."
+    },
+    "revisionBloat": {
+      "count": "{count} post revisions are stored.",
+      "limit": "To stop them growing back, set WP_POST_REVISIONS in wp-config.php, for example to 5.",
+      "irreversible": "Deleting old revisions cannot be undone — the edit history is lost. Back up first.",
+      "orphanMeta": "There are also {count} orphaned meta rows not attached to any post."
+    },
+    "cronBacklog": {
+      "overdue": "{count} tasks have not run for more than an hour.",
+      "disabled": "DISABLE_WP_CRON is on, so a real cron job should be configured on the server. It apparently is not, or it is not working.",
+      "enable": "Best fix: turn on DISABLE_WP_CRON and add a host cron job that calls wp-cron.php every 5 minutes.",
+      "relief": "That takes the heavy work off your visitors."
+    },
+    "oldPhp": {
+      "version": "The site runs PHP {version}.",
+      "upgrade": "Upgrading to 8.2 or later is done from the hosting control panel.",
+      "backup": "Back up before upgrading and check the main pages afterwards: very old plugins may throw errors."
+    },
+    "noOpcache": {
+      "enable": "Turn on opcache.enable in the host's PHP settings.",
+      "askHost": "If you do not have access, ask your host — it is a standard setting with no risk."
+    },
+    "pageCached": {
+      "nothing": "Nothing to fix.",
+      "bypass": "To see this page's real queries, you need to bypass the cache for that URL temporarily."
+    }
+  }
+}

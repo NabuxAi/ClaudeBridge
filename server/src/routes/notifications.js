@@ -1,10 +1,14 @@
 import { Router } from 'express'
+import { i18nMiddleware } from '../i18n.js'
 import { requireAuth } from '../auth.js'
 import { notifications } from '../notifications.store.js'
 import { limiter, clientIp } from '../security/ratelimit.js'
 import { config } from '../config.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 
 const ip = (req) => clientIp(req, { trustProxy: config.trustProxy })
 
@@ -17,7 +21,7 @@ const ip = (req) => clientIp(req, { trustProxy: config.trustProxy })
  */
 router.get('/notifications/preferences', requireAuth, async (req, res, next) => {
   try {
-    res.json({ channels: await notifications.getPreferences(req.user.sub) })
+    res.json({ channels: await notifications.getPreferences(req.user.sub, req.locale) })
   } catch (e) { next(e) }
 })
 
@@ -32,7 +36,7 @@ router.put('/notifications/preferences/:channel', requireAuth, async (req, res, 
     const { enabled, destination, quietHoursStart, quietHoursEnd } = req.body || {}
     const saved = await notifications.setPreference(req.user.sub, req.params.channel, {
       enabled, destination, quietHoursStart, quietHoursEnd,
-    })
+    }, req.locale)
     res.json(saved)
   } catch (e) { next(e) }
 })
@@ -48,7 +52,7 @@ router.get('/notifications/contacts', requireAuth, async (req, res, next) => {
 
 const contactLimit = limiter('contact-enroll', {
   limit: 30, windowMs: 60 * 60 * 1000, keyFn: ip,
-  message: 'ثبت مخاطب از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+  message: 'notifications.limit.contact',
 })
 
 /**
@@ -61,7 +65,7 @@ const contactLimit = limiter('contact-enroll', {
 router.post('/notifications/contacts', requireAuth, contactLimit, async (req, res, next) => {
   try {
     const { type, value } = req.body || {}
-    if (!type || !value) return res.status(400).json({ message: 'نوع و مقدار تماس لازم است.' })
+    if (!type || !value) return res.status(400).json({ message: req.t('notifications.typeValueRequired') })
     const contact = await notifications.addContact(req.user.sub, type, value)
     res.status(201).json(contact)
   } catch (e) { next(e) }

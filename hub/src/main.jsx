@@ -12,17 +12,25 @@ import './styles/polish-site-c.css'
 import './styles/polish-site-d.css'
 import './styles/polish-marketing.css'
 import { AuthProvider } from './lib/auth.jsx'
+import { I18nProvider } from './lib/I18nProvider.jsx'
+import { initI18n } from './lib/i18n.js'
 import App from './App.jsx'
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
-  </StrictMode>
-)
+// The saved language (English by default) is loaded before the first paint,
+// so nobody sees a flash of the wrong language or direction.
+initI18n().then(() => {
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <BrowserRouter>
+        <I18nProvider>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </I18nProvider>
+      </BrowserRouter>
+    </StrictMode>
+  )
+})
 
 /**
  * Register the service worker.

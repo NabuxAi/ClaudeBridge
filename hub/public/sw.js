@@ -29,16 +29,18 @@ self.addEventListener('push', (event) => {
   try {
     data = event.data ? event.data.json() : {}
   } catch {
-    data = { title: 'هشدار امنیتی', body: event.data ? event.data.text() : '' }
+    data = { title: 'Security alert', body: event.data ? event.data.text() : '' }
   }
 
-  const title = data.title || 'هشدار امنیتی'
+  // The server localises title/body for the recipient; these English
+  // fallbacks only cover a payload that arrived without them.
+  const title = data.title || 'Security alert'
   const options = {
-    body: data.body || 'برای دیدن جزئیات پنل را باز کنید.',
+    body: data.body || 'Open the panel to see the details.',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    dir: 'rtl',
-    lang: 'fa',
+    dir: data.dir || 'auto',
+    lang: data.lang || '',
     requireInteraction: true,
     // A tag would collapse alerts for different sites into one. Two
     // compromised sites are two things someone has to act on.

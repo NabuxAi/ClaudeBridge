@@ -1,0 +1,38 @@
+{
+  "title": "Hosting",
+  "subtitle": "Where the site lives and how we reach it",
+  "saved": "Saved.",
+  "error": {
+    "load": "Could not load the hosting settings.",
+    "callbackInvalid": "Invalid callback address — it must start with http:// or https://.",
+    "save": "Could not save."
+  },
+  "region": {
+    "label": "Which country is the site hosted in?",
+    "hint": "If our requests go out from the wrong server, they may never reach the site and we would see it as “down”."
+  },
+  "provider": {
+    "label": "Hosting company",
+    "hint": "If it is not in the list, choose “Something else” and type its name.",
+    "nameLabel": "Hosting company name",
+    "namePlaceholder": "e.g. a local host in your city"
+  },
+  "egress": {
+    "label": "Which server should our requests go out from?",
+    "hint": "The default follows the country. If checks are not reaching the site, change it manually.",
+    "auto": "Automatic (based on country)",
+    "ir": "Server inside Iran",
+    "intl": "International server"
+  },
+  "callback": {
+    "label": "Address the site should send its requests to",
+    "hint": "Empty means the default address. If the default address is not reachable from inside your site, enter another one here — no need to pair again."
+  },
+  "current": {
+    "title": "Current callback address",
+    "hint": "The plugin on your site picks up this address the next time it reads its settings."
+  },
+  "traits": {
+    "title": "Known limitations of this host"
+  }
+}

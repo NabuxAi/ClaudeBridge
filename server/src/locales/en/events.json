@@ -1,0 +1,15 @@
+{
+  "proposal": {
+    "title": "Your approval is needed: {tool}",
+    "recorded": "Action proposal recorded: {tool}"
+  },
+  "scan": {
+    "unreachable": "The security scan could not reach the site",
+    "infectedFile": "Infected file found: {file}",
+    "suspiciousFile": "Suspicious file: {file}",
+    "robotsTampered": "robots.txt has been tampered with"
+  },
+  "sweep": {
+    "allFailed": "The automatic daily check did not succeed on any site"
+  }
+}

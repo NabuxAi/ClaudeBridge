@@ -1,4 +1,5 @@
 import Icon from '../lib/icons.jsx'
+import { t } from '../lib/i18n.js'
 
 /**
  * Shown where a view has no real data source yet.
@@ -27,7 +28,7 @@ export function NotMeasured({ title, reason, icon = 'info' }) {
         {reason}
       </p>
       <p style={{ fontSize: 12, color: 'var(--gd-text-muted)', margin: '10px 0 0', opacity: 0.75 }}>
-        اینجا عددی نشان نمی‌دهیم تا با دادهٔ واقعی اشتباه گرفته نشود.
+        {t('components.notMeasured.noNumbers')}
       </p>
     </div>
   )
@@ -47,16 +48,16 @@ export function Provenance({ data }) {
     <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 14, lineHeight: 1.9 }}>
       {p.live?.length > 0 && (
         <div>
-          <Icon name="check" size={12} style={{ verticalAlign: '-1px', marginLeft: 4, color: 'var(--gd-success)' }} />
+          <Icon name="check" size={12} style={{ verticalAlign: '-1px', marginInlineEnd: 4, color: 'var(--gd-success)' }} />
           {/* Overridable, because not every view reads the site: the alerts
               log is our own record of what we did and saw, and calling that
               "measured from the site" would misstate where it came from. */}
-          {p.liveLabel || 'اندازه‌گیری‌شده از سایت'}: <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{p.live.join('، ')}</span>
+          {p.liveLabel || t('components.provenance.measured')}{t('components.provenance.colon')}<span style={{ fontFamily: 'var(--gd-font-mono)' }}>{p.live.join(t('components.provenance.listSep'))}</span>
         </div>
       )}
       {partial.map(([field, why]) => (
         <div key={field} style={{ opacity: 0.85 }}>
-          <Icon name="minus" size={12} style={{ verticalAlign: '-1px', marginLeft: 4 }} />
+          <Icon name="minus" size={12} style={{ verticalAlign: '-1px', marginInlineEnd: 4 }} />
           <span style={{ fontFamily: 'var(--gd-font-mono)' }}>{field}</span> — {why}
         </div>
       ))}

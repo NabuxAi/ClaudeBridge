@@ -1,0 +1,15 @@
+{
+  "scope": "HTTP reachability check, not a user journey/payment",
+  "labelRequired": "A monitor label is required.",
+  "labelTooLong": "The monitor label is too long.",
+  "invalidUrl": "The monitor URL is not valid.",
+  "badScheme": "The monitor URL must start with http or https.",
+  "badStatus": "The expected status code must be a number between {min} and {max}.",
+  "containsTooLong": "The expected phrase is too long.",
+  "limitReached": "This site's monitor limit is full (at most {count} monitors per site).",
+  "notFound": "Monitor not found.",
+  "limit": {
+    "write": "Too many monitor changes from this address.",
+    "check": "Too many manual monitor checks from this address."
+  }
+}

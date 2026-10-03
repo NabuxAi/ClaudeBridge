@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import { Button, StatusPill, AuthorityBadge } from '../../components/index.js'
+import Trans from '../../components/Trans.jsx'
+import { t, num, digits } from '../../lib/i18n.js'
 
 // Six capability claims, each rewritten to what the product does. The old set
 // promised 24-hour monitoring, contact-form and payment-gateway checks, host
@@ -16,29 +18,29 @@ import { Button, StatusPill, AuthorityBadge } from '../../components/index.js'
 // NOT show payment-page 500 detection or automatic plugin-version rollback —
 // probes only cover homepage/wp-login and no file rollback path exists.
 const FEATURES = [
-  { icon: 'refresh-cw', title: 'همیشه به‌روز', desc: 'هسته، افزونه‌ها و قالب‌ها خودکار به آخرین نسخه می‌رسند. در حالت ایمنی، این گزینه‌ها قابل خاموش کردن نیستند.' },
-  { icon: 'shield-check', title: 'اسکن بدافزار', desc: 'اسکن روزانه با بانک امضای به‌روز، به‌علاوهٔ جست‌وجوی هش در پایگاه‌های بیرونی.' },
-  { icon: 'file-check-2', title: 'بررسی یکپارچگی هسته', desc: 'هر فایل هستهٔ وردپرس با نسخهٔ رسمی مقایسه می‌شود؛ فایل ناشناس در wp-includes خودش یک یافته است.' },
-  { icon: 'database', title: 'بکاپ و بازگردانی', desc: 'دامپ دیتابیس با PHP خالص — روی هاست‌هایی که exec() بسته است هم کار می‌کند — و فقط دامپ‌های کامل ثبت می‌شوند.' },
-  { icon: 'git-branch', title: 'پیدا کردن تداخل', desc: 'صفحهٔ خرابتان را می‌دهید؛ افزونه‌ها و قالب گروه‌گروه خاموش می‌شوند تا مقصر پیدا شود و بعد همه‌چیز برمی‌گردد.' },
-  { icon: 'shield-alert', title: 'عملیات نجات', desc: 'برای سایتی که دیگر به فایل‌هایش نمی‌شود اعتماد کرد: جایگزینی با نسخهٔ رسمی، نه پاک‌سازی حدسی.' },
+  { icon: 'refresh-cw', key: 'updates' },
+  { icon: 'shield-check', key: 'malware' },
+  { icon: 'file-check-2', key: 'integrity' },
+  { icon: 'database', key: 'backup' },
+  { icon: 'git-branch', key: 'conflict' },
+  { icon: 'shield-alert', key: 'rescue' },
 ]
-
 
 const AUTH_LEVELS = [
-  { level: 'report', icon: 'eye', tone: 'gray', title: 'فقط گزارش', desc: 'فقط مشاهده و پیشنهاد می‌دهد؛ هیچ تغییری روی سایت اعمال نمی‌شود.' },
-  { level: 'confirm', icon: 'user-check', tone: 'warning', title: 'با تأیید', desc: 'راه‌حل را آماده می‌کند، منتظر تأیید شما می‌ماند و سپس اجرا و تست می‌کند.' },
-  { level: 'auto', icon: 'zap', tone: 'success', title: 'خودکار', desc: 'کارهای کم‌ریسک را خودش انجام می‌دهد؛ موارد حساس همچنان با تأیید شما.' },
+  { level: 'report', icon: 'eye', tone: 'gray' },
+  { level: 'confirm', icon: 'user-check', tone: 'warning' },
+  { level: 'auto', icon: 'zap', tone: 'success' },
 ]
 
+// Prices are monthly Toman amounts; num() localises the digits/grouping.
 const PLANS = [
-  { name: 'پایه', price: '۱۹۰٬۰۰۰', popular: false, feats: ['۱ سایت', 'به‌روزرسانی خودکار', 'بکاپ و اسکن روزانه'], cta: 'درخواست دسترسی', variant: 'secondary' },
-  { name: 'حرفه‌ای', price: '۴۹۰٬۰۰۰', popular: true, feats: ['۵ سایت', 'بررسی یکپارچگی هسته', 'بررسی تداخل و عملیات نجات'], cta: 'درخواست دسترسی', variant: 'primary' },
+  { key: 'basic', price: 190000, popular: false, variant: 'secondary' },
+  { key: 'pro', price: 490000, popular: true, variant: 'primary' },
   // No "گزارش روزانه در تلگرام" here: the daily digest goes to the operator's
   // fixed TELEGRAM_CHAT_ID, not to site owners (no owner Telegram channel
   // exists). And no "تماس با فروش" CTA: /pricing offers pilot access, not a
   // sales contact — the label must match what the destination actually does.
-  { name: 'آژانس', price: '۹۹۰٬۰۰۰', popular: false, feats: ['سایت نامحدود', 'همهٔ امکانات حرفه‌ای', 'مدیریت سایت‌های مشتری از یک پنل'], cta: 'درخواست دسترسی', variant: 'secondary' },
+  { key: 'agency', price: 990000, popular: false, variant: 'secondary' },
 ]
 
 
@@ -51,37 +53,37 @@ export default function Landing() {
         <div className="dwp-container dwp-hero" style={{ paddingBlock: '66px 74px', display: 'grid', gap: 44, alignItems: 'center' }}>
           <div>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, color: 'var(--gd-primary)', background: 'var(--gd-primary-subtle)', border: '1px solid var(--gd-primary-border)', padding: '6px 13px', borderRadius: 'var(--gd-radius-pill)' }}>
-              <Icon name="sparkles" size={14} /> پشتیبان هوشمند وردپرس
+              <Icon name="sparkles" size={14} /> {t('landing.hero.badge')}
             </span>
             <h1 style={{ fontSize: 'clamp(28px, 5vw, 44px)', lineHeight: 1.25, fontWeight: 800, margin: '18px 0 0', color: 'var(--gd-text)' }}>
-              سایت وردپرسی شما، <span className="gd-gradient-text">همیشه به‌روز</span> و زیر نظر اسکن روزانه
+              <Trans k="landing.hero.title" components={{ hl: (c) => <span className="gd-gradient-text">{c}</span> }} />
             </h1>
             <p style={{ fontSize: 17, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: '16px 0 0', maxWidth: 520 }}>
-              به‌جای استخدام پشتیبان دائمی سایت. کارهای روزمرهٔ نگهداری خودکار می‌شوند و فقط برای تصمیم‌های حساس از شما اجازه گرفته می‌شود.
+              {t('landing.hero.sub')}
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 28, flexWrap: 'wrap' }}>
-              <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">ساخت حساب</Button>
-              <Button as={Link} to="/pricing" variant="secondary" size="lg" rightIcon="arrow-left">مشاهده قیمت‌ها</Button>
+              <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">{t('landing.hero.ctaRegister')}</Button>
+              <Button as={Link} to="/pricing" variant="secondary" size="lg" rightIcon="arrow-left">{t('landing.hero.ctaPricing')}</Button>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 22, fontSize: 12.5, color: 'var(--gd-text-muted)', flexWrap: 'wrap' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={15} style={{ color: 'var(--gd-primary)' }} /> نصب در ۲ دقیقه</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={15} style={{ color: 'var(--gd-primary)' }} /> بدون نیاز به کارت بانکی در دسترسی آزمایشی</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={15} style={{ color: 'var(--gd-primary)' }} /> {t('landing.hero.pointInstall')}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={15} style={{ color: 'var(--gd-primary)' }} /> {t('landing.hero.pointNoCard')}</span>
             </div>
           </div>
           <div>
             <div className="gd-card--glass" style={{ padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-text-muted)', background: 'var(--gd-bg-inset)', border: '1px solid var(--gd-border)', borderRadius: 999, padding: '3px 10px' }}>پیش‌نمایش پنل</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-text-muted)', background: 'var(--gd-bg-inset)', border: '1px solid var(--gd-border)', borderRadius: 999, padding: '3px 10px' }}>{t('landing.hero.previewTag')}</span>
                 <span className="dwp-spacer" /><StatusPill status="healthy" />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: 15, borderRadius: 'var(--gd-radius-lg)', background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)' }}>
                 <span style={{ width: 46, height: 46, borderRadius: '50%', background: 'var(--gd-success-bg)', color: 'var(--gd-success-text)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}><Icon name="shield-check" size={23} /></span>
-                <div><div style={{ fontWeight: 800, fontSize: 16 }}>وضعیت سایت شما</div><div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 3 }}>پس از اتصال، اینجا نمایش داده می‌شود</div></div>
+                <div><div style={{ fontWeight: 800, fontSize: 16 }}>{t('landing.hero.previewTitle')}</div><div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 3 }}>{t('landing.hero.previewSub')}</div></div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
-                {['بررسی SSL', 'آپدیت‌ها'].map((t) => (
-                  <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--gd-text-secondary)', background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', padding: '8px 11px' }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--gd-success)' }} /> {t}
+                {[t('landing.hero.chipSsl'), t('landing.hero.chipUpdates')].map((chip) => (
+                  <span key={chip} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--gd-text-secondary)', background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', padding: '8px 11px' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--gd-success)' }} /> {chip}
                   </span>
                 ))}
               </div>
@@ -93,15 +95,15 @@ export default function Landing() {
       {/* Features */}
       <section id="features" className="dwp-container" style={{ paddingBlock: 66 }}>
         <div style={{ textAlign: 'center', maxWidth: 600, margin: '0 auto 40px' }}>
-          <span className="gd-sec-head__eyebrow">قابلیت‌ها</span>
-          <h2 style={{ fontSize: 32, fontWeight: 800, margin: '10px 0 0' }}>دقیقاً چه کارهایی انجام می‌دهد؟</h2>
+          <span className="gd-sec-head__eyebrow">{t('landing.features.eyebrow')}</span>
+          <h2 style={{ fontSize: 32, fontWeight: 800, margin: '10px 0 0' }}>{t('landing.features.title')}</h2>
         </div>
         <div className="dwp-grid dwp-grid-3">
           {FEATURES.map((f) => (
-            <div key={f.title} style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', padding: 24, boxShadow: 'var(--gd-shadow-xs)' }}>
+            <div key={f.key} style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', padding: 24, boxShadow: 'var(--gd-shadow-xs)' }}>
               <span style={{ width: 46, height: 46, borderRadius: 'var(--gd-radius-lg)', background: 'var(--gd-primary-subtle)', color: 'var(--gd-primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name={f.icon} size={23} /></span>
-              <h3 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 7px' }}>{f.title}</h3>
-              <p style={{ fontSize: 14, lineHeight: 1.75, color: 'var(--gd-text-secondary)', margin: 0 }}>{f.desc}</p>
+              <h3 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 7px' }}>{t(`landing.features.${f.key}.title`)}</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.75, color: 'var(--gd-text-secondary)', margin: 0 }}>{t(`landing.features.${f.key}.desc`)}</p>
             </div>
           ))}
         </div>
@@ -111,9 +113,9 @@ export default function Landing() {
       <section id="authority" style={{ background: 'var(--gd-bg-app)', borderTop: '1px solid var(--gd-border)', borderBottom: '1px solid var(--gd-border)' }}>
         <div className="dwp-container" style={{ paddingBlock: 60 }}>
           <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 34px' }}>
-            <span className="gd-sec-head__eyebrow">کنترل با شماست</span>
-            <h2 style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 8px' }}>سه سطح اختیار</h2>
-            <p style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--gd-text-secondary)', margin: 0 }}>تعیین کنید پشتیبان چقدر آزادی عمل داشته باشد. اقدام‌های حساس در هر سطحی به تأیید شما نیاز دارند.</p>
+            <span className="gd-sec-head__eyebrow">{t('landing.authority.eyebrow')}</span>
+            <h2 style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 8px' }}>{t('landing.authority.title')}</h2>
+            <p style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--gd-text-secondary)', margin: 0 }}>{t('landing.authority.sub')}</p>
           </div>
           <div className="dwp-grid dwp-grid-3">
             {AUTH_LEVELS.map((a) => (
@@ -122,8 +124,8 @@ export default function Landing() {
                   <span style={{ width: 44, height: 44, borderRadius: 12, background: a.tone === 'warning' ? 'var(--gd-warning-bg)' : a.tone === 'success' ? 'var(--gd-success-bg)' : 'var(--gd-bg-inset)', color: a.tone === 'warning' ? 'var(--gd-warning)' : a.tone === 'success' ? 'var(--gd-success)' : 'var(--gd-gray-600)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={a.icon} size={22} /></span>
                   <AuthorityBadge level={a.level} />
                 </div>
-                <h3 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 7px' }}>{a.title}</h3>
-                <p style={{ fontSize: 13.5, lineHeight: 1.75, color: 'var(--gd-text-secondary)', margin: 0 }}>{a.desc}</p>
+                <h3 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 7px' }}>{t(`landing.authority.${a.level}.title`)}</h3>
+                <p style={{ fontSize: 13.5, lineHeight: 1.75, color: 'var(--gd-text-secondary)', margin: 0 }}>{t(`landing.authority.${a.level}.desc`)}</p>
               </div>
             ))}
           </div>
@@ -133,24 +135,24 @@ export default function Landing() {
       {/* Transparent report sample */}
       <section className="dwp-container dwp-report" style={{ paddingBlock: 64, display: 'grid', gap: 44, alignItems: 'center' }}>
         <div>
-          <span className="gd-sec-head__eyebrow">گزارش شفاف</span>
-          <h2 style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 12px' }}>به زبان ساده به شما می‌گوید چه شد</h2>
-          <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: 0 }}>هر یافته را با همین ترتیب گزارش می‌کند: علت، اقدام پیشنهادی و وضعیت — بدون ادعایی که هنوز رخ نداده.</p>
+          <span className="gd-sec-head__eyebrow">{t('landing.report.eyebrow')}</span>
+          <h2 style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 12px' }}>{t('landing.report.title')}</h2>
+          <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: 0 }}>{t('landing.report.sub')}</p>
         </div>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-text-muted)', marginBottom: 8 }}>نمونه گزارش</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gd-text-muted)', marginBottom: 8 }}>{t('landing.report.sampleLabel')}</div>
           <div style={{ display: 'flex', gap: 12, borderRadius: 'var(--gd-radius-lg)', border: '1px solid var(--gd-danger-border)', background: 'var(--gd-danger-bg)', padding: '18px 22px', boxShadow: 'var(--gd-shadow-sm)' }}>
             <span style={{ width: 40, height: 40, borderRadius: 'var(--gd-radius-md)', background: 'var(--gd-danger)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}><Icon name="alert-octagon" size={22} /></span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--gd-danger-text)' }}>هشدار مهم</span>
-                <span className="dwp-mono" style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginInlineStart: 'auto' }}>۱۴:۳۲</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--gd-danger-text)' }}>{t('landing.report.alertTitle')}</span>
+                <span className="dwp-mono" style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginInlineStart: 'auto' }}>{digits('14:32')}</span>
               </div>
-              <div style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--gd-text-secondary)', marginTop: 6 }}>بررسی یکپارچگی هسته: فایلی در wp-includes با نسخهٔ رسمی وردپرس مطابقت ندارد.</div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--gd-text-secondary)', marginTop: 6 }}>{t('landing.report.alertBody')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 9, fontSize: 13 }}>
-                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>علت:</b> هنوز مشخص نیست — فایل باید بررسی شود</span>
-                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>اقدام پیشنهادی:</b> عملیات نجات؛ جایگزینی با نسخهٔ رسمی وردپرس</span>
-                <span style={{ color: 'var(--gd-warning-text)', fontWeight: 600 }}><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>وضعیت فعلی:</b> منتظر تأیید شما</span>
+                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>{t('landing.report.causeLabel')}</b> {t('landing.report.causeValue')}</span>
+                <span><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>{t('landing.report.actionLabel')}</b> {t('landing.report.actionValue')}</span>
+                <span style={{ color: 'var(--gd-warning-text)', fontWeight: 600 }}><b style={{ color: 'var(--gd-text-muted)', fontWeight: 600 }}>{t('landing.report.statusLabel')}</b> {t('landing.report.statusValue')}</span>
               </div>
             </div>
           </div>
@@ -161,21 +163,21 @@ export default function Landing() {
       <section style={{ background: 'var(--gd-bg-app)', borderTop: '1px solid var(--gd-border)' }}>
         <div className="dwp-container" style={{ paddingBlock: 64 }}>
           <div style={{ textAlign: 'center', maxWidth: 600, margin: '0 auto 36px' }}>
-            <span className="gd-sec-head__eyebrow">قیمت‌گذاری ساده</span>
-            <h2 style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 0' }}>پلنی برای هر اندازه</h2>
+            <span className="gd-sec-head__eyebrow">{t('landing.pricing.eyebrow')}</span>
+            <h2 style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 0' }}>{t('landing.pricing.title')}</h2>
           </div>
           <div className="dwp-grid dwp-grid-3" style={{ alignItems: 'start' }}>
             {PLANS.map((p) => (
-              <div key={p.name} style={{ background: 'var(--gd-bg-surface)', border: p.popular ? '2px solid var(--gd-primary)' : '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', padding: 26, boxShadow: p.popular ? 'var(--gd-shadow-md)' : 'var(--gd-shadow-xs)', position: 'relative' }}>
-                {p.popular && <span style={{ position: 'absolute', top: -12, insetInlineStart: 26, background: 'var(--gd-primary)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '4px 12px' }}>محبوب‌ترین</span>}
-                <div style={{ fontSize: 16, fontWeight: 800 }}>{p.name}</div>
-                <div style={{ margin: '12px 0 4px' }}><span className="dwp-mono" style={{ fontSize: 30, fontWeight: 800 }}>{p.price}</span></div>
-                <div style={{ fontSize: 12, color: 'var(--gd-text-muted)' }}>تومان / ماه</div>
+              <div key={p.key} style={{ background: 'var(--gd-bg-surface)', border: p.popular ? '2px solid var(--gd-primary)' : '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', padding: 26, boxShadow: p.popular ? 'var(--gd-shadow-md)' : 'var(--gd-shadow-xs)', position: 'relative' }}>
+                {p.popular && <span style={{ position: 'absolute', top: -12, insetInlineStart: 26, background: 'var(--gd-primary)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '4px 12px' }}>{t('landing.pricing.popular')}</span>}
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{t(`landing.pricing.${p.key}.name`)}</div>
+                <div style={{ margin: '12px 0 4px' }}><span className="dwp-mono" style={{ fontSize: 30, fontWeight: 800 }}>{num(p.price)}</span></div>
+                <div style={{ fontSize: 12, color: 'var(--gd-text-muted)' }}>{t('landing.pricing.perMonth')}</div>
                 <div style={{ height: 1, background: 'var(--gd-border)', margin: '18px 0' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13.5, color: 'var(--gd-text-secondary)', marginBottom: 20 }}>
-                  {p.feats.map((f) => <span key={f} style={{ display: 'flex', gap: 9 }}><Icon name="check" size={17} style={{ color: 'var(--gd-success)' }} /> {f}</span>)}
+                  {t(`landing.pricing.${p.key}.feats`).map((f) => <span key={f} style={{ display: 'flex', gap: 9 }}><Icon name="check" size={17} style={{ color: 'var(--gd-success)' }} /> {f}</span>)}
                 </div>
-                <Button as={Link} to="/pricing" variant={p.variant} size="md" fullWidth rightIcon="arrow-left">{p.cta}</Button>
+                <Button as={Link} to="/pricing" variant={p.variant} size="md" fullWidth rightIcon="arrow-left">{t('landing.pricing.cta')}</Button>
               </div>
             ))}
           </div>
@@ -186,10 +188,10 @@ export default function Landing() {
       <div data-theme="ink" style={{ background: 'var(--gd-bg-app)' }}>
         <div className="dwp-container dwp-cta" style={{ paddingBlock: 60, display: 'flex', alignItems: 'center', gap: 30, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 280 }}>
-            <h2 style={{ fontSize: 30, fontWeight: 800, margin: 0, color: 'var(--gd-text)' }}>همین امروز خیال‌تان از سایت راحت شود</h2>
-            <p style={{ fontSize: 15, color: 'var(--gd-text-secondary)', margin: '10px 0 0' }}>دسترسی آزمایشی — بدون کارت بانکی. اتصال در کمتر از دو دقیقه.</p>
+            <h2 style={{ fontSize: 30, fontWeight: 800, margin: 0, color: 'var(--gd-text)' }}>{t('landing.cta.title')}</h2>
+            <p style={{ fontSize: 15, color: 'var(--gd-text-secondary)', margin: '10px 0 0' }}>{t('landing.cta.sub')}</p>
           </div>
-          <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">ساخت حساب</Button>
+          <Button as={Link} to="/register" variant="primary" size="lg" leftIcon="shield-check">{t('landing.cta.button')}</Button>
         </div>
       </div>
     </>

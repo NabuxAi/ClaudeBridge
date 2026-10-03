@@ -1,18 +1,19 @@
 // ============================================================
-// Conflict & Rescue Specialist Sub-Agent (عامل تخصصی رفع تداخل و نجات)
+// Conflict & Rescue Specialist Sub-Agent
 // ============================================================
 import * as connector from '../../connector.js'
+import { t } from '../../i18n.js'
 
 export const RESCUE_AGENT = {
   id: 'rescue',
-  name: 'متخصص رفع تداخل و عملیات نجات',
-  role: 'عیب‌یابی خطاهای مهلک (Fatal Errors)، تفکیک باینری تداخل افزونه‌ها (Bisect) و بازگردانی سایت‌های از کار افتاده',
-  systemPrompt: `شما «عامل تخصصی نجات و رفع تداخل وردپرس» هستید.
-وظیفه شما:
-۱. تحلیل لاگ‌های خطای PHP (error.log / debug.log) و یافتن Stack Trace خطاهای Fatal Error و سفید شدن صفحه (WSOD).
-۲. اجرای فرآیند تفکیک باینری (Bisect) برای پیدا کردن سریع افزونه یا تابعی که باعث شکست سایت شده است.
-۳. در صورت قطعی سایت، پیشنهاد غیرفعال‌سازی هدفمند افزونه خاطی با نگهداری سوابق برای فعال‌سازی مجدد.
-۴. بازنشانی کلیدها و قفل‌های ترنزینت و پاکسازی فایل maintenance.`,
+  nameKey: 'agents.specialists.rescue.name',
+  roleKey: 'agents.specialists.rescue.role',
+  systemPrompt: `You are the WordPress rescue and conflict-resolution specialist agent.
+Your job:
+1. Analyse PHP error logs (error.log / debug.log) and find the stack traces of fatal errors and white screens (WSOD).
+2. Run a binary bisect to find quickly which plugin or function broke the site.
+3. When the site is down, propose deactivating the offending plugin specifically, keeping a record so it can be re-activated.
+4. Reset transient keys and locks, and clear a stale maintenance file.`,
 
   tools: [
     'error_log_tail',
@@ -24,7 +25,7 @@ export const RESCUE_AGENT = {
     'transient_cleanup',
   ],
 
-  async diagnose(target, _options = {}) {
+  async diagnose(target, options = {}) {
     const report = {
       isDegraded: false,
       fatalErrors: [],
@@ -53,7 +54,7 @@ export const RESCUE_AGENT = {
         }
       }
     } catch (e) {
-      report.actions.push(`خطا در واکشی لاگ‌های سرور: ${e.message}`)
+      report.actions.push(t(options.locale, 'agents.rescue.logsFailed', { error: e.message }))
     }
 
     return report

@@ -1,0 +1,176 @@
+{
+  "head": {
+    "title": "Backups & restore",
+    "subtitle": "Where backups are kept, daily limit, automatic cleanup and fast downloads",
+    "policyButton": "Retention & storage settings",
+    "pruning": "Cleaning up…",
+    "prune": "Clean up old backups",
+    "takeBackup": "Take manual backup"
+  },
+  "errors": {
+    "loadList": "Couldn't load the backup list",
+    "preflight": "Couldn't measure disk space and backup size",
+    "startBackup": "The backup couldn't be started.",
+    "savePolicy": "Couldn't save the backup retention settings",
+    "prune": "Backup cleanup failed",
+    "restore": "The restore didn't start.",
+    "download": "The download didn't complete.",
+    "saveTarget": "Couldn't save the cloud destination.",
+    "deleteTarget": "Couldn't delete the cloud destination.",
+    "sync": "The cloud sync couldn't be started."
+  },
+  "success": {
+    "policySaved": "Backup retention and storage settings saved.",
+    "pruned_one": "Cleanup done: {count} backup removed and {mb} MB freed.",
+    "pruned_other": "Cleanup done: {count} backups removed and {mb} MB freed."
+  },
+  "confirm": {
+    "prune": "Delete backup files older than the retention limit to free up space on the host?",
+    "deleteTarget": "Delete this cloud destination?"
+  },
+  "task": {
+    "backup": "Manual backup",
+    "restore": "Restore backup {id}",
+    "sync": "Sync backup to S3 cloud storage"
+  },
+  "loadFailed": {
+    "title": "Couldn't read the backup list",
+    "noResponse": "No response was received from the server."
+  },
+  "metrics": {
+    "lastBackup": "Last backup",
+    "notRecorded": "None recorded",
+    "verified": "Dump verified complete",
+    "unverified": "Not verified",
+    "noneYet": "No backup has been taken yet",
+    "location": "Backup location",
+    "locationValue": "WordPress server (host)",
+    "retentionHint_one": "Retention limit: {count} day",
+    "retentionHint_other": "Retention limit: {count} days",
+    "today": "Backups today",
+    "todayValue": "{done} of {max}",
+    "dailyFull": "Daily limit reached",
+    "dailyOk": "A new backup is allowed",
+    "freeDisk": "Free disk space",
+    "quotaHint": "Folder size limit: {mb} MB",
+    "diskUnchecked": "Checked when you take a manual backup"
+  },
+  "banner": {
+    "title": "Retention and automatic cleanup policy",
+    "body": "Backups are kept on your WordPress host, in a protected folder outside web access · backups older than {days} days are removed automatically, or once the folder reaches {mb} MB",
+    "change": "Change policy"
+  },
+  "list": {
+    "title": "Available backups",
+    "count_one": "{count} backup stored",
+    "count_other": "{count} backups stored",
+    "colDate": "Date & time",
+    "colType": "Type & sections",
+    "colLocation": "Location",
+    "colSize": "Size",
+    "colHealth": "Integrity",
+    "empty": "No backups are stored yet. Use “Take manual backup” to create the first one.",
+    "typeManual": "Manual",
+    "locationBadge": "WordPress server",
+    "downloadSqlTitle": "Fast direct SQL stream download",
+    "downloading": "Fetching…",
+    "downloadSql": "Download SQL",
+    "downloadZipTitle": "Download the compressed archive of media and plugins",
+    "downloadZip": "Download ZIP",
+    "restore": "Restore"
+  },
+  "policy": {
+    "title": "Daily limit and retention settings",
+    "info": "Backups are stored on <strong>your WordPress host</strong>, in a protected folder outside web access. To keep copies off the host, use the “Dedicated cloud backup (S3)” section further down this page.",
+    "dailyLabel": "Maximum backups per day (daily limit):",
+    "dailyOption": "{count} per day",
+    "dailyOptionDefault": "{count} per day (default)",
+    "dailyHint": "Prevents extra load and repeated use of host resources within 24 hours.",
+    "retentionLabel": "Retention period (backups older than this are removed automatically):",
+    "retention": {
+      "d7": "7 days (1 week)",
+      "d14": "14 days (2 weeks)",
+      "d30": "30 days (1 month – recommended)",
+      "d60": "60 days (2 months)",
+      "d90": "90 days (3 months)",
+      "d180": "180 days (6 months)"
+    },
+    "storageLabel": "Total backup folder size limit (old backups are removed when it fills up):",
+    "storage": {
+      "mb500": "500 MB",
+      "mb1024": "1 GB (1024 MB)",
+      "mb2048": "2 GB (2048 MB – standard)",
+      "mb5120": "5 GB (5120 MB)",
+      "mb10240": "10 GB (10240 MB)"
+    },
+    "autoPruneTitle": "Clean up automatically when the size limit is reached",
+    "autoPruneDesc": "The oldest backups are removed so the host doesn't fill up.",
+    "save": "Save settings"
+  },
+  "offsite": {
+    "title": "Dedicated cloud backup (S3 Storage)",
+    "badge": "AES-256 encryption",
+    "desc": "Send backups directly to S3-compatible cloud storage (ArvanCloud, Liara, AWS S3, MinIO)",
+    "add": "Add S3 destination",
+    "emptyTitle": "No S3 cloud destination added yet",
+    "emptyBody": "You can connect your own buckets on ArvanCloud, Liara or Amazon for a secondary, isolated backup copy.",
+    "configure": "Configure S3 bucket",
+    "targetMeta_one": "Region: <mono>{region}</mono> · Retention: {count} day",
+    "targetMeta_other": "Region: <mono>{region}</mono> · Retention: {count} days",
+    "syncNow": "Sync now",
+    "historyTitle": "Recent cloud transfers:",
+    "jobDone": "Succeeded",
+    "jobFailed": "Failed",
+    "jobRunning": "Transferring"
+  },
+  "target": {
+    "title": "Configure cloud storage destination (S3)",
+    "intro": "Enter your S3-compatible bucket details. Access keys are stored encrypted (AES-256-GCM).",
+    "endpoint": "S3 endpoint URL:",
+    "endpointPlaceholder": "https://s3.ir-thr-at1.arvanstorage.ir or https://s3.amazonaws.com",
+    "bucket": "Bucket name:",
+    "region": "Region:",
+    "regionPlaceholder": "us-east-1 or ir-thr-at1",
+    "accessKey": "Access Key ID:",
+    "secretKey": "Secret Access Key:",
+    "pathPrefix": "Path prefix:",
+    "retention": "Retention period (days):",
+    "save": "Save cloud destination"
+  },
+  "preflight": {
+    "title": "Custom backup",
+    "freeDisk": "Free disk space on host: {value}",
+    "calculating": "Calculating…",
+    "checking": "Checking",
+    "insufficient": "Not enough space",
+    "sufficient": "Enough space",
+    "unchecked": "Not checked",
+    "msgInsufficient": "There isn't enough free disk space on the host for this size. Clean up older backups or select fewer sections.",
+    "msgOk": "Host space was checked live and is sufficient for the selected backup.",
+    "msgUnchecked": "The automatic disk space check didn't run. To see the available space, close this window and try again.",
+    "sectionsTitle": "Sections to back up:",
+    "required": "(required)",
+    "seconds": "~{s} s",
+    "estSize": "Estimated backup size: ",
+    "megabytes": "{mb} MB",
+    "estDuration": "Estimated time: ",
+    "start": "Start backup"
+  },
+  "sections": {
+    "dbTitle": "Database (SQL)",
+    "dbDesc": "Database tables and records",
+    "pluginsTitle": "Plugins",
+    "pluginsDesc": "The wp-content/plugins folder",
+    "themesTitle": "Themes",
+    "themesDesc": "The wp-content/themes folder",
+    "uploadsTitle": "Media & uploads",
+    "uploadsDesc": "The wp-content/uploads folder"
+  },
+  "restore": {
+    "title": "Confirm backup restore",
+    "warning": "<strong>Warning:</strong> restoring this backup returns all database content (orders, comments and new posts) to the moment this backup was taken.",
+    "prompt": "To confirm, type <strong>“{word}”</strong> in the box below:",
+    "confirmWord": "restore",
+    "confirm": "Confirm and start restore"
+  }
+}

@@ -1,11 +1,22 @@
 // ============================================================
 // Assistant Conversations & Messages Store
-// ذخیره‌سازی دائمی گفتگوها و پردازش پس‌زمینه دستیار هوشمند
+// Durable conversations and background processing for the assistant.
 // ============================================================
 import { all, one, query, newId } from './db.js'
 import * as assistant from './assistant.js'
 import * as events from './events.js'
 import { config } from './config.js'
+import { t, httpError, errorMessage } from './i18n.js'
+
+// The stored default title. Rows created before the i18n change hold the
+// Persian default; both are served as the reader's "New conversation".
+export const DEFAULT_TITLE = 'New conversation'
+const DEFAULT_TITLES = new Set([DEFAULT_TITLE, 'گفتگوی جدید'])
+const isDefaultTitle = (title) => DEFAULT_TITLES.has(String(title || '').trim())
+
+/** A conversation row with a default title rendered in `locale`. */
+export const localize = (locale, c) =>
+  c && isDefaultTitle(c.title) ? { ...c, title: t(locale, 'conversations.newTitle') } : c
 
 // In-memory fallback if running without PostgreSQL (e.g. unit test suite)
 const MEM_CONVERSATIONS = new Map()
@@ -38,10 +49,10 @@ export async function list(siteId, limit = 50) {
   return rows || []
 }
 
-export async function create(siteId, userId = null, title = 'گفتگوی جدید') {
+export async function create(siteId, userId = null, title = DEFAULT_TITLE) {
   const id = newId('conv-')
   const now = Date.now()
-  const cleanTitle = String(title || 'گفتگوی جدید').trim().slice(0, 120)
+  const cleanTitle = String(title || DEFAULT_TITLE).trim().slice(0, 120)
 
   if (!config.databaseUrl) {
     const conv = {
@@ -197,9 +208,9 @@ export async function addMessage(siteId, conversationId, msg) {
  * Process a user message in background.
  * Handles AI answering, proposal tracking, title auto-generation, and notification dispatch.
  */
-export async function postAndProcess(site, conversationId, userText, { userId, maxToolSteps } = {}) {
+export async function postAndProcess(site, conversationId, userText, { userId, maxToolSteps, locale } = {}) {
   const text = String(userText || '').trim()
-  if (!text) throw new Error('متن پیام نمی‌تواند خالی باشد.')
+  if (!text) throw httpError(400, 'conversations.emptyMessage')
 
   // 1. Record user message
   const userMsg = await addMessage(site.id, conversationId, {
@@ -210,7 +221,7 @@ export async function postAndProcess(site, conversationId, userText, { userId, m
   // 2. Set conversation status to 'processing'
   const conv = await get(site.id, conversationId)
   const isFirstMessage = (conv?.messages?.length || 0) <= 1
-  const newTitle = isFirstMessage && conv?.title === 'گفتگوی جدید'
+  const newTitle = isFirstMessage && isDefaultTitle(conv?.title)
     ? text.slice(0, 45) + (text.length > 45 ? '…' : '')
     : undefined
 
@@ -222,12 +233,12 @@ export async function postAndProcess(site, conversationId, userText, { userId, m
   // 3. Launch background execution (does not block returning immediately)
   const task = (async () => {
     try {
-      const answerRes = await assistant.answer(site, text, { maxToolSteps })
+      const answerRes = await assistant.answer(site, text, { maxToolSteps, locale })
       
       // Add AI reply message
       await addMessage(site.id, conversationId, {
         sender: 'ai',
-        text: answerRes.reply || 'پاسخی دریافت نشد.',
+        text: answerRes.reply || t(locale, 'conversations.noReply'),
         refs: answerRes.refs || null,
         note: answerRes.note || null,
         unknown: answerRes.unknown || null,
@@ -241,14 +252,14 @@ export async function postAndProcess(site, conversationId, userText, { userId, m
       await events.record(site.id, {
         kind: 'assistant_reply',
         severity: 'info',
-        title: `پاسخ دستیار آماده شد: «${(conv?.title || text).slice(0, 35)}»`,
+        title: t('en', 'conversations.replyReady', { title: (conv?.title || text).slice(0, 35) }),
         detail: answerRes.reply?.slice(0, 120),
       }).catch(() => {})
 
     } catch (err) {
       await addMessage(site.id, conversationId, {
         sender: 'ai',
-        text: `خطا در دریافت پاسخ: ${err.message || 'خطای نامشخص'}`,
+        text: t(locale, 'conversations.replyError', { error: errorMessage(locale, err) || t(locale, 'conversations.unknownError') }),
         error: err.message,
       })
       await update(site.id, conversationId, { status: 'error' })

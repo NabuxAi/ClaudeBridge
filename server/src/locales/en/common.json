@@ -1,0 +1,13 @@
+{
+  "serverError": "Server error.",
+  "rateLimited": "You are sending too many requests. Please wait a moment.",
+  "passwordTooShort": "Password must be at least {min} characters.",
+  "userNotFound": "User not found.",
+  "siteNotFound": "Site not found.",
+  "ownerOnly": "Only the site owner can do this; team members currently have view-only access.",
+  "siteNotPaired": "The site is not connected.",
+  "siteNotPairedYet": "The site is not connected to our server yet — install and pair the bridge plugin.",
+  "liveOff": "Live mode is off on this server (LIVE=1), so nothing can be read from the site.",
+  "notFound": "Not found.",
+  "siteMissing": "Site not found."
+}

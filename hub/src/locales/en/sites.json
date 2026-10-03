@@ -1,0 +1,17 @@
+{
+  "title": "My sites",
+  "subtitle": "Every site you cover, at a glance",
+  "addSite": "Add site",
+  "loadFailed": "Sites could not be loaded.",
+  "loadFailedTitle": "Sites failed to load",
+  "stat": {
+    "uptime": "Uptime",
+    "updates": "Updates",
+    "alerts": "Alerts"
+  },
+  "empty": {
+    "title": "No sites added yet",
+    "desc": "Add your first WordPress site to start monitoring, backups and alerts."
+  },
+  "openPanel": "Open panel"
+}

@@ -11,6 +11,7 @@
 // ============================================================
 import { all, newId, one, query } from './db.js'
 import * as events from './events.js'
+import { t } from './i18n.js'
 
 // The fingerprint ties the "a decision is waiting" event to the proposal that
 // raised it, so a repeated proposal touches one open event instead of adding
@@ -53,8 +54,11 @@ export async function record({ siteId, userId, tool, args = {}, kind, reason, au
         siteId,
         kind: 'proposal',
         severity: 'warning',
-        title: `تأیید شما لازم است: ${tool}`,
-        detail: { proposalId: row.id, tool, args, kind, reason: reason || null, authority: authority || null },
+        title: t('en', 'events.proposal.title', { tool }),
+        detail: {
+          proposalId: row.id, tool, args, kind, reason: reason || null, authority: authority || null,
+          i18n: { key: 'events.proposal.title', vars: { tool } },
+        },
         fingerprint: fingerprintFor(row.id),
       })
       .catch(() => {})

@@ -1,0 +1,107 @@
+{
+  "draftBanner": "Initial draft — requires legal review before final publication",
+  "draftFooter": "Initial draft — requires legal review before final publication. Before final publication, the text above will be reviewed by legal counsel and may change.",
+  "title": "DigiWP Ai Support Privacy Policy",
+  "updated": "Draft version — last updated: {date}",
+  "intro": "This page is written on one principle: to say exactly what data goes where, and why — and not to stay silent or make false claims about things that haven't been built yet. Every change to how data flows must be reflected on this page.",
+  "collected": {
+    "title": "1. Data we keep",
+    "items": [
+      {
+        "t": "Account data",
+        "d": "Your email address, name (optional), and password hash. Passwords are hashed with the scrypt algorithm, and their plain text is never stored."
+      },
+      {
+        "t": "Site connection",
+        "d": "Your WordPress site's address and its pairing credentials. The pairing secret is shown only once, at pairing time; after that it never comes back in any list or detail view inside the panel and is not sent to the browser."
+      },
+      {
+        "t": "Site data",
+        "d": "The list of plugins, themes, and the core version, update status, malware scan and integrity check results, health signals, backup records, and events — all sent from the plugin to the relay server."
+      },
+      {
+        "t": "Contact details for notifications",
+        "d": "An email address or Telegram ID — only if you register one yourself to receive alerts."
+      },
+      {
+        "t": "Event and operation history",
+        "d": "Which action was proposed, performed, failed, or rejected — for auditing and transparency."
+      },
+      {
+        "t": "Sessions and signed-in devices",
+        "d": "For each sign-in session: a summary of the device type (browser and operating system, from the User-Agent), the IP address at sign-in, sign-in time, last activity, and expiry. Only a hash of the session token is kept — never the token itself — and from the “Account security” page you can see and revoke each device."
+      },
+      {
+        "t": "Two-step sign-in — if enabled",
+        "d": "If you enable two-step sign-in (TOTP): the enrolled secret and hashes of your one-time recovery codes. The secret is shown only once during setup and is not returned in normal responses; for recovery codes, too, only hashes are stored. Both are erased when the account is deleted."
+      },
+      {
+        "t": "Browser notification subscription — if enabled",
+        "d": "If you enable browser notifications: your browser's endpoint address and the message encryption keys, tied to your account. This data is used only to deliver alerts to your own browser, is not shown in full in panel responses, and is erased when you delete your account or unsubscribe from that device."
+      }
+    ]
+  },
+  "external": {
+    "title": "2. External services — what data goes where",
+    "intro": "All of these services are contacted from the relay server, not from your browser — except where explicitly stated.",
+    "items": [
+      {
+        "t": "WordPress.com screenshots (mShots)",
+        "d": "An optional screenshot tool. Only the public address of the page you are capturing is sent to the service; no password or private data is attached."
+      },
+      {
+        "t": "WordPress.org APIs (api.wordpress.org)",
+        "d": "Used to learn the latest plugin and theme versions, to check the integrity of core files (checksums), and — during rescue operations — to fetch security keys. Plugin/theme/core slugs and versions are exchanged; your passwords or site content are not."
+      },
+      {
+        "t": "NVD vulnerability database (services.nvd.nist.gov)",
+        "d": "Public CVE data is fetched by our server, and matching against installed versions happens on our own server; your site never connects to NVD directly, and your IP is not recorded there."
+      },
+      {
+        "t": "Malware signature feeds (GitHub — signature-base, and abuse.ch)",
+        "d": "Malware rules and signatures are fetched by our server; no data from your site is sent to these feeds."
+      },
+      {
+        "t": "VirusTotal — hash only, and optional",
+        "d": "If an API key is configured, only a file's “fingerprint” (hash) is queried to check a suspicious file. Your file itself is never uploaded to VirusTotal or any public malware analysis service."
+      },
+      {
+        "t": "Email server (configured SMTP)",
+        "d": "To send password-reset emails and site-owner alerts, your email address and the message text reach the email server configured on the deployment."
+      },
+      {
+        "t": "AI model gateway — optional",
+        "d": "The assistant can reason beyond deterministic readings only when a model gateway is configured. In that case, readable site data goes to the model within a step-bounded loop, and sensitive tools are never offered to the model. Without a model gateway, the assistant says so plainly."
+      },
+      {
+        "t": "External S3-compatible backup destination — optional",
+        "d": "If you define a destination yourself, the backup file is encrypted before it leaves the server and is uploaded to the destination you chose. Without a destination, backups stay only on the site itself."
+      },
+      {
+        "t": "Browser push service (Web Push) — optional",
+        "d": "If you enable browser notifications, alerts are sent from our server to your own browser's push service (such as FCM or the Mozilla/Apple services): each message is encrypted with your device's subscription keys before sending, so the push service sees only ciphertext; the sender's identity is verified with the server's VAPID keys. Without VAPID configured on the deployment, this path is honestly reported as “not configured” and nothing is sent."
+      }
+    ]
+  },
+  "notSent": {
+    "title": "3. What does not leave",
+    "items": [
+      "After its single initial display, the site pairing secret is never shown anywhere again, and your browser never receives it.",
+      "Your site's files are not uploaded to any public malware analysis service — at most a file hash, and only if the optional VirusTotal integration is configured.",
+      "By default, backups stay on the managed site itself; nothing leaves unless you define an external destination yourself.",
+      "The panel does not cache dashboard data in the browser — a stale security status from a temporary cache is worse than an explicit “offline” error."
+    ]
+  },
+  "retention": {
+    "title": "4. Data retention and account deletion",
+    "body": "Account and site data stay on the server for as long as your account is active. Account deletion is available from the profile page: with your current password, the account is deleted immediately and irreversibly — all sessions are revoked, site connections are disabled and their credentials erased; sessions, two-step sign-in settings, browser notification subscriptions, notification contacts, and team invitations are deleted; and the account's identifying data is overwritten so your email address is freed. To be candid: there is no waiting period for undoing it, no exported data archive, and no deletion confirmation email; deletion is immediate and final. Account security and authentication settings are covered in the <link>Terms of Use</link>."
+  },
+  "security": {
+    "title": "5. Security — and its limits",
+    "body": "Communication between the panel and the server is protected by a session token, passwords are hashed, and communication between the server and your site uses HMAC signatures with an anti-replay time window. But no system is flawless: a “clean scan” does not guarantee the site's security, and “backup created” does not mean “restore guaranteed” — we deliberately keep these two claims separate."
+  },
+  "changes": {
+    "title": "6. Changes to this policy",
+    "body": "If data flows change — a new external service is added or one is removed — this page will be updated with a new date."
+  }
+}

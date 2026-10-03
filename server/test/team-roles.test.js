@@ -59,7 +59,8 @@ if (!dsn) {
   async function request(method, path, body, auth) {
     const res = await fetch(API + path, {
       method,
-      headers: { 'Content-Type': 'application/json', ...authHeaders(auth) },
+      // Persian on purpose: these tests pin the reviewed Persian wording.
+      headers: { 'Content-Type': 'application/json', 'Accept-Language': 'fa', ...authHeaders(auth) },
       body: body != null ? JSON.stringify(body) : undefined,
     })
     const data = await res.json().catch(() => ({}))

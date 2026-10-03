@@ -15,6 +15,7 @@
 import crypto from 'node:crypto'
 import { one, all, newId } from './db.js'
 import { base32Encode } from './totp.js'
+import { httpError } from './i18n.js'
 
 /** How many one-time recovery codes an activation mints. */
 export const RECOVERY_CODE_COUNT = 8
@@ -57,9 +58,7 @@ export const twoFactor = {
    */
   async setPending(userId, secret) {
     if (!userId || !secret) {
-      const e = new Error('کاربر و رمز برای راه‌اندازی لازم است.')
-      e.status = 400
-      throw e
+      throw httpError(400, 'auth.twoFactor.setupArgsRequired')
     }
     await one(
       `INSERT INTO two_factor (user_id, secret, status, created_at)
@@ -83,9 +82,7 @@ export const twoFactor = {
       [userId, Date.now()]
     )
     if (!row) {
-      const e = new Error('راه‌اندازی ورود دو مرحله‌ای در جریان نیست.')
-      e.status = 400
-      throw e
+      throw httpError(400, 'auth.twoFactor.notPendingShort')
     }
     await all('DELETE FROM two_factor_recovery WHERE user_id = $1', [userId])
     const codes = []

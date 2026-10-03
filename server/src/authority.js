@@ -25,6 +25,7 @@
 // in the plugin faster than they arrive here, and the failure that matters is
 // the one where an unclassified tool runs unattended.
 // ============================================================
+import { t } from './i18n.js'
 
 /** Tools that only observe. Safe to run at any authority level. */
 export const READ_TOOLS = Object.freeze([
@@ -230,27 +231,48 @@ export function permits(level, tool, args = null) {
   const kind = classify(tool, args)
 
   if (kind === 'read') {
-    return { allowed: true, kind, reason: null }
+    return { allowed: true, kind, reason: null, reasonKey: null }
   }
   if (kind === 'sensitive') {
-    return {
-      allowed: false,
-      kind,
-      reason: 'این اقدام حساس است و در هر سطحی به تأیید صریح شما نیاز دارد.',
-    }
+    return refusal(kind, 'authority.reasons.sensitive')
   }
   // Mutating.
   if (authority === 'auto') {
-    return { allowed: true, kind, reason: null }
+    return { allowed: true, kind, reason: null, reasonKey: null }
   }
   if (authority === 'confirm') {
-    return { allowed: false, kind, reason: 'این تغییر به تأیید شما نیاز دارد.' }
+    return refusal(kind, 'authority.reasons.needsApproval')
   }
-  return {
-    allowed: false,
-    kind,
-    reason: 'سطح اختیار روی «فقط گزارش» است، پس تغییری روی سایت انجام نمی‌دهم.',
-  }
+  return refusal(kind, 'authority.reasons.reportOnly')
+}
+
+/**
+ * A refusal carries its reason twice: `reason` in English (what gets stored,
+ * e.g. in proposals.reason, and what logs read) and `reasonKey`, so whoever
+ * shows it to a person renders it in that person's language.
+ */
+const refusal = (kind, reasonKey) => ({ allowed: false, kind, reason: t('en', reasonKey), reasonKey })
+
+// The stored reasons this module has ever produced, in every language they
+// were written in — rows from before translation hold the Persian text.
+const LEGACY_REASONS = {
+  'این اقدام حساس است و در هر سطحی به تأیید صریح شما نیاز دارد.': 'authority.reasons.sensitive',
+  'این تغییر به تأیید شما نیاز دارد.': 'authority.reasons.needsApproval',
+  'سطح اختیار روی «فقط گزارش» است، پس تغییری روی سایت انجام نمی‌دهم.': 'authority.reasons.reportOnly',
+}
+
+/**
+ * A stored refusal reason, in `locale`. Recognises the English and the
+ * pre-translation Persian wording of every reason permits() produces; any
+ * other text (a reason written by someone else) is returned unchanged.
+ */
+export function localizeReason(locale, reason) {
+  if (!reason) return reason
+  const key = LEGACY_REASONS[reason] ||
+    ['sensitive', 'needsApproval', 'reportOnly']
+      .map((k) => `authority.reasons.${k}`)
+      .find((k) => t('en', k) === reason)
+  return key ? t(locale, key) : reason
 }
 
 /** The tools the model is offered at a given level: everything it may see. */

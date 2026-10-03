@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './auth.jsx'
+import { t } from './i18n.js'
 
 export default function AdminRoute({ children }) {
   const { user, ready } = useAuth()
@@ -7,11 +8,11 @@ export default function AdminRoute({ children }) {
 
   if (!ready) {
     return (
-      <div dir="rtl" style={{
+      <div style={{
         minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: 'var(--gd-bg-app)', color: 'var(--gd-text-secondary)', fontFamily: 'var(--gd-font-sans)',
       }}>
-        <span>در حال بارگذاری…</span>
+        <span>{t('common.loading')}</span>
       </div>
     )
   }

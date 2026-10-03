@@ -94,6 +94,7 @@ import Users from 'lucide-react/dist/esm/icons/users.js'
 import Wallet from 'lucide-react/dist/esm/icons/wallet.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import Zap from 'lucide-react/dist/esm/icons/zap.js'
+import Languages from 'lucide-react/dist/esm/icons/languages.js'
 
 export const ICONS = {
   'activity': Activity,
@@ -190,5 +191,6 @@ export const ICONS = {
   'wallet': Wallet,
   'x': X,
   'zap': Zap,
+  'languages': Languages,
 }
 export const FALLBACK = Circle

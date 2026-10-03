@@ -1,5 +1,5 @@
 // ============================================================
-// Multi-Agent WordPress Support System (سیستم چند لایه پشتیبانی هوشمند وردپرس)
+// Multi-Agent WordPress Support System
 // ============================================================
 export { WordPressMultiAgentOrchestrator, orchestrator } from './orchestrator.js'
 export { SECURITY_AGENT } from './specialists/security.js'

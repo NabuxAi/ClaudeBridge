@@ -1,0 +1,21 @@
+{
+  "title": "Alerts",
+  "subtitle": "Events and automatic support actions",
+  "loadError": "Couldn't read alerts.",
+  "notReadTitle": "Couldn't read alerts",
+  "dismissError": "Couldn't ignore the alert.",
+  "reload": "Reload",
+  "tabs": {
+    "all": "All",
+    "critical": "Critical",
+    "warning": "Warning",
+    "resolved": "Resolved"
+  },
+  "ignore": "Ignore",
+  "timeline": "Response timeline",
+  "recent": "Recent events",
+  "empty": "No events recorded yet.",
+  "emptyFilter": "Nothing found in this category",
+  "closed": "Closed",
+  "open": "Open"
+}

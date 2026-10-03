@@ -261,7 +261,7 @@ if (!dsn) {
       method: 'POST', body: { email: u.email, password: u.password, code: '000000' },
     })
     assert.equal(wrong.status, 401)
-    assert.ok(wrong.body.message.includes('دو مرحله‌ای'))
+    assert.ok(wrong.body.message.includes('two-factor'), wrong.body.message)
     assert.equal(wrong.body.token, undefined)
 
     // A code one step old (the ±1 window) is accepted.

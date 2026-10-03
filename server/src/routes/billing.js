@@ -1,10 +1,14 @@
 import { Router } from 'express'
+import { i18nMiddleware } from '../i18n.js'
 import { requireAuth } from '../auth.js'
 import { billing } from '../billing.store.js'
 import { limiter, clientIp } from '../security/ratelimit.js'
 import { config } from '../config.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 
 const ip = (req) => clientIp(req, { trustProxy: config.trustProxy })
 
@@ -21,12 +25,12 @@ const NOT_BUILT = (what) => ({
  */
 router.get('/billing', requireAuth, async (req, res, next) => {
   try {
-    const subscription = await billing.forUser(req.user.sub)
+    const subscription = await billing.forUser(req.user.sub, req.locale)
     res.json({
       subscription,
       provenance: { live: ['subscriptions'], unavailable: null },
-      payment: NOT_BUILT('درگاه پرداخت هنوز متصل نیست و کارتی ذخیره نمی‌شود.'),
-      invoices: { ...NOT_BUILT('فاکتوری صادر نمی‌شود چون سیستم پرداخت هنوز وجود ندارد.'), list: [] },
+      payment: NOT_BUILT(req.t('billing.noGateway')),
+      invoices: { ...NOT_BUILT(req.t('billing.noInvoices')), list: [] },
     })
   } catch (e) { next(e) }
 })
@@ -34,7 +38,7 @@ router.get('/billing', requireAuth, async (req, res, next) => {
 /** All available plans. Public within an authenticated session. */
 router.get('/billing/plans', requireAuth, async (req, res, next) => {
   try {
-    res.json(await billing.plans())
+    res.json(await billing.plans(req.locale))
   } catch (e) { next(e) }
 })
 
@@ -49,19 +53,19 @@ router.get('/billing/trial', requireAuth, async (req, res, next) => {
  * Request pilot access to a plan.
  *
  * No payment is taken. The server records the request, starts/extends a trial,
- * and returns the updated subscription. This replaces the fake "پرداخت امن"
+ * and returns the updated subscription. This replaces the fake "secure payment"
  * flow until real gateways are wired in.
  */
 const pilotLimit = limiter('request-pilot', {
   limit: 10, windowMs: 60 * 60 * 1000, keyFn: ip,
-  message: 'تعداد درخواست‌های دسترسی آزمایشی از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+  message: 'billing.limit.pilot',
 })
 
 router.post('/billing/request-pilot', requireAuth, pilotLimit, async (req, res, next) => {
   try {
     const planId = String(req.body?.plan || '').trim()
-    if (!planId) return res.status(400).json({ message: 'شناسهٔ پلن لازم است.' })
-    const subscription = await billing.requestPilot(req.user.sub, planId)
+    if (!planId) return res.status(400).json({ message: req.t('billing.planIdRequired') })
+    const subscription = await billing.requestPilot(req.user.sub, planId, req.locale)
     res.json({ ok: true, subscription })
   } catch (e) { next(e) }
 })
@@ -76,21 +80,21 @@ router.post('/billing/request-pilot', requireAuth, pilotLimit, async (req, res, 
  */
 const webhookLimit = limiter('billing-webhook', {
   limit: 60, windowMs: 60 * 1000, keyFn: ip,
-  message: 'تعداد webhookهای دریافتی از این آدرس بیش از حد است.',
+  message: 'billing.limit.webhook',
 })
 
 router.post('/billing/webhook', requireAuth, webhookLimit, async (req, res, next) => {
   try {
     const userId = req.body?.userId || req.user?.sub
-    if (!userId) return res.status(400).json({ message: 'شناسهٔ کاربر لازم است.' })
+    if (!userId) return res.status(400).json({ message: req.t('billing.userIdRequired') })
 
     const { plan, trialDays, cancelAtPeriodEnd } = req.body || {}
-    const persisted = await billing.applyChange(userId, { plan, trialDays, cancelAtPeriodEnd })
+    const persisted = await billing.applyChange(userId, { plan, trialDays, cancelAtPeriodEnd }, req.locale)
 
     res.json({
       ok: true,
       payment: 'NOT_BUILT',
-      message: 'پرداخت هنوز فعال نیست، اما تغییر پلن/دورهٔ آزمایشی ثبت شد.',
+      message: req.t('billing.webhookRecorded'),
       persisted,
     })
   } catch (e) { next(e) }

@@ -109,7 +109,14 @@ test('a wrong password is refused, and says nothing about the account', async ()
   assert.equal(res.status, 401)
   const body = await res.json()
   // The same sentence for both cases, deliberately.
-  assert.equal(body.message, 'ایمیل یا رمز عبور نادرست است.')
+  assert.equal(body.message, 'Incorrect email or password.')
+})
+
+test('the generic login refusal is rendered in Persian for Accept-Language: fa', async () => {
+  _reset()
+  const res = await post('/auth/login', { email: 'someone@example.com', password: 'nope' }, { 'Accept-Language': 'fa' })
+  assert.equal(res.status, 401)
+  assert.equal((await res.json()).message, 'ایمیل یا رمز عبور نادرست است.')
 })
 
 test('a nonexistent account gives the identical response to a wrong password', async () => {

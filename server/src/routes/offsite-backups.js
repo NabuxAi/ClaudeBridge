@@ -1,12 +1,16 @@
 import { Router } from 'express'
+import { i18nMiddleware } from '../i18n.js'
 import { config } from '../config.js'
 import { requireAuth } from '../auth.js'
 import { sites } from '../store.js'
 import { offsiteBackups } from '../offsite-backups.store.js'
-import { runOffsiteBackup } from '../offsite-backups.runner.js'
+import { runOffsiteBackup, localizeJobError } from '../offsite-backups.runner.js'
 import { limiter, clientIp } from '../security/ratelimit.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 
 const ip = (req) => clientIp(req, { trustProxy: config.trustProxy })
 
@@ -22,7 +26,7 @@ async function loadSite(req, res) {
   }
   const row = await sites.rawWithRole(req.params.id, req.user.sub)
   if (!row || !row.member_role) {
-    res.status(404).json({ message: 'سایت یافت نشد.' })
+    res.status(404).json({ message: req.t('common.siteNotFound') })
     return null
   }
   const { member_role: role, ...raw } = row
@@ -35,7 +39,7 @@ async function loadOwnerSite(req, res) {
   if (!site) return null
   if (req.siteRole !== 'owner') {
     res.status(403).json({
-      message: 'این اقدام فقط برای مالک سایت مجاز است؛ اعضای تیم در حال حاضر فقط دسترسی مشاهده دارند.',
+      message: req.t('common.ownerOnly'),
     })
     return null
   }
@@ -44,12 +48,12 @@ async function loadOwnerSite(req, res) {
 
 const targetLimit = limiter('offsite-target', {
   limit: 30, windowMs: 60 * 60 * 1000, keyFn: ip,
-  message: 'تعداد تغییرات هدف بکاپ خارجی از این آدرس بیش از حد است.',
+  message: 'offsite.limit.target',
 })
 
 const jobLimit = limiter('offsite-job', {
   limit: 30, windowMs: 60 * 60 * 1000, keyFn: ip,
-  message: 'تعداد شروع بکاپ خارجی از این آدرس بیش از حد است.',
+  message: 'offsite.limit.job',
 })
 
 // ---- Targets ---------------------------------------------------
@@ -76,7 +80,7 @@ router.get('/sites/:id/offsite-backups/targets/:targetId', async (req, res, next
     const site = await loadSite(req, res)
     if (!site) return
     const target = await offsiteBackups.getTarget(site.id, req.params.targetId)
-    if (!target) return res.status(404).json({ message: 'هدف پشتیبان یافت نشد.' })
+    if (!target) return res.status(404).json({ message: req.t('offsite.targetNotFound') })
     res.json(target)
   } catch (e) { next(e) }
 })
@@ -106,7 +110,7 @@ router.get('/sites/:id/offsite-backups/jobs', async (req, res, next) => {
     const site = await loadSite(req, res)
     if (!site) return
     const jobs = await offsiteBackups.listJobs(site.id, { targetId: req.query.targetId })
-    res.json({ jobs })
+    res.json({ jobs: jobs.map((j) => (j?.error ? { ...j, error: localizeJobError(req.locale, j.error) } : j)) })
   } catch (e) { next(e) }
 })
 
@@ -116,19 +120,19 @@ router.post('/sites/:id/offsite-backups/jobs', jobLimit, async (req, res, next) 
     if (!site) return
 
     const targetId = req.body?.targetId
-    if (!targetId) return res.status(400).json({ message: 'targetId لازم است.' })
+    if (!targetId) return res.status(400).json({ message: req.t('offsite.targetIdRequired') })
 
     const target = await offsiteBackups.getTarget(site.id, targetId)
-    if (!target) return res.status(404).json({ message: 'هدف پشتیبان یافت نشد.' })
+    if (!target) return res.status(404).json({ message: req.t('offsite.targetNotFound') })
 
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({
-        message: 'سایت هنوز به سرور ما وصل نشده — افزونهٔ واسط را نصب و جفت کنید.',
+        message: req.t('common.siteNotPairedYet'),
       })
     }
     if (!config.live) {
       return res.status(400).json({
-        message: 'حالت زنده روی این سرور خاموش است (LIVE=1)، پس نمی‌توان فایل بکاپ را از سایت خواند.',
+        message: req.t('offsite.liveOff'),
       })
     }
 

@@ -1,0 +1,84 @@
+{
+  "title": "Team members",
+  "subtitle": "People and their access to your sites",
+  "roles": {
+    "admin": "Admin — reports and status (making changes is not yet enabled for members)",
+    "viewer": "View only — reports and status"
+  },
+  "effective": {
+    "owner": "Full management",
+    "report": "Read only",
+    "current": "Current access: {label}"
+  },
+  "mailFail": {
+    "no_email_url": "the email service is not configured on the server",
+    "no_recipient": "the recipient address is invalid",
+    "provider_error": "the email service did not accept the message",
+    "unknown": "unknown reason"
+  },
+  "errors": {
+    "loadMembers": "Members could not be loaded.",
+    "notEnabled": "Team member management is not enabled on the server yet.",
+    "loadSites": "Sites could not be loaded.",
+    "loadSitesTitle": "Sites failed to load",
+    "accept": "Accepting the invitation failed.",
+    "acceptNotEnabled": "Invitation acceptance is not enabled on the server yet.",
+    "invite": "Sending the invitation failed.",
+    "inviteNotEnabled": "Member invitations are not enabled on the server yet.",
+    "revoke": "Revoking the invitation failed.",
+    "role": "Changing the role failed.",
+    "remove": "Removing the member failed.",
+    "title": "Error"
+  },
+  "accept": {
+    "incompleteTitle": "The invitation link is incomplete",
+    "incompleteDesc": "This link is missing the site ID and cannot be accepted from the panel. Ask the site owner to send the invitation again.",
+    "okTitle": "Invitation accepted",
+    "okDesc": "Your membership of the site has been recorded.",
+    "failTitle": "The invitation could not be accepted"
+  },
+  "inviteMailFailed": "The invitation was created, but the email was not sent — {reason}. The invitation remains in the “pending” list.",
+  "toast": {
+    "invited": "Invitation sent.",
+    "revoked": "Invitation revoked.",
+    "roleUpdated": "Role updated.",
+    "removed": "Member removed.",
+    "linkCopied": "Link copied.",
+    "copyFailed": "Automatic copy failed; select the link manually."
+  },
+  "confirmRemove": "This member will be removed from the site. Continue?",
+  "noSites": {
+    "title": "You haven't added any sites yet",
+    "desc": "Add a site first to manage its members."
+  },
+  "selectSite": "Select site",
+  "loadingMembers": "Loading members…",
+  "cols": {
+    "member": "Member",
+    "role": "Role",
+    "site": "Site",
+    "status": "Status"
+  },
+  "status": {
+    "owner": "Owner",
+    "member": "Member"
+  },
+  "removeMember": "Remove member",
+  "noMembers": "No members yet.",
+  "inviteLink": {
+    "title": "Sign-up link for “{email}”",
+    "desc": "If this person has no account, they sign up with this link and become a member of the site right away. The link is valid for 7 days and can be used only once.",
+    "copy": "Copy link"
+  },
+  "pending": {
+    "title": "Pending invitations",
+    "expires": "Expires {date}",
+    "revoke": "Revoke"
+  },
+  "invite": {
+    "title": "Invite a new member",
+    "email": "Email",
+    "role": "Role",
+    "submit": "Send invitation"
+  }
+}

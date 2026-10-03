@@ -1,12 +1,22 @@
 // Auth context — session against YOUR server (never a managed site).
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { auth as authApi, setToken, getToken } from './api.js'
+import { getLang, hasStoredLang } from './i18n.js'
+import { useI18n } from './I18nProvider.jsx'
 
 const AuthCtx = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [ready, setReady] = useState(false)
+  const { setLang } = useI18n()
+
+  // A browser that never picked a language follows the account's saved one
+  // (a returning Persian-speaking user on a new device); an explicit choice
+  // on this browser always wins.
+  const adoptLang = useCallback((u) => {
+    if (u?.lang && !hasStoredLang() && u.lang !== getLang()) setLang(u.lang)
+  }, [setLang])
 
   useEffect(() => {
     let alive = true
@@ -14,7 +24,7 @@ export function AuthProvider({ children }) {
       if (getToken()) {
         try {
           const u = await authApi.me()
-          if (alive) setUser(u)
+          if (alive) { setUser(u); adoptLang(u) }
         } catch {
           setToken('')
         }
@@ -22,20 +32,22 @@ export function AuthProvider({ children }) {
       if (alive) setReady(true)
     })()
     return () => { alive = false }
-  }, [])
+  }, [adoptLang])
 
   const login = useCallback(async (creds) => {
     const data = await authApi.login(creds)
-    // چالش دومرحله‌ای: رمز درست بوده اما سرور هنوز نشستی صادر نکرده است.
-    // پاسخ بدون توکن، دست‌نخورده به فرم ورود برمی‌گردد تا مرحلهٔ کد را نشان
-    // دهد و همان فرم با `code` دوباره بفرستد. setToken با undefined خوانده
-    // نمی‌شود — پاک‌کردن نشستِ موجود روی چالش، اشتباه است.
+    // Two-factor challenge: the password was right but the server has not
+    // issued a session yet. The token-less answer goes back to the login form
+    // untouched so it can show the code step and resubmit with `code`.
+    // setToken is not called with undefined — clearing an existing session
+    // on a challenge would be wrong.
     if (data?.totp_required) return data
     const { token, user: u } = data
     setToken(token)
     setUser(u)
+    adoptLang(u)
     return u
-  }, [])
+  }, [adoptLang])
 
   const register = useCallback(async (body) => {
     const { token, user: u, invite } = await authApi.register(body)

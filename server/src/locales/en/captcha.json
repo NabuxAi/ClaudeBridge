@@ -1,0 +1,7 @@
+{
+  "missing": "Enter the answer to the security question.",
+  "invalid": "The security question is invalid. Reload the page.",
+  "expired": "Time to answer the security question ran out. Get a new question.",
+  "reused": "This question has already been used. Get a new question.",
+  "wrong": "The answer to the security question is incorrect."
+}

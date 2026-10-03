@@ -1,10 +1,11 @@
 import Icon from '../lib/icons.jsx'
+import { t } from '../lib/i18n.js'
 
-// The product's signature 3-tier autonomy model.
+// The product's signature 3-tier autonomy model. Labels are i18n keys.
 const AUTHORITY = {
-  report: { icon: 'eye', label: 'فقط گزارش' },
-  confirm: { icon: 'user-check', label: 'با تأیید' },
-  auto: { icon: 'zap', label: 'خودکار' },
+  report: { icon: 'eye', label: 'components.authority.report' },
+  confirm: { icon: 'user-check', label: 'components.authority.confirm' },
+  auto: { icon: 'zap', label: 'components.authority.auto' },
 }
 
 export function AuthorityBadge({ level, size = 'md', showIcon = true, label, className = '' }) {
@@ -15,14 +16,14 @@ export function AuthorityBadge({ level, size = 'md', showIcon = true, label, cla
   if (!cfg) {
     return (
       <span className={['gd-authority', 'gd-authority--unknown', `gd-authority--${size}`, className].filter(Boolean).join(' ')}>
-        {label != null ? label : 'نامشخص'}
+        {label != null ? label : t('common.unknown')}
       </span>
     )
   }
   return (
     <span className={['gd-authority', `gd-authority--${level}`, `gd-authority--${size}`, className].filter(Boolean).join(' ')}>
       {showIcon && <Icon name={cfg.icon} size={size === 'sm' ? 12 : 14} />}
-      {label != null ? label : cfg.label}
+      {label != null ? label : t(cfg.label)}
     </span>
   )
 }

@@ -6,7 +6,7 @@
 // bad or partial input, not about the happy path.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalise, describe as describeHosting, egressFor, needsCacheBust, PROVIDERS, REGIONS } from '../src/hosting.js'
+import { normalise, describe as describeHosting, egressFor, needsCacheBust, hostingOptions, PROVIDERS, REGIONS } from '../src/hosting.js'
 
 test('a complete profile survives normalisation unchanged', () => {
   const p = normalise({ region: 'ir', provider: 'parspack', egress: 'ir', callbackUrl: 'https://ir.example.com/v1' })
@@ -84,10 +84,25 @@ test('"no notes on this host" is worded differently from "no limits"', () => {
   // them is a claim we cannot make.
   const known = describeHosting({ provider: 'hetzner' })
   assert.equal(known.traits.length, 0)
-  assert.match(known.traitsNote, /ثبت نکرده‌ایم/)
+  assert.match(known.traitsNote, /not that there definitely are none/)
+  assert.match(describeHosting({ provider: 'hetzner' }, 'fa').traitsNote, /ثبت نکرده‌ایم/)
 
   const other = describeHosting({ provider: 'other', providerName: 'X' })
-  assert.match(other.traitsNote, /در فهرست ما نیست/)
+  assert.match(other.traitsNote, /not on our list/)
+  assert.match(describeHosting({ provider: 'other', providerName: 'X' }, 'fa').traitsNote, /در فهرست ما نیست/)
+})
+
+test('the form options render in the viewer\'s language, ids unchanged', () => {
+  const en = hostingOptions()
+  const fa = hostingOptions('fa')
+  assert.deepEqual(en.providers.map((p) => p.id), PROVIDERS.map((p) => p.id))
+  assert.equal(en.providers.find((p) => p.id === 'parspack').label, 'ParsPack')
+  assert.equal(fa.providers.find((p) => p.id === 'parspack').label, 'پارس‌پک')
+  assert.equal(en.providers.find((p) => p.id === 'hetzner').label, 'Hetzner')
+  assert.equal(en.regions.find((r) => r.id === 'unknown').label, "I don't know")
+  assert.ok(en.traits['no-exec'].effect.includes('mysqldump'))
+  const d = describeHosting({ provider: 'siteground' }, 'fa')
+  assert.equal(d.traits.find((x) => x.id === 'no-exec').label, 'exec() بسته است')
 })
 
 test('"other" is always offered, so the form is never a dead end', () => {

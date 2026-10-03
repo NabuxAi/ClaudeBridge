@@ -1,0 +1,32 @@
+{
+  "provenance": {
+    "overview": {
+      "uptime": "Uptime needs continuous monitoring — this view checks only when the page is opened",
+      "responseMs": "One sample from our server — not an average, and not what visitors experience",
+      "hostSpace": "Host disk space cannot be measured from outside"
+    },
+    "security": {
+      "cveDb": "list_plugins + our own CVE database",
+      "score": "Combined score — not calculated until all of its inputs are real",
+      "blockedLogins": "Needs login events recorded on the site — not built yet"
+    },
+    "incidents": {
+      "liveLabel": "Recorded on our server",
+      "eventLog": "Event log",
+      "downtime": "Downtime between two scans is not recorded here — this log is not continuous monitoring",
+      "logins": "Failed logins need login events recorded on the site — not built yet"
+    }
+  },
+  "type": {
+    "core": "Core",
+    "plugin": "Plugin",
+    "theme": "Theme"
+  },
+  "risk": {
+    "low": "Low risk",
+    "major": "New major version",
+    "minor": "Minor version",
+    "patch": "Small patch"
+  },
+  "doneNote": "WordPress keeps no lasting history of completed updates; this list is built from the site's own report."
+}

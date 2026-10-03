@@ -15,6 +15,7 @@
 // limits, and no customer's IP is logged against a malware feed.
 // ============================================================
 import { config } from '../config.js'
+import { t, DEFAULT_LOCALE } from '../i18n.js'
 
 const MB = 'https://mb-api.abuse.ch/api/v1/'
 const VT = 'https://www.virustotal.com/api/v3/files/'
@@ -112,7 +113,7 @@ export async function virusTotal(sha256) {
  * clean result — "we could not ask" and "we asked and it is clean" are
  * different answers and the caller has to be able to tell them apart.
  */
-export async function lookup(sha256) {
+export async function lookup(sha256, { locale = DEFAULT_LOCALE } = {}) {
   if (!/^[a-f0-9]{64}$/i.test(sha256)) {
     return { error: 'a sha256 hash is required' }
   }
@@ -124,9 +125,9 @@ export async function lookup(sha256) {
     malwarebazaar: mb,
     virustotal: vt,
     verdict: known
-      ? 'این فایل در پایگاه‌های بدافزار شناخته‌شده است.'
+      ? t(locale, 'intel.threat.known')
       : mb.available || vt.available
-        ? 'در پایگاه‌های بیرونی شناخته‌شده نیست — که به معنی سالم بودن نیست، فقط یعنی قبلاً گزارش نشده.'
-        : 'هیچ منبع بیرونی پیکربندی نشده؛ فقط بانک خودمان بررسی شد.',
+        ? t(locale, 'intel.threat.notKnown')
+        : t(locale, 'intel.threat.noSources'),
   }
 }

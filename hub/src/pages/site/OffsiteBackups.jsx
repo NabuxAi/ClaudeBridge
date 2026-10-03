@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import { Button, Input, IconButton, Badge, MetricCard, NotMeasured } from '../../components/index.js'
 import { site as siteApi } from '../../lib/api.js'
+import { t, num, dateTime } from '../../lib/i18n.js'
 
 export default function OffsiteBackups() {
   const { siteId, site } = useOutletContext()
@@ -62,7 +63,7 @@ export default function OffsiteBackups() {
         if (hasActiveJob(list)) poll()
       }),
     ])
-      .catch((e) => alive && setError(e?.message || 'بارگذاری انجام نشد.'))
+      .catch((e) => alive && setError(e?.message || t('offsiteBackups.errors.load')))
       // The finally belongs here: in the reject path the .then above is
       // skipped, and without this the page stayed on the skeleton forever
       // with the error message rendered behind the early return.
@@ -71,7 +72,7 @@ export default function OffsiteBackups() {
   }, [api, poll, attempt])
 
   // Failed first load with nothing read: an explicit error state with a
-  // retry, not the «هنوز هدفی افزوده نشده» empty state.
+  // retry, not the "no targets added yet" empty state.
   function retryLoad() {
     setError('')
     setLoading(true)
@@ -82,16 +83,16 @@ export default function OffsiteBackups() {
     return { endpoint: '', bucket: '', region: '', accessKeyId: '', secretAccessKey: '', pathPrefix: '', retentionDays: '30' }
   }
 
-  function startEdit(t) {
-    setEditingId(t.id)
+  function startEdit(target) {
+    setEditingId(target.id)
     setForm({
-      endpoint: t.endpoint || '',
-      bucket: t.bucket || '',
-      region: t.region || '',
-      accessKeyId: t.accessKeyId || '',
+      endpoint: target.endpoint || '',
+      bucket: target.bucket || '',
+      region: target.region || '',
+      accessKeyId: target.accessKeyId || '',
       secretAccessKey: '',
-      pathPrefix: t.pathPrefix || '',
-      retentionDays: String(t.retentionDays || 30),
+      pathPrefix: target.pathPrefix || '',
+      retentionDays: String(target.retentionDays || 30),
     })
     setShowForm(true)
   }
@@ -114,22 +115,22 @@ export default function OffsiteBackups() {
       setEditingId(null)
       setForm(emptyForm())
       await loadTargets()
-    } catch (err) { setError(err?.message || 'ذخیره نشد.') } finally { setBusy('') }
+    } catch (err) { setError(err?.message || t('offsiteBackups.errors.save')) } finally { setBusy('') }
   }
 
   async function removeTarget(id) {
-    if (!window.confirm('این هدف و تاریخچهٔ بکاپ‌هایش حذف می‌شود. ادامه می‌دهید؟')) return
+    if (!window.confirm(t('offsiteBackups.confirmDelete'))) return
     setBusy(`del-${id}`); setError('')
     try {
       await api.deleteOffsiteTarget(id)
       await loadTargets()
       await loadJobs()
-    } catch (err) { setError(err?.message || 'حذف نشد.') } finally { setBusy('') }
+    } catch (err) { setError(err?.message || t('offsiteBackups.errors.delete')) } finally { setBusy('') }
   }
 
   async function runBackup(targetId) {
     if (site?.paired === false) {
-      setError('سایت هنوز به سرور ما وصل نشده — افزونهٔ واسط را نصب و جفت کنید.')
+      setError(t('offsiteBackups.notPaired'))
       return
     }
     setBusy(`run-${targetId}`); setError('')
@@ -137,16 +138,16 @@ export default function OffsiteBackups() {
       await api.runOffsiteBackup(targetId)
       await loadJobs()
       poll()
-    } catch (err) { setError(err?.message || 'شروع نشد.') } finally { setBusy('') }
+    } catch (err) { setError(err?.message || t('offsiteBackups.errors.start')) } finally { setBusy('') }
   }
 
   const head = (
     <PageHead
-      title="بکاپ خارجی"
-      subtitle="ارسال رمزنگاری‌شدهٔ نسخه‌های پشتیبان به سرویس S3 سازگار"
+      title={t('offsiteBackups.head.title')}
+      subtitle={t('offsiteBackups.head.subtitle')}
       action={(
         <Button variant="primary" size="sm" leftIcon="cloud" onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyForm()) }}>
-          افزودن هدف
+          {t('offsiteBackups.head.add')}
         </Button>
       )}
     />
@@ -158,10 +159,10 @@ export default function OffsiteBackups() {
     return (
       <>
         {head}
-        <NotMeasured title="بکاپ خارجی خوانده نشد" reason={error} icon="alert-triangle" />
+        <NotMeasured title={t('offsiteBackups.loadFailed')} reason={error} icon="alert-triangle" />
         <div style={{ textAlign: 'center', marginTop: 14 }}>
           <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={retryLoad}>
-            تلاش دوباره
+            {t('common.retry')}
           </Button>
         </div>
       </>
@@ -169,10 +170,10 @@ export default function OffsiteBackups() {
   }
 
   // paired is a real boolean once the shell's site list lands; site === null
-  // only means it has not arrived yet. Treating null as «جفت‌نشده» showed a
-  // paired site a false «سایت هنوز به سرور ما وصل نشده» during that window.
+  // only means it has not arrived yet. Treating null as "unpaired" showed a
+  // paired site a false "not connected yet" notice during that window.
   const unavailable = site?.paired === false
-    ? 'سایت هنوز به سرور ما وصل نشده — افزونهٔ واسط را نصب و جفت کنید.'
+    ? t('offsiteBackups.notPaired')
     : null
 
   const formCard = showForm && (
@@ -180,19 +181,19 @@ export default function OffsiteBackups() {
       onSubmit={saveTarget}
       style={{ background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: 18, marginBottom: 22 }}
     >
-      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>{editingId ? 'ویرایش هدف' : 'هدف بکاپ خارجی جدید'}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>{editingId ? t('offsiteBackups.form.editTitle') : t('offsiteBackups.form.newTitle')}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-        <Input label="نشانی S3" required value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} hint="مثلاً https://s3.example.com" />
-        <Input label="نام باکت" required value={form.bucket} onChange={(e) => setForm({ ...form, bucket: e.target.value })} />
-        <Input label="Region" value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} hint="مثلاً us-east-1" />
-        <Input label="Access Key ID" required value={form.accessKeyId} onChange={(e) => setForm({ ...form, accessKeyId: e.target.value })} />
-        <Input label="Secret Access Key" type="password" required={!editingId} value={form.secretAccessKey} onChange={(e) => setForm({ ...form, secretAccessKey: e.target.value })} hint={editingId ? 'خالی بگذارید تا تغییر نکند' : ''} />
-        <Input label="پیشوند مسیر (path prefix)" value={form.pathPrefix} onChange={(e) => setForm({ ...form, pathPrefix: e.target.value })} hint="اختیاری" />
-        <Input label="دوره نگهداری (روز)" type="number" min={1} required value={form.retentionDays} onChange={(e) => setForm({ ...form, retentionDays: e.target.value })} />
+        <Input label={t('offsiteBackups.form.endpoint')} required dir="ltr" value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} hint={t('offsiteBackups.form.endpointHint')} />
+        <Input label={t('offsiteBackups.form.bucket')} required value={form.bucket} onChange={(e) => setForm({ ...form, bucket: e.target.value })} />
+        <Input label={t('offsiteBackups.form.region')} value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} hint={t('offsiteBackups.form.regionHint')} />
+        <Input label={t('offsiteBackups.form.accessKey')} required value={form.accessKeyId} onChange={(e) => setForm({ ...form, accessKeyId: e.target.value })} />
+        <Input label={t('offsiteBackups.form.secretKey')} type="password" required={!editingId} value={form.secretAccessKey} onChange={(e) => setForm({ ...form, secretAccessKey: e.target.value })} hint={editingId ? t('offsiteBackups.form.secretHint') : ''} />
+        <Input label={t('offsiteBackups.form.pathPrefix')} value={form.pathPrefix} onChange={(e) => setForm({ ...form, pathPrefix: e.target.value })} hint={t('offsiteBackups.form.optional')} />
+        <Input label={t('offsiteBackups.form.retention')} type="number" min={1} required value={form.retentionDays} onChange={(e) => setForm({ ...form, retentionDays: e.target.value })} />
       </div>
       <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-        <Button variant="primary" size="sm" loading={busy === 'save'} type="submit">{editingId ? 'به‌روزرسانی' : 'ذخیره'}</Button>
-        <Button variant="ghost" size="sm" type="button" onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm()) }}>انصراف</Button>
+        <Button variant="primary" size="sm" loading={busy === 'save'} type="submit">{editingId ? t('offsiteBackups.form.update') : t('common.save')}</Button>
+        <Button variant="ghost" size="sm" type="button" onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm()) }}>{t('common.cancel')}</Button>
       </div>
     </form>
   )
@@ -202,72 +203,72 @@ export default function OffsiteBackups() {
       {head}
 
       {unavailable && (
-        <NotMeasured title="بکاپ خارجی" reason={unavailable} />
+        <NotMeasured title={t('offsiteBackups.head.title')} reason={unavailable} />
       )}
 
       {formCard}
 
       {/* Targets summary */}
       <div className="pbk-metrics">
-        <MetricCard icon="cloud" iconTone="accent" label="اهداف فعال" value={String(targets?.length || 0)} hint="S3-compatible" />
-        <MetricCard icon="check-circle-2" iconTone="success" label="آخرین بکاپ موفق" value={lastSuccess(jobs)} hint="براساس تاریخچه" />
-        <MetricCard icon="database" iconTone="primary" label="حجم آخرین بکاپ" value={lastSuccessSize(jobs)} />
-        <MetricCard icon="shield-check" iconTone="neutral" label="رمزنگاری" value="AES-256-GCM" hint="در حالت استراحت" />
+        <MetricCard icon="cloud" iconTone="accent" label={t('offsiteBackups.metrics.targets')} value={num(targets?.length || 0)} hint={t('offsiteBackups.metrics.targetsHint')} />
+        <MetricCard icon="check-circle-2" iconTone="success" label={t('offsiteBackups.metrics.lastSuccess')} value={lastSuccess(jobs)} hint={t('offsiteBackups.metrics.lastSuccessHint')} />
+        <MetricCard icon="database" iconTone="primary" label={t('offsiteBackups.metrics.lastSize')} value={lastSuccessSize(jobs)} />
+        <MetricCard icon="shield-check" iconTone="neutral" label={t('offsiteBackups.metrics.encryption')} value="AES-256-GCM" hint={t('offsiteBackups.metrics.encryptionHint')} />
       </div>
 
       {/* Targets table */}
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>اهداف ذخیره‌سازی</div>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>{t('offsiteBackups.targets.title')}</div>
       <div className="pbk-panel" style={{ marginBottom: 24 }}>
         <div className="pbk-trow pbk-trow--head pbk-cols-target">
-          <span>نشانی / باکت</span>
-          <span>Region</span>
-          <span>مسیر</span>
-          <span>نگهداری</span>
-          <span>وضعیت</span>
+          <span>{t('offsiteBackups.targets.colEndpoint')}</span>
+          <span>{t('offsiteBackups.targets.colRegion')}</span>
+          <span>{t('offsiteBackups.targets.colPath')}</span>
+          <span>{t('offsiteBackups.targets.colRetention')}</span>
+          <span>{t('offsiteBackups.targets.colStatus')}</span>
           <span />
         </div>
         {targets?.length === 0 && (
           <div style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--gd-text-muted)', fontSize: 13 }}>
-            هنوز هدفی افزوده نشده.
+            {t('offsiteBackups.targets.empty')}
           </div>
         )}
-        {targets?.map((t) => (
+        {targets?.map((target) => (
           <div
-            key={t.id}
+            key={target.id}
             className="pbk-trow pbk-trow--body pbk-cols-target"
           >
             <span style={{ minWidth: 0 }}>
-              <div className="dwp-mono" style={{ fontWeight: 600 }}>{t.endpoint}</div>
-              <div style={{ fontSize: 12, color: 'var(--gd-text-muted)' }}>{t.bucket}</div>
+              <div className="dwp-mono" style={{ fontWeight: 600 }}>{target.endpoint}</div>
+              <div style={{ fontSize: 12, color: 'var(--gd-text-muted)' }}>{target.bucket}</div>
             </span>
-            <span style={{ color: 'var(--gd-text-secondary)' }}>{t.region || '—'}</span>
-            <span className="dwp-mono" style={{ color: 'var(--gd-text-secondary)' }}>{t.pathPrefix || '/'}</span>
-            <span>{t.retentionDays} روز</span>
-            <span><Badge variant="neutral" appearance="soft">پیکربندی‌شده</Badge></span>
+            <span style={{ color: 'var(--gd-text-secondary)' }}>{target.region || '—'}</span>
+            <span className="dwp-mono" style={{ color: 'var(--gd-text-secondary)' }}>{target.pathPrefix || '/'}</span>
+            <span>{t('offsiteBackups.targets.days', { count: Number(target.retentionDays) || 0 })}</span>
+            <span><Badge variant="neutral" appearance="soft">{t('offsiteBackups.targets.configured')}</Badge></span>
             <span className="pbk-actions pbk-actions--start">
-              <Button variant="secondary" size="sm" leftIcon="play" disabled={busy === `run-${t.id}` || site?.paired === false} onClick={() => runBackup(t.id)}>
-                {busy === `run-${t.id}` ? 'در حال شروع…' : 'بکاپ بگیر'}
+              <Button variant="secondary" size="sm" leftIcon="play" disabled={busy === `run-${target.id}` || site?.paired === false} onClick={() => runBackup(target.id)}>
+                {busy === `run-${target.id}` ? t('offsiteBackups.targets.starting') : t('offsiteBackups.targets.run')}
               </Button>
-              <Button variant="ghost" size="sm" leftIcon="settings" onClick={() => startEdit(t)}>ویرایش</Button>
-              <IconButton icon="trash-2" label="حذف" size="sm" disabled={busy === `del-${t.id}`} onClick={() => removeTarget(t.id)} />
+              <Button variant="ghost" size="sm" leftIcon="settings" onClick={() => startEdit(target)}>{t('common.edit')}</Button>
+              <IconButton icon="trash-2" label={t('common.delete')} size="sm" disabled={busy === `del-${target.id}`} onClick={() => removeTarget(target.id)} />
             </span>
           </div>
         ))}
       </div>
 
       {/* Jobs table */}
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>تاریخچهٔ ارسال</div>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>{t('offsiteBackups.jobs.title')}</div>
       <div className="pbk-panel">
         <div className="pbk-trow pbk-trow--head pbk-cols-jobs">
-          <span>زمان</span>
-          <span>هدف</span>
-          <span>حجم</span>
-          <span>وضعیت</span>
-          <span>پیام</span>
+          <span>{t('offsiteBackups.jobs.colTime')}</span>
+          <span>{t('offsiteBackups.jobs.colTarget')}</span>
+          <span>{t('offsiteBackups.jobs.colSize')}</span>
+          <span>{t('offsiteBackups.jobs.colStatus')}</span>
+          <span>{t('offsiteBackups.jobs.colMessage')}</span>
         </div>
         {jobs?.length === 0 && (
           <div style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--gd-text-muted)', fontSize: 13 }}>
-            هنوز هیچ بکاپ خارجی ارسال نشده.
+            {t('offsiteBackups.jobs.empty')}
           </div>
         )}
         {jobs?.map((j) => (
@@ -275,7 +276,7 @@ export default function OffsiteBackups() {
             key={j.id}
             className="pbk-trow pbk-trow--body pbk-cols-jobs"
           >
-            <span style={{ color: 'var(--gd-text-secondary)' }}>{j.createdAt ? new Date(j.createdAt).toLocaleString('fa-IR') : '—'}</span>
+            <span style={{ color: 'var(--gd-text-secondary)' }}>{j.createdAt ? dateTime(j.createdAt) : '—'}</span>
             <span className="dwp-mono" style={{ color: 'var(--gd-text-muted)' }}>{targetLabel(targets, j.targetId)}</span>
             <span className="dwp-mono">{j.sizeBytes != null ? humanBytes(j.sizeBytes) : '—'}</span>
             <span><Badge variant={jobTone(j.status)} appearance="soft">{jobLabel(j.status)}</Badge></span>
@@ -295,14 +296,14 @@ export default function OffsiteBackups() {
 
 function lastSuccess(jobs) {
   const j = (jobs || []).find((x) => x.status === 'done')
-  return j && j.completedAt ? new Date(j.completedAt).toLocaleString('fa-IR') : '—'
+  return j && j.completedAt ? dateTime(j.completedAt) : '—'
 }
 
 // Human-readable target for the history rows: the bucket name while the
 // target exists, otherwise the id suffix of a since-deleted target.
 function targetLabel(targets, targetId) {
-  const t = (targets || []).find((x) => x.id === targetId)
-  return t?.bucket || (targetId ? String(targetId).slice(-8) : '—')
+  const target = (targets || []).find((x) => x.id === targetId)
+  return target?.bucket || (targetId ? String(targetId).slice(-8) : '—')
 }
 
 function lastSuccessSize(jobs) {
@@ -317,10 +318,7 @@ function jobTone(status) {
 }
 
 function jobLabel(status) {
-  if (status === 'queued') return 'در صف'
-  if (status === 'running') return 'در حال اجرا'
-  if (status === 'done') return 'موفق'
-  if (status === 'failed') return 'ناموفق'
+  if (['queued', 'running', 'done', 'failed'].includes(status)) return t(`offsiteBackups.jobs.${status}`)
   return status
 }
 

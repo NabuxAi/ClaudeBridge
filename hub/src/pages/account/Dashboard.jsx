@@ -6,14 +6,18 @@ import {
   Button, MetricCard, StatusPill, AuthorityBadge, ActivityRow, AlertCard, SkeletonStats,
 } from '../../components/index.js'
 import { account } from '../../lib/api.js'
-import { faNum } from '../../lib/format.js'
+import { t, digits, num, time } from '../../lib/i18n.js'
+
+const NS = 'dashboard'
 
 // Pick a card icon from the site's title/name so the grid keeps visual variety.
+// The titles are the owner's own text, so both Persian and English words are
+// recognised here (input matching, not UI copy).
 function siteIcon(s) {
-  const t = `${s.title || ''} ${s.name || ''}`
-  if (t.includes('فروشگاه')) return 'store'
-  if (t.includes('وبلاگ')) return 'newspaper'
-  if (t.includes('لندینگ') || t.includes('کمپین')) return 'megaphone'
+  const text = `${s.title || ''} ${s.name || ''}`.toLowerCase()
+  if (/فروشگاه|shop|store/.test(text)) return 'store'
+  if (/وبلاگ|blog/.test(text)) return 'newspaper'
+  if (/لندینگ|کمپین|landing|campaign/.test(text)) return 'megaphone'
   return 'globe'
 }
 
@@ -59,25 +63,25 @@ export default function Dashboard() {
       .catch((e) => {
         // Without this catch a failed request was swallowed and the page sat
         // on the empty header forever — a network error looked like a slow one.
-        if (alive) setError(e?.message || 'بارگذاری داشبورد انجام نشد.')
+        if (alive) setError(e?.message || t('dashboard.loadFailed'))
       })
     return () => { alive = false }
   }, [reloadKey])
 
-  const addAction = <Button variant="secondary" size="sm" leftIcon="plus" as={Link} to="/onboarding">افزودن سایت</Button>
+  const addAction = <Button variant="secondary" size="sm" leftIcon="plus" as={Link} to="/onboarding">{t('dashboard.addSite')}</Button>
 
   if (error) {
     return (
       <>
-        <PageHead title="داشبورد حساب" subtitle="نمای کلی و سلامت همهٔ سایت‌های تحت پوشش" action={addAction} />
+        <PageHead title={t('dashboard.title')} subtitle={t('dashboard.subtitle')} action={addAction} />
         <AlertCard
           severity="critical"
-          title="بارگذاری داشبورد ناموفق بود"
+          title={t('dashboard.loadFailedTitle')}
           desc={error}
           className="dwp-acc-alert"
           actions={(
             <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => { setError(null); setReloadKey((k) => k + 1) }}>
-              تلاش دوباره
+              {t('common.retry')}
             </Button>
           )}
         />
@@ -88,7 +92,7 @@ export default function Dashboard() {
   if (!sites) {
     return (
       <>
-        <PageHead title="داشبورد حساب" subtitle="نمای کلی و سلامت همهٔ سایت‌های تحت پوشش" action={addAction} />
+        <PageHead title={t('dashboard.title')} subtitle={t('dashboard.subtitle')} action={addAction} />
         <SkeletonStats count={4} />
       </>
     )
@@ -107,32 +111,32 @@ export default function Dashboard() {
   return (
     <>
       <PageHead
-        title="داشبورد حساب"
-        subtitle="نمای کلی و سلامت همهٔ سایت‌های تحت پوشش"
+        title={t('dashboard.title')}
+        subtitle={t('dashboard.subtitle')}
         action={addAction}
       />
 
       {/* Summary metrics */}
       <div className="dwp-grid dwp-grid-4" style={{ marginBottom: 22 }}>
-        <MetricCard icon="globe" iconTone="primary" label="سایت‌های فعال" value={faNum(active)} />
-        <MetricCard icon="shield-check" iconTone="success" label="سالم" value={faNum(healthy)} hint="بدون مشکل" />
-        <MetricCard icon="alert-triangle" iconTone="warning" label="نیازمند توجه" value={faNum(attention.length)} hint={attention[0]?.name || 'بدون مورد'} />
+        <MetricCard icon="globe" iconTone="primary" label={t('dashboard.metrics.active')} value={digits(active)} />
+        <MetricCard icon="shield-check" iconTone="success" label={t('dashboard.metrics.healthy')} value={digits(healthy)} hint={t('dashboard.metrics.healthyHint')} />
+        <MetricCard icon="alert-triangle" iconTone="warning" label={t('dashboard.metrics.attention')} value={digits(attention.length)} hint={attention[0]?.name || t('dashboard.metrics.noneHint')} />
         <MetricCard
           icon="refresh-cw"
           iconTone="neutral"
-          label="آپدیت در انتظار"
-          value={pendingTotal == null ? '—' : faNum(pendingTotal)}
-          hint={pendingTotal == null ? 'اندازه‌گیری نشده' : `در ${faNum(sitesWithUpdates)} سایت`}
+          label={t('dashboard.metrics.pending')}
+          value={pendingTotal == null ? '—' : digits(pendingTotal)}
+          hint={pendingTotal == null ? t('common.notMeasured') : t('dashboard.metrics.pendingHint', { count: sitesWithUpdates })}
         />
       </div>
 
       {/* Site cards */}
-      <div className="dwp-sec-title">سایت‌های شما</div>
+      <div className="dwp-sec-title">{t('dashboard.yourSites')}</div>
       {sites.length === 0 ? (
         <AlertCard
           severity="info"
-          title="هنوز سایتی ثبت نشده است"
-          desc="برای دیدن نمای کلی سلامت و رویدادها، اولین سایت وردپرس خود را اضافه کنید."
+          title={t('dashboard.empty.title')}
+          desc={t('dashboard.empty.desc')}
           className="dwp-acc-alert"
           actions={addAction}
         />
@@ -164,14 +168,14 @@ export default function Dashboard() {
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border-subtle)', borderRadius: 'var(--gd-radius-md)', padding: '11px 14px' }}>
-                  <Stat label="آپ‌تایم" value={s.uptime == null ? '—' : `${faNum(String(s.uptime).replace('.', '٫'))}٪`} />
-                  <Stat label="آپدیت" value={s.pendingUpdates == null ? '—' : faNum(s.pendingUpdates)} color={s.pendingUpdates > 0 ? 'var(--gd-warning-text)' : undefined} />
-                  <Stat label="هشدار" value={s.incidents == null ? '—' : faNum(s.incidents)} color={s.incidents > 0 ? 'var(--gd-danger-text)' : undefined} />
+                  <Stat label={t(`${NS}.stat.uptime`)} value={s.uptime == null ? '—' : num(Number(s.uptime) / 100, { style: 'percent', maximumFractionDigits: 2 })} />
+                  <Stat label={t(`${NS}.stat.updates`)} value={s.pendingUpdates == null ? '—' : digits(s.pendingUpdates)} color={s.pendingUpdates > 0 ? 'var(--gd-warning-text)' : undefined} />
+                  <Stat label={t(`${NS}.stat.alerts`)} value={s.incidents == null ? '—' : digits(s.incidents)} color={s.incidents > 0 ? 'var(--gd-danger-text)' : undefined} />
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <AuthorityBadge level={s.authority} size="sm" />
-                  <Button as={Link} to={`/site/${s.id}`} variant="secondary" size="sm" rightIcon="arrow-left">ورود به پنل</Button>
+                  <Button as={Link} to={`/site/${s.id}`} variant="secondary" size="sm" rightIcon="arrow-left">{t(`${NS}.openPanel`)}</Button>
                 </div>
               </div>
             )
@@ -180,12 +184,12 @@ export default function Dashboard() {
       )}
 
       {/* Cross-site activity */}
-      <div className="dwp-sec-title">آخرین رویدادها در همهٔ سایت‌ها</div>
+      <div className="dwp-sec-title">{t('dashboard.activityTitle')}</div>
       <div className="dwp-card" style={{ padding: '6px 20px' }}>
         {activity == null ? (
-          <ActivityRow icon="loader" tone="neutral" label="در حال بارگذاری رویدادها…" meta="" time="" divided={false} />
+          <ActivityRow icon="loader" tone="neutral" label={t('dashboard.activityLoading')} meta="" time="" divided={false} />
         ) : activity.length === 0 ? (
-          <ActivityRow icon="info" tone="neutral" label="هنوز رویدادی ثبت نشده است." meta="" time="" divided={false} />
+          <ActivityRow icon="info" tone="neutral" label={t('dashboard.activityEmpty')} meta="" time="" divided={false} />
         ) : activity.map((e, i) => (
           <ActivityRow
             key={e.id || i}
@@ -193,7 +197,7 @@ export default function Dashboard() {
             tone={eventTone(e.severity, e.resolved_at)}
             label={e.title}
             meta={e.site_name || e.site_id}
-            time={new Date(Number(e.created_at)).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+            time={time(Number(e.created_at))}
             divided={i < activity.length - 1}
           />
         ))}

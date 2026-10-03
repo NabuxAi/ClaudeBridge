@@ -1,0 +1,74 @@
+{
+  "title": "Speed",
+  "subtitle": "Queries on each page, and what actually slows it down",
+  "task": {
+    "titleUrl": "Measuring speed and queries for “{url}”",
+    "titleHome": "Measuring speed and queries for the homepage"
+  },
+  "error": {
+    "start": "Could not start.",
+    "stalled": "Reading the measurement status failed several times — you can try again.",
+    "status": "Could not read the status.",
+    "retrying": "{message} — retrying…",
+    "analyse": "Could not analyse the result.",
+    "run": "Could not run."
+  },
+  "fix": {
+    "done": "Done",
+    "partial": "Partly done — run it again."
+  },
+  "form": {
+    "urlLabel": "Address of the page you want checked",
+    "urlPlaceholder": "Leave empty to check the homepage",
+    "costNote": "To count queries, that single request deliberately runs slower and the instrumentation switches off right after. Other visitors are not affected.",
+    "measuring": "Measuring…",
+    "measure": "Measure speed"
+  },
+  "job": {
+    "running": "Running",
+    "failed": "Failed",
+    "done": "Done"
+  },
+  "measure": {
+    "title": "Measurements",
+    "autoload": "Autoload size",
+    "autoloadRows_one": "{count} row, loaded on every request",
+    "autoloadRows_other": "{count} rows, loaded on every request",
+    "queries": "Queries on this page",
+    "dbTime": "{ms}ms spent in the database",
+    "notMeasured": "Not measured",
+    "generation": "Page generation",
+    "peakMemory": "Peak memory {value}",
+    "objectCache": "Object cache",
+    "present": "Yes",
+    "absent": "No",
+    "opcacheOff": "OPcache off"
+  },
+  "sources": {
+    "title": "Database time by source",
+    "row_one": "{count} query · {ms}ms · {share}",
+    "row_other": "{count} queries · {ms}ms · {share}"
+  },
+  "repeated": {
+    "title": "Repeated queries",
+    "hint": "One query shape running dozens of times almost always means code inside a loop is hitting the database separately for each item.",
+    "times_one": "{count} time",
+    "times_other": "{count} times"
+  },
+  "largest": {
+    "title": "Largest autoload rows",
+    "hint": "These are read on every request — not just pages, but admin-ajax, REST and cron too.",
+    "orphan": "No owner"
+  },
+  "findings": {
+    "title": "Fixes",
+    "running": "Running…",
+    "runAgain": "Run again",
+    "run": "Do it"
+  },
+  "risk": {
+    "safe": { "label": "Safe", "note": "Reversible, with no visual change" },
+    "careful": { "label": "Careful", "note": "Reversible, but changes behaviour" },
+    "manual": { "label": "Manual", "note": "Needs your decision or hosting access" }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "title": "Payments aren't active yet",
+  "lead": "Invoicing and the payment gateway haven't been built yet. No payment is taken on this page.",
+  "note": "All accounts currently run in pilot mode. To use DigiWP in production or learn more, please contact the team.",
+  "cta": "Request pilot access",
+  "back": "Back to dashboard"
+}

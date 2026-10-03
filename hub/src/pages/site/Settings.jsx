@@ -3,27 +3,25 @@ import { useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Badge, Switch, SkeletonStats, SkeletonCard } from '../../components/index.js'
-import { faNum, faAgo } from '../../lib/format.js'
+import { t, digits, ago, date, dateTime, getIntlLocale } from '../../lib/i18n.js'
 import { site as siteApi } from '../../lib/api.js'
 
+// Title/description are translated at render: settings.tiers.<key>.title|desc
 const TIERS = [
   {
-    key: 'report', icon: 'eye', title: 'فقط گزارش',
-    desc: 'فقط مشاهده و پیشنهاد؛ هیچ تغییری اعمال نمی‌شود.',
+    key: 'report', icon: 'eye',
     softBg: 'var(--gd-bg-inset)', softColor: 'var(--gd-gray-600)',
     solidBg: 'var(--gd-gray-700)', tint: 'var(--gd-bg-inset)',
     line: 'var(--gd-authority-report)', text: 'var(--gd-text)',
   },
   {
-    key: 'confirm', icon: 'user-check', title: 'با تأیید',
-    desc: 'راه‌حل را آماده می‌کند و منتظر تأیید شما می‌ماند.',
+    key: 'confirm', icon: 'user-check',
     softBg: 'var(--gd-warning-bg)', softColor: 'var(--gd-warning)',
     solidBg: 'var(--gd-warning)', tint: 'var(--gd-warning-bg)',
     line: 'var(--gd-authority-confirm)', text: 'var(--gd-warning-text)',
   },
   {
-    key: 'auto', icon: 'zap', title: 'خودکار',
-    desc: 'کارهای کم‌ریسک را خودش انجام می‌دهد؛ موارد حساس با تأیید.',
+    key: 'auto', icon: 'zap',
     softBg: 'var(--gd-success-bg)', softColor: 'var(--gd-success)',
     solidBg: 'var(--gd-success)', tint: 'var(--gd-success-bg)',
     line: 'var(--gd-authority-auto)', text: 'var(--gd-success-text)',
@@ -37,19 +35,19 @@ const SENSITIVE_ICONS = ['trash-2', 'palette', 'code', 'credit-card', 'globe', '
 // The relay stores connector.lastSeen as a raw epoch-ms number — every contact
 // rewrites it with Date.now() (server/src/store.js) and the settings route
 // returns it unformatted — so printing it directly showed a 13-digit integer.
-// The dev mock instead sends a ready-made Persian string. A number becomes
-// relative Persian time (absolute date past a month, like the server's own
-// faWhen in routes/sites.js); any other non-empty string passes through;
+// The dev mock instead sends a ready-made string. A number becomes localised
+// relative time (absolute date past a month, like the server's own when-label
+// in routes/sites.js); any other non-empty string passes through;
 // anything else is missing → «—».
 function lastSeenLabel(value) {
   if (value === null || value === undefined || value === '') return '—'
-  const t = typeof value === 'number'
+  const ts = typeof value === 'number'
     ? value
     : (/^\d+$/.test(String(value).trim()) ? Number(value) : NaN)
-  if (!Number.isFinite(t) || t <= 0) return typeof value === 'string' ? value : '—'
-  const mins = Math.floor((Date.now() - t) / 60000)
-  if (mins >= 60 * 24 * 31) return new Date(t).toLocaleDateString('fa-IR')
-  return faAgo(Math.max(0, mins))
+  if (!Number.isFinite(ts) || ts <= 0) return typeof value === 'string' ? value : '—'
+  const mins = Math.floor((Date.now() - ts) / 60000)
+  if (mins >= 60 * 24 * 31) return date(ts)
+  return ago(Math.max(0, mins))
 }
 
 export default function Settings() {
@@ -74,7 +72,7 @@ export default function Settings() {
     } catch (e) {
       // Silence here reads as "applied". The failure must be visible next to
       // the button that claimed it.
-      setSaveError(e?.message || 'ذخیره نشد — سطح اختیار اعمال نشد.')
+      setSaveError(e?.message || t('settings.error.saveAuthority'))
     } finally {
       setSaving(false)
     }
@@ -92,23 +90,24 @@ export default function Settings() {
     }).catch((e) => {
       if (!alive) return
       setData(null)
-      setLoadError(e?.message || 'بارگذاری تنظیمات انجام نشد.')
+      setLoadError(e?.message || t('settings.error.load'))
       setLoadedFor(siteId)
     })
     return () => { alive = false }
   }, [siteId, attempt])
 
-  const subtitle = 'سطح اختیار پشتیبان، اتصال و ترجیحات پایش'
+  const subtitle = t('settings.subtitle')
+  const title = t('settings.title')
   const fresh = loadedFor === siteId
 
   if (loadError && fresh) {
     return (
       <>
-        <PageHead title="تنظیمات سایت" subtitle={subtitle} />
+        <PageHead title={title} subtitle={subtitle} />
         <div className="gd-card gd-card--e-sm gd-card--p-md dwp-error-row">
           <Icon name="alert-circle" size={17} style={{ color: 'var(--gd-danger)' }} />
           <span style={{ fontSize: 13.5, color: 'var(--gd-danger-text)', flex: 1 }}>{loadError}</span>
-          <Button variant="secondary" size="sm" onClick={() => setAttempt((a) => a + 1)}>تلاش دوباره</Button>
+          <Button variant="secondary" size="sm" onClick={() => setAttempt((a) => a + 1)}>{t('common.retry')}</Button>
         </div>
       </>
     )
@@ -117,7 +116,7 @@ export default function Settings() {
   if (!fresh || !data) {
     return (
       <>
-        <PageHead title="تنظیمات سایت" subtitle={subtitle} />
+        <PageHead title={title} subtitle={subtitle} />
         <SkeletonStats count={3} />
         <SkeletonCard height={200} />
       </>
@@ -126,62 +125,62 @@ export default function Settings() {
 
   // The sensitive-action list comes from the server. When it is absent there
   // is nothing to show but the connector card — inventing labels would break
-  // product truth rule ۱.
+  // product truth rule 1.
   const hasSensitive = Array.isArray(data.sensitive) && data.sensitive.length > 0
 
   return (
     <>
-      <PageHead title="تنظیمات سایت" subtitle={subtitle} />
+      <PageHead title={title} subtitle={subtitle} />
 
       {/* Authority level selector — a real radio group: keyboard arrows move
           between levels and screen readers see the selection. The input is
           visually hidden; the wrapping label is the click target. */}
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 5 }}>سطح اختیار پشتیبان</div>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 5 }}>{t('settings.authority.title')}</div>
       <p style={{ fontSize: 13, color: 'var(--gd-text-muted)', margin: '0 0 14px' }}>
-        تعیین کنید پشتیبان چقدر آزادی عمل داشته باشد. موارد حساس در هر سطحی به تأیید شما نیاز دارند.
+        {t('settings.authority.hint')}
       </p>
-      <div className="dwp-tiers" role="radiogroup" aria-label="سطح اختیار پشتیبان">
-        {TIERS.map((t) => {
-          const sel = authority === t.key
+      <div className="dwp-tiers" role="radiogroup" aria-label={t('settings.authority.title')}>
+        {TIERS.map((tier) => {
+          const sel = authority === tier.key
           return (
             <label
-              key={t.key}
+              key={tier.key}
               className="dwp-tier"
               style={{
-                border: sel ? `2px solid ${t.line}` : '1.5px solid var(--gd-border)',
+                border: sel ? `2px solid ${tier.line}` : '1.5px solid var(--gd-border)',
                 borderRadius: 'var(--gd-radius-lg)',
                 padding: '16px 18px',
                 display: 'flex', flexDirection: 'column', gap: 9,
                 cursor: 'pointer',
-                background: sel ? t.tint : 'var(--gd-bg-surface)',
+                background: sel ? tier.tint : 'var(--gd-bg-surface)',
               }}
             >
               <input
-                type="radio" name="authority-level" value={t.key}
+                type="radio" name="authority-level" value={tier.key}
                 className="dwp-tier__radio"
                 checked={sel}
-                onChange={() => setAuthority(t.key)}
+                onChange={() => setAuthority(tier.key)}
               />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ width: 36, height: 36, borderRadius: 10, background: sel ? t.solidBg : t.softBg, color: sel ? '#fff' : t.softColor, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name={t.icon} size={19} />
+                <span style={{ width: 36, height: 36, borderRadius: 10, background: sel ? tier.solidBg : tier.softBg, color: sel ? '#fff' : tier.softColor, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name={tier.icon} size={19} />
                 </span>
                 {sel ? (
-                  <span style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${t.solidBg}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.solidBg }} />
+                  <span style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${tier.solidBg}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: tier.solidBg }} />
                   </span>
                 ) : (
                   <span style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--gd-border-strong)', flex: '0 0 auto' }} />
                 )}
               </div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: sel ? t.text : undefined }}>
-                {t.title}
+              <div style={{ fontSize: 15, fontWeight: 700, color: sel ? tier.text : undefined }}>
+                {t(`settings.tiers.${tier.key}.title`)}
                 {sel && (
-                  <span style={{ fontSize: 11, fontWeight: 700, background: t.solidBg, color: '#fff', borderRadius: 999, padding: '1px 8px', marginInlineStart: 4 }}>فعال</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, background: tier.solidBg, color: '#fff', borderRadius: 999, padding: '1px 8px', marginInlineStart: 4 }}>{t('settings.authority.active')}</span>
                 )}
               </div>
-              <div style={{ fontSize: 12.5, color: sel ? t.text : 'var(--gd-text-muted)', lineHeight: 1.6, opacity: sel ? 0.9 : 1 }}>
-                {t.desc}
+              <div style={{ fontSize: 12.5, color: sel ? tier.text : 'var(--gd-text-muted)', lineHeight: 1.6, opacity: sel ? 0.9 : 1 }}>
+                {t(`settings.tiers.${tier.key}.desc`)}
               </div>
             </label>
           )
@@ -218,10 +217,10 @@ export default function Settings() {
         {hasSensitive && (
           <div className="gd-card gd-card--e-sm gd-card--p-md">
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
-              <Icon name="lock" size={17} style={{ color: 'var(--gd-danger)' }} /> اقدام‌های همیشه نیازمند تأیید
+              <Icon name="lock" size={17} style={{ color: 'var(--gd-danger)' }} /> {t('settings.sensitive.title')}
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '0 0 14px', lineHeight: 1.6 }}>
-              این کارها حتی در حالت خودکار هم بدون اجازهٔ شما انجام نمی‌شوند.
+              {t('settings.sensitive.hint')}
             </p>
             <div className="dwp-chip-grid">
               {data.sensitive.map((label, i) => (
@@ -235,28 +234,28 @@ export default function Settings() {
 
         <div className="gd-card gd-card--e-sm gd-card--p-md" style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 700 }}>
-            <Icon name="plug" size={17} style={{ color: 'var(--gd-primary)' }} /> اتصال و پایش
+            <Icon name="plug" size={17} style={{ color: 'var(--gd-primary)' }} /> {t('settings.connector.title')}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <span style={{ fontSize: 13, color: 'var(--gd-text-secondary)' }}>وضعیت اتصال</span>
+            <span style={{ fontSize: 13, color: 'var(--gd-text-secondary)' }}>{t('settings.connector.status')}</span>
             {data.connector.paired
-              ? <Badge variant="success" appearance="soft" dot>متصل</Badge>
-              : <Badge variant="danger" appearance="soft" dot>قطع</Badge>}
+              ? <Badge variant="success" appearance="soft" dot>{t('settings.connector.connected')}</Badge>
+              : <Badge variant="danger" appearance="soft" dot>{t('settings.connector.disconnected')}</Badge>}
           </div>
           {/* An unpaired site sends { paired: false } and nothing else. Missing
               is missing: «—», not an empty cell that looks like a rendering bug. */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <span style={{ fontSize: 13, color: 'var(--gd-text-secondary)' }}>سرور واسط</span>
+            <span style={{ fontSize: 13, color: 'var(--gd-text-secondary)' }}>{t('settings.connector.relay')}</span>
             <span style={{ fontSize: 12.5, fontFamily: 'var(--gd-font-mono)', color: 'var(--gd-text)' }}>{data.connector.server || '—'}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <span style={{ fontSize: 13, color: 'var(--gd-text-secondary)' }}>نسخهٔ کانکتور</span>
+            <span style={{ fontSize: 13, color: 'var(--gd-text-secondary)' }}>{t('settings.connector.version')}</span>
             <span style={{ fontSize: 12.5, fontFamily: 'var(--gd-font-mono)', color: 'var(--gd-text)' }}>
-              {data.connector.version ? `v${faNum(data.connector.version)}` : '—'}
+              {data.connector.version ? `v${digits(data.connector.version)}` : '—'}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <span style={{ fontSize: 13, color: 'var(--gd-text-secondary)' }}>آخرین ارتباط</span>
+            <span style={{ fontSize: 13, color: 'var(--gd-text-secondary)' }}>{t('settings.connector.lastSeen')}</span>
             <span style={{ fontSize: 12.5, color: 'var(--gd-text-muted)' }}>{lastSeenLabel(data.connector.lastSeen)}</span>
           </div>
         </div>
@@ -270,14 +269,14 @@ export default function Settings() {
             setting that gets left half-applied. */}
         {saveError && <span style={{ fontSize: 12.5, color: 'var(--gd-danger-text)', marginInlineEnd: 'auto' }}>{saveError}</span>}
         <Button variant="ghost" size="md" onClick={() => setAuthority(data.authority)}>
-          بازنشانی
+          {t('settings.reset')}
         </Button>
         <Button
           variant="primary" size="md" leftIcon="check"
           disabled={saving || authority === data.authority}
           onClick={saveAuthority}
         >
-          {saving ? 'در حال ذخیره…' : 'ذخیرهٔ تغییرات'}
+          {saving ? t('common.saving') : t('settings.saveChanges')}
         </Button>
       </div>
     </>
@@ -306,9 +305,9 @@ function UpdatePolicyCard({ siteId, policy, state, onChange }) {
       const next = await siteApi(siteId).setUpdatePolicy({ [id]: on })
       onChange(next)
       if (next.message) setNotice(next.message)
-      else if (next.pushed === false) setNotice('ذخیره شد، ولی هنوز به سایت اعمال نشده — در بررسی بعدی دوباره تلاش می‌شود.')
+      else if (next.pushed === false) setNotice(t('settings.policy.notPushed'))
     } catch (e) {
-      setNotice(e?.message || 'ذخیره نشد.')
+      setNotice(e?.message || t('settings.error.save'))
     } finally {
       setBusy('')
     }
@@ -320,7 +319,7 @@ function UpdatePolicyCard({ siteId, policy, state, onChange }) {
     try {
       onChange(await siteApi(siteId).setUpdatePolicy({ safeMode: on }))
     } catch (e) {
-      setNotice(e?.message || 'ذخیره نشد.')
+      setNotice(e?.message || t('settings.error.save'))
     } finally {
       setBusy('')
     }
@@ -330,10 +329,10 @@ function UpdatePolicyCard({ siteId, policy, state, onChange }) {
     <div className="gd-card gd-card--e-sm gd-card--p-md" style={{ marginBottom: 22 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 700 }}>
-          <Icon name="shield-check" size={17} style={{ color: 'var(--gd-success)' }} /> به‌روزرسانی خودکار
+          <Icon name="shield-check" size={17} style={{ color: 'var(--gd-success)' }} /> {t('settings.policy.title')}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <span style={{ fontSize: 12.5, color: 'var(--gd-text-muted)' }}>حالت ایمنی</span>
+          <span style={{ fontSize: 12.5, color: 'var(--gd-text-muted)' }}>{t('settings.policy.safeMode')}</span>
           <Switch
             checked={policy.safeMode}
             disabled={busy === 'safeMode'}
@@ -345,7 +344,7 @@ function UpdatePolicyCard({ siteId, policy, state, onChange }) {
 
       {policy.lockReason && (
         <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '0 0 14px', lineHeight: 1.7 }}>
-          <Icon name="lock" size={13} style={{ verticalAlign: '-2px', marginLeft: 5, color: 'var(--gd-success)' }} />
+          <Icon name="lock" size={13} style={{ verticalAlign: '-2px', marginInlineEnd: 5, color: 'var(--gd-success)' }} />
           {policy.lockReason}
         </p>
       )}
@@ -402,35 +401,38 @@ function UpdatePolicyCard({ siteId, policy, state, onChange }) {
 function UpdateRunNote({ state }) {
   const summary = state?.summary || {}
   const groups = [
-    { label: 'هسته', list: summary.core },
-    { label: 'افزونه', list: summary.plugin },
-    { label: 'قالب', list: summary.theme },
+    { kind: 'core', list: summary.core },
+    { kind: 'plugin', list: summary.plugin },
+    { kind: 'theme', list: summary.theme },
   ]
   const total = groups.reduce((n, g) => n + (g.list?.length || 0), 0)
   const failedItems = groups.flatMap((g) => (g.list || []).filter((i) => i && !i.ok && !i.unknown))
-  const failedNames = failedItems.map((i) => i.name).filter(Boolean).join('، ')
+  const failedNames = failedItems.map((i) => i.name).filter(Boolean).join(t('settings.run.nameSeparator'))
   const unknown = groups.reduce((n, g) => n + (g.list || []).filter((i) => i?.unknown).length, 0)
-  const when = state?.at ? new Date(state.at).toLocaleString('fa-IR') : ''
-  const counts = groups.filter((g) => g.list?.length).map((g) => `${faNum(g.list.length)} ${g.label}`).join(' و ')
+  const when = state?.at ? dateTime(state.at) : ''
+  const counts = new Intl.ListFormat(getIntlLocale(), { type: 'conjunction' })
+    .format(groups.filter((g) => g.list?.length).map((g) => t(`settings.run.kind.${g.kind}`, { count: g.list.length })))
 
   // No reported run at all, or an empty one: pending updates are simply not
   // measured here. Say that — never a green zero.
   if (!total) {
-    return <>هنوز گزارش به‌روزرسانی خودکاری از سایت ثبت نشده؛ تا اولین اجرا، به‌روزرسانی‌های معلق اندازه‌گیری نشده‌اند.</>
+    return <>{t('settings.run.none')}</>
   }
 
   if (failedItems.length || unknown) {
     return (
       <span style={{ display: 'block', color: 'var(--gd-warning-text)', background: 'var(--gd-warning-bg)', border: '1px solid var(--gd-warning-border)', borderRadius: 'var(--gd-radius-md)', padding: '9px 12px' }}>
-        آخرین گزارش به‌روزرسانی خودکار{when ? ` (${when})` : ''}: {counts}.
+        {when ? t('settings.run.lastWhen', { when, counts }) : t('settings.run.last', { counts })}
         {failedItems.length > 0 && (
           <span style={{ display: 'block' }}>
-            {faNum(failedItems.length)} مورد ناموفق بود{failedNames ? `: ${failedNames}` : ''}.
+            {failedNames
+              ? t('settings.run.failedNames', { count: failedItems.length, names: failedNames })
+              : t('settings.run.failed', { count: failedItems.length })}
           </span>
         )}
         {unknown > 0 && (
           <span style={{ display: 'block' }}>
-            نتیجهٔ {faNum(unknown)} مورد نامشخص ماند — نه موفق ثبت شد، نه ناموفق.
+            {t('settings.run.unknown', { count: unknown })}
           </span>
         )}
       </span>
@@ -439,8 +441,8 @@ function UpdateRunNote({ state }) {
 
   return (
     <>
-      <Icon name="check" size={13} style={{ verticalAlign: '-2px', marginLeft: 5, color: 'var(--gd-success)' }} />
-      آخرین گزارش به‌روزرسانی خودکار{when ? ` (${when})` : ''}: {counts} — همگی با موفقیت انجام شد.
+      <Icon name="check" size={13} style={{ verticalAlign: '-2px', marginInlineEnd: 5, color: 'var(--gd-success)' }} />
+      {when ? t('settings.run.allOkWhen', { when, counts }) : t('settings.run.allOk', { counts })}
     </>
   )
 }

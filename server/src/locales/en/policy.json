@@ -1,0 +1,17 @@
+{
+  "lockReason": "Safe mode is on: automatic core/plugin/theme updates cannot be switched off. This keeps the site up to date; it does not give automatic rollback after a broken update — background updates still have no file rollback.",
+  "switches": {
+    "autoCore": {
+      "label": "Automatic WordPress core updates",
+      "desc": "Install new WordPress releases automatically, including major versions"
+    },
+    "autoPlugins": {
+      "label": "Automatic plugin updates",
+      "desc": "Every plugin from the WordPress directory stays on its latest version"
+    },
+    "autoThemes": {
+      "label": "Automatic theme updates",
+      "desc": "Every theme from the WordPress directory stays on its latest version"
+    }
+  }
+}

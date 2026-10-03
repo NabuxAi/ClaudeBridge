@@ -106,7 +106,7 @@ test('under report, a change is proposed rather than performed', async () => {
   )
   assert.equal(out.requiresApproval, true)
   assert.equal(out.proposals[0].tool, 'flush_cache')
-  assert.match(out.proposals[0].reason, /گزارش/)
+  assert.match(out.proposals[0].reason, /Report only/)
 })
 
 test('under confirm, the change is still the owner’s to approve', async () => {

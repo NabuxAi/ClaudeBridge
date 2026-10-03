@@ -1,12 +1,16 @@
 // Persistent store for notification preferences and enrolled contacts.
 import { one, all, newId } from './db.js'
 import { httpError } from './store.js'
+import { t } from './i18n.js'
 
-const CHANNELS = [
-  { id: 'email', label: 'ایمیل', desc: 'هشدارها و گزارش روزانه به ایمیل شما' },
-  { id: 'sms', label: 'پیامک', desc: 'هشدارهای مهم به شماره موبایل' },
-  { id: 'push', label: 'اعلان مرورگر', desc: 'اعلان فوری روی دستگاه‌هایی که مجوز داده‌اند' },
-]
+const CHANNELS = [{ id: 'email' }, { id: 'sms' }, { id: 'push' }]
+
+/** A channel with its label/description in `locale`. */
+const channelMeta = (id, locale) => ({
+  id,
+  label: t(locale, `notifications.channel.${id}.label`),
+  desc: t(locale, `notifications.channel.${id}.desc`),
+})
 
 const publicContact = (c) => c && ({
   id: c.id,
@@ -17,21 +21,21 @@ const publicContact = (c) => c && ({
   createdAt: c.created_at,
 })
 
-const publicSetting = (s, channelMeta) => s && ({
+const publicSetting = (s, locale) => s && ({
   channel: s.channel,
   enabled: !!s.enabled,
   destination: s.destination || null,
   quietHoursStart: s.quiet_hours_start,
   quietHoursEnd: s.quiet_hours_end,
   updatedAt: s.updated_at,
-  ...CHANNELS.find((c) => c.id === s.channel),
+  ...(CHANNELS.some((c) => c.id === s.channel) ? channelMeta(s.channel, locale) : {}),
 })
 
 export const notifications = {
   channels: CHANNELS,
 
   /** Return every known channel merged with the user's saved preference, if any. */
-  async getPreferences(userId) {
+  async getPreferences(userId, locale) {
     const rows = await all(
       'SELECT * FROM notification_settings WHERE user_id = $1 ORDER BY channel',
       [userId]
@@ -40,8 +44,8 @@ export const notifications = {
     return CHANNELS.map((c) => {
       const saved = byChannel.get(c.id)
       return saved
-        ? publicSetting(saved, c)
-        : { ...c, enabled: false, destination: null, quietHoursStart: null, quietHoursEnd: null, updatedAt: null }
+        ? publicSetting(saved, locale)
+        : { ...channelMeta(c.id, locale), enabled: false, destination: null, quietHoursStart: null, quietHoursEnd: null, updatedAt: null }
     })
   },
 
@@ -51,9 +55,9 @@ export const notifications = {
    * This is a full overwrite (PUT semantics): every field is written as sent,
    * so sending null clears destination or quiet hours.
    */
-  async setPreference(userId, channel, { enabled, destination, quietHoursStart, quietHoursEnd } = {}) {
+  async setPreference(userId, channel, { enabled, destination, quietHoursStart, quietHoursEnd } = {}, locale) {
     if (!CHANNELS.some((c) => c.id === channel)) {
-      throw httpError(400, 'کانال اعلان نامعتبر است.')
+      throw httpError(400, 'notifications.invalidChannel')
     }
     const now = Date.now()
     const start = clampHour(quietHoursStart)
@@ -73,7 +77,7 @@ export const notifications = {
        RETURNING *`,
       [userId, channel, !!enabled, dest, start, end, now]
     )
-    return publicSetting(row)
+    return publicSetting(row, locale)
   },
 
   async listContacts(userId) {
@@ -86,10 +90,10 @@ export const notifications = {
 
   async addContact(userId, type, value) {
     if (!CHANNELS.some((c) => c.id === type)) {
-      throw httpError(400, 'نوع کانال تماس نامعتبر است.')
+      throw httpError(400, 'notifications.invalidContactType')
     }
     const normalised = normaliseContactValue(type, value)
-    if (!normalised) throw httpError(400, 'مقدار تماس نامعتبر است.')
+    if (!normalised) throw httpError(400, 'notifications.invalidContactValue')
     const id = newId('uc_')
     const now = Date.now()
     const row = await one(
@@ -108,7 +112,7 @@ export const notifications = {
       'DELETE FROM user_contacts WHERE id = $1 AND user_id = $2 RETURNING *',
       [id, userId]
     )
-    if (!row) throw httpError(404, 'مخاطب پیدا نشد.')
+    if (!row) throw httpError(404, 'notifications.contactNotFound')
     return { ok: true, id: row.id }
   },
 
@@ -117,7 +121,7 @@ export const notifications = {
       'UPDATE user_contacts SET verified_at = $3 WHERE id = $1 AND user_id = $2 RETURNING *',
       [id, userId, Date.now()]
     )
-    if (!row) throw httpError(404, 'مخاطب پیدا نشد.')
+    if (!row) throw httpError(404, 'notifications.contactNotFound')
     return publicContact(row)
   },
 }

@@ -1,0 +1,7 @@
+{
+  "errors": {
+    "targetNotFound": "Backup target not found.",
+    "noBackups": "No backup was found on the site.",
+    "readStalled": "Reading the backup file stalled."
+  }
+}

@@ -1,6 +1,6 @@
 import { useTask } from '../lib/tasks.jsx'
 import Icon from '../lib/icons.jsx'
-import { faNum } from '../lib/format.js'
+import { t, pct } from '../lib/i18n.js'
 import { Button, IconButton } from './actions.jsx'
 
 export default function TaskNotificationBar() {
@@ -49,7 +49,7 @@ export default function TaskNotificationBar() {
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', marginTop: 1 }}>
               {isDetached
-                ? 'نمایش پیشرفت در پنل قطع شد؛ کار ممکن است روی سایت همچنان در حال اجرا باشد.'
+                ? t('components.task.detached')
                 : activeTask.message}
             </div>
           </div>
@@ -60,23 +60,23 @@ export default function TaskNotificationBar() {
           <span style={{ fontSize: 12.5, fontWeight: 800, fontFamily: 'var(--gd-font-mono)', color: isFailed ? 'var(--gd-danger)' : isDone ? 'var(--gd-success)' : isDetached ? 'var(--gd-text-muted)' : 'var(--gd-primary)' }}>
             {/* A frozen percentage presented as current would be a reading we
                 no longer take; the dash says the display is detached. */}
-            {isFailed ? 'خطا' : isDone ? 'تکمیل شد' : isDetached ? '—' : `${faNum(progress)}٪`}
+            {isFailed ? t('components.task.error') : isDone ? t('components.task.done') : isDetached ? '—' : pct(progress)}
           </span>
 
           {isRunning && (
             <Button size="sm" variant="subtle" onClick={cancelTask} leftIcon="eye-off">
-              قطع نمایش
+              {t('components.task.detach')}
             </Button>
           )}
 
           {isDetached && activeTask.id && (
             <Button size="sm" variant="primary" onClick={resumeTask} leftIcon="play">
-              ادامه نمایش
+              {t('components.task.resume')}
             </Button>
           )}
 
           {(isDone || isFailed || isDetached) && (
-            <IconButton icon="x" label="بستن" size="sm" onClick={clearTask} />
+            <IconButton icon="x" label={t('common.close')} size="sm" onClick={clearTask} />
           )}
         </div>
       </div>

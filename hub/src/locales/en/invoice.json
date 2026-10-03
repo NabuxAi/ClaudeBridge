@@ -1,0 +1,7 @@
+{
+  "title": "Invoice {id} not found",
+  "lead": "Payments and invoicing haven't been built yet. No invoice with this number exists.",
+  "note": "Your account is running in pilot mode and you haven't been charged anything. Contact us for more information.",
+  "cta": "Request information",
+  "back": "Back to dashboard"
+}

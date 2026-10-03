@@ -1,3 +1,6 @@
+import Trans from '../components/Trans.jsx'
+import { t } from '../lib/i18n.js'
+
 /**
  * صفحهٔ خروج تمیز بعد از حذف حساب (/goodbye).
  *
@@ -8,7 +11,7 @@
  */
 export default function Goodbye() {
   return (
-    <div dir="rtl" style={{
+    <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'var(--gd-bg-app)', fontFamily: 'var(--gd-font-sans)', padding: 20,
     }}>
@@ -25,28 +28,26 @@ export default function Goodbye() {
           </svg>
         </span>
         <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--gd-text-primary)' }}>
-          حساب شما حذف شد
+          {t('goodbye.title')}
         </h1>
         <p style={{ fontSize: 13.5, color: 'var(--gd-text-secondary)', lineHeight: 2, margin: 0 }}>
-          همهٔ نشست‌ها باطل شده، سایت‌های شما از پایش خارج شده‌اند و اعتبارنامهٔ جفت‌سازی آن‌ها باطل شده است —
-          افزونهٔ روی سایت‌هایتان دیگر به این پنل وصل نمی‌شود. داده‌های شخصی حساب حذف شده و
-          <strong> این تغییر بازگشت‌پذیر نیست.</strong>
+          <Trans k="goodbye.body" />
         </p>
         <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', lineHeight: 2, margin: 0 }}>
-          اگر در آینده دوباره به DigiWP نیاز داشتید، می‌توانید با همان ایمیل یک حساب تازه بسازید.
+          {t('goodbye.again')}
         </p>
         <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
           <a href="/" style={{
             padding: '9px 18px', borderRadius: 'var(--gd-radius-md)', fontSize: 13.5, fontWeight: 700,
             background: 'var(--gd-primary)', color: '#fff', textDecoration: 'none',
           }}>
-            صفحهٔ اصلی
+            {t('goodbye.home')}
           </a>
           <a href="/login" style={{
             padding: '9px 18px', borderRadius: 'var(--gd-radius-md)', fontSize: 13.5, fontWeight: 700,
             border: '1px solid var(--gd-border)', color: 'var(--gd-text-secondary)', textDecoration: 'none',
           }}>
-            ورود یا ثبت‌نام
+            {t('goodbye.login')}
           </a>
         </div>
       </div>

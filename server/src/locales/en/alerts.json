@@ -1,0 +1,50 @@
+{
+  "skip": {
+    "vapid": "VAPID keys are not configured",
+    "noBrowser": "No browser subscription is registered",
+    "firebaseKey": "Firebase key is not configured",
+    "deviceToken": "No device token is registered",
+    "najvaKey": "Najva key is not configured",
+    "najvaToken": "No Najva token is registered",
+    "smsService": "SMS service is not configured",
+    "phone": "No mobile number is registered",
+    "emailService": "Email service is not configured",
+    "email": "No email address is registered",
+    "telegram": "Telegram is not configured"
+  },
+  "fail": {
+    "notDelivered": "The message was not delivered",
+    "unexpected": "Unexpected error: {error}"
+  },
+  "notes": {
+    "smsAccepted": "Sending was accepted; delivery to the phone is not confirmed",
+    "accepted": "The message was accepted by the provider. Its delivery and reading are not confirmed.",
+    "nothingConfigured": "No notification channel was configured for this user.",
+    "allFailed": "None of the notification channels worked."
+  },
+  "compose": {
+    "yourSite": "your site",
+    "malware": {
+      "title": "Security alert: {name}",
+      "body": "An infected file was found on {name}. Until it is investigated, an attacker may have access to the site.",
+      "sms": "An infected file was found on {name}. Please check the panel now.",
+      "email": "A file matching the signature of known malware was found on {name}.\n\n{what}\n\nThis probably means someone had write access to the site. Until the source is found, changing passwords on its own is not enough.\n\n",
+      "panel": "Details and rescue tools: {url}"
+    },
+    "coreIntegrity": {
+      "title": "Tampered core file: {name}",
+      "body": "A file in {name}'s WordPress core does not match the official release.",
+      "sms": "A core file on {name} has been tampered with. Check the panel.",
+      "email": "One or more WordPress core files on {name} differ from the official files for that version.\n\n{what}\n\nCore files do not change without a reason. This almost always means something wrote to them.\n\n"
+    },
+    "down": {
+      "title": "{name} is not responding",
+      "body": "Our latest check could not reach {name}.",
+      "sms": "{name} is not responding.",
+      "email": "Our latest check could not reach {name}.\n\n{what}\n\n"
+    },
+    "generic": {
+      "title": "Alert: {name}"
+    }
+  }
+}

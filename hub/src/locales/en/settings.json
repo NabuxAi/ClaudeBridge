@@ -1,0 +1,61 @@
+{
+  "title": "Site settings",
+  "subtitle": "Support authority level, connection and monitoring preferences",
+  "reset": "Reset",
+  "saveChanges": "Save changes",
+  "error": {
+    "saveAuthority": "Not saved — the authority level was not applied.",
+    "load": "Could not load the settings.",
+    "save": "Not saved."
+  },
+  "authority": {
+    "title": "Support authority level",
+    "hint": "Decide how much freedom support has. Sensitive actions need your approval at every level.",
+    "active": "Active"
+  },
+  "tiers": {
+    "report": { "title": "Report only", "desc": "Observe and suggest only; nothing is changed." },
+    "confirm": { "title": "With approval", "desc": "Prepares the fix and waits for your approval." },
+    "auto": { "title": "Automatic", "desc": "Handles low-risk work on its own; sensitive actions still need approval." }
+  },
+  "sensitive": {
+    "title": "Actions that always need approval",
+    "hint": "These are never done without your permission, even in automatic mode."
+  },
+  "connector": {
+    "title": "Connection and monitoring",
+    "status": "Connection status",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "relay": "Relay server",
+    "version": "Connector version",
+    "lastSeen": "Last contact"
+  },
+  "policy": {
+    "title": "Automatic updates",
+    "safeMode": "Safe mode",
+    "notPushed": "Saved, but not yet applied to the site — it will be retried on the next check."
+  },
+  "run": {
+    "kind": {
+      "core_one": "{count} core",
+      "core_other": "{count} core",
+      "plugin_one": "{count} plugin",
+      "plugin_other": "{count} plugins",
+      "theme_one": "{count} theme",
+      "theme_other": "{count} themes"
+    },
+    "nameSeparator": ", ",
+    "none": "No automatic update report has been recorded from the site yet; until the first run, pending updates are not measured.",
+    "last": "Last automatic update report: {counts}.",
+    "lastWhen": "Last automatic update report ({when}): {counts}.",
+    "failed_one": "{count} item failed.",
+    "failed_other": "{count} items failed.",
+    "failedNames_one": "{count} item failed: {names}.",
+    "failedNames_other": "{count} items failed: {names}.",
+    "unknown_one": "The outcome of {count} item is unknown — recorded as neither succeeded nor failed.",
+    "unknown_other": "The outcome of {count} items is unknown — recorded as neither succeeded nor failed.",
+    "allOk": "Last automatic update report: {counts} — all completed successfully.",
+    "allOkWhen": "Last automatic update report ({when}): {counts} — all completed successfully."
+  }
+}

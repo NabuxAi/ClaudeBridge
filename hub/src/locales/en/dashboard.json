@@ -1,0 +1,31 @@
+{
+  "title": "Account dashboard",
+  "subtitle": "Overview and health of every site you cover",
+  "addSite": "Add site",
+  "loadFailed": "The dashboard could not be loaded.",
+  "loadFailedTitle": "Dashboard failed to load",
+  "metrics": {
+    "active": "Active sites",
+    "healthy": "Healthy",
+    "healthyHint": "No issues",
+    "attention": "Needs attention",
+    "noneHint": "None",
+    "pending": "Pending updates",
+    "pendingHint_one": "on {count} site",
+    "pendingHint_other": "on {count} sites"
+  },
+  "stat": {
+    "uptime": "Uptime",
+    "updates": "Updates",
+    "alerts": "Alerts"
+  },
+  "yourSites": "Your sites",
+  "empty": {
+    "title": "No sites added yet",
+    "desc": "Add your first WordPress site to see a health overview and events."
+  },
+  "openPanel": "Open panel",
+  "activityTitle": "Latest events across all sites",
+  "activityLoading": "Loading events…",
+  "activityEmpty": "No events recorded yet."
+}

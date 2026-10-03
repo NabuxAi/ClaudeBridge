@@ -1,0 +1,29 @@
+{
+  "title": "Overview",
+  "subtitle": "Your site's live status",
+  "checking": "Checking…",
+  "checkAgain": "Check again",
+  "loadError": "Couldn't check the site.",
+  "notReadTitle": "Couldn't read the site's status",
+  "recheckFailed": "Couldn't check again: {error}",
+  "banner": {
+    "ok": "The site is responding",
+    "down": "The site didn't respond",
+    "unknown": "Check didn't run",
+    "notChecked": "Not checked",
+    "noResponse": "No response came back from the check.",
+    "checkedOnOpen": "Checked when this page was opened"
+  },
+  "recentEvents": "Recent events",
+  "noEvents": "No events recorded yet. The site is only observed during a scan or an action.",
+  "ssl": {
+    "title": "SSL certificate",
+    "remaining": "Validity remaining",
+    "days_one": "{count} day",
+    "days_other": "{count} days",
+    "issuerExpiry": "Issuer: {issuer} · Expires: {expires}",
+    "notRead": "Couldn't read the certificate.",
+    "notReadReason": "Couldn't read the certificate: {error}"
+  },
+  "authorityNote": "The authority level is set in Settings."
+}

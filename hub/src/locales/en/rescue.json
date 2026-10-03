@@ -1,0 +1,83 @@
+{
+  "title": "Site rescue",
+  "subtitle": "Recovering a site whose infection has gone past the point where its files can be trusted",
+  "premise": {
+    "title": "Why replace instead of clean",
+    "body": "You can't prove a PHP file is clean — a good backdoor is indistinguishable from healthy code. But you can prove a file is <b>identical</b> to the official release. So nothing here is cleaned; files are replaced, and anything without an official source is your decision, never an automatic deletion."
+  },
+  "steps": {
+    "backup": {
+      "title": "Snapshot",
+      "desc": "A full database backup before any change. The backup itself is infected — its purpose is not to restore the site, but to make going back possible."
+    },
+    "inventory": {
+      "title": "Inventory",
+      "desc": "Every plugin and theme sorted into one of three groups: replaceable from the repository, needs a clean copy from its vendor, or a folder that isn't a plugin at all."
+    },
+    "leftovers": {
+      "title": "Hunt for leftovers",
+      "desc": "Places a core reinstall doesn't cover: PHP files in uploads, drop-ins, mu-plugins."
+    },
+    "dbAudit": {
+      "title": "Database audit",
+      "desc": "Admin users, hidden capabilities, infected options, and suspicious cron jobs. Report only — nothing is deleted."
+    },
+    "rotateKeys": {
+      "title": "Rotate keys",
+      "desc": "If the attacker reached the database, they have the password hashes and session tokens. Without this step, all the work above is undone by tomorrow."
+    },
+    "verify": {
+      "title": "Verify",
+      "desc": "Clean core, an empty scan, and no critical leftovers. Anything less than all three is a claim, not a result."
+    }
+  },
+  "confirmRotate": "Rotating keys signs every user out of the site — including you.\n\nA backup copy of wp-config.php is kept. Continue?",
+  "taskTitle": "Site rescue: {step}",
+  "errors": {
+    "queuedNoId": "The step was queued, but no status id came back — run it again later.",
+    "notRun": "Not run.",
+    "statusUnread": "Couldn't read the status.",
+    "pollGaveUp": "Reading the step's status failed several times. It is still running on the site — run it again later.",
+    "failedOnSite": "The step failed on the site."
+  },
+  "badge": {
+    "writes": "Writes",
+    "readOnly": "Read-only"
+  },
+  "run": "Run",
+  "runAgain": "Run again",
+  "running": "Running…",
+  "listSep": ", ",
+  "result": {
+    "backupFailed": "No backup was taken.",
+    "backupSaved": "Database saved: {tables} tables, {rows} rows, {mb} MB.",
+    "dumpVerified": "Full dump verified.",
+    "dumpIncomplete": "The dump is incomplete — don't rely on this backup.",
+    "invRepo": "replaceable from the repository",
+    "invForeign": "need files from their vendor",
+    "invOrphan": "folders without a plugin header",
+    "needsUpload": "Needs upload:",
+    "suspectFolders": "Suspicious folders:",
+    "suspectFoldersNote": "— these are often the backdoor itself, but deleting them without review breaks the site.",
+    "critical_one": "{count} critical item",
+    "critical_other": "{count} critical items",
+    "review_one": "{count} item needs review",
+    "review_other": "{count} items need review",
+    "admins_one": "{count} admin account",
+    "admins_other": "{count} admin accounts",
+    "hiddenAdmins_one": "{count} user with admin capabilities but no admin role:",
+    "hiddenAdmins_other": "{count} users with admin capabilities but no admin role:",
+    "suspectOptions_one": "{count} suspicious option:",
+    "suspectOptions_other": "{count} suspicious options:",
+    "suspectCron": "Suspicious cron:",
+    "rotateFailed": "Not done.",
+    "rotateBackup": "Backup copy:",
+    "core": "Core: {value}",
+    "coreClean": "clean",
+    "coreUnknown_one": "{count} unknown file",
+    "coreUnknown_other": "{count} unknown files",
+    "scan_one": "Scan: {count} finding",
+    "scan_other": "Scan: {count} findings",
+    "leftoverCritical": "Critical leftovers: {count}"
+  }
+}

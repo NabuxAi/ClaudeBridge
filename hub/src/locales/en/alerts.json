@@ -1,0 +1,35 @@
+{
+  "title": "Emergency alerts",
+  "subtitle": "How we tell you if a site gets hacked",
+  "saved": "Saved.",
+  "saveFailed": "Could not save.",
+  "push": {
+    "title": "Browser notifications",
+    "hint": "The fastest channel. If you add this panel to your phone's home screen, notifications arrive just like an app's.",
+    "enable": "Enable notifications on this device",
+    "requesting": "Requesting permission…",
+    "unsupported": "This browser does not support notifications.",
+    "denied": "Notification permission was not granted. Without it, browser notifications cannot work.",
+    "noWorker": "The service worker is not registered; reload the page.",
+    "noSubscription": "No notification subscription was created.",
+    "enabled": "Browser notifications enabled.",
+    "failed": "Notifications could not be enabled."
+  },
+  "readiness": {
+    "none": "You have no working way to be notified",
+    "count_one": "{count} working channel",
+    "count_other": "{count} working channels"
+  },
+  "channels": {
+    "title": "Notification channels",
+    "hint": "Each channel has two sides: the service must be configured on our server, and your contact details must be on file too.",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "phone": {
+    "title": "Mobile number",
+    "hint": "SMS helps when the phone has no internet or the app isn't installed — exactly when the other channels fail.",
+    "placeholder": "09123456789"
+  },
+  "caveat": "When an alert is sent, we only know the service accepted it — not that it reached you or was read. That is why more than one channel matters."
+}

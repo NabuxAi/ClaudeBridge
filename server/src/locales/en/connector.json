@@ -1,0 +1,7 @@
+{
+  "events": {
+    "autoUpdateMixed": "Automatic update: {done} done, {failed} failed",
+    "autoUpdateDone": "Automatic update: {count} done",
+    "updateFailed": "Update failed: {name}"
+  }
+}

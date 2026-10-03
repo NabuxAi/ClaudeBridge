@@ -6,7 +6,7 @@ import {
   Button, MetricCard, StatusPill, ActivityRow, AuthorityBadge, ProgressBar, Provenance,
   NotMeasured, SkeletonStats, SkeletonCard, SkeletonTable,
 } from '../../components/index.js'
-import { faNum } from '../../lib/format.js'
+import { t, digits, date } from '../../lib/i18n.js'
 import { site as siteApi } from '../../lib/api.js'
 
 export default function Overview() {
@@ -23,7 +23,7 @@ export default function Overview() {
     return siteApi(siteId)
       .overview()
       .then((d) => { if (aliveRef.current) setData(d) })
-      .catch((e) => { if (aliveRef.current) setLoadError(e?.message || 'بررسی سایت ممکن نشد.') })
+      .catch((e) => { if (aliveRef.current) setLoadError(e?.message || t('overview.loadError')) })
   }, [siteId])
 
   const load = async () => {
@@ -40,11 +40,11 @@ export default function Overview() {
 
   const head = (
     <PageHead
-      title="نمای کلی"
-      subtitle="وضعیت لحظه‌ای سایت شما"
+      title={t('overview.title')}
+      subtitle={t('overview.subtitle')}
       action={(
         <Button variant="secondary" size="sm" leftIcon="refresh-cw" disabled={checking} onClick={load}>
-          {checking ? 'در حال بررسی…' : 'بررسی دوباره'}
+          {checking ? t('overview.checking') : t('overview.checkAgain')}
         </Button>
       )}
     />
@@ -57,10 +57,10 @@ export default function Overview() {
       return (
         <>
           {head}
-          <NotMeasured title="وضعیت سایت خوانده نشد" reason={loadError} icon="alert-triangle" />
+          <NotMeasured title={t('overview.notReadTitle')} reason={loadError} icon="alert-triangle" />
           <div style={{ textAlign: 'center', marginTop: 14 }}>
             <Button variant="secondary" size="sm" leftIcon="refresh-cw" disabled={checking} onClick={load}>
-              تلاش دوباره
+              {t('common.retry')}
             </Button>
           </div>
         </>
@@ -96,7 +96,7 @@ export default function Overview() {
       {loadError && (
         <div className="psa-err" role="alert">
           <Icon name="alert-triangle" size={17} style={{ flex: '0 0 auto', marginTop: 2 }} />
-          <div style={{ flex: 1 }}>بررسی دوباره ممکن نشد: {loadError}</div>
+          <div style={{ flex: 1 }}>{t('overview.recheckFailed', { error: loadError })}</div>
         </div>
       )}
 
@@ -111,7 +111,7 @@ export default function Overview() {
                 and a certificate answered — that is not the same as every part
                 of a shop working, and the wording should not imply it. */}
             <div style={{ fontSize: 22, fontWeight: 800 }}>
-              {variant === 'ok' ? 'سایت پاسخ می‌دهد' : variant === 'down' ? 'سایت پاسخ نداد' : 'بررسی انجام نشد'}
+              {variant === 'ok' ? t('overview.banner.ok') : variant === 'down' ? t('overview.banner.down') : t('overview.banner.unknown')}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 9, flexWrap: 'wrap' }}>
               {/* 'down' had no label and no colour in the pill scale — a failed
@@ -119,15 +119,15 @@ export default function Overview() {
                   answered badly, offline gray for a check that never happened. */}
               <StatusPill
                 status={variant === 'ok' ? 'healthy' : variant === 'down' ? 'critical' : 'offline'}
-                label={variant === 'unknown' ? 'بررسی نشد' : undefined}
+                label={variant === 'unknown' ? t('overview.banner.notChecked') : undefined}
               />
               {variant === 'unknown' ? (
                 <span style={{ fontSize: 12, color: 'var(--gd-text-muted)' }}>
-                  {data.probeError || 'پاسخی از بررسی دریافت نشد.'}
+                  {data.probeError || t('overview.banner.noResponse')}
                 </span>
               ) : (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--gd-text-muted)' }}>
-                  <Icon name="refresh-cw" size={13} /> بررسی‌شده هنگام باز کردن این صفحه
+                  <Icon name="refresh-cw" size={13} /> {t('overview.banner.checkedOnOpen')}
                 </span>
               )}
             </div>
@@ -142,7 +142,7 @@ export default function Overview() {
                   <span style={{ color: 'var(--gd-text-secondary)' }}>{s.label}</span>
                 </span>
                 {/* The reading behind the dot. A green dot on its own is a claim;
-                    "200 در 340ms" is evidence. */}
+                    "200 in 340ms" is evidence. */}
                 {s.detail && <span style={{ fontSize: 11, color: 'var(--gd-text-muted)', paddingInlineStart: 16 }}>{s.detail}</span>}
               </span>
             ))}
@@ -155,7 +155,7 @@ export default function Overview() {
         {metrics.map((m) => (
           <MetricCard
             key={m.label} icon={m.icon} iconTone={m.tone} label={m.label}
-            value={faNum(m.value)} unit={m.unit}
+            value={digits(m.value)} unit={m.unit}
           />
         ))}
       </div>
@@ -164,12 +164,12 @@ export default function Overview() {
       <div className="psa-cols">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 15, fontWeight: 700, marginBottom: 12 }}>
-            <span>رخدادهای اخیر</span>
+            <span>{t('overview.recentEvents')}</span>
           </div>
           <div className="psa-card psa-card--list">
             {report.length === 0 && (
               <div style={{ padding: '24px 0', textAlign: 'center', fontSize: 13, color: 'var(--gd-text-muted)', lineHeight: 1.9 }}>
-                هنوز رخدادی ثبت نشده. سایت فقط هنگام اسکن یا اقدام دیده می‌شود.
+                {t('overview.noEvents')}
               </div>
             )}
             {report.map((r, i) => (
@@ -184,14 +184,14 @@ export default function Overview() {
             had no handler. Replaced with the certificate, which is a real
             reading and the thing that most often takes a healthy site down. */}
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>گواهی SSL</div>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>{t('overview.ssl.title')}</div>
           <div className="psa-card psa-card--pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {data.probe?.cert?.ok ? (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--gd-text-secondary)', fontWeight: 600 }}>اعتبار باقی‌مانده</span>
+                  <span style={{ color: 'var(--gd-text-secondary)', fontWeight: 600 }}>{t('overview.ssl.remaining')}</span>
                   <span className="dwp-mono" style={{ fontWeight: 700, color: data.probe.cert.daysLeft < 14 ? 'var(--gd-danger-text)' : data.probe.cert.daysLeft < 30 ? 'var(--gd-warning-text)' : 'var(--gd-success)' }}>
-                    {faNum(data.probe.cert.daysLeft)} روز
+                    {t('overview.ssl.days', { count: data.probe.cert.daysLeft })}
                   </span>
                 </div>
                 <ProgressBar
@@ -199,12 +199,12 @@ export default function Overview() {
                   tone={data.probe.cert.daysLeft < 14 ? 'danger' : data.probe.cert.daysLeft < 30 ? 'warning' : 'success'}
                 />
                 <p style={{ fontSize: 12, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.8 }}>
-                  صادرکننده: {data.probe.cert.issuer || 'نامشخص'} · انقضا: {new Date(data.probe.cert.expiresAt).toLocaleDateString('fa-IR')}
+                  {t('overview.ssl.issuerExpiry', { issuer: data.probe.cert.issuer || t('common.unknown'), expires: date(data.probe.cert.expiresAt) })}
                 </p>
               </>
             ) : (
               <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>
-                گواهی خوانده نشد{data.probe?.cert?.error ? `: ${data.probe.cert.error}` : ''}.
+                {data.probe?.cert?.error ? t('overview.ssl.notReadReason', { error: data.probe.cert.error }) : t('overview.ssl.notRead')}
               </p>
             )}
             <div style={{ height: 1, background: 'var(--gd-border-subtle)' }} />
@@ -215,7 +215,7 @@ export default function Overview() {
                   on every site, whatever its actual level. */}
               {data.authority && <AuthorityBadge level={data.authority} size="sm" />}
               <span style={{ fontSize: 12, color: 'var(--gd-text-muted)', lineHeight: 1.5 }}>
-                سطح اختیار در تنظیمات تعیین می‌شود.
+                {t('overview.authorityNote')}
               </span>
             </div>
           </div>

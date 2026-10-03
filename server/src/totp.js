@@ -52,7 +52,7 @@ export function base32Decode(str) {
   const bytes = []
   for (const ch of clean) {
     const idx = B32.indexOf(ch)
-    if (idx === -1) throw new Error('رشته base32 نویسهٔ نامعتبر دارد.')
+    if (idx === -1) throw new Error('base32 string contains an invalid character.')
     value = (value << 5) | idx
     bits += 5
     if (bits >= 8) {

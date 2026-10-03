@@ -1,0 +1,18 @@
+{
+  "services": {
+    "home": "صفحهٔ اصلی",
+    "login": "صفحهٔ ورود مدیریت",
+    "ssl": "گواهی SSL"
+  },
+  "detail": {
+    "answered": "{status} در {ms}ms",
+    "code": "کد {status}",
+    "loginLocked": "دسترسی بسته شده (۴۰۳) — احتمالاً عمدی",
+    "certDays_other": "{count} روز اعتبار",
+    "certDaysIssuer_other": "{count} روز اعتبار — {issuer}"
+  },
+  "cert": {
+    "unreadable": "گواهی خوانده نشد",
+    "not_https": "سایت روی https نیست"
+  }
+}

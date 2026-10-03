@@ -1,0 +1,73 @@
+{
+  "badge": "Pricing page — payments aren't active yet",
+  "title": "A plan that grows with your business",
+  "lead": "From one store to dozens of client sites — there's always a plan that fits. Change or cancel anytime.",
+  "trial": {
+    "lastDay": "Today is the last day of pilot access",
+    "daysLeft_one": "{count} day of pilot access left",
+    "daysLeft_other": "{count} days of pilot access left"
+  },
+  "monthly": "Monthly billing",
+  "yearly": "Yearly billing",
+  "yearlyBonus": "{n} months free",
+  "perYear": "Toman / year",
+  "perMonth": "Toman / month",
+  "monthlyEquiv": "Equivalent to {amount} Toman per month",
+  "popular": "Most popular",
+  "pilotCta": "Request pilot access",
+  "choosePlan": "Choose plan",
+  "submitting": "Submitting…",
+  "requestOk": "Pilot access request recorded.",
+  "requestFailed": "Couldn't submit the request.",
+  "loadFailed": "Couldn't load the plans.",
+  "loadError": "Error loading",
+  "compare": "Full feature comparison",
+  "feature": "Feature",
+  "cols": {
+    "base": "Basic",
+    "pro": "Professional",
+    "agency": "Agency"
+  },
+  "plans": {
+    "base": {
+      "subtitle": "For a personal website or store",
+      "f1": "1 WordPress site",
+      "f2": "Automatic core, plugin and theme updates",
+      "f3": "Safe mode: lock on automatic updates",
+      "f4": "Database backup on the site itself",
+      "f5": "Daily malware scan"
+    },
+    "pro": {
+      "subtitle": "For freelancers and growing businesses",
+      "head": "Everything in Basic, plus:",
+      "f1": "Up to 5 WordPress sites",
+      "f2": "Core file integrity check",
+      "f3": "Plugin and theme conflict check",
+      "f4": "Rescue operations",
+      "f5": "Assistant grounded in the site's real data"
+    },
+    "agency": {
+      "subtitle": "For agencies managing client sites",
+      "head": "Everything in Professional, plus:",
+      "f1": "Unlimited sites",
+      "f2": "Manage client sites from one panel"
+    }
+  },
+  "rows": {
+    "sites": "Number of sites",
+    "autoUpdates": "Automatic updates",
+    "malwareScan": "Malware scan",
+    "dbBackup": "Database backup",
+    "integrity": "Core integrity check",
+    "conflict": "Conflict check",
+    "rescue": "Rescue operations",
+    "support": "Support"
+  },
+  "cells": {
+    "unlimited": "Unlimited",
+    "daily": "Daily",
+    "onSite": "On the site itself",
+    "ticket": "Ticket",
+    "priority": "Priority"
+  }
+}

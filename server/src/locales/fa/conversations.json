@@ -1,0 +1,9 @@
+{
+  "newTitle": "گفتگوی جدید",
+  "emptyMessage": "متن پیام نمی‌تواند خالی باشد.",
+  "noReply": "پاسخی دریافت نشد.",
+  "replyReady": "پاسخ دستیار آماده شد: «{title}»",
+  "replyError": "خطا در دریافت پاسخ: {error}",
+  "unknownError": "خطای نامشخص",
+  "notFound": "گفتگو یافت نشد."
+}

@@ -1,18 +1,19 @@
 // ============================================================
-// Performance & Database Specialist Sub-Agent (عامل تخصصی سرعت و بهینه‌سازی)
+// Performance & Database Specialist Sub-Agent
 // ============================================================
 import * as connector from '../../connector.js'
+import { t } from '../../i18n.js'
 
 export const PERFORMANCE_AGENT = {
   id: 'performance',
-  name: 'متخصص سرعت و بهینه‌سازی منابع',
-  role: 'تحلیل حجم اتولود (Autoload)، کوئری‌های کند دیتابیس، کش اشیاء، و بهینه‌سازی جداول وردپرس',
-  systemPrompt: `شما «عامل تخصصی عملکرد و سرعت وردپرس» هستید.
-وظیفه شما:
-۱. بررسی حجم آپشن‌های خودکار لود شونده (Autoload Options) در جدول wp_options.
-۲. شناسایی ترنزینت‌های منقضی شده (Expired Transients) و جداول دیتابیس دچار فرسایش (Overhead).
-۳. پایش مدت زمان لود و پاسخگویی سرور (TTFB) و وضعیت پلاگین‌های کشینگ (LiteSpeed / WP Rocket / Redis Object Cache).
-۴. تولید دستورالعمل‌ها و دستورهای استاندارد برای سبک‌سازی و افزایش سرعت لود.`,
+  nameKey: 'agents.specialists.performance.name',
+  roleKey: 'agents.specialists.performance.role',
+  systemPrompt: `You are the WordPress performance and speed specialist agent.
+Your job:
+1. Check the size of autoloaded options in the wp_options table.
+2. Find expired transients and database tables with overhead.
+3. Watch load time, server response time (TTFB) and the state of caching plugins (LiteSpeed / WP Rocket / Redis Object Cache).
+4. Produce standard instructions and commands for slimming the site down and speeding up page loads.`,
 
   tools: [
     'autoload_audit',
@@ -23,7 +24,7 @@ export const PERFORMANCE_AGENT = {
     'speed_audit',
   ],
 
-  async analyze(target, _options = {}) {
+  async analyze(target, options = {}) {
     const findings = {
       autoloadSizeKb: 0,
       expiredTransients: 0,
@@ -43,8 +44,8 @@ export const PERFORMANCE_AGENT = {
           findings.score -= 25
           findings.recommendations.push({
             type: 'autoload_bloat',
-            title: `حجم بالای Autoload (${sizeKb} کیلوبایت)`,
-            action: 'پاکسازی آپشن‌های افزونه‌های حذف شده یا غیرضروری',
+            title: t(options.locale, 'agents.performance.autoloadTitle', { size: sizeKb }),
+            action: t(options.locale, 'agents.performance.autoloadAction'),
             impact: 'high',
           })
         }
@@ -58,14 +59,14 @@ export const PERFORMANCE_AGENT = {
           findings.score -= 15
           findings.recommendations.push({
             type: 'table_optimize',
-            title: `جداول دیتابیس نیاز به بهینه‌سازی دارند (${payload.overhead_mb} مگابایت فضای خالی)`,
-            action: 'اجرای OPTIMIZE TABLE برای جداول کلیدی',
+            title: t(options.locale, 'agents.performance.overheadTitle', { size: Number(payload.overhead_mb) }),
+            action: t(options.locale, 'agents.performance.overheadAction'),
             impact: 'medium',
           })
         }
       }
     } catch (e) {
-      findings.recommendations.push({ type: 'error', title: `خطا در پایش دیتابیس: ${e.message}` })
+      findings.recommendations.push({ type: 'error', title: t(options.locale, 'agents.performance.failed', { error: e.message }) })
     }
 
     findings.score = Math.max(0, findings.score)

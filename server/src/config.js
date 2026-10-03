@@ -130,6 +130,8 @@ export const config = {
     emailApiKey: process.env.EMAIL_API_KEY || '',
     emailFrom: process.env.EMAIL_FROM || 'alerts@digiwp.com',
   },
+  // Language of operator-only text (Telegram digest). English unless set.
+  operatorLocale: process.env.OPERATOR_LOCALE || 'en',
   // Hour (UTC, 0–23) to send the daily digest.
   digestHour: Number.isFinite(Number(process.env.DIGEST_HOUR)) ? Number(process.env.DIGEST_HOUR) : 8,
 }

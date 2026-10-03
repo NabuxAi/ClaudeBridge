@@ -4,12 +4,15 @@ import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, IconButton } from '../../components/index.js'
 import { site as siteApi } from '../../lib/api.js'
+import { t, date } from '../../lib/i18n.js'
+import Trans from '../../components/Trans.jsx'
 
+// Keys, translated at render time.
 const SUGGESTIONS = [
-  'آخرین بکاپ کی بود و آیا سالمه؟',
-  'چه آپدیت‌هایی در صف هستند؟',
-  'الان چه هشدار بازی داریم؟',
-  'وضعیت امنیت و فایل‌های هسته چطوره؟',
+  'assistant.suggestions.backup',
+  'assistant.suggestions.updates',
+  'assistant.suggestions.alerts',
+  'assistant.suggestions.security',
 ]
 
 const mono = { fontFamily: 'var(--gd-font-mono)' }
@@ -78,8 +81,8 @@ export default function Assistant() {
   const notifyReply = useCallback((title, text) => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       try {
-        new Notification(title || 'پاسخ هوش مصنوعی آماده است', {
-          body: text || 'دستیار هوشمند پاسخ سایت شما را ثبت کرد.',
+        new Notification(title || t('assistant.notify.title'), {
+          body: text || t('assistant.notify.body'),
           icon: '/icon-192.png',
         })
       } catch {
@@ -110,19 +113,19 @@ export default function Assistant() {
       } else {
         // Create initial default conversation
         try {
-          const created = await siteApi(siteId).createConversation('گفتگوی اصلی')
+          const created = await siteApi(siteId).createConversation(t('assistant.defaultTitle.main'))
           if (created?.id) {
             setConversations([created])
             setActiveConvId(created.id)
           }
         } catch (e) {
-          setListError(e?.message || 'ایجاد گفتگوی نخست ناموفق بود.')
+          setListError(e?.message || t('assistant.errors.createFirst'))
         }
       }
     } catch (e) {
       // An unreadable list must say so — "no conversations yet" would be a
       // claim about data this page never received.
-      setListError(e?.message || 'بارگذاری گفتگوها ناموفق بود.')
+      setListError(e?.message || t('assistant.errors.loadList'))
     } finally {
       setLoadingList(false)
     }
@@ -139,7 +142,7 @@ export default function Assistant() {
         // If it was processing and now ready, notify!
         if (activeConv?.status === 'processing' && conv.status === 'ready' && isPoll) {
           const lastAiMsg = [...(conv.messages || [])].reverse().find((m) => m.sender === 'ai')
-          notifyReply(`پاسخ دستیار: ${conv.title}`, lastAiMsg?.text?.slice(0, 100))
+          notifyReply(t('assistant.notify.titleFor', { title: conv.title }), lastAiMsg?.text?.slice(0, 100))
         }
         setActiveConv(conv)
       }
@@ -148,7 +151,7 @@ export default function Assistant() {
       // failure must be visible instead of rendering an empty chat.
       if (!isPoll) {
         setActiveConv(null)
-        setConvError(e?.message || 'بارگذاری پیام‌ها ناموفق بود.')
+        setConvError(e?.message || t('assistant.errors.loadMessages'))
       }
     } finally {
       if (!isPoll) setLoadingConv(false)
@@ -197,21 +200,21 @@ export default function Assistant() {
   // Create new conversation
   const handleNewConversation = async () => {
     try {
-      const created = await siteApi(siteId).createConversation('گفتگوی جدید')
+      const created = await siteApi(siteId).createConversation(t('assistant.defaultTitle.new'))
       if (created?.id) {
         setConversations((prev) => [created, ...prev])
         setActiveConvId(created.id)
         setActiveConv(created)
       }
     } catch (e) {
-      alert(e?.message || 'خطا در ایجاد گفتگوی جدید')
+      alert(e?.message || t('assistant.errors.create'))
     }
   }
 
   // Delete conversation
   const handleDeleteConversation = async (e, convId) => {
     e.stopPropagation()
-    if (!window.confirm('آیا از حذف این گفتگو اطمینان دارید؟')) return
+    if (!window.confirm(t('assistant.confirmDelete'))) return
     try {
       await siteApi(siteId).deleteConversation(convId)
       const remaining = conversations.filter((c) => c.id !== convId)
@@ -224,7 +227,7 @@ export default function Assistant() {
         }
       }
     } catch (err) {
-      alert(err?.message || 'خطا در حذف گفتگو')
+      alert(err?.message || t('assistant.errors.delete'))
     }
   }
 
@@ -244,7 +247,7 @@ export default function Assistant() {
     } catch (e) {
       // A failed rename stays open with its reason visible — closing silently
       // would present the old title as if it had been saved.
-      alert(e?.message || 'ذخیرهٔ عنوان ناموفق بود.')
+      alert(e?.message || t('assistant.errors.saveTitle'))
     }
   }
 
@@ -254,7 +257,7 @@ export default function Assistant() {
     if (!q || sending) return
     if (!activeConvId) {
       // Sending into a closed conversation must say so, not vanish on Enter.
-      setSendNotice('گفتگویی باز نیست — یک گفتگو بسازید یا بارگذاری را دوباره تلاش کنید.')
+      setSendNotice(t('assistant.noOpenConversation'))
       return
     }
     setSendNotice('')
@@ -293,7 +296,7 @@ export default function Assistant() {
           {
             id: 'err-' + Date.now(),
             sender: 'ai',
-            text: `خطا در ارسال درخواست: ${e?.message || 'مشکل در ارتباط با سرور'}`,
+            text: t('assistant.errors.send', { reason: e?.message || t('assistant.errors.connection') }),
             error: e?.message,
             created_at: Date.now(),
           },
@@ -340,7 +343,7 @@ export default function Assistant() {
         ...(proposalId ? { proposalId } : {}),
       })
 
-      const outcome = res?.ok === false ? (res.message || 'اجرا نشد.') : 'با موفقیت انجام شد.'
+      const outcome = res?.ok === false ? (res.message || t('assistant.errors.notRun')) : t('assistant.outcomeOk')
 
       setActiveConv((prev) => ({
         ...prev,
@@ -356,7 +359,7 @@ export default function Assistant() {
         }),
       }))
     } catch (err) {
-      const outcome = err?.message || 'اجرا نشد.'
+      const outcome = err?.message || t('assistant.errors.notRun')
       setActiveConv((prev) => ({
         ...prev,
         messages: prev.messages.map((m) => {
@@ -377,12 +380,12 @@ export default function Assistant() {
 
   return (
     <>
-      <PageHead title="دستیار هوشمند وردپرس" subtitle="پشتیبان فنی همیشه بیدار، مستند به لاگ‌های زنده و تحلیل چند لایه" />
+      <PageHead title={t('assistant.title')} subtitle={t('assistant.subtitle')} />
 
       {/* In-app Notification Banner */}
       {notificationBanner && (
         <div style={{
-          position: 'fixed', top: 20, insetInlineStart: '50%', transform: 'translateX(50%)',
+          position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
           zIndex: 999, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-primary-border)',
           boxShadow: 'var(--gd-shadow-xl)', borderRadius: 'var(--gd-radius-lg)', padding: '12px 18px',
           display: 'flex', alignItems: 'center', gap: 12, animation: 'fadeIn 0.3s ease',
@@ -394,7 +397,7 @@ export default function Assistant() {
             <div style={{ fontSize: 13, fontWeight: 700 }}>{notificationBanner.title}</div>
             <div style={{ fontSize: 11.5, color: 'var(--gd-text-secondary)', marginTop: 2 }}>{notificationBanner.text}</div>
           </div>
-          <IconButton icon="x" label="بستن" size="sm" onClick={() => setNotificationBanner(null)} />
+          <IconButton icon="x" label={t('common.close')} size="sm" onClick={() => setNotificationBanner(null)} />
         </div>
       )}
 
@@ -411,25 +414,25 @@ export default function Assistant() {
               fullWidth
               onClick={handleNewConversation}
             >
-              گفتگوی جدید
+              {t('assistant.newConversation')}
             </Button>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
             {loadingList ? (
               <div style={{ padding: 20, textAlign: 'center', fontSize: 12.5, color: 'var(--gd-text-muted)' }}>
-                در حال بارگذاری گفتگوها…
+                {t('assistant.loadingList')}
               </div>
             ) : listError ? (
               <div className="dwp-assist__err" role="alert">
                 <div>{listError}</div>
                 <Button size="sm" variant="secondary" style={{ marginTop: 8 }} onClick={() => loadConversations()}>
-                  تلاش دوباره
+                  {t('common.retry')}
                 </Button>
               </div>
             ) : conversations.length === 0 ? (
               <div style={{ padding: 20, textAlign: 'center', fontSize: 12.5, color: 'var(--gd-text-muted)' }}>
-                گفتگویی ثبت نشده است.
+                {t('assistant.emptyList')}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -466,23 +469,23 @@ export default function Assistant() {
                           color: isActive ? 'var(--gd-primary)' : 'var(--gd-text)',
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
-                          {conv.title || 'گفتگوی بدون عنوان'}
+                          {conv.title || t('assistant.untitled')}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 11, color: 'var(--gd-text-muted)' }}>
                           {isProcessing && (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--gd-warning)' }}>
                               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gd-warning)' }} />
-                              در حال پردازش
+                              {t('assistant.processing')}
                             </span>
                           )}
                           {!isProcessing && conv.created_at && (
-                            <span>{new Date(Number(conv.updated_at || conv.created_at)).toLocaleDateString('fa-IR')}</span>
+                            <span>{date(Number(conv.updated_at || conv.created_at))}</span>
                           )}
                         </div>
                       </div>
                       <IconButton
                         icon="trash-2"
-                        label="حذف"
+                        label={t('common.delete')}
                         size="sm"
                         style={{ opacity: 0.5 }}
                         onClick={(e) => handleDeleteConversation(e, conv.id)}
@@ -516,17 +519,17 @@ export default function Assistant() {
                       fontSize: 13, fontFamily: 'inherit', flex: 1, outline: 'none',
                     }}
                   />
-                  <Button size="sm" variant="primary" onClick={handleSaveTitle}>ذخیره</Button>
-                  <Button size="sm" variant="subtle" onClick={() => setEditingTitle(false)}>انصراف</Button>
+                  <Button size="sm" variant="primary" onClick={handleSaveTitle}>{t('common.save')}</Button>
+                  <Button size="sm" variant="subtle" onClick={() => setEditingTitle(false)}>{t('common.cancel')}</Button>
                 </div>
               ) : (
                 <>
                   <span style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {activeConv?.title || 'گفتگو با دستیار'}
+                    {activeConv?.title || t('assistant.headerFallback')}
                   </span>
                   <IconButton
                     icon="pencil"
-                    label="ویرایش عنوان"
+                    label={t('assistant.editTitle')}
                     size="sm"
                     onClick={() => {
                       setTitleInput(activeConv?.title || '')
@@ -540,7 +543,7 @@ export default function Assistant() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {activeConv?.status === 'processing' && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--gd-warning)', background: 'var(--gd-warning-bg)', padding: '4px 10px', borderRadius: 'var(--gd-radius-pill)' }}>
-                  <Icon name="loader-2" size={13} className="gd-activity__ic--spin" /> در حال تحلیل در پس‌زمینه…
+                  <Icon name="loader-2" size={13} className="gd-activity__ic--spin" /> {t('assistant.analyzing')}
                 </span>
               )}
             </div>
@@ -559,15 +562,15 @@ export default function Assistant() {
                 borderRadius: 16, padding: '14px 17px', fontSize: 13.5, lineHeight: 1.85,
                 color: 'var(--gd-text)', boxShadow: 'var(--gd-shadow-xs)',
               }}>
-                من دستیار هوشمند و متصل به موتور چندعامله {siteName
-                  ? <>سایت <span style={mono}>{siteName}</span></>
-                  : 'سایت شما'} هستم. هر سوال یا بررسی امنیتی، سرعت، آپدیت و رفع تداخل دارید بفرمایید تا مستقیماً با بررسی لاگ‌های زنده سایت پاسخ دهم.
+                {siteName
+                  ? <Trans k="assistant.intro.withSite" vars={{ site: siteName }} components={{ site: (c) => <span style={mono}>{c}</span> }} />
+                  : t('assistant.intro.noSite')}
               </div>
             </div>
 
             {loadingConv && (
               <div style={{ textAlign: 'center', padding: 20, color: 'var(--gd-text-muted)', fontSize: 13 }}>
-                در حال بارگذاری پیام‌ها…
+                {t('assistant.loadingMessages')}
               </div>
             )}
 
@@ -575,7 +578,7 @@ export default function Assistant() {
               <div className="dwp-assist__err" role="alert">
                 <div>{convError}</div>
                 <Button size="sm" variant="secondary" style={{ marginTop: 8 }} onClick={() => loadActiveConversation(activeConvId)}>
-                  تلاش دوباره
+                  {t('common.retry')}
                 </Button>
               </div>
             )}
@@ -620,7 +623,7 @@ export default function Assistant() {
 
                     {m.ran && Array.isArray(m.ran) && m.ran.length > 0 && (
                       <div style={{ fontSize: 11.5, color: 'var(--gd-text-secondary)', marginTop: 9 }}>
-                        اقدام انجام شده: {m.ran.join('، ')}
+                        {t('assistant.ran', { list: m.ran.join(t('assistant.listSep')) })}
                       </div>
                     )}
 
@@ -632,7 +635,7 @@ export default function Assistant() {
                               <Icon name="shield-check" size={14} />
                               <span style={{ ...mono, fontSize: 12.5, fontWeight: 700 }}>{pr.tool}</span>
                               {pr.kind === 'sensitive' && (
-                                <span style={{ fontSize: 10.5, color: 'var(--gd-danger)', background: 'var(--gd-danger-subtle)', borderRadius: 999, padding: '2px 8px' }}>حساس</span>
+                                <span style={{ fontSize: 10.5, color: 'var(--gd-danger)', background: 'var(--gd-danger-subtle)', borderRadius: 999, padding: '2px 8px' }}>{t('assistant.sensitive')}</span>
                               )}
                             </div>
                             {pr.reason && (
@@ -648,7 +651,7 @@ export default function Assistant() {
                                 disabled={Boolean(m.running)}
                                 onClick={() => handleApproveProposal(m.id, pr)}
                               >
-                                {m.running === pr.tool ? 'در حال اجرا…' : 'تأیید و اجرا'}
+                                {m.running === pr.tool ? t('assistant.running') : t('assistant.approve')}
                               </Button>
                             )}
                           </div>
@@ -680,7 +683,7 @@ export default function Assistant() {
                   boxShadow: 'var(--gd-shadow-xs)', display: 'inline-flex', alignItems: 'center', gap: 8,
                 }}>
                   <Icon name="loader-2" size={15} className="gd-activity__ic--spin" style={{ color: 'var(--gd-primary)' }} />
-                  <span>دستیار در حال بررسی لاگ‌های سایت و پردازش در پس‌زمینه است…</span>
+                  <span>{t('assistant.thinking')}</span>
                 </div>
               </div>
             )}
@@ -698,7 +701,7 @@ export default function Assistant() {
                 <button
                   key={s}
                   type="button"
-                  onClick={() => handleSend(s)}
+                  onClick={() => handleSend(t(s))}
                   disabled={sending || activeConv?.status === 'processing'}
                   style={{
                     fontSize: 12, fontFamily: 'inherit', color: 'var(--gd-text-secondary)',
@@ -706,18 +709,18 @@ export default function Assistant() {
                     borderRadius: 999, padding: '5px 12px', cursor: (sending || activeConv?.status === 'processing') ? 'default' : 'pointer',
                   }}
                 >
-                  {s}
+                  {t(s)}
                 </button>
               ))}
             </div>
 
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, background: 'var(--gd-bg-inset)',
-              border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-pill)', padding: '6px 16px 6px 8px',
+              border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-pill)', paddingBlock: 6, paddingInlineStart: 16, paddingInlineEnd: 8,
             }}>
               <input
                 type="text"
-                placeholder="سؤالتان را بنویسید (مثلاً: وضعیت امنیت چطوره؟)…"
+                placeholder={t('assistant.inputPlaceholder')}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSend(input) }}
@@ -730,7 +733,7 @@ export default function Assistant() {
               <button
                 type="button"
                 className="dwp-assist__send"
-                aria-label="ارسال پیام"
+                aria-label={t('assistant.send')}
                 disabled={sending || activeConv?.status === 'processing'}
                 onClick={() => handleSend(input)}
               >

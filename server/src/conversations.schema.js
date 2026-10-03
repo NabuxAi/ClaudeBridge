@@ -7,7 +7,7 @@ export const SCHEMA = `
     id          TEXT PRIMARY KEY,
     site_id     TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
     user_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
-    title       TEXT NOT NULL DEFAULT 'گفتگوی جدید',
+    title       TEXT NOT NULL DEFAULT 'New conversation',
     status      TEXT NOT NULL DEFAULT 'ready', -- 'processing' | 'ready' | 'error'
     created_at  BIGINT NOT NULL,
     updated_at  BIGINT NOT NULL

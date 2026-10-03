@@ -15,6 +15,7 @@
 // ============================================================
 
 import * as mock from '../data/mock.js'
+import { getLang, t, num } from './i18n.js'
 
 const BASE = (import.meta.env.VITE_API_BASE_URL || 'https://api.digiwp.com/v1').replace(/\/$/, '')
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === '1'
@@ -30,6 +31,8 @@ async function http(path, { method = 'GET', body, signal } = {}) {
     signal,
     headers: {
       'Content-Type': 'application/json',
+      // The server answers messages (errors, labels, scope notes) in this language.
+      'Accept-Language': getLang(),
       ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
     },
     body: body != null ? JSON.stringify(body) : undefined,
@@ -62,6 +65,9 @@ export class ApiError extends Error {
 
 // Route to mock or real server without changing call-sites.
 const call = (mockFn, realFn) => (...args) => (USE_MOCK ? mockFn(...args) : realFn(...args))
+
+// Dev-mock size label, e.g. "35.0 MB" in the active locale's digits.
+const mockSize = (n, unit) => `${num(n, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${unit}`
 
 // ---- Auth (against YOUR server) --------------------------------
 export const auth = {
@@ -113,15 +119,15 @@ export const auth = {
     () => http('/auth/2fa/status')
   ),
   twoFactorSetup: call(
-    () => Promise.reject(new ApiError('ورود دو مرحله‌ای در حالت نمایشی در دسترس نیست.', 501)),
+    () => Promise.reject(new ApiError(t('api.mock.twoFactor'), 501)),
     () => http('/auth/2fa/setup', { method: 'POST', body: {} })
   ),
   twoFactorActivate: call(
-    () => Promise.reject(new ApiError('ورود دو مرحله‌ای در حالت نمایشی در دسترس نیست.', 501)),
+    () => Promise.reject(new ApiError(t('api.mock.twoFactor'), 501)),
     (b) => http('/auth/2fa/activate', { method: 'POST', body: b })
   ),
   twoFactorDisable: call(
-    () => Promise.reject(new ApiError('ورود دو مرحله‌ای در حالت نمایشی در دسترس نیست.', 501)),
+    () => Promise.reject(new ApiError(t('api.mock.twoFactor'), 501)),
     (b) => http('/auth/2fa/disable', { method: 'POST', body: b })
   ),
 }
@@ -160,15 +166,15 @@ export const account = {
   // (a fake cannot mint a deployment's VAPID keys), and the subscribe write
   // refusing — a mock must not look like a subscription that can receive.
   pushStatus: call(
-    () => Promise.resolve({ configured: false, reason: 'کلیدهای VAPID در حالت نمایشی تنظیم نشده‌اند.', subscriptions: [] }),
+    () => Promise.resolve({ configured: false, reason: t('api.mock.vapid'), subscriptions: [] }),
     () => http('/push/status')
   ),
   pushPublicKey: call(
-    () => Promise.resolve({ configured: false, message: 'اعلان مرورگر در حالت نمایشی فعال نیست.' }),
+    () => Promise.resolve({ configured: false, message: t('api.mock.pushOff') }),
     () => http('/push/public-key')
   ),
   pushSubscribe: call(
-    () => Promise.reject(new ApiError('ثبت اشتراک اعلان در حالت نمایشی در دسترس نیست.', 501)),
+    () => Promise.reject(new ApiError(t('api.mock.pushSubscribe'), 501)),
     (body) => http('/push/subscribe', { method: 'POST', body })
   ),
   pushUnsubscribe: call(
@@ -266,17 +272,17 @@ export function site(siteId) {
       () => Promise.resolve({
         ok: true,
         free_disk_bytes: 4 * 1024 * 1024 * 1024,
-        free_disk_formatted: '۴.۰ GB',
+        free_disk_formatted: mockSize(4, 'GB'),
         total_full_bytes: 250 * 1024 * 1024,
-        total_full_formatted: '۲۵۰.۰ MB',
+        total_full_formatted: mockSize(250, 'MB'),
         total_full_duration: 30,
         can_full_backup: true,
         can_db_backup: true,
         sections: {
-          db: { key: 'db', title: 'پایگاه داده (SQL)', description: 'جداول و رکوردهای دیتابیس', bytes: 35 * 1024 * 1024, formatted: '۳۵.۰ MB', duration_sec: 5, required: true },
-          plugins: { key: 'plugins', title: 'افزونه‌ها (Plugins)', description: 'پوشه wp-content/plugins', bytes: 85 * 1024 * 1024, formatted: '۸۵.۰ MB', duration_sec: 10, required: false },
-          themes: { key: 'themes', title: 'قالب‌ها (Themes)', description: 'پوشه wp-content/themes', bytes: 20 * 1024 * 1024, formatted: '۲۰.۰ MB', duration_sec: 4, required: false },
-          uploads: { key: 'uploads', title: 'رسانه‌ها و آپلودها (Uploads)', description: 'پوشه wp-content/uploads', bytes: 110 * 1024 * 1024, formatted: '۱۱۰.۰ MB', duration_sec: 14, required: false },
+          db: { key: 'db', title: t('api.mock.backup.db'), description: t('api.mock.backup.dbDesc'), bytes: 35 * 1024 * 1024, formatted: mockSize(35, 'MB'), duration_sec: 5, required: true },
+          plugins: { key: 'plugins', title: t('api.mock.backup.plugins'), description: t('api.mock.backup.pluginsDesc'), bytes: 85 * 1024 * 1024, formatted: mockSize(85, 'MB'), duration_sec: 10, required: false },
+          themes: { key: 'themes', title: t('api.mock.backup.themes'), description: t('api.mock.backup.themesDesc'), bytes: 20 * 1024 * 1024, formatted: mockSize(20, 'MB'), duration_sec: 4, required: false },
+          uploads: { key: 'uploads', title: t('api.mock.backup.uploads'), description: t('api.mock.backup.uploadsDesc'), bytes: 110 * 1024 * 1024, formatted: mockSize(110, 'MB'), duration_sec: 14, required: false },
         },
       }),
       () => http(p('/backups/preflight'))
@@ -396,11 +402,11 @@ export function site(siteId) {
       () => http(p('/conversations'))
     ),
     createConversation: call(
-      (title) => Promise.resolve({ id: 'conv-mock', title: title || 'گفتگوی جدید', status: 'ready', messages: [] }),
+      (title) => Promise.resolve({ id: 'conv-mock', title: title || t('api.mock.newConversation'), status: 'ready', messages: [] }),
       (title) => http(p('/conversations'), { method: 'POST', body: { title } })
     ),
     getConversation: call(
-      (convId) => Promise.resolve({ id: convId, title: 'گفتگو', status: 'ready', messages: [] }),
+      (convId) => Promise.resolve({ id: convId, title: t('api.mock.conversation'), status: 'ready', messages: [] }),
       (convId) => http(p(`/conversations/${convId}`))
     ),
     updateConversation: call(
@@ -463,25 +469,25 @@ export function site(siteId) {
       (targetId) => mock.runOffsiteBackup(siteId, targetId),
       (targetId) => http(p('/offsite-backups/jobs'), { method: 'POST', body: { targetId } })
     ),
-    // Uptime monitors — «بررسی دسترسی HTTP، نه سفر کاربری/پرداخت». The mocks
+    // Uptime monitors — "HTTP reachability check, not a user/payment journey". The mocks
     // answer the honest dev-mock states: an empty list carrying the scope
     // label (no invented readings), and create/update/check refusing with 501
     // because a fake cannot verify a real URL. Same pattern as the 2FA mocks.
     listMonitors: call(
       () => Promise.resolve({
         monitors: [],
-        availability: { scope: 'بررسی دسترسی HTTP، نه سفر کاربری/پرداخت', days7: { measured: false, percent: null, incidents: null, checks: 0 }, days30: { measured: false, percent: null, incidents: null, checks: 0 } },
-        scope: 'بررسی دسترسی HTTP، نه سفر کاربری/پرداخت',
+        availability: { scope: t('api.mock.monitorScope'), days7: { measured: false, percent: null, incidents: null, checks: 0 }, days30: { measured: false, percent: null, incidents: null, checks: 0 } },
+        scope: t('api.mock.monitorScope'),
         limit: 10,
       }),
       () => http(p('/monitors'))
     ),
     createMonitor: call(
-      () => Promise.reject(new ApiError('مانیتورها در حالت نمایشی در دسترس نیستند.', 501)),
+      () => Promise.reject(new ApiError(t('api.mock.monitors'), 501)),
       (body) => http(p('/monitors'), { method: 'POST', body })
     ),
     updateMonitor: call(
-      () => Promise.reject(new ApiError('مانیتورها در حالت نمایشی در دسترس نیستند.', 501)),
+      () => Promise.reject(new ApiError(t('api.mock.monitors'), 501)),
       (monitorId, body) => http(p(`/monitors/${encodeURIComponent(monitorId)}`), { method: 'PATCH', body })
     ),
     deleteMonitor: call(
@@ -489,7 +495,7 @@ export function site(siteId) {
       (monitorId) => http(p(`/monitors/${encodeURIComponent(monitorId)}`), { method: 'DELETE' })
     ),
     checkMonitor: call(
-      () => Promise.reject(new ApiError('بررسی دستی مانیتور در حالت نمایشی در دسترس نیست.', 501)),
+      () => Promise.reject(new ApiError(t('api.mock.monitorCheck'), 501)),
       (monitorId) => http(p(`/monitors/${encodeURIComponent(monitorId)}/check`), { method: 'POST', body: {} })
     ),
     listMonitorResults: call(

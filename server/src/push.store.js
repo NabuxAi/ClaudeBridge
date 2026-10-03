@@ -112,23 +112,23 @@ export const pushSubscriptions = {
 export function validateSubscription(body) {
   const endpoint = String(body?.endpoint || '').trim()
   if (!endpoint || endpoint.length > 2048) {
-    throw httpError(400, 'نشانی اشتراک (endpoint) نامعتبر است.')
+    throw httpError(400, 'push.invalidEndpoint')
   }
   let url
   try {
     url = new URL(endpoint)
   } catch {
-    throw httpError(400, 'نشانی اشتراک (endpoint) نامعتبر است.')
+    throw httpError(400, 'push.invalidEndpoint')
   }
   // A push endpoint is an HTTPS capability. Anything else is either a mistake
   // or someone trying to make the server fetch/sign something it should not.
   if (url.protocol !== 'https:') {
-    throw httpError(400, 'اشتراک اعلان باید یک نشانی HTTPS معتبر باشد.')
+    throw httpError(400, 'push.httpsRequired')
   }
   const p256dh = String(body?.keys?.p256dh || '').trim()
   const auth = String(body?.keys?.auth || '').trim()
   if (!p256dh || !auth || p256dh.length > 512 || auth.length > 512) {
-    throw httpError(400, 'کلیدهای رمزنگاری اشتراک (p256dh و auth) لازم است.')
+    throw httpError(400, 'push.keysRequired')
   }
   return { endpoint, p256dh, auth }
 }

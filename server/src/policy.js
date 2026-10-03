@@ -14,6 +14,7 @@
 // renders the switches disabled, but that is a courtesy to the user, not the
 // enforcement.
 // ============================================================
+import { t, DEFAULT_LOCALE } from './i18n.js'
 
 /** The policy a site gets before anyone touches it: everything current. */
 export const DEFAULT_POLICY = Object.freeze({
@@ -73,36 +74,37 @@ export function applyPolicyChange(current, patch = {}) {
 
 /**
  * The shape the panel renders: each switch with whether it is currently locked.
- * Labels are Persian because the panel is.
+ * Labels are rendered in `locale` (the viewer's req.locale).
  */
-export function describePolicy(current) {
+export function describePolicy(current, locale = DEFAULT_LOCALE) {
   const p = readPolicy(current)
+  const tr = (key) => t(locale, key)
   const locked = p.safeMode
   return {
     safeMode: p.safeMode,
     locked,
     lockReason: locked
-      ? 'حالت ایمنی روشن است: آپدیت‌های خودکار هسته/افزونه/قالب خاموش نمی‌شوند. این به‌روز بودن را تضمین می‌کند، نه rollback خودکار پس از یک آپدیتی خراب — rollback کامل فایل هنوز ساخته نشده است.'
+      ? tr('policy.lockReason')
       : null,
     switches: [
       {
         id: 'autoCore',
-        label: 'به‌روزرسانی خودکار هستهٔ وردپرس',
-        desc: 'نصب خودکار نسخه‌های جدید وردپرس، شامل نسخه‌های اصلی',
+        label: tr('policy.switches.autoCore.label'),
+        desc: tr('policy.switches.autoCore.desc'),
         on: p.autoCore,
         locked,
       },
       {
         id: 'autoPlugins',
-        label: 'به‌روزرسانی خودکار افزونه‌ها',
-        desc: 'همهٔ افزونه‌های مخزن وردپرس روی آخرین نسخه می‌مانند',
+        label: tr('policy.switches.autoPlugins.label'),
+        desc: tr('policy.switches.autoPlugins.desc'),
         on: p.autoPlugins,
         locked,
       },
       {
         id: 'autoThemes',
-        label: 'به‌روزرسانی خودکار قالب‌ها',
-        desc: 'همهٔ قالب‌های مخزن وردپرس روی آخرین نسخه می‌مانند',
+        label: tr('policy.switches.autoThemes.label'),
+        desc: tr('policy.switches.autoThemes.desc'),
         on: p.autoThemes,
         locked,
       },

@@ -4,14 +4,18 @@ import Icon from '../../lib/icons.jsx'
 import PageHead from '../../layouts/PageHead.jsx'
 import { Button, StatusPill, AuthorityBadge, AlertCard } from '../../components/index.js'
 import { account } from '../../lib/api.js'
-import { faNum } from '../../lib/format.js'
+import { t, digits, num } from '../../lib/i18n.js'
+
+const NS = 'sites'
 
 // Pick a card icon from the site's title/name so the grid keeps visual variety.
+// The titles are the owner's own text, so both Persian and English words are
+// recognised here (input matching, not UI copy).
 function siteIcon(s) {
-  const t = `${s.title || ''} ${s.name || ''}`
-  if (t.includes('فروشگاه')) return 'store'
-  if (t.includes('وبلاگ')) return 'newspaper'
-  if (t.includes('لندینگ') || t.includes('کمپین')) return 'megaphone'
+  const text = `${s.title || ''} ${s.name || ''}`.toLowerCase()
+  if (/فروشگاه|shop|store/.test(text)) return 'store'
+  if (/وبلاگ|blog/.test(text)) return 'newspaper'
+  if (/لندینگ|کمپین|landing|campaign/.test(text)) return 'megaphone'
   return 'globe'
 }
 
@@ -33,24 +37,24 @@ export default function Sites() {
     let alive = true
     account.sites()
       .then((d) => alive && setSites(d))
-      .catch((e) => alive && setError(e?.message || 'بارگذاری سایت‌ها انجام نشد.'))
+      .catch((e) => alive && setError(e?.message || t('sites.loadFailed')))
     return () => { alive = false }
   }, [reloadKey])
 
-  const addAction = <Button variant="primary" size="sm" leftIcon="plus" as={Link} to="/onboarding">افزودن سایت</Button>
+  const addAction = <Button variant="primary" size="sm" leftIcon="plus" as={Link} to="/onboarding">{t('sites.addSite')}</Button>
 
   if (error) {
     return (
       <>
-        <PageHead title="سایت‌های من" subtitle="همهٔ سایت‌های تحت پوشش شما در یک نگاه" action={addAction} />
+        <PageHead title={t('sites.title')} subtitle={t('sites.subtitle')} action={addAction} />
         <AlertCard
           severity="critical"
-          title="بارگذاری سایت‌ها ناموفق بود"
+          title={t('sites.loadFailedTitle')}
           desc={error}
           className="dwp-acc-alert"
           actions={(
             <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => { setError(null); setReloadKey((k) => k + 1) }}>
-              تلاش دوباره
+              {t('common.retry')}
             </Button>
           )}
         />
@@ -59,22 +63,22 @@ export default function Sites() {
   }
 
   if (!sites) {
-    return <PageHead title="سایت‌های من" subtitle="همهٔ سایت‌های تحت پوشش شما در یک نگاه" action={addAction} />
+    return <PageHead title={t('sites.title')} subtitle={t('sites.subtitle')} action={addAction} />
   }
 
   return (
     <>
       <PageHead
-        title="سایت‌های من"
-        subtitle="همهٔ سایت‌های تحت پوشش شما در یک نگاه"
+        title={t('sites.title')}
+        subtitle={t('sites.subtitle')}
         action={addAction}
       />
 
       {sites.length === 0 ? (
         <AlertCard
           severity="info"
-          title="هنوز سایتی ثبت نشده است"
-          desc="برای شروع پایش، بکاپ و هشدار، اولین سایت وردپرس خود را اضافه کنید."
+          title={t('sites.empty.title')}
+          desc={t('sites.empty.desc')}
           className="dwp-acc-alert"
           actions={addAction}
         />
@@ -110,14 +114,14 @@ export default function Sites() {
                       "99.98%" uptime for sites nobody had ever monitored — the
                       most convincing lie in the product, because it is precise,
                       on the first screen, and pure decoration. */}
-                  <Stat label="آپ‌تایم" value={s.uptime == null ? '—' : `${faNum(String(s.uptime).replace('.', '٫'))}٪`} />
-                  <Stat label="آپدیت" value={s.pendingUpdates == null ? '—' : faNum(s.pendingUpdates)} color={s.pendingUpdates > 0 ? 'var(--gd-warning-text)' : undefined} />
-                  <Stat label="هشدار" value={s.incidents == null ? '—' : faNum(s.incidents)} color={s.incidents > 0 ? 'var(--gd-danger-text)' : undefined} />
+                  <Stat label={t(`${NS}.stat.uptime`)} value={s.uptime == null ? '—' : num(Number(s.uptime) / 100, { style: 'percent', maximumFractionDigits: 2 })} />
+                  <Stat label={t(`${NS}.stat.updates`)} value={s.pendingUpdates == null ? '—' : digits(s.pendingUpdates)} color={s.pendingUpdates > 0 ? 'var(--gd-warning-text)' : undefined} />
+                  <Stat label={t(`${NS}.stat.alerts`)} value={s.incidents == null ? '—' : digits(s.incidents)} color={s.incidents > 0 ? 'var(--gd-danger-text)' : undefined} />
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <AuthorityBadge level={s.authority} size="sm" />
-                  <Button as={Link} to={`/site/${s.id}`} variant="secondary" size="sm" rightIcon="arrow-left">ورود به پنل</Button>
+                  <Button as={Link} to={`/site/${s.id}`} variant="secondary" size="sm" rightIcon="arrow-left">{t(`${NS}.openPanel`)}</Button>
                 </div>
               </div>
             )

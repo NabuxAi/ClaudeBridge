@@ -16,16 +16,23 @@
 //
 // Nothing here retries on its own. Retrying inside a channel would delay the
 // fallback, and the whole point is that the second road is tried quickly.
+//
+// Language: the message itself arrives already composed in the recipient's
+// language (alerts/index.js compose). What each channel says about its own
+// attempt — skip reasons, notes — is evidence stored in alert_deliveries, so
+// it is written in English with its key beside it (`errorKey`/`noteKey`) for
+// any reader that wants it in another language.
 // ============================================================
 import { config } from '../config.js'
 import { isPushConfigured, sendToSubscriptions } from '../push.js'
+import { t } from '../i18n.js'
 
 const TIMEOUT = 12000
 
 /** Shape every channel returns. Uniform so the dispatcher needs no special cases. */
 const ok = (channel, detail = {}) => ({ channel, ok: true, ...detail })
 const fail = (channel, error, detail = {}) => ({ channel, ok: false, error, ...detail })
-const skip = (channel, why) => ({ channel, ok: false, skipped: true, error: why })
+const skip = (channel, key) => ({ channel, ok: false, skipped: true, error: t('en', key), errorKey: key })
 
 /**
  * Web Push (VAPID) — the owner's own browsers, reached directly from this
@@ -38,15 +45,16 @@ const skip = (channel, why) => ({ channel, ok: false, skipped: true, error: why 
  * lock screen nobody looks at is not a person warned.
  */
 export async function webPush(msg, to) {
-  if (!isPushConfigured()) return skip('web-push', 'کلیدهای VAPID تنظیم نشده')
+  if (!isPushConfigured()) return skip('web-push', 'alerts.skip.vapid')
   const subs = to?.pushSubscriptions || []
-  if (!subs.length) return skip('web-push', 'اشتراک مرورگری ثبت نشده')
+  if (!subs.length) return skip('web-push', 'alerts.skip.noBrowser')
 
   const r = await sendToSubscriptions(subs, {
     title: msg.title,
     body: msg.body,
     url: msg.url || '/',
     severity: msg.severity,
+    lang: msg.lang,
   })
   if (!r.ok) return fail('web-push', r.detail || r.reason, { accepted: r.accepted, removed: r.removed })
   return ok('web-push', {
@@ -66,8 +74,8 @@ export async function webPush(msg, to) {
  * the body is checked rather than the status code.
  */
 export async function firebase(msg, to) {
-  if (!config.alerts.fcmServerKey) return skip('firebase', 'کلید Firebase تنظیم نشده')
-  if (!to?.fcmToken) return skip('firebase', 'توکن دستگاه ثبت نشده')
+  if (!config.alerts.fcmServerKey) return skip('firebase', 'alerts.skip.firebaseKey')
+  if (!to?.fcmToken) return skip('firebase', 'alerts.skip.deviceToken')
 
   try {
     const res = await fetch('https://fcm.googleapis.com/fcm/send', {
@@ -88,7 +96,7 @@ export async function firebase(msg, to) {
     const body = await res.json().catch(() => ({}))
     // 200 with success:0 is a failure wearing a success's clothes.
     if (body.success !== 1) {
-      return fail('firebase', body.results?.[0]?.error || 'پیام تحویل نشد')
+      return fail('firebase', body.results?.[0]?.error || t('en', 'alerts.fail.notDelivered'))
     }
     return ok('firebase', { id: body.multicast_id ? String(body.multicast_id) : null })
   } catch (e) {
@@ -105,8 +113,8 @@ export async function firebase(msg, to) {
  * are trying to warn.
  */
 export async function najva(msg, to) {
-  if (!config.alerts.najvaApiKey) return skip('najva', 'کلید نجوا تنظیم نشده')
-  if (!to?.najvaToken) return skip('najva', 'توکن نجوا ثبت نشده')
+  if (!config.alerts.najvaApiKey) return skip('najva', 'alerts.skip.najvaKey')
+  if (!to?.najvaToken) return skip('najva', 'alerts.skip.najvaToken')
 
   try {
     const res = await fetch('https://app.najva.com/api/v1/notification/management/send/', {
@@ -140,8 +148,8 @@ export async function najva(msg, to) {
  * of order often enough to matter.
  */
 export async function sms(msg, to) {
-  if (!config.alerts.smsApiKey || !config.alerts.smsUrl) return skip('sms', 'سرویس پیامک تنظیم نشده')
-  if (!to?.phone) return skip('sms', 'شماره موبایل ثبت نشده')
+  if (!config.alerts.smsApiKey || !config.alerts.smsUrl) return skip('sms', 'alerts.skip.smsService')
+  if (!to?.phone) return skip('sms', 'alerts.skip.phone')
 
   const text = `${msg.title}\n${msg.smsBody || msg.body}`.slice(0, 300)
   try {
@@ -164,7 +172,7 @@ export async function sms(msg, to) {
       signal: AbortSignal.timeout(TIMEOUT),
     })
     if (!res.ok) return fail('sms', `HTTP ${res.status}`)
-    return ok('sms', { id: null, note: 'ارسال پذیرفته شد؛ تحویل به گوشی تأیید نشده' })
+    return ok('sms', { id: null, note: t('en', 'alerts.notes.smsAccepted'), noteKey: 'alerts.notes.smsAccepted' })
   } catch (e) {
     return fail('sms', e.message)
   }
@@ -178,8 +186,8 @@ export async function sms(msg, to) {
  * here is the full explanation rather than the one-line version.
  */
 export async function email(msg, to) {
-  if (!config.alerts.emailUrl) return skip('email', 'سرویس ایمیل تنظیم نشده')
-  if (!to?.email) return skip('email', 'ایمیل ثبت نشده')
+  if (!config.alerts.emailUrl) return skip('email', 'alerts.skip.emailService')
+  if (!to?.email) return skip('email', 'alerts.skip.email')
 
   try {
     const res = await fetch(config.alerts.emailUrl, {
@@ -213,7 +221,7 @@ export async function email(msg, to) {
  */
 export async function telegramOps(msg) {
   if (!config.telegram.token || !config.telegram.chatId) {
-    return skip('telegram-ops', 'تلگرام تنظیم نشده')
+    return skip('telegram-ops', 'alerts.skip.telegram')
   }
   try {
     const res = await fetch(`https://api.telegram.org/bot${config.telegram.token}/sendMessage`, {

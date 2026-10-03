@@ -1,0 +1,68 @@
+{
+  "head": {
+    "title": "Off-site backup",
+    "subtitle": "Encrypted delivery of backups to an S3-compatible service",
+    "add": "Add target"
+  },
+  "errors": {
+    "load": "Loading failed.",
+    "save": "Couldn't save.",
+    "delete": "Couldn't delete.",
+    "start": "Couldn't start."
+  },
+  "confirmDelete": "This target and its backup history will be deleted. Continue?",
+  "notPaired": "The site isn't connected to our server yet — install and pair the connector plugin.",
+  "loadFailed": "Couldn't read off-site backups",
+  "form": {
+    "editTitle": "Edit target",
+    "newTitle": "New off-site backup target",
+    "endpoint": "S3 endpoint",
+    "endpointHint": "e.g. https://s3.example.com",
+    "bucket": "Bucket name",
+    "region": "Region",
+    "regionHint": "e.g. us-east-1",
+    "accessKey": "Access Key ID",
+    "secretKey": "Secret Access Key",
+    "secretHint": "Leave empty to keep the current key",
+    "pathPrefix": "Path prefix",
+    "optional": "Optional",
+    "retention": "Retention period (days)",
+    "update": "Update"
+  },
+  "metrics": {
+    "targets": "Configured targets",
+    "targetsHint": "S3-compatible",
+    "lastSuccess": "Last successful backup",
+    "lastSuccessHint": "From the transfer history",
+    "lastSize": "Last backup size",
+    "encryption": "Encryption",
+    "encryptionHint": "At rest"
+  },
+  "targets": {
+    "title": "Storage targets",
+    "colEndpoint": "Endpoint / bucket",
+    "colRegion": "Region",
+    "colPath": "Path",
+    "colRetention": "Retention",
+    "colStatus": "Status",
+    "empty": "No targets added yet.",
+    "days_one": "{count} day",
+    "days_other": "{count} days",
+    "configured": "Configured",
+    "starting": "Starting…",
+    "run": "Back up now"
+  },
+  "jobs": {
+    "title": "Transfer history",
+    "colTime": "Time",
+    "colTarget": "Target",
+    "colSize": "Size",
+    "colStatus": "Status",
+    "colMessage": "Message",
+    "empty": "No off-site backup has been sent yet.",
+    "queued": "Queued",
+    "running": "Running",
+    "done": "Succeeded",
+    "failed": "Failed"
+  }
+}

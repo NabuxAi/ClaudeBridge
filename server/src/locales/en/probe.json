@@ -1,0 +1,20 @@
+{
+  "services": {
+    "home": "Homepage",
+    "login": "Admin login page",
+    "ssl": "SSL certificate"
+  },
+  "detail": {
+    "answered": "{status} in {ms}ms",
+    "code": "Code {status}",
+    "loginLocked": "Access blocked (403) — probably deliberate",
+    "certDays_one": "{count} day of validity",
+    "certDays_other": "{count} days of validity",
+    "certDaysIssuer_one": "{count} day of validity — {issuer}",
+    "certDaysIssuer_other": "{count} days of validity — {issuer}"
+  },
+  "cert": {
+    "unreadable": "Certificate could not be read",
+    "not_https": "The site is not served over https"
+  }
+}

@@ -1,18 +1,22 @@
 // ============================================================
 // WooCommerce & Business Transactions Specialist Sub-Agent
-// (عامل تخصصی ووکامرس و پایش تراکنش‌ها)
+//
+// Prompts are English (the model is told the reply language by the
+// orchestrator); text shown to people is rendered from the `agents` namespace
+// in `options.locale`.
 // ============================================================
 import * as connector from '../../connector.js'
+import { t } from '../../i18n.js'
 
 export const ECOMMERCE_AGENT = {
   id: 'ecommerce',
-  name: 'متخصص فروشگاه ووکامرس و تراکنش‌ها',
-  role: 'پایش صف سفارش‌ها، وضعیت درگاه‌های پرداخت فعال، سلامت کران‌های Action Scheduler و ارزیابی فرایند تسویه‌حساب',
-  systemPrompt: `شما «عامل تخصصی ووکامرس و فروشگاه وردپرس» هستید.
-وظیفه شما:
-۱. پایش وضعیت درگاه‌های پرداخت، اطمینان از سلامت کال‌بک‌ها و عدم وجود خطای ۵۰۰ در برگه تسویه‌حساب (Checkout).
-۲. بررسی سفارش‌های معلق یا در انتظار پرداخت غیرعادی و خطاهای دیتابیسی جدول سفارشات.
-۳. نظارت بر صف وظایف زمان‌بندی شده ووکامرس (Action Scheduler) و رفع مسدودی کران‌های خودکار.`,
+  nameKey: 'agents.specialists.ecommerce.name',
+  roleKey: 'agents.specialists.ecommerce.role',
+  systemPrompt: `You are the WooCommerce and WordPress store specialist agent.
+Your job:
+1. Monitor payment gateways, make sure their callbacks are healthy and the Checkout page returns no 500 errors.
+2. Review orders that are stuck on hold or pending payment for an unusual time, and database errors in the orders tables.
+3. Watch WooCommerce's scheduled-task queue (Action Scheduler) and unblock stalled automated cron runs.`,
 
   tools: [
     'wc_status',
@@ -22,7 +26,7 @@ export const ECOMMERCE_AGENT = {
     'cron_status',
   ],
 
-  async check(target, _options = {}) {
+  async check(target, options = {}) {
     const report = {
       isWooCommerceActive: false,
       gateways: [],
@@ -40,7 +44,7 @@ export const ECOMMERCE_AGENT = {
         report.isWooCommerceActive = hasWc
       }
     } catch (e) {
-      report.issues.push(`خطا در بررسی وضعیت افزونه ووکامرس: ${e.message}`)
+      report.issues.push(t(options.locale, 'agents.ecommerce.checkFailed', { error: e.message }))
     }
 
     return report

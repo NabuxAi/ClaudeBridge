@@ -1,0 +1,7 @@
+{
+  "notConfigured": "VAPID keys are not configured on this server (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY).",
+  "noSubscription": "No browser subscription is registered for this user.",
+  "defaultTitle": "Security alert",
+  "accepted": "The message was accepted by the push service. Its display and reading are not confirmed.",
+  "noneAccepted": "None of the browser subscriptions accepted the message."
+}

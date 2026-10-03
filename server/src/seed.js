@@ -1,15 +1,9 @@
 // Demo content, matching the shapes the hub renders. Your real server would
 // build these from its DB + live connector reads; here they seed a working demo.
-export const demoUser = {
-  id: 'u_1', name: 'مریم رضایی', role: 'مدیر حساب',
-  email: 'maryam@example.com', initials: 'م', plan: 'حرفه‌ای',
-  password: 'demo1234', // demo only
-}
-
 export const demoSites = [
-  { id: 'mystore', name: 'mystore.ir', title: 'فروشگاه من', status: 'healthy', authority: 'auto', uptime: 99.98, checks: 9, lastCheck: 2, incidents: 0, pendingUpdates: 5 },
-  { id: 'blog', name: 'blog.myco.ir', title: 'وبلاگ شرکت', status: 'warning', authority: 'confirm', uptime: 99.7, checks: 9, lastCheck: 4, incidents: 1, pendingUpdates: 2 },
-  { id: 'landing', name: 'promo.myco.ir', title: 'لندینگ کمپین', status: 'checking', authority: 'report', uptime: 100, checks: 9, lastCheck: 0, incidents: 0, pendingUpdates: 0 },
+  { id: 'mystore', name: 'mystore.ir', title: 'My store', status: 'healthy', authority: 'auto', uptime: 99.98, checks: 9, lastCheck: 2, incidents: 0, pendingUpdates: 5 },
+  { id: 'blog', name: 'blog.myco.ir', title: 'Company blog', status: 'warning', authority: 'confirm', uptime: 99.7, checks: 9, lastCheck: 4, incidents: 1, pendingUpdates: 2 },
+  { id: 'landing', name: 'promo.myco.ir', title: 'Campaign landing', status: 'checking', authority: 'report', uptime: 100, checks: 9, lastCheck: 0, incidents: 0, pendingUpdates: 0 },
 ]
 
 // Features listed here must be features that exist. The old list promised
@@ -22,51 +16,20 @@ export const demoSites = [
 // API list in hub/src/data/mock.js (`plans`) and the price cards in
 // hub/src/pages/marketing/Landing.jsx — they live apart only because server
 // and hub are separate packages, so keep prices and features identical.
+// Display names and feature lines are served from the locale files by plan id
+// (billing.plans.<id>.name, billing.catalog.<id>.features); the English text
+// here is only the fallback for a plan id without keys.
 export const plans = [
-  { id: 'base', name: 'پایه', price: 190000, popular: false, features: [
-    '۱ سایت', 'به‌روزرسانی خودکار هسته، افزونه و قالب', 'بکاپ دیتابیس روی خود سایت', 'اسکن امنیتی روزانه',
+  { id: 'base', name: 'Basic', price: 190000, popular: false, features: [
+    '1 site', 'Automatic core, plugin and theme updates', 'Database backup on the site itself', 'Daily security scan',
   ] },
-  { id: 'pro', name: 'حرفه‌ای', price: 490000, popular: true, features: [
-    '۵ سایت', 'همهٔ امکانات پلن پایه', 'بررسی یکپارچگی فایل‌های هسته', 'بررسی تداخل افزونه و قالب', 'عملیات نجات',
+  { id: 'pro', name: 'Professional', price: 490000, popular: true, features: [
+    '5 sites', 'Everything in Basic', 'Core file integrity check', 'Plugin and theme conflict check', 'Rescue operations',
   ] },
-  { id: 'agency', name: 'آژانس', price: 990000, popular: false, features: [
-    'سایت نامحدود', 'همهٔ امکانات پلن حرفه‌ای', 'مدیریت سایت‌های مشتری از یک پنل',
+  { id: 'agency', name: 'Agency', price: 990000, popular: false, features: [
+    'Unlimited sites', 'Everything in Professional', 'Manage client sites from one panel',
   ] },
 ]
-
-export const billing = { plan: 'حرفه‌ای', price: 490000, cycle: 'ماهانه', sitesUsed: 3, sitesLimit: 5, renewsAt: '۱۴۰۳/۰۵/۱۲', card: '•••• ۸۸۲۴' }
-export const invoices = [
-  { id: 'INV-1403-014', date: '۱۴۰۳/۰۴/۱۲', amount: 490000, status: 'paid' },
-  { id: 'INV-1403-009', date: '۱۴۰۳/۰۳/۱۲', amount: 490000, status: 'paid' },
-  { id: 'INV-1403-004', date: '۱۴۰۳/۰۲/۱۲', amount: 490000, status: 'paid' },
-]
-export const invoiceDetail = (id) => ({
-  id, date: '۱۴۰۳/۰۴/۱۲', dueDate: '۱۴۰۳/۰۴/۱۲', status: 'paid',
-  seller: { name: 'دیجی‌وردپرس (DigiWP Ai Support)', id: 'ai.digiwp.com', taxId: '۱۴۰۱۲۳۴۵۶۷۸' },
-  buyer: { name: 'مریم رضایی', email: 'maryam@example.com' },
-  items: [{ desc: 'اشتراک پلن حرفه‌ای — یک ماه', qty: 1, unit: 490000 }],
-  subtotal: 490000, tax: 44100, total: 534100,
-})
-
-export const team = [
-  { id: 't1', name: 'مریم رضایی', email: 'maryam@example.com', role: 'owner', roleLabel: 'مالک', initials: 'م', sites: 'همه' },
-  { id: 't2', name: 'سینا احمدی', email: 'sina@example.com', role: 'admin', roleLabel: 'مدیر', initials: 'س', sites: 'mystore.ir' },
-  { id: 't3', name: 'نگار موسوی', email: 'negar@example.com', role: 'viewer', roleLabel: 'ناظر', initials: 'ن', sites: 'blog.myco.ir' },
-]
-
-export const notifications = {
-  channels: [
-    { id: 'email', label: 'ایمیل', icon: 'mail', value: 'maryam@example.com', on: true },
-    { id: 'sms', label: 'پیامک', icon: 'message-square', value: '۰۹۱۲•••۴۵۶۷', on: true },
-    { id: 'telegram', label: 'تلگرام', icon: 'send', value: '@maryam', on: false },
-  ],
-  prefs: [
-    { id: 'critical', label: 'هشدارهای بحرانی', desc: 'خطای ۵۰۰، از دسترس خارج شدن سایت، نفوذ', on: true, locked: true },
-    { id: 'approvals', label: 'درخواست‌های تأیید', desc: 'وقتی اقدامی نیازمند تأیید شماست', on: true },
-    { id: 'updates', label: 'آپدیت‌ها', desc: 'آپدیت‌های انجام‌شده و در صف', on: true },
-    { id: 'reports', label: 'گزارش روزانه', desc: 'خلاصهٔ روزانهٔ وضعیت سایت‌ها', on: false },
-  ],
-}
 
 /**
  * Per-site payload skeletons.
@@ -92,8 +55,8 @@ export const siteData = (id) => ({
   settings: {
     id,
     authority: demoSites.find((s) => s.id === id)?.authority || 'report',
-    // Enforced for real in routes/sites.js — this list is the same set the
-    // relay refuses without an explicit approval.
-    sensitive: ['حذف افزونه', 'تعویض قالب', 'ویرایش فایل', 'اجرای کوئری دیتابیس', 'حذف فایل'],
+    // Filled per request in routes/sites.js from authority.js's
+    // SENSITIVE_TOOLS — the same set the relay refuses without approval.
+    sensitive: [],
   },
 })

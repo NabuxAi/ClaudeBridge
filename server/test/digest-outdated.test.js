@@ -30,7 +30,7 @@ test('a site that never reported a version is counted, not accused', () => {
   // Saying it is behind would be inventing a fact; saying nothing hides that we
   // cannot tell. It is reported as unknown.
   const out = renderOutdatedSites([site('quiet.example', undefined)], '3.7.4')
-  assert.match(out, /گزارش نکرده/)
+  assert.match(out, /not reported/)
   assert.doesNotMatch(out, /quiet\.example/)
 })
 
@@ -49,7 +49,7 @@ test('a malformed connector blob does not break the digest', () => {
   // This runs inside the one message that leaves the server; a parse error here
   // must not cost the whole report.
   const out = renderOutdatedSites([{ name: 'broken', connector: '{not json' }], '3.7.4')
-  assert.match(out, /گزارش نکرده/)
+  assert.match(out, /not reported/)
 })
 
 test('site names are escaped', () => {

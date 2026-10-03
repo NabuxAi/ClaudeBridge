@@ -3,11 +3,7 @@ import crypto from 'node:crypto'
 import { one, all, newId } from './db.js'
 import { config } from './config.js'
 
-function httpError(status, message) {
-  const e = new Error(message)
-  e.status = status
-  return e
-}
+import { httpError } from './i18n.js'
 
 /** Derive a 32-byte AES key from the configured OFFSITE_BACKUP_KEY. */
 function deriveKey() {
@@ -20,7 +16,7 @@ function deriveKey() {
 
 function encrypt(plain) {
   const key = deriveKey()
-  if (!key) throw httpError(503, 'کلید رمزنگاری بکاپ خارجی روی سرور تنظیم نشده.')
+  if (!key) throw httpError(503, 'offsite.noKey')
   const iv = crypto.randomBytes(12)
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
   const enc = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()])
@@ -30,9 +26,9 @@ function encrypt(plain) {
 
 function decrypt(stored) {
   const key = deriveKey()
-  if (!key) throw httpError(503, 'کلید رمزنگاری بکاپ خارجی روی سرور تنظیم نشده.')
+  if (!key) throw httpError(503, 'offsite.noKey')
   const [ivHex, tagHex, encHex] = String(stored || '').split(':')
-  if (!ivHex || !tagHex || !encHex) throw httpError(400, 'رمزنگاری ذخیره‌شده نامعتبر است.')
+  if (!ivHex || !tagHex || !encHex) throw httpError(400, 'offsite.badCipher')
   const iv = Buffer.from(ivHex, 'hex')
   const tag = Buffer.from(tagHex, 'hex')
   const enc = Buffer.from(encHex, 'hex')
@@ -114,7 +110,7 @@ export const offsiteBackups = {
     } = fields || {}
 
     if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
-      throw httpError(400, 'نشانی S3، نام باکت، Access Key ID و Secret Access Key لازم است.')
+      throw httpError(400, 'offsite.fieldsRequired')
     }
 
     const id = newId('obt_')
@@ -137,7 +133,7 @@ export const offsiteBackups = {
       'SELECT * FROM offsite_backup_targets WHERE id = $1 AND site_id = $2',
       [targetId, siteId]
     )
-    if (!existing) throw httpError(404, 'هدف پشتیبان یافت نشد.')
+    if (!existing) throw httpError(404, 'offsite.targetNotFound')
 
     const sets = []
     const values = []
@@ -167,7 +163,7 @@ export const offsiteBackups = {
       'DELETE FROM offsite_backup_targets WHERE id = $1 AND site_id = $2 RETURNING id',
       [targetId, siteId]
     )
-    if (!row) throw httpError(404, 'هدف پشتیبان یافت نشد.')
+    if (!row) throw httpError(404, 'offsite.targetNotFound')
     return { ok: true }
   },
 

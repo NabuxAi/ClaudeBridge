@@ -5,9 +5,13 @@
 //
 //   It is one HTTP GET with a timeout, from this server, with redirects
 //   followed. No JavaScript runs, no session is logged in, nothing is clicked.
-//   The product label for exactly this scope is «بررسی دسترسی HTTP، نه سفر
-//   کاربری/پرداخت», and it is carried in the API responses rather than only in
-//   comments, so the panel cannot soften it.
+//   The product label for exactly this scope is "HTTP reachability check, not
+//   a user/payment journey" (monitors.scope), and it is carried in the API
+//   responses rather than only in comments, so the panel cannot soften it.
+//
+// Language: a failed check's `error` is stored in English in monitor_results
+// (the scheduler has no reader to translate for); localizeResult() renders
+// the messages this runner writes in the viewer's language on the way out.
 //
 // The request goes through global fetch on purpose: tests inject a fake the
 // same way mailer.test.js does, so no test ever touches a real network.
@@ -15,6 +19,7 @@
 import { all } from './db.js'
 import * as monitorsStore from './monitors.store.js'
 import { config } from './config.js'
+import { t } from './i18n.js'
 
 /** One answer within ten seconds, or the check has failed — a hung site is down. */
 const TIMEOUT_MS = 10_000
@@ -66,11 +71,11 @@ export async function checkMonitor(monitor) {
       const len = Number(res.headers.get('content-length') || 0)
       if (len > 2 * 1024 * 1024) {
         containsOk = false
-        containsError = 'بدنهٔ پاسخ برای بررسی عبارت بیش از حد بزرگ بود.'
+        containsError = t('en', 'monitorRunner.errors.bodyTooLarge')
       } else {
         const text = await res.text()
         containsOk = text.includes(expectContains)
-        if (!containsOk) containsError = 'پاسخ ۲۰۰ بود اما عبارت مورد انتظار در آن نبود.'
+        if (!containsOk) containsError = t('en', 'monitorRunner.errors.phraseMissing')
       }
     } else {
       // Nobody reads the body: release it instead of holding the connection.
@@ -87,11 +92,31 @@ export async function checkMonitor(monitor) {
       ok: false,
       status: null,
       ms: Date.now() - started,
-      error: e?.name === 'TimeoutError' ? 'پاسخی در مهلت ۱۰ ثانیه نرسید.' : (e?.message || 'درخواست ناموفق بود.'),
+      error: e?.name === 'TimeoutError' ? t('en', 'monitorRunner.errors.timeout') : (e?.message || t('en', 'monitorRunner.errors.failed')),
     }
   }
   return monitorsStore.monitors.recordResult(monitor, outcome)
 }
+
+// The stored messages this runner writes — English now, Persian in rows
+// recorded before translation — mapped back to their keys.
+const ERROR_KEYS = ['bodyTooLarge', 'phraseMissing', 'timeout', 'failed'].map((k) => `monitorRunner.errors.${k}`)
+const LEGACY_ERRORS = {
+  'بدنهٔ پاسخ برای بررسی عبارت بیش از حد بزرگ بود.': 'monitorRunner.errors.bodyTooLarge',
+  'پاسخ ۲۰۰ بود اما عبارت مورد انتظار در آن نبود.': 'monitorRunner.errors.phraseMissing',
+  'پاسخی در مهلت ۱۰ ثانیه نرسید.': 'monitorRunner.errors.timeout',
+  'درخواست ناموفق بود.': 'monitorRunner.errors.failed',
+}
+
+/** A stored check error in `locale`; text we did not write (e.g. a network error) is kept. */
+export function localizeCheckError(locale, error) {
+  if (!error) return error
+  const key = LEGACY_ERRORS[error] || ERROR_KEYS.find((k) => t('en', k) === error)
+  return key ? t(locale, key) : error
+}
+
+/** A public result row with its error rendered for `locale`. */
+export const localizeResult = (locale, r) => (r && r.error ? { ...r, error: localizeCheckError(locale, r.error) } : r)
 
 /**
  * Check every pending monitor once, one after another.
@@ -122,7 +147,7 @@ export async function runMonitorChecks({ trigger = 'scheduled' } = {}) {
  * Schedule the checks alongside the digest/intel/sweep schedulers in
  * index.js:start(). Interval from MONITOR_INTERVAL_MINUTES (default 5);
  * setting it to 0 turns the schedule off without touching the manual
- * «بررسی الان» path.
+ * "check now" path.
  */
 export function scheduleMonitors() {
   const minutes = config.monitors.intervalMinutes

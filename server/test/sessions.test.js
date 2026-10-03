@@ -120,7 +120,7 @@ if (!dsn) {
     const rows = await query('SELECT * FROM sessions WHERE user_id = $1 AND token_hash = $2', [user.userId, sha])
     assert.equal(rows.rows.length, 1)
     const row = rows.rows[0]
-    assert.equal(row.device, 'Firefox روی Windows', 'the stored device is a summary of the user-agent')
+    assert.equal(row.device, 'Firefox · Windows', 'the stored device is a language-neutral summary of the user-agent')
     assert.equal(row.ip, '127.0.0.1')
     assert.ok(row.expires_at > Date.now(), 'the session outlives the request by days, not seconds')
     assert.equal(row.revoked_at, null)
@@ -132,7 +132,7 @@ if (!dsn) {
 
   test('the session list answers with devices, never with hashes', async () => {
     const user = await register()
-    await login(user.email) // Firefox روی Windows
+    await login(user.email) // Firefox on Windows
     const second = await login(user.email, { ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Safari/605.1.15' })
 
     const r = await get('/auth/sessions', `Bearer ${second.token}`)
@@ -143,10 +143,15 @@ if (!dsn) {
     assert.equal(list.length, 3)
     // Current session first, and marked as such.
     assert.equal(list[0].current, true)
-    assert.equal(list[0].device, 'Safari روی macOS')
+    assert.equal(list[0].device, 'Safari on macOS')
     const devices = list.map((s) => s.device)
-    assert.ok(devices.includes('Firefox روی Windows'))
-    assert.ok(devices.includes('دستگاه ناشناس'), 'an unrecognised user-agent says so instead of inventing a device')
+    assert.ok(devices.includes('Firefox on Windows'))
+    assert.ok(devices.includes('Unknown device'), 'an unrecognised user-agent says so instead of inventing a device')
+    // The same list in Persian for Accept-Language: fa.
+    const faRes = await fetch(API + '/auth/sessions', { headers: { Authorization: `Bearer ${second.token}`, 'Accept-Language': 'fa' } })
+    const faDevices = (await faRes.json()).sessions.map((s) => s.device)
+    assert.ok(faDevices.includes('Safari روی macOS'))
+    assert.ok(faDevices.includes('دستگاه ناشناس'))
     for (const s of list) {
       assert.ok(!('token_hash' in s), 'token_hash must never reach the browser')
       assert.ok(!('tokenHash' in s), 'no camelCase leak of the hash either')
@@ -164,7 +169,7 @@ if (!dsn) {
     const list = await get('/auth/sessions', `Bearer ${a.token}`)
     const other = list.body.sessions.find((s) => !s.current)
     assert.ok(other, 'the other device must be listed')
-    assert.equal(other.device, 'Chrome روی Linux')
+    assert.equal(other.device, 'Chrome on Linux')
 
     const del1 = await del(`/auth/sessions/${other.id}`, `Bearer ${a.token}`)
     assert.equal(del1.status, 200)

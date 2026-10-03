@@ -4,16 +4,20 @@ import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input, Badge, SkeletonTable } from '../../components/index.js'
 import { admin } from '../../lib/api.js'
-import { faNum } from '../../lib/format.js'
+import { t, digits, date } from '../../lib/i18n.js'
 
 const LIMIT = 25
 
 // The users list serves raw rows (created_at as epoch ms). A missing or
 // malformed value must read «—», never «Invalid Date».
 const registeredOn = (v) => {
-  const t = Number(v)
-  return Number.isFinite(t) && t > 0 ? new Date(t).toLocaleDateString('fa-IR') : '—'
+  const ms = Number(v)
+  return Number.isFinite(ms) && ms > 0 ? date(ms) : '—'
 }
+
+// The non-admin role is a stored data value, not UI copy: it matches the
+// server's users.role schema default, so it stays untranslated here.
+const DEFAULT_ROLE = 'مدیر حساب'
 
 export default function AdminUsers() {
   const [data, setData] = useState(null)
@@ -32,7 +36,7 @@ export default function AdminUsers() {
     let alive = true
     admin.users({ limit: LIMIT, offset, search })
       .then((d) => { if (alive) { setData(d); setError('') } })
-      .catch((e) => { if (alive) setError(e?.message || 'بارگذاری کاربران انجام نشد.') })
+      .catch((e) => { if (alive) setError(e?.message || t('admin.users.loadFailed')) })
     return () => { alive = false }
   }, [offset, search, refresh])
 
@@ -41,7 +45,7 @@ export default function AdminUsers() {
       await admin.setUserRole(id, role)
       setRefresh((n) => n + 1)
     } catch (e) {
-      setError(e?.message || 'تغییر نقش انجام نشد.')
+      setError(e?.message || t('admin.users.roleFailed'))
     }
   }
 
@@ -50,11 +54,11 @@ export default function AdminUsers() {
   if (error && !data) {
     return (
       <>
-        <PageHead title="مدیریت کاربران" subtitle="مشاهده و مدیریت حساب‌های کاربری" />
+        <PageHead title={t('admin.users.title')} subtitle={t('admin.users.subtitle')} />
         <div className="gd-card gd-card--e-sm gd-card--p-md dwp-error-row">
           <Icon name="alert-circle" size={17} style={{ color: 'var(--gd-danger)' }} />
           <span style={{ fontSize: 13.5, color: 'var(--gd-danger-text)', flex: 1 }}>{error}</span>
-          <Button variant="secondary" size="sm" onClick={() => setRefresh((n) => n + 1)}>تلاش دوباره</Button>
+          <Button variant="secondary" size="sm" onClick={() => setRefresh((n) => n + 1)}>{t('common.retry')}</Button>
         </div>
       </>
     )
@@ -62,13 +66,13 @@ export default function AdminUsers() {
 
   return (
     <>
-      <PageHead title="مدیریت کاربران" subtitle="مشاهده و مدیریت حساب‌های کاربری" />
+      <PageHead title={t('admin.users.title')} subtitle={t('admin.users.subtitle')} />
       {error && <p style={{ color: 'var(--gd-danger-text)', marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <Input
           value={search}
           onChange={(e) => { setSearch(e.target.value); setOffset(0) }}
-          placeholder="جستجو در نام یا ایمیل…"
+          placeholder={t('admin.users.search')}
           style={{ maxWidth: 320 }}
         />
       </div>
@@ -80,12 +84,12 @@ export default function AdminUsers() {
           <table>
             <thead>
               <tr>
-                <th>نام</th>
-                <th>ایمیل</th>
-                <th>نقش</th>
-                <th>پلن</th>
-                <th>سایت‌ها</th>
-                <th>ثبت‌نام</th>
+                <th>{t('admin.users.cols.name')}</th>
+                <th>{t('admin.users.cols.email')}</th>
+                <th>{t('admin.users.cols.role')}</th>
+                <th>{t('admin.users.cols.plan')}</th>
+                <th>{t('admin.users.cols.sites')}</th>
+                <th>{t('admin.users.cols.registered')}</th>
                 <th />
               </tr>
             </thead>
@@ -93,7 +97,7 @@ export default function AdminUsers() {
               {data.users.length === 0 && (
                 <tr>
                   <td colSpan={7} style={{ textAlign: 'center', color: 'var(--gd-text-muted)', whiteSpace: 'normal' }}>
-                    {search ? 'کاربری با این مشخصات پیدا نشد.' : 'هنوز کاربری ثبت نشده.'}
+                    {search ? t('admin.users.noMatch') : t('admin.users.empty')}
                   </td>
                 </tr>
               )}
@@ -105,17 +109,17 @@ export default function AdminUsers() {
                     <Badge variant={u.role === 'admin' ? 'primary' : 'neutral'} appearance="soft">{u.role}</Badge>
                   </td>
                   <td>{u.plan}</td>
-                  <td data-numeric>{faNum(u.site_count || 0)}</td>
+                  <td data-numeric>{digits(u.site_count || 0)}</td>
                   <td style={{ color: 'var(--gd-text-muted)' }}>{registeredOn(u.created_at)}</td>
                   <td style={{ textAlign: 'end' }}>
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <Button as={Link} to={`/admin/users/${u.id}`} variant="ghost" size="sm">جزئیات</Button>
+                      <Button as={Link} to={`/admin/users/${u.id}`} variant="ghost" size="sm">{t('admin.details')}</Button>
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => setRole(u.id, u.role === 'admin' ? 'مدیر حساب' : 'admin')}
+                        onClick={() => setRole(u.id, u.role === 'admin' ? DEFAULT_ROLE : 'admin')}
                       >
-                        {u.role === 'admin' ? 'عزل از ادمین' : 'ادمین کن'}
+                        {u.role === 'admin' ? t('admin.users.demote') : t('admin.users.promote')}
                       </Button>
                     </div>
                   </td>
@@ -126,11 +130,11 @@ export default function AdminUsers() {
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-        <Button variant="secondary" size="sm" disabled={offset === 0} onClick={() => setOffset((o) => Math.max(0, o - LIMIT))}>قبلی</Button>
+        <Button variant="secondary" size="sm" disabled={offset === 0} onClick={() => setOffset((o) => Math.max(0, o - LIMIT))}>{t('admin.prev')}</Button>
         <span style={{ fontSize: 13, color: 'var(--gd-text-muted)' }}>
-          {faNum(offset + 1)} تا {faNum(Math.min(offset + LIMIT, data?.total || 0))} از {faNum(data?.total || 0)}
+          {t('admin.range', { from: digits(offset + 1), to: digits(Math.min(offset + LIMIT, data?.total || 0)), total: digits(data?.total || 0) })}
         </span>
-        <Button variant="secondary" size="sm" disabled={!data || offset + LIMIT >= data.total} onClick={() => setOffset((o) => o + LIMIT)}>بعدی</Button>
+        <Button variant="secondary" size="sm" disabled={!data || offset + LIMIT >= data.total} onClick={() => setOffset((o) => o + LIMIT)}>{t('admin.next')}</Button>
       </div>
     </>
   )

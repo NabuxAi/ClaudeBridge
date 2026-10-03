@@ -1,0 +1,15 @@
+{
+  "proposal": {
+    "title": "تأیید شما لازم است: {tool}",
+    "recorded": "پیشنهاد اقدام ثبت شد: {tool}"
+  },
+  "scan": {
+    "unreachable": "اسکن امنیتی به سایت نرسید",
+    "infectedFile": "فایل آلوده پیدا شد: {file}",
+    "suspiciousFile": "فایل مشکوک: {file}",
+    "robotsTampered": "فایل robots.txt دستکاری شده"
+  },
+  "sweep": {
+    "allFailed": "بررسی خودکار روزانه روی هیچ سایتی موفق نبود"
+  }
+}

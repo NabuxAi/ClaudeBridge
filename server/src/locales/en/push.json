@@ -1,0 +1,13 @@
+{
+  "noVapidReason": "VAPID keys are not configured on this server (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY).",
+  "scope": "Browser notifications, sent directly from the server; acceptance by the push service does not mean the notification was seen.",
+  "notConfigured": "Browser notifications are not enabled on this server: VAPID keys are not configured.",
+  "idOrEndpointRequired": "A subscription ID or endpoint is required.",
+  "notFound": "Subscription not found.",
+  "invalidEndpoint": "Invalid subscription endpoint.",
+  "httpsRequired": "A notification subscription must be a valid HTTPS address.",
+  "keysRequired": "The subscription's encryption keys (p256dh and auth) are required.",
+  "limit": {
+    "subscribe": "Too many notification subscriptions from this address. Try again in an hour."
+  }
+}

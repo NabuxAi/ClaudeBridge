@@ -1,0 +1,99 @@
+{
+  "hero": {
+    "badge": "Smart WordPress care",
+    "title": "Your WordPress site, <hl>always up to date</hl> and checked by a daily scan",
+    "sub": "No need to hire a full-time site admin. Routine maintenance is automated, and you're asked for permission only when a decision is sensitive.",
+    "ctaRegister": "Create account",
+    "ctaPricing": "See pricing",
+    "pointInstall": "Set up in 2 minutes",
+    "pointNoCard": "No bank card needed for pilot access",
+    "previewTag": "Panel preview",
+    "previewTitle": "Your site's status",
+    "previewSub": "Shown here once your site is connected",
+    "chipSsl": "SSL check",
+    "chipUpdates": "Updates"
+  },
+  "features": {
+    "eyebrow": "Features",
+    "title": "What exactly does it do?",
+    "updates": {
+      "title": "Always up to date",
+      "desc": "Core, plugins, and themes are updated to their latest versions automatically. In safe mode, these options can't be turned off."
+    },
+    "malware": {
+      "title": "Malware scanning",
+      "desc": "A daily scan against an up-to-date signature database, plus hash lookups in external threat databases."
+    },
+    "integrity": {
+      "title": "Core integrity check",
+      "desc": "Every WordPress core file is compared with the official release; an unknown file in wp-includes is a finding in its own right."
+    },
+    "backup": {
+      "title": "Backup and restore",
+      "desc": "Database dumps written in pure PHP — they work even on hosts where exec() is disabled — and only complete dumps are recorded."
+    },
+    "conflict": {
+      "title": "Conflict finder",
+      "desc": "Point it at your broken page: plugins and the theme are switched off group by group until the culprit is found, then everything is switched back on."
+    },
+    "rescue": {
+      "title": "Rescue operations",
+      "desc": "For a site whose files can no longer be trusted: replace them with the official versions instead of guesswork cleanup."
+    }
+  },
+  "authority": {
+    "eyebrow": "You stay in control",
+    "title": "Three levels of authority",
+    "sub": "Decide how much freedom your assistant has. Sensitive actions need your approval at every level.",
+    "report": {
+      "title": "Report only",
+      "desc": "Only observes and suggests; nothing is changed on your site."
+    },
+    "confirm": {
+      "title": "With approval",
+      "desc": "Prepares the fix, waits for your approval, then applies and tests it."
+    },
+    "auto": {
+      "title": "Automatic",
+      "desc": "Handles low-risk tasks on its own; sensitive actions still wait for your approval."
+    }
+  },
+  "report": {
+    "eyebrow": "Transparent reports",
+    "title": "Tells you what happened, in plain language",
+    "sub": "Every finding is reported in the same order — cause, recommended action, and status — with no claims about things that haven't happened yet.",
+    "sampleLabel": "Sample report",
+    "alertTitle": "Important alert",
+    "alertBody": "Core integrity check: a file in wp-includes does not match the official WordPress release.",
+    "causeLabel": "Cause:",
+    "causeValue": "Not known yet — the file needs to be reviewed",
+    "actionLabel": "Recommended action:",
+    "actionValue": "Rescue operation: replace it with the official WordPress version",
+    "statusLabel": "Current status:",
+    "statusValue": "Waiting for your approval"
+  },
+  "pricing": {
+    "eyebrow": "Simple pricing",
+    "title": "A plan for every size",
+    "popular": "Most popular",
+    "perMonth": "Toman / month",
+    "cta": "Request access",
+    "basic": {
+      "name": "Basic",
+      "feats": ["1 site", "Automatic updates", "Daily backups and scans"]
+    },
+    "pro": {
+      "name": "Pro",
+      "feats": ["5 sites", "Core integrity checks", "Conflict finder and rescue operations"]
+    },
+    "agency": {
+      "name": "Agency",
+      "feats": ["Unlimited sites", "Everything in Pro", "Manage client sites from one panel"]
+    }
+  },
+  "cta": {
+    "title": "Get peace of mind about your site, starting today",
+    "sub": "Pilot access — no bank card needed. Connect in under two minutes.",
+    "button": "Create account"
+  }
+}

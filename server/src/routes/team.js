@@ -1,14 +1,18 @@
 import { Router } from 'express'
+import { i18nMiddleware } from '../i18n.js'
 import { team } from '../store.js'
 import { config } from '../config.js'
 import { limiter, clientIp } from '../security/ratelimit.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 const ip = (req) => clientIp(req, { trustProxy: config.trustProxy })
 
 const inviteLimit = limiter('team-invite', {
   limit: 10, windowMs: 60 * 60 * 1000, keyFn: ip,
-  message: 'تعداد دعوت‌ها از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+  message: 'team.limit.invite',
 })
 
 /**
@@ -19,7 +23,7 @@ const inviteLimit = limiter('team-invite', {
  */
 router.get('/sites/:id/team', async (req, res, next) => {
   try {
-    res.json(await team.list(req.params.id, req.user.sub))
+    res.json(await team.list(req.params.id, req.user.sub, req.locale))
   } catch (e) { next(e) }
 })
 
@@ -34,7 +38,7 @@ router.get('/sites/:id/team', async (req, res, next) => {
 router.post('/sites/:id/team/invitations', inviteLimit, async (req, res, next) => {
   try {
     const { email, role } = req.body || {}
-    const result = await team.invite(req.params.id, req.user.sub, { email, role })
+    const result = await team.invite(req.params.id, req.user.sub, { email, role, locale: req.locale })
     res.status(201).json(result)
   } catch (e) { next(e) }
 })
@@ -51,9 +55,9 @@ router.post('/team/invitations/accept', async (req, res, next) => {
   try {
     const { siteId, token } = req.body || {}
     if (!siteId || !token) {
-      return res.status(400).json({ message: 'شناسهٔ سایت و توکن دعوت لازم است.' })
+      return res.status(400).json({ message: req.t('team.siteAndTokenRequired') })
     }
-    const member = await team.accept(siteId, token, req.user.sub)
+    const member = await team.accept(siteId, token, req.user.sub, req.locale)
     res.status(201).json(member)
   } catch (e) { next(e) }
 })
@@ -69,7 +73,7 @@ router.delete('/sites/:id/team/invitations/:invitationId', async (req, res, next
 router.patch('/sites/:id/team/members/:memberId', async (req, res, next) => {
   try {
     const { role } = req.body || {}
-    res.json(await team.updateRole(req.params.id, req.user.sub, req.params.memberId, role))
+    res.json(await team.updateRole(req.params.id, req.user.sub, req.params.memberId, role, req.locale))
   } catch (e) { next(e) }
 })
 

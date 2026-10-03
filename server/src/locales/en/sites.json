@@ -1,0 +1,101 @@
+{
+  "domainRequired": "The site's domain is required.",
+  "alreadyAdded": "This site has already been added.",
+  "metric": {
+    "wordpress": "WordPress",
+    "responseNow": "Response right now",
+    "ssl": "SSL validity",
+    "unexpectedCore": "Unknown files in core",
+    "modifiedCore": "Modified core files",
+    "knownVulns": "Known vulnerabilities",
+    "malware": "Malware findings",
+    "scanned": "Files scanned"
+  },
+  "unit": {
+    "days": "days"
+  },
+  "probeFailed": "The check did not run",
+  "certUnreadable": "The certificate could not be read",
+  "backup": {
+    "scheduled": "Automatic daily",
+    "manual": "Manual"
+  },
+  "incidentsEmpty": "No events recorded yet. This means nothing was observed, not that the site was definitely healthy — the site is only seen when it is scanned.",
+  "noUrl": "No site address on file.",
+  "when": {
+    "now": "just now",
+    "minutes_one": "{count} minute ago",
+    "minutes_other": "{count} minutes ago",
+    "hours_one": "{count} hour ago",
+    "hours_other": "{count} hours ago",
+    "yesterday": "yesterday",
+    "days_one": "{count} day ago",
+    "days_other": "{count} days ago"
+  },
+  "incident": {
+    "resolvedSuffix": "{title} — resolved",
+    "kind": "Type",
+    "firstSeen": "First seen",
+    "file": "File",
+    "rule": "Matched rule",
+    "status": "Status",
+    "stillOpen": "Still open",
+    "desc": "This was seen in a scan and is still open. It will not be marked resolved until a later scan confirms it is gone."
+  },
+  "kind": {
+    "malware": "Malware",
+    "scan_failed": "Failed scan",
+    "policy": "Policy change",
+    "rescue": "Rescue operation",
+    "conflict": "Conflict check",
+    "action": "Sensitive action"
+  },
+  "sensitive": {
+    "delete_plugin": "Delete plugin",
+    "delete_theme": "Delete theme",
+    "activate_theme": "Activate theme",
+    "edit_file": "Edit file",
+    "delete_file": "Delete file",
+    "db_query": "Run a database query",
+    "rescue_rotate_keys": "Rotate security keys",
+    "create_plugin": "Create plugin"
+  },
+  "safeModeRefused": "Safe mode is on; automatic updates were not turned off.",
+  "unknownStep": "Unknown step.",
+  "rotateConfirm": "This step signs every user out of the site. Send confirm=true to run it.",
+  "invalidAuthority": "Invalid authority level.",
+  "brokenUrlRequired": "The broken page's URL is required.",
+  "perfProfileRequired": "A speed report is required.",
+  "updates": {
+    "noneMatched": "None of the submitted items were found in the site's update queue; fetch the update list again.",
+    "needApproval": "The selected items need your approval; each high-risk item must be approved and run separately.",
+    "noLowRisk": "There is no low-risk item in the queue; high-risk items need your separate approval."
+  },
+  "restoreConfirm": "Restoring replaces the current database with the older copy, and every change made after that backup is lost. Send confirm=true to run it.",
+  "readStalled": "Reading the file stalled.",
+  "noOffsiteTarget": "No cloud backup destination (S3) is configured.",
+  "openEventNotFound": "No open event with this ID was found.",
+  "noUrlShort": "The site has no address.",
+  "notReadyToPair": "The site is not ready to connect yet.",
+  "proposalSettled": "This proposal has already been decided.",
+  "actionRequired": "action/tool is required.",
+  "needsApproval": "This action is sensitive and needs your approval.",
+  "simulated": "Simulation — the site is not paired live.",
+  "events": {
+    "policyChanged": "Update policy changed",
+    "rescueStep": "Rescue — step “{step}” ran",
+    "conflictStarted": "Conflict check started",
+    "manualUpdate_one": "Manual update of {count} item started",
+    "manualUpdate_other": "Manual update of {count} items started",
+    "manualUpdate": "Manual update of {count} items started",
+    "manualBackup": "Manual backup started",
+    "restoreStarted": "Database restore from backup {id} started",
+    "pruneRan": "Old backup cleanup ran",
+    "offsiteTargetAdded": "New cloud backup destination added",
+    "offsiteSyncStarted": "Cloud backup sync started",
+    "alertDismissed": "An alert was dismissed manually",
+    "hostingChanged": "Site hosting settings changed",
+    "sensitiveRan": "Sensitive action ran: {op}",
+    "approvedFailed": "Approved action failed: {op}"
+  }
+}

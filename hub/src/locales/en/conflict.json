@@ -1,0 +1,56 @@
+{
+  "title": "Conflict finder",
+  "subtitle": "Find the plugin or theme that broke a page",
+  "taskTitle": "Plugin conflict check on {url}",
+  "errors": {
+    "notStarted": "Didn't start.",
+    "statusUnread": "Couldn't read the status.",
+    "retrying": "{reason} — retrying…",
+    "pollGaveUp": "Reading the check's status failed several times — the check is still running on the site, and you can try again."
+  },
+  "liveWarning": {
+    "title": "This check runs on the live site",
+    "body": "Plugins are switched off and back on in groups to find the culprit. A visitor who arrives mid-check sees the site in that state. At the end everything — even if an error occurs — is returned to how it was. It's best run during low-traffic hours."
+  },
+  "form": {
+    "url": "Address of the broken page",
+    "expect": "Text that should appear when the page is healthy",
+    "expectOptional": "(optional, but improves accuracy)",
+    "expectPlaceholder": "Complete purchase",
+    "expectHint": "Without this, only the status code is checked — a page that returns 200 but is empty counts as healthy.",
+    "forbid": "Text that signals a failure",
+    "optional": "(optional)",
+    "forbidHint": "PHP errors often come back with status 200. If you put the error text here, the page counts as broken whenever it appears.",
+    "start": "Start check",
+    "running": "Checking…"
+  },
+  "job": {
+    "running": "Running",
+    "failed": "Failed",
+    "done": "Done"
+  },
+  "result": {
+    "themeCulprit": "The theme is the culprit",
+    "pluginCulprit": "Culprit plugin found",
+    "noCulprit": "No culprit found",
+    "themeTitle": "Theme check",
+    "themeIsCause": "With the default theme “{compared}” the page worked — so the theme “{current}” is the culprit.",
+    "themeNotCause": "With the default theme “{compared}” the page stayed broken, so the theme “{current}” is not the culprit.",
+    "themeNotTested": "Not checked: {reason}",
+    "bisectTitle": "Binary search",
+    "bisectBody_one": "The culprit was found in {count} step. At each step half the plugins were switched off and the rest stayed on — so a conflict between two plugins stays reproducible.",
+    "bisectBody_other": "The culprit was found in {count} steps. At each step half the plugins were switched off and the rest stayed on — so a conflict between two plugins stays reproducible.",
+    "roundDisabled": "plugins off →",
+    "roundHealthy": "page worked",
+    "roundBroken": "still broken",
+    "incompleteTitle": "Check didn't finish",
+    "incompleteBody": "{error} — the result above is incomplete.",
+    "restoreTitle": "Restore",
+    "restored": "Active plugins and theme were read back and match the original state. Page status after restore: {state}.",
+    "stateHealthy": "healthy",
+    "stateBroken": "the same original failure",
+    "stateBrokenStatus": "the same original failure ({status})",
+    "stateUnmeasured": "— (not measured)",
+    "notRestored": "Restore didn't complete — check the site manually. {error}"
+  }
+}

@@ -5,6 +5,8 @@
  * Version: 3.9.1
  * Author: Account City
  * License: GPLv2 or later
+ * Text Domain: wp-claude-bridge
+ * Domain Path: /languages
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -20,6 +22,16 @@ define( 'CB_ACTIVITY_OPTION', 'cb_activity_log' );      // Ring buffer of recent
 define( 'CB_ACTIVITY_OPTION_ON', 'cb_activity_on' );    // "1" = log calls (default), "0" = off.
 define( 'CB_ACTIVITY_MAX', 40 );                        // Entries kept.
 define( 'CB_LASTSEEN_OPTION', 'cb_last_seen' );         // Unix time of the last authorized call.
+
+/*
+ * Translations. English is the source language; bundled catalogs live in
+ * /languages. Loaded on init (not earlier) because WordPress 6.7+ warns when a
+ * text domain is touched before init, and nothing user-facing runs sooner.
+ */
+add_action( 'init', 'cb_load_textdomain' );
+function cb_load_textdomain() {
+	load_plugin_textdomain( 'wp-claude-bridge', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
+}
 
 /* ============================================================================
  * 0. FILESYSTEM
@@ -786,7 +798,7 @@ function cb_backup_run( $args = array() ) {
 	// cb_backup_dir() is empty when uploads is unavailable; without this the
 	// paths below would resolve against the filesystem root.
 	if ( '' === $dir ) {
-		return array( 'ok' => false, 'message' => 'پوشهٔ بارگذاری در دسترس نیست؛ بکاپ ممکن نشد.' );
+		return array( 'ok' => false, 'message' => __( 'The uploads directory is not available; the backup could not be made.', 'wp-claude-bridge' ) );
 	}
 
 	// Host Disk Space Preflight Check
@@ -795,7 +807,7 @@ function cb_backup_run( $args = array() ) {
 		$free_bytes = @disk_free_space( ABSPATH );
 	}
 	if ( false !== $free_bytes && $free_bytes < ( 50 * 1024 * 1024 ) ) {
-		return array( 'ok' => false, 'message' => 'فضای خالی هاست کمتر از ۵۰ مگابایت است؛ بکاپ برای جلوگیری از پر شدن هاست متوقف شد.' );
+		return array( 'ok' => false, 'message' => __( 'Less than 50 MB of free disk space is left on the host; the backup was stopped so it would not fill the disk.', 'wp-claude-bridge' ) );
 	}
 
 	$stamp = gmdate( 'Ymd-His' );
@@ -937,7 +949,7 @@ function cb_backup_policy_get() {
 
 function cb_backup_policy_set( $args ) {
 	if ( ! is_array( $args ) ) {
-		return new WP_Error( 'cb_invalid_args', 'تنظیمات نامعتبر است.' );
+		return new WP_Error( 'cb_invalid_args', __( 'Invalid settings.', 'wp-claude-bridge' ) );
 	}
 	$cur_info = cb_backup_policy_get();
 	$current = $cur_info['policy'];
@@ -1094,17 +1106,17 @@ function cb_op_update_journal( $args ) {
 		$dir = cb_safe_update_run_dir( $run_id );
 		$j   = cb_update_journal_read( $dir );
 		if ( ! is_array( $j ) ) {
-			return array( 'ok' => false, 'message' => 'ژورنالی با این شناسهٔ اجرا پیدا نشد.' );
+			return array( 'ok' => false, 'message' => __( 'No journal was found for this run ID.', 'wp-claude-bridge' ) );
 		}
 		return array( 'ok' => true, 'journal' => $j );
 	}
 	$latest = cb_update_journal_latest_run();
 	if ( null === $latest ) {
-		return array( 'ok' => false, 'message' => 'هنوز اجرای به‌روزرسانی موجی ثبت نشده است.' );
+		return array( 'ok' => false, 'message' => __( 'No wave-by-wave update run has been recorded yet.', 'wp-claude-bridge' ) );
 	}
 	$j = cb_update_journal_read( $latest['dir'] );
 	if ( ! is_array( $j ) ) {
-		return array( 'ok' => false, 'message' => 'ژورنال آخرین اجرا خوانده نشد.' );
+		return array( 'ok' => false, 'message' => __( 'The journal of the latest run could not be read.', 'wp-claude-bridge' ) );
 	}
 	return array( 'ok' => true, 'journal' => $j );
 }
@@ -1128,11 +1140,11 @@ function cb_op_update_rollback( $args ) {
 		$latest = cb_update_journal_latest_run();
 	}
 	if ( null === $latest ) {
-		return array( 'ok' => false, 'message' => 'اجرایی برای بازگردانی پیدا نشد.' );
+		return array( 'ok' => false, 'message' => __( 'No run was found to roll back.', 'wp-claude-bridge' ) );
 	}
 	$journal = cb_update_journal_read( $latest['dir'] );
 	if ( ! is_array( $journal ) || empty( $journal['items'] ) ) {
-		return array( 'ok' => false, 'message' => 'ژورنال این اجرا خوانده نشد یا موجی ندارد.' );
+		return array( 'ok' => false, 'message' => __( 'The journal of this run could not be read, or it has no waves.', 'wp-claude-bridge' ) );
 	}
 
 	// Default: the newest wave that actually has a snapshot to come back to.
@@ -1149,7 +1161,7 @@ function cb_op_update_rollback( $args ) {
 		}
 	}
 	if ( null === $choice || empty( $choice['snapshot'] ) || 'core' === $choice['type'] ) {
-		return array( 'ok' => false, 'message' => 'موجی با snapshot قابل‌بازگردانی در این اجرا نیست (هسته snapshot ندارد).' );
+		return array( 'ok' => false, 'message' => __( 'This run has no wave with a restorable snapshot (core has no snapshot).', 'wp-claude-bridge' ) );
 	}
 
 	$snapshot_path = $latest['dir'] . '/' . preg_replace( '/[^A-Za-z0-9_.-]/', '', (string) $choice['snapshot'] );
@@ -1174,7 +1186,7 @@ function cb_op_update_rollback( $args ) {
 	}
 	return array(
 		'ok'         => true,
-		'message'    => 'موج بازگردانی شد و سلامت دوباره سنجیده شد.',
+		'message'    => __( 'The wave was rolled back and site health was measured again.', 'wp-claude-bridge' ),
 		'run_id'     => $latest['run_id'],
 		'item'       => array( 'type' => $choice['type'], 'name' => $choice['name'] ),
 		'health'     => cb_update_health_summary( $health ),
@@ -1240,8 +1252,8 @@ function cb_backup_preflight( $args = array() ) {
 	$sections = array(
 		'db' => array(
 			'key'         => 'db',
-			'title'       => 'پایگاه داده (SQL)',
-			'description' => 'شامل جداول پست‌ها، کاربران، تنظیمات و سفارش‌ها',
+			'title'       => _x( 'Database (SQL)', 'backup component', 'wp-claude-bridge' ),
+			'description' => __( 'Includes the posts, users, settings and orders tables', 'wp-claude-bridge' ),
 			'bytes'       => $db_bytes,
 			'formatted'   => size_format( $db_bytes, 1 ),
 			'duration_sec'=> $est_duration( $db_bytes ),
@@ -1249,8 +1261,8 @@ function cb_backup_preflight( $args = array() ) {
 		),
 		'plugins' => array(
 			'key'         => 'plugins',
-			'title'       => 'افزونه‌ها (Plugins)',
-			'description' => 'پوشه تمام افزونه‌های نصب‌شده روی وردپرس',
+			'title'       => _x( 'Plugins', 'backup component', 'wp-claude-bridge' ),
+			'description' => __( 'The folder of every plugin installed on WordPress', 'wp-claude-bridge' ),
 			'bytes'       => $plugins_bytes,
 			'formatted'   => size_format( $plugins_bytes, 1 ),
 			'duration_sec'=> $est_duration( $plugins_bytes ),
@@ -1258,8 +1270,8 @@ function cb_backup_preflight( $args = array() ) {
 		),
 		'themes' => array(
 			'key'         => 'themes',
-			'title'       => 'قالب‌ها (Themes)',
-			'description' => 'پوشه قالب فعال و سایر پوسته‌های نصب‌شده',
+			'title'       => _x( 'Themes', 'backup component', 'wp-claude-bridge' ),
+			'description' => __( 'The active theme folder and every other installed theme', 'wp-claude-bridge' ),
 			'bytes'       => $themes_bytes,
 			'formatted'   => size_format( $themes_bytes, 1 ),
 			'duration_sec'=> $est_duration( $themes_bytes ),
@@ -1267,8 +1279,8 @@ function cb_backup_preflight( $args = array() ) {
 		),
 		'uploads' => array(
 			'key'         => 'uploads',
-			'title'       => 'رسانه‌ها و آپلودها (Uploads)',
-			'description' => 'تصاویر، ویدئوها و فایل‌های کتابخانه چندرسانه‌ای',
+			'title'       => _x( 'Media and uploads', 'backup component', 'wp-claude-bridge' ),
+			'description' => __( 'Images, videos and Media Library files', 'wp-claude-bridge' ),
 			'bytes'       => $uploads_bytes,
 			'formatted'   => size_format( $uploads_bytes, 1 ),
 			'duration_sec'=> $est_duration( $uploads_bytes ),
@@ -1283,7 +1295,7 @@ function cb_backup_preflight( $args = array() ) {
 	return array(
 		'ok'                  => true,
 		'free_disk_bytes'     => $free_bytes,
-		'free_disk_formatted' => false !== $free_bytes ? size_format( $free_bytes, 1 ) : 'نامشخص',
+		'free_disk_formatted' => false !== $free_bytes ? size_format( $free_bytes, 1 ) : __( 'Unknown', 'wp-claude-bridge' ),
 		'total_full_bytes'    => $total_full_bytes,
 		'total_full_formatted'=> size_format( $total_full_bytes, 1 ),
 		'total_full_duration' => $est_duration( $total_full_bytes ),
@@ -1309,20 +1321,20 @@ function cb_op_backup_read( $args ) {
 	$id   = isset( $args['id'] ) ? preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $args['id'] ) : '';
 	$what = isset( $args['what'] ) && 'files' === $args['what'] ? 'files' : 'db';
 	if ( '' === $id ) {
-		return new WP_Error( 'cb_backup_read', 'شناسهٔ بکاپ لازم است.' );
+		return new WP_Error( 'cb_backup_read', __( 'A backup ID is required.', 'wp-claude-bridge' ) );
 	}
 	$found = cb_backup_find_meta( $id );
 	if ( ! $found ) {
-		return new WP_Error( 'cb_backup_read', 'این بکاپ پیدا نشد.' );
+		return new WP_Error( 'cb_backup_read', __( 'This backup was not found.', 'wp-claude-bridge' ) );
 	}
 	$dir  = $found['dir'];
 	$meta = json_decode( (string) cb_get_contents( $found['path'] ), true );
 	if ( ! is_array( $meta ) ) {
-		return new WP_Error( 'cb_backup_read', 'این بکاپ پیدا نشد.' );
+		return new WP_Error( 'cb_backup_read', __( 'This backup was not found.', 'wp-claude-bridge' ) );
 	}
 	$name = 'files' === $what ? ( isset( $meta['files_file'] ) ? $meta['files_file'] : null ) : $meta['db_file'];
 	if ( ! $name ) {
-		return new WP_Error( 'cb_backup_read', 'این بکاپ چنین فایلی ندارد.' );
+		return new WP_Error( 'cb_backup_read', __( 'This backup has no such file.', 'wp-claude-bridge' ) );
 	}
 
 	// basename() on the stored name, then a realpath check: the id is already
@@ -1331,7 +1343,7 @@ function cb_op_backup_read( $args ) {
 	$path = $dir . '/' . basename( $name );
 	$real = realpath( $path );
 	if ( ! $real || 0 !== strpos( $real, realpath( $dir ) ) || ! is_readable( $real ) ) {
-		return new WP_Error( 'cb_backup_read', 'فایل بکاپ خوانده نشد.' );
+		return new WP_Error( 'cb_backup_read', __( 'The backup file could not be read.', 'wp-claude-bridge' ) );
 	}
 
 	$size   = (int) filesize( $real );
@@ -1352,7 +1364,7 @@ function cb_op_backup_read( $args ) {
 		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets -- streamed; see the note above.
 	$fh = fopen( $real, 'rb' );
 	if ( ! $fh ) {
-		return new WP_Error( 'cb_backup_read', 'فایل بکاپ باز نشد.' );
+		return new WP_Error( 'cb_backup_read', __( 'The backup file could not be opened.', 'wp-claude-bridge' ) );
 	}
 	fseek( $fh, $offset );
 	$raw = (string) fread( $fh, $length );
@@ -1456,7 +1468,7 @@ function cb_rescue_inventory() {
 		'repo' => $repo, 'foreign' => $foreign, 'orphan' => $orphan,
 		'counts' => array( 'repo' => count( $repo ), 'foreign' => count( $foreign ), 'orphan' => count( $orphan ) ),
 		'needs_upload' => array_values( array_map( function ( $f ) { return $f['slug']; }, $foreign ) ),
-		'note' => 'فایل افزونه‌های تجاری را حتماً از سایت سازنده بگیرید، نه از همین سرور آلوده — وگرنه همان بک‌دور برمی‌گردد.',
+		'note' => __( 'Always download commercial plugin files from the vendor site, not from this infected server — otherwise the same backdoor comes back.', 'wp-claude-bridge' ),
 		'checked_at' => time(),
 	);
 }
@@ -1549,7 +1561,7 @@ function cb_rescue_leftovers() {
 			'critical' => count( array_filter( $found, function ( $f ) { return 'critical' === $f['severity']; } ) ),
 			'review'   => count( array_filter( $found, function ( $f ) { return 'review' === $f['severity']; } ) ),
 		),
-		'note' => 'فقط گزارش است. حذف خودکار انجام نمی‌شود — در uploads رسانهٔ واقعی هست.',
+		'note' => __( 'Report only. Nothing is deleted automatically — uploads also holds real media.', 'wp-claude-bridge' ),
 	);
 }
 
@@ -1608,7 +1620,7 @@ function cb_rescue_db_audit() {
 		'suspect_options' => $suspect,
 		'urls' => array( 'siteurl' => get_option( 'siteurl' ), 'home' => get_option( 'home' ) ),
 		'suspect_cron' => $cron,
-		'note' => 'گزارش است، نه اقدام. حذف کاربر باید با تأیید صاحب سایت باشد — حذف خودکار می‌تواند خود او را بیرون بیندازد.',
+		'note' => __( 'This is a report, not an action. Deleting a user needs the site owner’s approval — an automatic deletion could lock the owner out.', 'wp-claude-bridge' ),
 		'checked_at' => time(),
 	);
 }
@@ -1622,7 +1634,7 @@ function cb_rescue_db_audit() {
  */
 function cb_rescue_rotate_keys( $args = array() ) {
 	if ( empty( $args['confirm'] ) ) {
-		return array( 'ok' => false, 'message' => 'برای چرخش کلیدها confirm=true لازم است. این کار همهٔ کاربران را از سایت خارج می‌کند.' );
+		return array( 'ok' => false, 'message' => __( 'Rotating the keys requires confirm=true. It logs every user out of the site.', 'wp-claude-bridge' ) );
 	}
 	$config = ABSPATH . 'wp-config.php';
 	// Asked before touching wp-config.php: a rescue that half-writes it takes
@@ -1630,7 +1642,7 @@ function cb_rescue_rotate_keys( $args = array() ) {
 	// initialised just to answer a question PHP can answer directly.
 	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- cheap pre-flight check; see above.
 	if ( ! is_writable( $config ) ) {
-		return array( 'ok' => false, 'message' => 'wp-config.php قابل نوشتن نیست.' );
+		return array( 'ok' => false, 'message' => __( 'wp-config.php is not writable.', 'wp-claude-bridge' ) );
 	}
 	$res = wp_remote_get( 'https://api.wordpress.org/secret-key/1.1/salt/', array( 'timeout' => 20 ) );
 	if ( is_wp_error( $res ) ) {
@@ -1638,7 +1650,7 @@ function cb_rescue_rotate_keys( $args = array() ) {
 	}
 	$salts = trim( wp_remote_retrieve_body( $res ) );
 	if ( ! $salts || false === strpos( $salts, 'AUTH_KEY' ) ) {
-		return array( 'ok' => false, 'message' => 'دریافت کلیدهای جدید ناموفق بود.' );
+		return array( 'ok' => false, 'message' => __( 'Fetching new keys failed.', 'wp-claude-bridge' ) );
 	}
 
 	$src = cb_get_contents( $config );
@@ -1649,11 +1661,11 @@ function cb_rescue_rotate_keys( $args = array() ) {
 	$out = preg_replace( '/(<\?php)/', "$1\n" . $salts . "\n", $out, 1 );
 
 	if ( ! $out || false === strpos( $out, 'AUTH_KEY' ) ) {
-		return array( 'ok' => false, 'message' => 'ویرایش ناموفق بود؛ wp-config.php دست‌نخورده ماند.' );
+		return array( 'ok' => false, 'message' => __( 'The edit failed; wp-config.php was left untouched.', 'wp-claude-bridge' ) );
 	}
 	cb_put_contents( $config, $out );
 	return array( 'ok' => true, 'backup' => 'wp-config.php.pre-rescue.bak',
-		'message' => 'کلیدها عوض شدند. همهٔ نشست‌ها باطل شد — از جمله نشست مهاجم.' );
+		'message' => __( 'The keys were rotated. Every session was invalidated — including the attacker’s.', 'wp-claude-bridge' ) );
 }
 
 /**
@@ -1674,8 +1686,8 @@ function cb_rescue_verify() {
 	return array(
 		'clean' => $clean, 'integrity' => $integrity, 'scan' => $scan, 'leftovers' => $leftovers,
 		'verdict' => $clean
-			? 'هسته با نسخهٔ رسمی یکی است، اسکن بدافزار خالی است و فایل بحرانی باقی نمانده.'
-			: 'هنوز موردی باقی است — تا رفع نشده، سایت را پاک‌شده حساب نکنید.',
+			? __( 'Core matches the official release, the malware scan is empty, and no critical file remains.', 'wp-claude-bridge' )
+			: __( 'Something still remains — until it is fixed, do not consider the site clean.', 'wp-claude-bridge' ),
 	);
 }
 
@@ -2404,7 +2416,7 @@ function cb_op_conflict_hunt( $args ) {
 	if ( ! empty( $baseline['healthy'] ) ) {
 		return array(
 			'url' => $url, 'baseline' => $baseline, 'restored' => true,
-			'verdict' => 'صفحه همین حالا سالم است — چیزی برای پیدا کردن نیست.',
+			'verdict' => __( 'The page is healthy right now — there is nothing to find.', 'wp-claude-bridge' ),
 		);
 	}
 
@@ -2416,22 +2428,23 @@ function cb_op_conflict_hunt( $args ) {
 
 		if ( ! empty( $theme['is_cause'] ) ) {
 			$result['culprit'] = array( 'kind' => 'theme', 'name' => $theme['current'] );
-			$result['verdict'] = sprintf( 'قالب «%s» عامل خرابی است — با قالب پیش‌فرض صفحه سالم شد.', $theme['current'] );
+			$result['verdict'] = sprintf( /* translators: %s: theme stylesheet (folder name). */ __( 'The theme “%s” is the cause — the page was healthy with the default theme.', 'wp-claude-bridge' ), $theme['current'] );
 		} else {
 			$candidates = array_values( array_diff( $original, array( $self ) ) );
 			if ( ! $candidates ) {
-				$result['verdict'] = 'هیچ افزونهٔ فعالی برای بررسی نبود و قالب هم عامل نیست.';
+				$result['verdict'] = __( 'There was no active plugin to check, and the theme is not the cause.', 'wp-claude-bridge' );
 			} else {
 				$bisect           = cb_conflict_bisect( $url, $expect, $forbid, $candidates, $original, $self );
 				$result['bisect'] = $bisect;
 				if ( $bisect['culprit'] ) {
 					$result['culprit'] = array( 'kind' => 'plugin', 'name' => $bisect['culprit'] );
 					$result['verdict'] = sprintf(
-						'افزونهٔ «%s» عامل خرابی است. با %d مرحله پیدا شد، به‌جای %d بار خاموش و روشن کردن.',
+						/* translators: 1: plugin file, 2: number of bisection steps taken, 3: number of active plugins (one-by-one toggles avoided). */
+						__( 'The plugin “%1$s” is the cause. Found in %2$d steps instead of switching plugins off and on %3$d times.', 'wp-claude-bridge' ),
 						$bisect['culprit'], $bisect['tested'], count( $candidates )
 					);
 				} else {
-					$result['verdict'] = 'با خاموش کردن افزونه‌ها صفحه درست نشد — احتمالاً مشکل از هسته، هاست یا دیتابیس است.';
+					$result['verdict'] = __( 'Switching plugins off did not fix the page — the problem is probably in core, the host or the database.', 'wp-claude-bridge' );
 				}
 			}
 		}
@@ -2460,8 +2473,10 @@ function cb_op_conflict_hunt( $args ) {
 	$result['restored'] = ( $plugins_back && $theme_back );
 	if ( ! $result['restored'] ) {
 		$result['restore_error'] = ! $plugins_back
-			? 'افزونه‌های فعال با حالت اولیه یکی نیست: ' . implode( ', ', array_values( array_diff( $want_plugins, $now_plugins ) ) )
-			: sprintf( 'قالب روی «%s» ماند، نه «%s».', get_stylesheet(), $original_theme );
+			/* translators: %s: comma-separated list of plugin files that are not active again. */
+			? sprintf( __( 'The active plugins do not match the original state: %s', 'wp-claude-bridge' ), implode( ', ', array_values( array_diff( $want_plugins, $now_plugins ) ) ) )
+			/* translators: 1: theme that is active now, 2: theme that should have been restored. */
+			: sprintf( __( 'The theme stayed on “%1$s”, not “%2$s”.', 'wp-claude-bridge' ), get_stylesheet(), $original_theme );
 	}
 	$result['final_health'] = cb_conflict_health( $url, $expect, $forbid );
 
@@ -2539,7 +2554,7 @@ function cb_job_start( $type, $args = array() ) {
 		'args'       => $args,
 		'state'      => 'queued',
 		'progress'   => 0,
-		'message'    => 'در صف',
+		'message'    => __( 'Queued', 'wp-claude-bridge' ),
 		'cursor'     => null,
 		'result'     => null,
 		'created_at' => time(),
@@ -2626,7 +2641,7 @@ function cb_job_run( $id ) {
 			cb_job_put( $id, array(
 				'state'    => 'done',
 				'progress' => 100,
-				'message'  => isset( $out['message'] ) ? $out['message'] : 'انجام شد',
+				'message'  => isset( $out['message'] ) ? $out['message'] : __( 'Done', 'wp-claude-bridge' ),
 				'result'   => isset( $out['result'] ) ? $out['result'] : null,
 			) );
 		} else {
@@ -2668,7 +2683,7 @@ function cb_job_types() {
 function cb_job_backup( $job ) {
 	$out = cb_backup_run( is_array( $job['args'] ) ? $job['args'] : array() );
 	return array( 'done' => true, 'result' => $out,
-		'message' => ! empty( $out['ok'] ) ? 'بکاپ گرفته شد' : 'بکاپ ناموفق' );
+		'message' => ! empty( $out['ok'] ) ? __( 'Backup created', 'wp-claude-bridge' ) : __( 'Backup failed', 'wp-claude-bridge' ) );
 }
 
 /* -----------------------------------------------------------------
@@ -2959,7 +2974,7 @@ function cb_perf_capture() {
 		'slow'         => array_slice( $slow, 0, 10 ),
 		// Said plainly rather than left for someone to discover: the count is a
 		// floor, not an exact total.
-		'note'         => 'شمارش از لحظهٔ بارگذاری افزونه‌ها شروع می‌شود؛ چند کوئری اولیهٔ هسته در آن نیست.',
+		'note'         => __( 'Counting starts when plugins load; a few early core queries are not included.', 'wp-claude-bridge' ),
 	);
 
 	set_transient( 'cb_perf_result_' . $token, $result, 900 );
@@ -3028,12 +3043,18 @@ function cb_op_perf_clean_transients( $args = array() ) {
 		    AND option_value < UNIX_TIMESTAMP()"
 	);
 
+	/* translators: %d: number of expired transients deleted. */
+	$message = sprintf( _n( '%d expired transient deleted.', '%d expired transients deleted.', $deleted, 'wp-claude-bridge' ), $deleted );
+	if ( $left ) {
+		/* translators: %d: number of expired transients still left. */
+		$message .= ' ' . sprintf( _n( '%d remains — run it again.', '%d remain — run it again.', $left, 'wp-claude-bridge' ), $left );
+	}
+
 	return array(
 		'ok'        => true,
 		'deleted'   => $deleted,
 		'remaining' => $left,
-		'message'   => sprintf( '%d ترنزینت منقضی حذف شد%s', $deleted,
-			$left ? sprintf( '، %d مورد باقی مانده — دوباره اجرا کنید', $left ) : '' ),
+		'message'   => $message,
 	);
 }
 
@@ -3050,7 +3071,7 @@ function cb_job_perf( $job ) {
 
 	if ( empty( $state['site'] ) ) {
 		$state['site'] = cb_perf_site();
-		return array( 'cursor' => $state, 'progress' => 40, 'message' => 'بررسی کلی سایت انجام شد' );
+		return array( 'cursor' => $state, 'progress' => 40, 'message' => __( 'Site-wide check done', 'wp-claude-bridge' ) );
 	}
 
 	$url = isset( $args['url'] ) && $args['url'] ? esc_url_raw( (string) $args['url'] ) : home_url( '/' );
@@ -3071,17 +3092,17 @@ function cb_job_perf( $job ) {
 	$result = array( 'site' => $state['site'], 'url' => $url );
 
 	if ( is_wp_error( $resp ) ) {
-		$result['page_error'] = 'صفحه بارگذاری نشد: ' . $resp->get_error_message();
+		$result['page_error'] = sprintf( /* translators: %s: error message. */ __( 'The page did not load: %s', 'wp-claude-bridge' ), $resp->get_error_message() );
 	} elseif ( ! $page ) {
 		// A cache plugin serving a static file never reaches PHP, so no queries
 		// run. That is not a failure — it is the answer.
-		$result['page_error'] = 'گزارش صفحه ثبت نشد. معمولاً یعنی صفحه از کش سرو شده و اصلاً به PHP نرسیده — که خودش خبر خوبی است.';
+		$result['page_error'] = __( 'No page report was recorded. This usually means the page was served from cache and never reached PHP — which is good news in itself.', 'wp-claude-bridge' );
 		$result['http_code']  = (int) wp_remote_retrieve_response_code( $resp );
 	} else {
 		$result['page'] = $page;
 	}
 
-	return array( 'done' => true, 'message' => 'بررسی سرعت انجام شد', 'result' => $result );
+	return array( 'done' => true, 'message' => __( 'Speed check done', 'wp-claude-bridge' ), 'result' => $result );
 }
 
 /**
@@ -3202,7 +3223,7 @@ function cb_update_item_version( $type, $name ) {
  */
 function cb_update_resolve_item( $type, $name ) {
 	if ( 'core' === $type ) {
-		return new WP_Error( 'cb_update', 'هسته فایل موردی برای snapshot ندارد.' );
+		return new WP_Error( 'cb_update', __( 'Core has no per-item files to snapshot.', 'wp-claude-bridge' ) );
 	}
 	if ( 'theme' === $type ) {
 		$target = $name;
@@ -3220,7 +3241,7 @@ function cb_update_resolve_item( $type, $name ) {
 		$root = function_exists( 'get_theme_root' ) ? get_theme_root( $target ) : WP_CONTENT_DIR . '/themes';
 		$dir  = rtrim( $root, '/\\' ) . '/' . ltrim( $target, '/\\' );
 		if ( ! is_dir( $dir ) ) {
-			return new WP_Error( 'cb_update', 'پوشهٔ قالب پیدا نشد: ' . $target );
+			return new WP_Error( 'cb_update', sprintf( /* translators: %s: plugin or theme slug. */ __( 'Theme folder not found: %s', 'wp-claude-bridge' ), $target ) );
 		}
 		return array( 'dir' => $dir, 'slug' => basename( $dir ), 'single_file' => false );
 	}
@@ -3239,19 +3260,19 @@ function cb_update_resolve_item( $type, $name ) {
 	}
 	$target = str_replace( '\\', '/', $target );
 	if ( false !== strpos( $target, '../' ) ) {
-		return new WP_Error( 'cb_update', 'نام افزونه نامعتبر است.' );
+		return new WP_Error( 'cb_update', __( 'Invalid plugin name.', 'wp-claude-bridge' ) );
 	}
 	$parent = dirname( WP_PLUGIN_DIR . '/' . ltrim( $target, '/' ) );
 	if ( $parent === rtrim( WP_PLUGIN_DIR, '/\\' ) ) {
 		// A single-file plugin: the "folder" is one PHP file inside WP_PLUGIN_DIR.
 		$file = WP_PLUGIN_DIR . '/' . ltrim( $target, '/' );
 		if ( ! is_file( $file ) ) {
-			return new WP_Error( 'cb_update', 'فایل افزونه پیدا نشد: ' . $target );
+			return new WP_Error( 'cb_update', sprintf( /* translators: %s: plugin or theme slug. */ __( 'Plugin file not found: %s', 'wp-claude-bridge' ), $target ) );
 		}
 		return array( 'dir' => $file, 'slug' => basename( $file ), 'single_file' => true );
 	}
 	if ( ! is_dir( $parent ) ) {
-		return new WP_Error( 'cb_update', 'پوشهٔ افزونه پیدا نشد: ' . $target );
+		return new WP_Error( 'cb_update', sprintf( /* translators: %s: plugin or theme slug. */ __( 'Plugin folder not found: %s', 'wp-claude-bridge' ), $target ) );
 	}
 	return array( 'dir' => $parent, 'slug' => basename( $parent ), 'single_file' => false );
 }
@@ -3259,7 +3280,7 @@ function cb_update_resolve_item( $type, $name ) {
 /** Zip one item's current files into the run directory. Returns the zip path or WP_Error. */
 function cb_update_snapshot_item( $type, $name, $run_dir, $i ) {
 	if ( '' === $run_dir || ! class_exists( 'ZipArchive' ) ) {
-		return new WP_Error( 'cb_snapshot', 'ZipArchive یا پوشهٔ اجرا در دسترس نیست.' );
+		return new WP_Error( 'cb_snapshot', __( 'ZipArchive or the run directory is not available.', 'wp-claude-bridge' ) );
 	}
 	$r = cb_update_resolve_item( $type, $name );
 	if ( is_wp_error( $r ) ) {
@@ -3269,7 +3290,7 @@ function cb_update_snapshot_item( $type, $name, $run_dir, $i ) {
 	$zip_path = $run_dir . '/snap-' . (int) $i . '-' . ( 'theme' === $type ? 'theme' : 'plugin' ) . '-' . $slug . '.zip';
 	$zip      = new ZipArchive();
 	if ( true !== $zip->open( $zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE ) ) {
-		return new WP_Error( 'cb_snapshot', 'باز کردن zip برای snapshot ناموفق بود.' );
+		return new WP_Error( 'cb_snapshot', __( 'Opening the zip for the snapshot failed.', 'wp-claude-bridge' ) );
 	}
 	if ( $r['single_file'] ) {
 		$zip->addFile( $r['dir'], basename( $r['dir'] ) );
@@ -3288,7 +3309,7 @@ function cb_update_snapshot_item( $type, $name, $run_dir, $i ) {
 	}
 	$zip->close();
 	if ( ! file_exists( $zip_path ) || (int) @filesize( $zip_path ) < 100 ) {
-		return new WP_Error( 'cb_snapshot', 'snapshot خالی نوشته شد.' );
+		return new WP_Error( 'cb_snapshot', __( 'The snapshot was written empty.', 'wp-claude-bridge' ) );
 	}
 	return $zip_path;
 }
@@ -3321,7 +3342,7 @@ function cb_update_rrmdir( $dir ) {
  */
 function cb_update_rollback_item( $type, $name, $snapshot_path ) {
 	if ( ! class_exists( 'ZipArchive' ) || ! $snapshot_path || ! file_exists( $snapshot_path ) ) {
-		return new WP_Error( 'cb_rollback', 'snapshot در دسترس نیست؛ بازگردانی ممکن نشد.' );
+		return new WP_Error( 'cb_rollback', __( 'The snapshot is not available; the rollback could not be done.', 'wp-claude-bridge' ) );
 	}
 	$r = cb_update_resolve_item( $type, $name );
 	if ( is_wp_error( $r ) ) {
@@ -3331,26 +3352,26 @@ function cb_update_rollback_item( $type, $name, $snapshot_path ) {
 		// Extract next to the live file, swap in, keep the broken one for inspection.
 		$tmp = rtrim( dirname( $r['dir'] ), '/\\' ) . '/.cb-rollback-' . wp_generate_password( 6, false, false );
 		if ( ! wp_mkdir_p( $tmp ) ) {
-			return new WP_Error( 'cb_rollback', 'ساخت پوشهٔ موقت بازگردانی ناموفق بود.' );
+			return new WP_Error( 'cb_rollback', __( 'Creating the temporary rollback folder failed.', 'wp-claude-bridge' ) );
 		}
 		$zip = new ZipArchive();
 		if ( true !== $zip->open( $snapshot_path ) ) {
-			return new WP_Error( 'cb_rollback', 'باز کردن snapshot ناموفق بود.' );
+			return new WP_Error( 'cb_rollback', __( 'Opening the snapshot failed.', 'wp-claude-bridge' ) );
 		}
 		$ok = $zip->extractTo( $tmp );
 		$zip->close();
 		if ( ! $ok || ! file_exists( $tmp . '/' . basename( $r['dir'] ) ) ) {
-			return new WP_Error( 'cb_rollback', 'استخراج snapshot ناموفق بود.' );
+			return new WP_Error( 'cb_rollback', __( 'Extracting the snapshot failed.', 'wp-claude-bridge' ) );
 		}
 		@rename( $r['dir'], rtrim( dirname( $r['dir'] ), '/\\' ) . '/.broken-' . basename( $r['dir'] ) . '-' . wp_generate_password( 4, false, false ) );
 		$moved = @rename( $tmp . '/' . basename( $r['dir'] ), $r['dir'] );
 		cb_update_rrmdir( $tmp );
-		return $moved ? true : new WP_Error( 'cb_rollback', 'جایگزینی فایل بازگردانی‌شده ناموفق بود.' );
+		return $moved ? true : new WP_Error( 'cb_rollback', __( 'Replacing the files with the restored copy failed.', 'wp-claude-bridge' ) );
 	}
 
 	$zip = new ZipArchive();
 	if ( true !== $zip->open( $snapshot_path ) ) {
-		return new WP_Error( 'cb_rollback', 'باز کردن snapshot ناموفق بود.' );
+		return new WP_Error( 'cb_rollback', __( 'Opening the snapshot failed.', 'wp-claude-bridge' ) );
 	}
 	$entries = array();
 	for ( $zi = 0; $zi < $zip->numFiles; $zi++ ) {
@@ -3361,22 +3382,22 @@ function cb_update_rollback_item( $type, $name, $snapshot_path ) {
 	}
 	$zip->close();
 	if ( empty( $entries ) ) {
-		return new WP_Error( 'cb_rollback', 'snapshot خالی است.' );
+		return new WP_Error( 'cb_rollback', __( 'The snapshot is empty.', 'wp-claude-bridge' ) );
 	}
 	if ( ! cb_update_rrmdir( $r['dir'] ) && is_dir( $r['dir'] ) ) {
-		return new WP_Error( 'cb_rollback', 'حذف نسخهٔ خراب ناموفق بود.' );
+		return new WP_Error( 'cb_rollback', __( 'Removing the broken version failed.', 'wp-claude-bridge' ) );
 	}
 	if ( ! wp_mkdir_p( $r['dir'] ) ) {
-		return new WP_Error( 'cb_rollback', 'ساخت پوشهٔ بازگردانی ناموفق بود.' );
+		return new WP_Error( 'cb_rollback', __( 'Creating the rollback folder failed.', 'wp-claude-bridge' ) );
 	}
 	$zip = new ZipArchive();
 	if ( true !== $zip->open( $snapshot_path ) ) {
-		return new WP_Error( 'cb_rollback', 'باز کردن snapshot ناموفق بود.' );
+		return new WP_Error( 'cb_rollback', __( 'Opening the snapshot failed.', 'wp-claude-bridge' ) );
 	}
 	$ok = $zip->extractTo( $r['dir'] );
 	$zip->close();
 	if ( ! $ok || ! is_file( $r['dir'] . '/' . $entries[0] ) ) {
-		return new WP_Error( 'cb_rollback', 'استخراج snapshot کامل نشد.' );
+		return new WP_Error( 'cb_rollback', __( 'Extracting the snapshot did not complete.', 'wp-claude-bridge' ) );
 	}
 	return true;
 }
@@ -3565,7 +3586,7 @@ function cb_job_update_apply( $job ) {
 		}
 
 		if ( ! $queue ) {
-			return array( 'done' => true, 'message' => 'چیزی برای به‌روزرسانی نبود.',
+			return array( 'done' => true, 'message' => __( 'There was nothing to update.', 'wp-claude-bridge' ),
 				'result' => array( 'ok' => true, 'applied' => array(), 'failed' => array() ) );
 		}
 
@@ -3607,7 +3628,7 @@ function cb_job_update_apply( $job ) {
 		}
 		if ( false !== $free && $free < ( 100 * 1024 * 1024 ) ) {
 			$journal['state'] = 'aborted';
-			$journal['abort'] = 'فضای خالی هاست کمتر از ۱۰۰ مگابایت است؛ برای snapshot و بازگردانی، اجرا متوقف شد.';
+			$journal['abort'] = __( 'Less than 100 MB of free disk space is left on the host; the run was stopped because snapshots and rollback need room.', 'wp-claude-bridge' );
 			cb_update_journal_write( $run_dir, $journal );
 			return array( 'done' => true, 'message' => $journal['abort'],
 				'result' => array( 'ok' => false, 'applied' => array(), 'failed' => array(), 'run_id' => $state['run_id'] ) );
@@ -3623,7 +3644,7 @@ function cb_job_update_apply( $job ) {
 		return array(
 			'cursor'   => $state,
 			'progress' => 5,
-			'message'  => 'پیش‌نیازها آماده شد؛ آپدیت موجی آغاز می‌شود.',
+			'message'  => __( 'Preflight complete; the wave-by-wave update is starting.', 'wp-claude-bridge' ),
 		);
 	}
 
@@ -3639,17 +3660,25 @@ function cb_job_update_apply( $job ) {
 		cb_update_journal_write( $run_dir, $journal );
 		cb_safe_update_prune( 7 );
 
-		$parts   = array( sprintf( '%d مورد به‌روز شد', count( $state['applied'] ) ) );
-		$parts[] = sprintf( '%d ناموفق', count( $state['failed'] ) );
+		$n_applied = count( $state['applied'] );
+		$n_failed  = count( $state['failed'] );
+		/* translators: %d: number of items updated. */
+		$parts   = array( sprintf( _n( '%d item updated', '%d items updated', $n_applied, 'wp-claude-bridge' ), $n_applied ) );
+		/* translators: %d: number of items whose update failed. */
+		$parts[] = sprintf( _n( '%d failed', '%d failed', $n_failed, 'wp-claude-bridge' ), $n_failed );
 		if ( $state['rolled_back'] ) {
-			$parts[] = sprintf( '%d به‌روزرسانی خراب کرد و بازگردانی شد', count( $state['rolled_back'] ) );
+			$n_rolled = count( $state['rolled_back'] );
+			/* translators: %d: number of updates that broke the site and were rolled back. */
+			$parts[] = sprintf( _n( '%d update broke the site and was rolled back', '%d updates broke the site and were rolled back', $n_rolled, 'wp-claude-bridge' ), $n_rolled );
 		}
 		if ( $state['skipped'] ) {
-			$parts[] = sprintf( '%d مورد پس از توقف صف اجرا نشد', $state['skipped'] );
+			/* translators: %d: number of queued items not run because the queue stopped. */
+			$parts[] = sprintf( _n( '%d item was not run after the queue stopped', '%d items were not run after the queue stopped', $state['skipped'], 'wp-claude-bridge' ), $state['skipped'] );
 		}
 		return array(
 			'done'    => true,
-			'message' => implode( '، ', $parts ) . '.',
+			/* translators: Ends the update summary sentence; %s is the comma-joined list of counts. */
+			'message' => sprintf( _x( '%s.', 'update summary', 'wp-claude-bridge' ), implode( _x( ', ', 'list separator', 'wp-claude-bridge' ), $parts ) ),
 			'result'  => array(
 				'ok'             => empty( $state['failed'] ) && empty( $state['rolled_back'] ),
 				'applied'        => $state['applied'],
@@ -3690,7 +3719,7 @@ function cb_job_update_apply( $job ) {
 			if ( $target_update ) {
 				$res = $up->upgrade( $target_update );
 			} else {
-				$res = new WP_Error( 'no_core_update', 'آپدیت هسته‌ای در دسترس نیست' );
+				$res = new WP_Error( 'no_core_update', __( 'No core update is available', 'wp-claude-bridge' ) );
 			}
 		} elseif ( 'theme' === $item['type'] ) {
 			$target = $item['name'];
@@ -3728,7 +3757,7 @@ function cb_job_update_apply( $job ) {
 		if ( is_wp_error( $res ) ) {
 			$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => $res->get_error_message() );
 		} elseif ( false === $res ) {
-			$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => 'به‌روزرسانی انجام نشد' );
+			$state['failed'][] = array( 'name' => $item['name'], 'type' => $item['type'], 'error' => __( 'The update did not complete', 'wp-claude-bridge' ) );
 		} else {
 			$state['applied'][] = array( 'name' => $item['name'], 'type' => $item['type'] );
 		}
@@ -3773,7 +3802,7 @@ function cb_job_update_apply( $job ) {
 			// the database schema forward, and old files over a new schema is
 			// worse than a stopped queue. The safety backup is the way back.
 			$entry['outcome'] = 'applied_health_failed';
-			$entry['note']    = 'پس از به‌روزرسانی هسته سلامت سایت افت کرد. بازگردانی خودکار هسته انجام نمی‌شود (اسکیمای دیتابیس جلو رفته است)؛ بکاپ ایمنی موجود است و تصمیم با انسان است.';
+			$entry['note']    = __( 'Site health dropped after the core update. Core is not rolled back automatically (the database schema has already moved forward); the safety backup exists and the decision is a human one.', 'wp-claude-bridge' );
 			$stop = true;
 		} elseif ( is_string( $snapshot ) && file_exists( $snapshot ) ) {
 			$rb = cb_update_rollback_item( $item['type'], $item['name'], $snapshot );
@@ -3790,7 +3819,7 @@ function cb_job_update_apply( $job ) {
 			$stop = true;
 		} else {
 			$entry['outcome']        = 'applied_health_failed';
-			$entry['rollback_error'] = 'snapshot در دسترس نبود؛ بازگردانی خودکار ممکن نشد.';
+			$entry['rollback_error'] = __( 'No snapshot was available; automatic rollback was not possible.', 'wp-claude-bridge' );
 			$state['rolled_back'][]  = array( 'name' => $item['name'], 'type' => $item['type'], 'rollback_ok' => false );
 			$stop = true;
 		}
@@ -3816,13 +3845,13 @@ function cb_job_update_apply( $job ) {
 
 	if ( $stop ) {
 		return array( 'cursor' => $state, 'progress' => 95,
-			'message' => 'سلامت سایت پس از این موج افت کرد و صف متوقف شد: ' . $item['name'] );
+			'message' => sprintf( /* translators: %s: plugin, theme or core item name. */ __( 'Site health dropped after this wave and the queue was stopped: %s', 'wp-claude-bridge' ), $item['name'] ) );
 	}
 
 	return array(
 		'cursor'   => $state,
 		'progress' => (int) ( 5 + 90 * $state['i'] / max( 1, $n ) ),
-		'message'  => sprintf( 'به‌روزرسانی %d از %d: %s', $state['i'], $n, $item['name'] ),
+		'message'  => sprintf( /* translators: 1: position in the queue, 2: queue length, 3: item name. */ __( 'Updating %1$d of %2$d: %3$s', 'wp-claude-bridge' ), $state['i'], $n, $item['name'] ),
 	);
 }
 
@@ -3845,24 +3874,24 @@ function cb_job_backup_restore( $job ) {
 	$id    = isset( $args['id'] ) ? preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $args['id'] ) : '';
 
 	if ( '' === $id ) {
-		return array( 'done' => true, 'message' => 'شناسهٔ بکاپ لازم است.',
+		return array( 'done' => true, 'message' => __( 'A backup ID is required.', 'wp-claude-bridge' ),
 			'result' => array( 'ok' => false, 'error' => 'missing id' ) );
 	}
 
 	$found = cb_backup_find_meta( $id );
 	if ( ! $found ) {
-		return array( 'done' => true, 'message' => 'این بکاپ پیدا نشد.',
+		return array( 'done' => true, 'message' => __( 'This backup was not found.', 'wp-claude-bridge' ),
 			'result' => array( 'ok' => false, 'error' => 'backup not found' ) );
 	}
 	$dir  = $found['dir'];
 	$meta = json_decode( (string) cb_get_contents( $found['path'] ), true );
 	if ( ! is_array( $meta ) || empty( $meta['db_file'] ) ) {
-		return array( 'done' => true, 'message' => 'این بکاپ پیدا نشد.',
+		return array( 'done' => true, 'message' => __( 'This backup was not found.', 'wp-claude-bridge' ),
 			'result' => array( 'ok' => false, 'error' => 'backup not found' ) );
 	}
 	$sql = $dir . '/' . $meta['db_file'];
 	if ( ! is_readable( $sql ) ) {
-		return array( 'done' => true, 'message' => 'فایل دیتابیس این بکاپ خوانده نشد.',
+		return array( 'done' => true, 'message' => __( 'The database file of this backup could not be read.', 'wp-claude-bridge' ),
 			'result' => array( 'ok' => false, 'error' => 'dump unreadable' ) );
 	}
 
@@ -3879,7 +3908,7 @@ function cb_job_backup_restore( $job ) {
 		if ( empty( $safety['ok'] ) ) {
 			// No way back means no restore. Refusing here is the whole point of
 			// taking the safety snapshot first.
-			return array( 'done' => true, 'message' => 'بکاپ ایمنی پیش از بازگردانی گرفته نشد — بازگردانی انجام نشد.',
+			return array( 'done' => true, 'message' => __( 'The safety backup before the restore could not be taken — the restore was not performed.', 'wp-claude-bridge' ),
 				'result' => array( 'ok' => false, 'error' => 'pre-restore backup failed' ) );
 		}
 	}
@@ -3894,7 +3923,7 @@ function cb_job_backup_restore( $job ) {
 		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.file_system_operations_fread,WordPress.WP.AlternativeFunctions.file_system_operations_fgets -- streamed; see the note above.
 	$fh = fopen( $sql, 'rb' );
 	if ( ! $fh ) {
-		return array( 'done' => true, 'message' => 'فایل بکاپ باز نشد.',
+		return array( 'done' => true, 'message' => __( 'The backup file could not be opened.', 'wp-claude-bridge' ),
 			'result' => array( 'ok' => false, 'error' => 'open failed' ) );
 	}
 	fseek( $fh, (int) $state['offset'] );
@@ -3951,7 +3980,7 @@ function cb_job_backup_restore( $job ) {
 		return array(
 			'cursor'   => $state,
 			'progress' => (int) ( 95 * $state['offset'] / $total ),
-			'message'  => sprintf( 'بازگردانی: %d دستور اجرا شد', $state['statements'] ),
+			'message'  => sprintf( /* translators: %d: number of SQL statements replayed so far. */ _n( 'Restore: %d statement executed', 'Restore: %d statements executed', $state['statements'], 'wp-claude-bridge' ), $state['statements'] ),
 		);
 	}
 
@@ -3961,8 +3990,8 @@ function cb_job_backup_restore( $job ) {
 	return array(
 		'done'    => true,
 		'message' => $state['errors']
-			? sprintf( 'بازگردانی تمام شد با %d خطا', count( $state['errors'] ) )
-			: 'بازگردانی کامل شد',
+			? sprintf( /* translators: %d: number of SQL errors during the restore. */ _n( 'Restore finished with %d error', 'Restore finished with %d errors', count( $state['errors'] ), 'wp-claude-bridge' ), count( $state['errors'] ) )
+			: __( 'Restore complete', 'wp-claude-bridge' ),
 		'result'  => array(
 			'ok'         => empty( $state['errors'] ),
 			'backup_id'  => $id,
@@ -4017,7 +4046,7 @@ function cb_job_integrity( $job ) {
 				'done'     => false,
 				'cursor'   => $state,
 				'progress' => (int) ( 90 * ( $i + 1 ) / max( 1, $n ) ),
-				'message'  => sprintf( 'بررسی فایل %d از %d', $i + 1, $n ),
+				'message'  => sprintf( /* translators: 1: current file number, 2: total files. */ __( 'Checking file %1$d of %2$d', 'wp-claude-bridge' ), $i + 1, $n ),
 			);
 		}
 	}
@@ -4035,7 +4064,7 @@ function cb_job_integrity( $job ) {
 	}
 	sort( $state['modified'] ); sort( $state['missing'] ); sort( $unexpected );
 
-	return array( 'done' => true, 'message' => 'بررسی یکپارچگی کامل شد', 'result' => array(
+	return array( 'done' => true, 'message' => __( 'Integrity check complete', 'wp-claude-bridge' ), 'result' => array(
 		'ok' => true, 'version' => $version, 'locale' => $locale,
 		'files_known' => count( $sums ),
 		'modified' => $state['modified'], 'missing' => $state['missing'], 'unexpected' => $unexpected,
@@ -4085,11 +4114,11 @@ function cb_job_scan( $job ) {
 			$state['i'] = $i + 1;
 			return array( 'done' => false, 'cursor' => $state,
 				'progress' => (int) ( 100 * ( $i + 1 ) / max( 1, $n ) ),
-				'message' => sprintf( 'اسکن فایل %d از %d', $i + 1, $n ) );
+				'message' => sprintf( /* translators: 1: current file number, 2: total files. */ __( 'Scanning file %1$d of %2$d', 'wp-claude-bridge' ), $i + 1, $n ) );
 		}
 	}
 
-	return array( 'done' => true, 'message' => 'اسکن کامل شد',
+	return array( 'done' => true, 'message' => __( 'Scan complete', 'wp-claude-bridge' ),
 		'result' => array( 'hits' => $state['hits'], 'scanned' => $n ) );
 }
 
@@ -4101,7 +4130,7 @@ function cb_job_conflict( $job ) {
 			'result' => array( 'error' => $out->get_error_message() ) );
 	}
 	return array( 'done' => true, 'result' => $out,
-		'message' => isset( $out['verdict'] ) ? $out['verdict'] : 'بررسی تمام شد' );
+		'message' => isset( $out['verdict'] ) ? $out['verdict'] : __( 'Check finished', 'wp-claude-bridge' ) );
 }
 
 function cb_op_job_start( $args ) {
@@ -4569,39 +4598,39 @@ function cb_block_name_valid( $name ) {
  * not registered: a spec that references a block the editor does not know
  * opens with block validation errors, which to the owner IS a broken page.
  *
- * @return array( boolean ok, string persian message ) — message empty when ok.
+ * @return array( boolean ok, string translated message ) — message empty when ok.
  */
 function cb_block_specs_validate( $specs, $registry_check = false, $depth = 0 ) {
 	if ( $depth > 10 ) {
-		return array( false, 'ساختار بلوک‌ها بیش از حد تو در تو است (حداکثر ۱۰ سطح).' );
+		return array( false, __( 'The block structure is nested too deeply (maximum 10 levels).', 'wp-claude-bridge' ) );
 	}
 	if ( ! is_array( $specs ) || empty( $specs ) ) {
-		return array( false, 'فهرست specs بلوک خالی است یا آرایه نیست.' );
+		return array( false, __( 'The block specs list is empty or not an array.', 'wp-claude-bridge' ) );
 	}
 	foreach ( $specs as $spec ) {
 		if ( ! is_array( $spec ) ) {
-			return array( false, 'هر بلوک باید یک شیء با کلید name باشد.' );
+			return array( false, __( 'Every block must be an object with a name key.', 'wp-claude-bridge' ) );
 		}
 		$name = isset( $spec['name'] ) ? $spec['name'] : '';
 		if ( ! cb_block_name_valid( $name ) ) {
-			return array( false, 'نام بلوک نامعتبر است: «' . sanitize_text_field( (string) $name ) . '» — باید شبیه core/paragraph باشد.' );
+			return array( false, sprintf( /* translators: %s: block name as supplied. */ __( 'Invalid block name: “%s” — it must look like core/paragraph.', 'wp-claude-bridge' ), sanitize_text_field( (string) $name ) ) );
 		}
 		if ( $registry_check && class_exists( 'WP_Block_Type_Registry' ) ) {
 			$registered = WP_Block_Type_Registry::get_instance()->get_all_registered();
 			// An empty registry proves nothing about the site; do not false-refuse.
 			if ( ! empty( $registered ) && ! isset( $registered[ $name ] ) ) {
-				return array( false, 'بلوک «' . $name . '» روی این سایت ثبت نشده است؛ فهرست مجاز را با list_block_types ببینید.' );
+				return array( false, sprintf( /* translators: %s: block name or widget type. */ __( 'The block “%s” is not registered on this site; see the allowed list with list_block_types.', 'wp-claude-bridge' ), $name ) );
 			}
 		}
 		if ( isset( $spec['attributes'] ) && ! is_array( $spec['attributes'] ) ) {
-			return array( false, 'attributes بلوک «' . $name . '» باید شیء باشد.' );
+			return array( false, sprintf( /* translators: %s: block name or widget type. */ __( 'The attributes of block “%s” must be an object.', 'wp-claude-bridge' ), $name ) );
 		}
 		if ( isset( $spec['content'] ) && ! is_string( $spec['content'] ) ) {
-			return array( false, 'content بلوک «' . $name . '» باید رشته باشد.' );
+			return array( false, sprintf( /* translators: %s: block name or widget type. */ __( 'The content of block “%s” must be a string.', 'wp-claude-bridge' ), $name ) );
 		}
 		if ( isset( $spec['inner'] ) ) {
 			if ( ! is_array( $spec['inner'] ) ) {
-				return array( false, 'inner بلوک «' . $name . '» باید آرایه باشد.' );
+				return array( false, sprintf( /* translators: %s: block name or widget type. */ __( 'The inner list of block “%s” must be an array.', 'wp-claude-bridge' ), $name ) );
 			}
 			if ( ! empty( $spec['inner'] ) ) {
 				$inner = cb_block_specs_validate( $spec['inner'], $registry_check, $depth + 1 );
@@ -4704,11 +4733,11 @@ function cb_block_spec_to_markup( $spec, $depth, &$empties = null ) {
 /** Tool op: the registered block palette on this site, honestly. */
 function cb_op_list_block_types( $args = array() ) {
 	if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
-		return array( 'ok' => false, 'message' => 'رجیستری بلوک وردپرس روی این سایت در دسترس نیست.' );
+		return array( 'ok' => false, 'message' => __( 'The WordPress block registry is not available on this site.', 'wp-claude-bridge' ) );
 	}
 	$blocks = WP_Block_Type_Registry::get_instance()->get_all_registered();
 	if ( empty( $blocks ) ) {
-		return array( 'ok' => false, 'message' => 'هیچ نوع بلوکی روی این سایت ثبت نشده است.' );
+		return array( 'ok' => false, 'message' => __( 'No block types are registered on this site.', 'wp-claude-bridge' ) );
 	}
 	$search = isset( $args['search'] ) ? strtolower( trim( (string) $args['search'] ) ) : '';
 	$out    = array();
@@ -4752,7 +4781,7 @@ function cb_op_render_blocks( $args = array() ) {
 			return ! empty( $b['blockName'] );
 		} ) );
 		if ( $parsed !== count( $specs ) ) {
-			$warnings[] = 'تعداد بلوک‌های بازخوانی‌شده با ورودی یکی نیست؛ پیش از نوشتن بررسی کنید.';
+			$warnings[] = __( 'The number of blocks parsed back does not match the input; review before writing.', 'wp-claude-bridge' );
 		}
 	}
 	if ( ! empty( $empties ) ) {
@@ -4760,13 +4789,13 @@ function cb_op_render_blocks( $args = array() ) {
 		// that renders nothing on the front end. Void blocks (spacer, image…)
 		// are legitimate, so this is a loud warning next to the markup — not a
 		// refusal, and never a silent success that only looks finished.
-		$warnings[] = 'این بلوک‌ها هیچ محتوایی نداشتند (نه content، نه attributes.content، نه inner) و به‌صورت خودبسته (self-closing) درج شدند؛ اگر قرار است متنی نمایش دهند، روی فرانت هیچ چیزی رندر نمی‌شود: ' . implode( '، ', array_unique( $empties ) );
+		$warnings[] = sprintf( /* translators: %s: list of block names that had no content. */ __( 'These blocks had no content at all (no content, no attributes.content, no inner) and were inserted as self-closing blocks; if they are meant to show text, nothing renders on the front end: %s', 'wp-claude-bridge' ), implode( _x( ', ', 'list separator', 'wp-claude-bridge' ), array_unique( $empties ) ) );
 	}
 	return array(
 		'ok'            => true,
 		'preview'       => true,
 		'saved'         => false,
-		'message'       => 'پیش‌نمایش است؛ هیچ چیزی ذخیره نشده است. همین specs را می‌توانید به create_block_page یا append_blocks بدهید.',
+		'message'       => __( 'This is a preview; nothing has been saved. You can pass the same specs to create_block_page or append_blocks.', 'wp-claude-bridge' ),
 		'blocks'        => count( $specs ),
 		'markup_length' => strlen( $markup ),
 		'parsed_blocks' => $parsed,
@@ -4781,15 +4810,15 @@ function cb_op_create_block_page( $args = array() ) {
 	$args  = is_array( $args ) ? $args : array();
 	$title = sanitize_text_field( (string) ( isset( $args['title'] ) ? $args['title'] : '' ) );
 	if ( '' === $title ) {
-		return array( 'ok' => false, 'message' => 'عنوان لازم است.' );
+		return array( 'ok' => false, 'message' => __( 'A title is required.', 'wp-claude-bridge' ) );
 	}
 	$post_type = isset( $args['post_type'] ) ? (string) $args['post_type'] : 'page';
 	if ( ! in_array( $post_type, array( 'page', 'post' ), true ) ) {
-		return array( 'ok' => false, 'message' => 'post_type فقط page یا post می‌تواند باشد.' );
+		return array( 'ok' => false, 'message' => __( 'post_type can only be page or post.', 'wp-claude-bridge' ) );
 	}
 	$status = isset( $args['status'] ) ? (string) $args['status'] : 'draft';
 	if ( ! in_array( $status, array( 'draft', 'pending', 'private', 'publish' ), true ) ) {
-		return array( 'ok' => false, 'message' => 'status باید draft، pending، private یا publish باشد.' );
+		return array( 'ok' => false, 'message' => __( 'status must be draft, pending, private or publish.', 'wp-claude-bridge' ) );
 	}
 	$specs = ( isset( $args['specs'] ) && is_array( $args['specs'] ) ) ? $args['specs'] : array();
 	$valid = cb_block_specs_validate( $specs, true );
@@ -4806,14 +4835,14 @@ function cb_op_create_block_page( $args = array() ) {
 		'post_content' => wp_slash( cb_blocks_markup( $specs ) ),
 	), true );
 	if ( is_wp_error( $post_id ) ) {
-		return array( 'ok' => false, 'message' => 'ساخت نوشته ناموفق بود: ' . $post_id->get_error_message() );
+		return array( 'ok' => false, 'message' => sprintf( /* translators: %s: error message. */ __( 'Creating the post failed: %s', 'wp-claude-bridge' ), $post_id->get_error_message() ) );
 	}
 	return array(
 		'ok'       => true,
 		'post_id'  => (int) $post_id,
 		'status'   => $status,
 		'edit_url' => admin_url( 'post.php?post=' . (int) $post_id . '&action=edit' ),
-		'message'  => 'draft' === $status ? 'برگه به‌صورت پیش‌نویس ساخته شد تا ابتدا بازبینی انسانی شود.' : sprintf( '%s با شناسهٔ %d ساخته شد.', $post_type, (int) $post_id ),
+		'message'  => 'draft' === $status ? __( 'The page was created as a draft so a human can review it first.', 'wp-claude-bridge' ) : sprintf( /* translators: 1: post type (page or post), 2: new post ID. */ __( 'Created %1$s with ID %2$d.', 'wp-claude-bridge' ), $post_type, (int) $post_id ),
 	);
 }
 
@@ -4822,24 +4851,24 @@ function cb_op_append_blocks( $args = array() ) {
 	$args    = is_array( $args ) ? $args : array();
 	$post_id = isset( $args['post_id'] ) ? (int) $args['post_id'] : 0;
 	if ( $post_id <= 0 ) {
-		return array( 'ok' => false, 'message' => 'شناسهٔ نوشته (post_id) نامعتبر است.' );
+		return array( 'ok' => false, 'message' => __( 'Invalid post ID (post_id).', 'wp-claude-bridge' ) );
 	}
 	$post = get_post( $post_id );
 	if ( ! $post || 'revision' === $post->post_type ) {
-		return array( 'ok' => false, 'message' => 'نوشته‌ای با این شناسه پیدا نشد.' );
+		return array( 'ok' => false, 'message' => __( 'No post was found with this ID.', 'wp-claude-bridge' ) );
 	}
 	if ( 'trash' === $post->post_status ) {
-		return array( 'ok' => false, 'message' => 'این نوشته در زباله‌دان است؛ ابتدا باید بازگردانده شود.' );
+		return array( 'ok' => false, 'message' => __( 'This post is in the trash; it must be restored first.', 'wp-claude-bridge' ) );
 	}
 	if ( ! post_type_supports( $post->post_type, 'editor' ) ) {
-		return array( 'ok' => false, 'message' => 'این نوع محتوا ویرایشگر ندارد؛ افزودن بلوک به آن معنا ندارد.' );
+		return array( 'ok' => false, 'message' => __( 'This post type has no editor; appending blocks to it makes no sense.', 'wp-claude-bridge' ) );
 	}
 	// A page Elementor renders comes from _elementor_data, not post_content.
 	// Editing post_content there would "succeed" invisibly — the honest move
 	// is to refuse and point at the Elementor tool, not to change what the
 	// visitor will never see.
 	if ( 'builder' === get_post_meta( $post_id, '_elementor_edit_mode', true ) ) {
-		return array( 'ok' => false, 'message' => 'این برگه با المنتور ساخته شده و از دادهٔ المنتور رندر می‌شود؛ افزودن بلوک گوتنبرگ به محتوای آن دیده نمی‌شود. برای افزودن سکشن از ابزار elementor_section_append استفاده کنید.' );
+		return array( 'ok' => false, 'message' => __( 'This page was built with Elementor and renders from Elementor data; Gutenberg blocks appended to its content would not be visible. Use the elementor_section_append tool to add sections.', 'wp-claude-bridge' ) );
 	}
 	$specs = ( isset( $args['specs'] ) && is_array( $args['specs'] ) ) ? $args['specs'] : array();
 	$valid = cb_block_specs_validate( $specs, true );
@@ -4852,7 +4881,7 @@ function cb_op_append_blocks( $args = array() ) {
 	cb_become_admin();
 	$updated = wp_update_post( array( 'ID' => $post_id, 'post_content' => wp_slash( $new ) ), true );
 	if ( is_wp_error( $updated ) ) {
-		return array( 'ok' => false, 'message' => 'به‌روزرسانی محتوا ناموفق بود: ' . $updated->get_error_message() );
+		return array( 'ok' => false, 'message' => sprintf( /* translators: %s: error message. */ __( 'Updating the content failed: %s', 'wp-claude-bridge' ), $updated->get_error_message() ) );
 	}
 	// Revisions are the undo story only when this install actually keeps
 	// them for this post type; WP_POST_REVISIONS can turn them off.
@@ -4863,8 +4892,8 @@ function cb_op_append_blocks( $args = array() ) {
 		'appended_chars' => strlen( $addition ),
 		'revisions'      => $revisions,
 		'message'        => $revisions
-			? 'بلوک‌ها به انتهای محتوای همین نوشته افزوده شد؛ نسخه‌های پیشین در بازنگری‌ها موجود است.'
-			: 'بلوک‌ها به انتهای محتوای همین نوشته افزوده شد؛ توجه: بازنگری برای این نوع محتوا غیرفعال است و راه بازگشتی خودکار وجود ندارد.',
+			? __( 'The blocks were appended to the end of this post’s content; earlier versions are kept in revisions.', 'wp-claude-bridge' )
+			: __( 'The blocks were appended to the end of this post’s content. Note: revisions are disabled for this post type, so there is no automatic way back.', 'wp-claude-bridge' ),
 	);
 }
 
@@ -4933,47 +4962,47 @@ function cb_elementor_clean_settings( $settings ) {
  * widget renders nothing but breaks nothing, which is worse than an error
  * because the page looks built when it is not.
  *
- * @return array( boolean ok, string persian message ) — message empty when ok.
+ * @return array( boolean ok, string translated message ) — message empty when ok.
  */
 function cb_elementor_sections_validate( $sections, $widget_types ) {
 	if ( ! is_array( $sections ) || empty( $sections ) ) {
-		return array( false, 'فهرست sections خالی است یا آرایه نیست.' );
+		return array( false, __( 'The sections list is empty or not an array.', 'wp-claude-bridge' ) );
 	}
 	if ( empty( $widget_types ) ) {
-		return array( false, 'هیچ ابزارک المنتوری روی این سایت ثبت نشده است.' );
+		return array( false, __( 'No Elementor widgets are registered on this site.', 'wp-claude-bridge' ) );
 	}
 	foreach ( $sections as $section ) {
 		if ( ! is_array( $section ) ) {
-			return array( false, 'سکشن باید شیء باشد.' );
+			return array( false, __( 'A section must be an object.', 'wp-claude-bridge' ) );
 		}
 		if ( isset( $section['settings'] ) && ! is_array( $section['settings'] ) ) {
-			return array( false, 'settings سکشن باید شیء باشد.' );
+			return array( false, __( 'Section settings must be an object.', 'wp-claude-bridge' ) );
 		}
 		$columns = ( isset( $section['columns'] ) && is_array( $section['columns'] ) ) ? $section['columns'] : array();
 		if ( empty( $columns ) ) {
-			return array( false, 'هر سکشن دست‌کم یک ستون لازم دارد.' );
+			return array( false, __( 'Every section needs at least one column.', 'wp-claude-bridge' ) );
 		}
 		foreach ( $columns as $column ) {
 			if ( ! is_array( $column ) ) {
-				return array( false, 'ستون باید شیء باشد.' );
+				return array( false, __( 'A column must be an object.', 'wp-claude-bridge' ) );
 			}
 			if ( isset( $column['settings'] ) && ! is_array( $column['settings'] ) ) {
-				return array( false, 'settings ستون باید شیء باشد.' );
+				return array( false, __( 'Column settings must be an object.', 'wp-claude-bridge' ) );
 			}
 			$widgets = ( isset( $column['widgets'] ) && is_array( $column['widgets'] ) ) ? $column['widgets'] : array();
 			if ( empty( $widgets ) ) {
-				return array( false, 'هر ستون دست‌کم یک ابزارک لازم دارد.' );
+				return array( false, __( 'Every column needs at least one widget.', 'wp-claude-bridge' ) );
 			}
 			foreach ( $widgets as $widget ) {
 				if ( ! is_array( $widget ) ) {
-					return array( false, 'ابزارک باید شیء باشد.' );
+					return array( false, __( 'A widget must be an object.', 'wp-claude-bridge' ) );
 				}
 				$name = isset( $widget['widget'] ) ? (string) $widget['widget'] : '';
 				if ( '' === $name || ! isset( $widget_types[ $name ] ) ) {
-					return array( false, 'ابزارک «' . sanitize_text_field( $name ) . '» روی این سایت ثبت نشده است؛ فهرست مجاز را با list_elementor_widgets ببینید.' );
+					return array( false, sprintf( /* translators: %s: Elementor widget type as supplied. */ __( 'The widget “%s” is not registered on this site; see the allowed list with list_elementor_widgets.', 'wp-claude-bridge' ), sanitize_text_field( $name ) ) );
 				}
 				if ( isset( $widget['settings'] ) && ! is_array( $widget['settings'] ) ) {
-					return array( false, 'settings ابزارک «' . $name . '» باید شیء باشد.' );
+					return array( false, sprintf( /* translators: %s: block name or widget type. */ __( 'The settings of widget “%s” must be an object.', 'wp-claude-bridge' ), $name ) );
 				}
 			}
 		}
@@ -5088,15 +5117,15 @@ function cb_elementor_write_document( $post_id, $data ) {
 /** Tool op: the registered Elementor widget palette, honestly. */
 function cb_op_list_elementor_widgets( $args = array() ) {
 	if ( null === cb_elementor_plugin() ) {
-		return array( 'ok' => false, 'message' => 'المنتور روی این سایت فعال نیست؛ فهرست ابزارک‌های المنتور موجود نیست.' );
+		return array( 'ok' => false, 'message' => __( 'Elementor is not active on this site; there is no Elementor widget list.', 'wp-claude-bridge' ) );
 	}
 	$elementor = cb_elementor_plugin();
 	if ( ! isset( $elementor->widgets_manager ) || ! is_object( $elementor->widgets_manager ) || ! method_exists( $elementor->widgets_manager, 'get_widget_types' ) ) {
-		return array( 'ok' => false, 'message' => 'المنتور فعال است اما مدیر ابزارک‌های آن در دسترس نیست (نسخهٔ المنتور سازگار نیست).' );
+		return array( 'ok' => false, 'message' => __( 'Elementor is active but its widget manager is not available (incompatible Elementor version).', 'wp-claude-bridge' ) );
 	}
 	$widgets = $elementor->widgets_manager->get_widget_types();
 	if ( ! is_array( $widgets ) || empty( $widgets ) ) {
-		return array( 'ok' => false, 'message' => 'المنتور فعال است اما هیچ ابزارکی روی این سایت ثبت نشده است.' );
+		return array( 'ok' => false, 'message' => __( 'Elementor is active but no widgets are registered on this site.', 'wp-claude-bridge' ) );
 	}
 	$out = array();
 	foreach ( $widgets as $slug => $widget ) {
@@ -5124,19 +5153,19 @@ function cb_op_list_elementor_widgets( $args = array() ) {
 function cb_op_elementor_page_create( $args = array() ) {
 	$args = is_array( $args ) ? $args : array();
 	if ( null === cb_elementor_plugin() ) {
-		return array( 'ok' => false, 'message' => 'المنتور روی این سایت فعال نیست؛ ساخت برگهٔ المنتوری ممکن نیست.' );
+		return array( 'ok' => false, 'message' => __( 'Elementor is not active on this site; an Elementor page cannot be created.', 'wp-claude-bridge' ) );
 	}
 	$title = sanitize_text_field( (string) ( isset( $args['title'] ) ? $args['title'] : '' ) );
 	if ( '' === $title ) {
-		return array( 'ok' => false, 'message' => 'عنوان لازم است.' );
+		return array( 'ok' => false, 'message' => __( 'A title is required.', 'wp-claude-bridge' ) );
 	}
 	$status = isset( $args['status'] ) ? (string) $args['status'] : 'draft';
 	if ( ! in_array( $status, array( 'draft', 'pending', 'private', 'publish' ), true ) ) {
-		return array( 'ok' => false, 'message' => 'status باید draft، pending، private یا publish باشد.' );
+		return array( 'ok' => false, 'message' => __( 'status must be draft, pending, private or publish.', 'wp-claude-bridge' ) );
 	}
 	$widget_types = cb_elementor_widget_types();
 	if ( null === $widget_types ) {
-		return array( 'ok' => false, 'message' => 'المنتور فعال است اما ابزارک‌های آن خوانده نشد؛ نسخهٔ المنتور سازگار نیست.' );
+		return array( 'ok' => false, 'message' => __( 'Elementor is active but its widgets could not be read; the Elementor version is incompatible.', 'wp-claude-bridge' ) );
 	}
 	$sections = ( isset( $args['sections'] ) && is_array( $args['sections'] ) ) ? $args['sections'] : array();
 	$valid    = cb_elementor_sections_validate( $sections, $widget_types );
@@ -5153,10 +5182,10 @@ function cb_op_elementor_page_create( $args = array() ) {
 		'post_content' => '',
 	), true );
 	if ( is_wp_error( $post_id ) ) {
-		return array( 'ok' => false, 'message' => 'ساخت برگه ناموفق بود: ' . $post_id->get_error_message() );
+		return array( 'ok' => false, 'message' => sprintf( /* translators: %s: error message. */ __( 'Creating the page failed: %s', 'wp-claude-bridge' ), $post_id->get_error_message() ) );
 	}
 	if ( ! cb_elementor_write_document( $post_id, $data ) ) {
-		return array( 'ok' => false, 'post_id' => (int) $post_id, 'message' => 'برگه ساخته شد اما نوشتن دادهٔ المنتور ناموفق بود؛ برگه را در پیشخوان بررسی یا حذف کنید.' );
+		return array( 'ok' => false, 'post_id' => (int) $post_id, 'message' => __( 'The page was created but writing the Elementor data failed; review or delete the page in the dashboard.', 'wp-claude-bridge' ) );
 	}
 	return array(
 		'ok'       => true,
@@ -5164,7 +5193,7 @@ function cb_op_elementor_page_create( $args = array() ) {
 		'status'   => $status,
 		'sections' => count( $data ),
 		'edit_url' => admin_url( 'post.php?post=' . (int) $post_id . '&action=edit' ),
-		'message'  => 'draft' === $status ? 'برگهٔ المنتوری به‌صورت پیش‌نویس ساخته شد تا ابتدا بازبینی انسانی شود.' : 'برگهٔ المنتوری ساخته شد.',
+		'message'  => 'draft' === $status ? __( 'The Elementor page was created as a draft so a human can review it first.', 'wp-claude-bridge' ) : __( 'The Elementor page was created.', 'wp-claude-bridge' ),
 	);
 }
 
@@ -5172,31 +5201,31 @@ function cb_op_elementor_page_create( $args = array() ) {
 function cb_op_elementor_section_append( $args = array() ) {
 	$args = is_array( $args ) ? $args : array();
 	if ( null === cb_elementor_plugin() ) {
-		return array( 'ok' => false, 'message' => 'المنتور روی این سایت فعال نیست؛ افزودن سکشن ممکن نیست.' );
+		return array( 'ok' => false, 'message' => __( 'Elementor is not active on this site; sections cannot be appended.', 'wp-claude-bridge' ) );
 	}
 	$post_id = isset( $args['post_id'] ) ? (int) $args['post_id'] : 0;
 	if ( $post_id <= 0 ) {
-		return array( 'ok' => false, 'message' => 'شناسهٔ برگه (post_id) نامعتبر است.' );
+		return array( 'ok' => false, 'message' => __( 'Invalid page ID (post_id).', 'wp-claude-bridge' ) );
 	}
 	$post = get_post( $post_id );
 	if ( ! $post || 'revision' === $post->post_type ) {
-		return array( 'ok' => false, 'message' => 'برگه‌ای با این شناسه پیدا نشد.' );
+		return array( 'ok' => false, 'message' => __( 'No page was found with this ID.', 'wp-claude-bridge' ) );
 	}
 	if ( 'trash' === $post->post_status ) {
-		return array( 'ok' => false, 'message' => 'این برگه در زباله‌دان است؛ ابتدا باید بازگردانده شود.' );
+		return array( 'ok' => false, 'message' => __( 'This page is in the trash; it must be restored first.', 'wp-claude-bridge' ) );
 	}
 	$edit_mode = get_post_meta( $post_id, '_elementor_edit_mode', true );
 	if ( 'builder' !== $edit_mode ) {
-		return array( 'ok' => false, 'message' => 'این برگه با المنتور ساخته نشده است (_elementor_edit_mode برابر builder نیست)؛ چیزی تغییر نکرد.' );
+		return array( 'ok' => false, 'message' => __( 'This page was not built with Elementor (_elementor_edit_mode is not builder); nothing was changed.', 'wp-claude-bridge' ) );
 	}
 	$raw  = get_post_meta( $post_id, '_elementor_data', true );
 	$data = ( is_string( $raw ) && '' !== $raw ) ? json_decode( $raw, true ) : null;
 	if ( ! is_array( $data ) ) {
-		return array( 'ok' => false, 'message' => 'دادهٔ المنتور این برگه خوانده نشد؛ چیزی تغییر نکرد.' );
+		return array( 'ok' => false, 'message' => __( 'The Elementor data of this page could not be read; nothing was changed.', 'wp-claude-bridge' ) );
 	}
 	$widget_types = cb_elementor_widget_types();
 	if ( null === $widget_types ) {
-		return array( 'ok' => false, 'message' => 'المنتور فعال است اما ابزارک‌های آن خوانده نشد؛ نسخهٔ المنتور سازگار نیست.' );
+		return array( 'ok' => false, 'message' => __( 'Elementor is active but its widgets could not be read; the Elementor version is incompatible.', 'wp-claude-bridge' ) );
 	}
 	$sections = ( isset( $args['sections'] ) && is_array( $args['sections'] ) ) ? $args['sections'] : array();
 	$valid    = cb_elementor_sections_validate( $sections, $widget_types );
@@ -5208,14 +5237,14 @@ function cb_op_elementor_section_append( $args = array() ) {
 	$added = cb_elementor_sections_to_data( $sections, $used );
 	cb_become_admin();
 	if ( ! cb_elementor_write_document( $post_id, array_merge( $data, $added ) ) ) {
-		return array( 'ok' => false, 'message' => 'نوشتن دادهٔ المنتور ناموفق بود؛ چیزی تغییر نکرد.' );
+		return array( 'ok' => false, 'message' => __( 'Writing the Elementor data failed; nothing was changed.', 'wp-claude-bridge' ) );
 	}
 	return array(
 		'ok'              => true,
 		'post_id'         => $post_id,
 		'sections_added'  => count( $added ),
 		'sections_total'  => count( $data ) + count( $added ),
-		'message'         => 'سکشن‌ها به انتهای برگهٔ المنتوری افزوده شد و CSS قدیمی پاک شد تا دوباره ساخته شود.',
+		'message'         => __( 'The sections were appended to the end of the Elementor page and the old CSS was cleared so it gets rebuilt.', 'wp-claude-bridge' ),
 	);
 }
 
@@ -5835,7 +5864,7 @@ function cb_mcp_authorized_any() {
  * Every MCP request must be signed by the paired hub server (HMAC-SHA256 over
  * timestamp + raw body with a shared secret); direct token / Application
  * Password / logged-in access is refused. The plugin becomes a pure bridge:
- * things only happen through YOUR server (the "واسط"), never on the site
+ * things only happen through YOUR server (the "relay"), never on the site
  * directly. Backward-compatible — existing installs are unaffected until an
  * admin turns it on under Tools -> Claude Bridge.
  * ========================================================================== */
@@ -5929,7 +5958,7 @@ function cb_update_info( $res, $action, $args ) {
 		'author'        => 'DigiWP',
 		'homepage'      => isset( $m['homepage'] ) ? (string) $m['homepage'] : 'https://ai.digiwp.com',
 		'download_link' => (string) $m['download_url'],
-		'sections'      => array( 'description' => isset( $m['notes'] ) ? (string) $m['notes'] : 'به‌روزرسانی از سرور DigiWP.' ),
+		'sections'      => array( 'description' => isset( $m['notes'] ) ? (string) $m['notes'] : __( 'Update from the DigiWP server.', 'wp-claude-bridge' ) ),
 	);
 }
 
@@ -6406,10 +6435,10 @@ function cb_oauth_authorize() {
 
 	$clients = get_option( CB_CLIENTS_OPTION, array() );
 	if ( ! $client_id || ! isset( $clients[ $client_id ] ) ) {
-		wp_die( 'Unknown client_id.' );
+		wp_die( esc_html__( 'Unknown client_id.', 'wp-claude-bridge' ) );
 	}
 	if ( ! in_array( $redirect, $clients[ $client_id ]['redirect_uris'], true ) ) {
-		wp_die( 'redirect_uri does not match the registered client.' );
+		wp_die( esc_html__( 'redirect_uri does not match the registered client.', 'wp-claude-bridge' ) );
 	}
 	$redir_err = function ( $code ) use ( $redirect, $state ) {
 		$sep = ( strpos( $redirect, '?' ) !== false ) ? '&' : '?';
@@ -6453,7 +6482,7 @@ function cb_oauth_authorize() {
 		exit;
 	}
 	if ( ! current_user_can( 'manage_options' ) ) {
-		wp_die( 'You must be logged in as an administrator to authorize this connection.' );
+		wp_die( esc_html__( 'You must be logged in as an administrator to authorize this connection.', 'wp-claude-bridge' ) );
 	}
 
 	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '' ) === 'POST' && isset( $_POST['cb_consent'] ) ) {
@@ -6476,7 +6505,7 @@ function cb_oauth_authorize() {
 	$user = wp_get_current_user();
 	nocache_headers();
 	?>
-	<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>اتصال به Claude</title>
+	<!doctype html><html <?php language_attributes(); ?>><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><?php esc_html_e( 'Connect to Claude', 'wp-claude-bridge' ); ?></title>
 	<style>body{font-family:Tahoma,system-ui,sans-serif;background:#f3f4f6;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
 	.box{background:#fff;max-width:420px;width:90%;padding:32px;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.12);text-align:center}
 	h1{font-size:20px;margin:0 0 10px}p{color:#555;font-size:14px;line-height:1.8}
@@ -6485,11 +6514,23 @@ function cb_oauth_authorize() {
 	.ok{background:#2563eb;color:#fff}.no{background:#e5e7eb;color:#333}</style></head>
 	<body><form class="box" method="post">
 	<?php wp_nonce_field( 'cb_oauth_consent' ); ?>
-	<h1>اجازه‌ی اتصال</h1>
-	<p>برنامه‌ی <b><?php echo esc_html( $clients[ $client_id ]['name'] ); ?></b> می‌خواهد با دسترسی مدیریتی به سایت شما وصل شود (قالب، پلاگین، محصولات، سفارش‌ها و تنظیمات).</p>
-	<div class="who">ورود به‌عنوان: <b><?php echo esc_html( $user->user_login ); ?></b></div>
-	<button class="ok" name="cb_consent" value="approve" type="submit">تأیید و اتصال</button>
-	<button class="no" name="cb_consent" value="deny" type="submit">رد</button>
+	<h1><?php esc_html_e( 'Allow this connection', 'wp-claude-bridge' ); ?></h1>
+	<p><?php
+		printf(
+			/* translators: %s: name of the client application asking for access. */
+			esc_html__( 'The application %s wants to connect to your site with administrator access (themes, plugins, products, orders and settings).', 'wp-claude-bridge' ),
+			'<b>' . esc_html( $clients[ $client_id ]['name'] ) . '</b>'
+		);
+	?></p>
+	<div class="who"><?php
+		printf(
+			/* translators: %s: login name of the signed-in administrator. */
+			esc_html__( 'Signed in as: %s', 'wp-claude-bridge' ),
+			'<b>' . esc_html( $user->user_login ) . '</b>'
+		);
+	?></div>
+	<button class="ok" name="cb_consent" value="approve" type="submit"><?php esc_html_e( 'Approve and connect', 'wp-claude-bridge' ); ?></button>
+	<button class="no" name="cb_consent" value="deny" type="submit"><?php esc_html_e( 'Deny', 'wp-claude-bridge' ); ?></button>
 	</form></body></html>
 	<?php
 	exit;
@@ -6504,7 +6545,7 @@ function cb_oauth_app_return() {
 	$ap      = isset( $_GET['cb_ap'] ) ? sanitize_text_field( wp_unslash( $_GET['cb_ap'] ) ) : '';
 	$pending = $ap ? get_transient( 'cb_oauth_pending_' . $ap ) : false;
 	if ( ! $pending ) {
-		wp_die( 'This authorization request has expired. Please start the connection from Claude again.' );
+		wp_die( esc_html__( 'This authorization request has expired. Please start the connection from Claude again.', 'wp-claude-bridge' ) );
 	}
 	delete_transient( 'cb_oauth_pending_' . $ap );
 
@@ -6693,114 +6734,153 @@ function cb_settings_page() {
 	?>
 	<div class="wrap">
 		<h1>WP Claude Bridge <span style="font-size:13px;color:#888">v<?php echo esc_html( CB_VERSION ); ?></span></h1>
-		<p>This site is now a self-hosted MCP server: theme &amp; plugin file editing, plugin creation, theme/plugin activation, preview, cache, and full WordPress + WooCommerce control (90+ tools).</p>
+		<p><?php esc_html_e( 'This site is now a self-hosted MCP server: theme & plugin file editing, plugin creation, theme/plugin activation, preview, cache, and full WordPress + WooCommerce control (90+ tools).', 'wp-claude-bridge' ); ?></p>
 
-		<h2 style="margin-top:24px">✅ Easiest: connect with token in the URL (no header)</h2>
-		<p>In Claude, add a <b>Custom Connector</b> and paste this single URL. Nothing else to configure — the token is built in.</p>
+		<h2 style="margin-top:24px">✅ <?php esc_html_e( 'Easiest: connect with the token in the URL (no header)', 'wp-claude-bridge' ); ?></h2>
+		<p><?php echo wp_kses_post( __( 'In Claude, add a <b>Custom Connector</b> and paste this single URL. Nothing else to configure — the token is built in.', 'wp-claude-bridge' ) ); ?></p>
 		<p><input type="text" readonly onclick="this.select()" style="width:100%;max-width:760px;padding:10px;font-family:monospace;font-size:13px" value="<?php echo esc_attr( $mcp_tok ); ?>"></p>
-		<p class="description">Keep this URL secret — anyone with it has admin access. Regenerate the token below to revoke.</p>
+		<p class="description"><?php esc_html_e( 'Keep this URL secret — anyone with it has admin access. Regenerate the token below to revoke it.', 'wp-claude-bridge' ); ?></p>
 
-		<h2 style="margin-top:24px">Alternative: OAuth via native Application Passwords</h2>
-		<p>Add a Custom Connector with the plain URL below. Claude sends you to WordPress's own <b>Authorize Application</b> screen (one click, no header). Access is a standard Application Password you can revoke any time under <b>Users &rarr; Profile &rarr; Application Passwords</b>.</p>
+		<h2 style="margin-top:24px"><?php esc_html_e( 'Alternative: OAuth via native Application Passwords', 'wp-claude-bridge' ); ?></h2>
+		<p><?php echo wp_kses_post( __( 'Add a Custom Connector with the plain URL below. Claude sends you to WordPress’s own <b>Authorize Application</b> screen (one click, no header). Access is a standard Application Password you can revoke any time under <b>Users &rarr; Profile &rarr; Application Passwords</b>.', 'wp-claude-bridge' ) ); ?></p>
 		<p><code style="font-size:13px;padding:6px;background:#f6f7f7;display:inline-block"><?php echo esc_html( $mcp ); ?></code></p>
 
-		<h2 style="margin-top:24px">Alternative: Bearer header</h2>
+		<h2 style="margin-top:24px"><?php esc_html_e( 'Alternative: Bearer header', 'wp-claude-bridge' ); ?></h2>
 		<table class="form-table">
-			<tr><th>URL</th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
-			<tr><th>Header</th><td><code>Authorization: Bearer <?php echo esc_html( $token ); ?></code></td></tr>
+			<tr><th><?php esc_html_e( 'URL', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
+			<tr><th><?php esc_html_e( 'Header', 'wp-claude-bridge' ); ?></th><td><code>Authorization: Bearer <?php echo esc_html( $token ); ?></code></td></tr>
 		</table>
 		<?php $available_skills = cb_skill_list(); ?>
 		<?php if ( $available_skills ) : ?>
-			<h2 style="margin-top:24px">WordPress engineering playbooks</h2>
-			<p><b><?php echo count( $available_skills ); ?></b> playbooks are available to the connected model as tools, MCP resources, and prompts. DigiWP installations load requested text on demand; the documents are not stored in this site's webroot.</p>
+			<h2 style="margin-top:24px"><?php esc_html_e( 'WordPress engineering playbooks', 'wp-claude-bridge' ); ?></h2>
+			<p><?php
+			$cb_skill_count = count( $available_skills );
+			echo wp_kses_post( sprintf(
+				/* translators: %s: number of playbooks, wrapped in bold. */
+				_n(
+					'%s playbook is available to the connected model as tools, MCP resources, and prompts. DigiWP installations load requested text on demand; the documents are not stored in this site’s webroot.',
+					'%s playbooks are available to the connected model as tools, MCP resources, and prompts. DigiWP installations load requested text on demand; the documents are not stored in this site’s webroot.',
+					$cb_skill_count,
+					'wp-claude-bridge'
+				),
+				'<b>' . (int) $cb_skill_count . '</b>'
+			) );
+			?></p>
 			<p class="description"><?php echo esc_html( implode( ', ', wp_list_pluck( $available_skills, 'name' ) ) ); ?></p>
 		<?php else : ?>
-			<h2 style="margin-top:24px">Engineering guidance</h2>
-			<p>The playbook service is not configured or is temporarily unavailable. The built-in cookbook and all site-management tools remain available.</p>
+			<h2 style="margin-top:24px"><?php esc_html_e( 'Engineering guidance', 'wp-claude-bridge' ); ?></h2>
+			<p><?php esc_html_e( 'The playbook service is not configured or is temporarily unavailable. The built-in cookbook and all site-management tools remain available.', 'wp-claude-bridge' ); ?></p>
 		<?php endif; ?>
 
-		<h2 style="margin-top:24px">📕 Cookbook</h2>
-		<p>The plugin ships <b><?php echo count( cb_cookbook_recipes() ); ?></b> ready-to-paste recipes — the jobs people actually hand to an AI on a WordPress site, each written for the tools above. The ones that fit this site's stack also show on your <b>Dashboard</b>. The connected model can read them itself with <code>list_recipes</code> and <code>get_recipe</code>.</p>
-		<p><a href="<?php echo esc_url( cb_cookbook_url() ); ?>" class="button">Browse the cookbook</a></p>
+		<h2 style="margin-top:24px">📕 <?php esc_html_e( 'Cookbook', 'wp-claude-bridge' ); ?></h2>
+		<p><?php
+		$cb_recipe_count = count( cb_cookbook_recipes() );
+		echo wp_kses_post( sprintf(
+			/* translators: %s: number of recipes, wrapped in bold. */
+			_n(
+				'The plugin ships %s ready-to-paste recipe — the jobs people actually hand to an AI on a WordPress site, each written for the tools above. The ones that fit this site’s stack also show on your <b>Dashboard</b>. The connected model can read them itself with <code>list_recipes</code> and <code>get_recipe</code>.',
+				'The plugin ships %s ready-to-paste recipes — the jobs people actually hand to an AI on a WordPress site, each written for the tools above. The ones that fit this site’s stack also show on your <b>Dashboard</b>. The connected model can read them itself with <code>list_recipes</code> and <code>get_recipe</code>.',
+				$cb_recipe_count,
+				'wp-claude-bridge'
+			),
+			'<b>' . (int) $cb_recipe_count . '</b>'
+		) );
+		?></p>
+		<p><a href="<?php echo esc_url( cb_cookbook_url() ); ?>" class="button"><?php esc_html_e( 'Browse the cookbook', 'wp-claude-bridge' ); ?></a></p>
 
-		<h2 style="margin-top:24px">Connection modes (built-in fallback)</h2>
-		<p>All endpoints below speak the same MCP protocol and accept the same token. If a host, security plugin, or proxy blocks one, point Claude at another:</p>
+		<h2 style="margin-top:24px"><?php esc_html_e( 'Connection modes (built-in fallback)', 'wp-claude-bridge' ); ?></h2>
+		<p><?php esc_html_e( 'All endpoints below speak the same MCP protocol and accept the same token. If a host, security plugin, or proxy blocks one, point Claude at another:', 'wp-claude-bridge' ); ?></p>
 		<table class="form-table">
-			<tr><th>Primary (REST)</th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
-			<tr><th>REST aliases</th><td><code><?php echo esc_html( rest_url( 'claude-bridge/v1/sse' ) ); ?></code> · <code><?php echo esc_html( rest_url( 'claude-bridge/v1/rpc' ) ); ?></code></td></tr>
-			<tr><th>admin-ajax</th><td><code><?php echo esc_html( admin_url( 'admin-ajax.php?action=cb_mcp' ) ); ?></code> <span class="description">— when <code>/wp-json/</code> REST routes are disabled</span></td></tr>
-			<tr><th>Query-var</th><td><code><?php echo esc_html( home_url( '/?cb_mcp=1' ) ); ?></code> <span class="description">— when the REST API is fully off</span></td></tr>
-			<tr><th>Response format</th><td>JSON by default · append <code>&amp;transport=sse</code> for Server-Sent Events</td></tr>
+			<tr><th><?php esc_html_e( 'Primary (REST)', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
+			<tr><th><?php esc_html_e( 'REST aliases', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( rest_url( 'claude-bridge/v1/sse' ) ); ?></code> · <code><?php echo esc_html( rest_url( 'claude-bridge/v1/rpc' ) ); ?></code></td></tr>
+			<tr><th>admin-ajax</th><td><code><?php echo esc_html( admin_url( 'admin-ajax.php?action=cb_mcp' ) ); ?></code> <span class="description"><?php echo wp_kses_post( __( '— when <code>/wp-json/</code> REST routes are disabled', 'wp-claude-bridge' ) ); ?></span></td></tr>
+			<tr><th><?php esc_html_e( 'Query-var', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( home_url( '/?cb_mcp=1' ) ); ?></code> <span class="description"><?php esc_html_e( '— when the REST API is fully off', 'wp-claude-bridge' ); ?></span></td></tr>
+			<tr><th><?php esc_html_e( 'Response format', 'wp-claude-bridge' ); ?></th><td><?php echo wp_kses_post( __( 'JSON by default · append <code>&amp;transport=sse</code> for Server-Sent Events', 'wp-claude-bridge' ) ); ?></td></tr>
 		</table>
-		<p class="description">If your host strips the <code>Authorization</code> header, append <code>?token=…</code> (or <code>&amp;token=…</code>) to any endpoint above.</p>
+		<p class="description"><?php echo wp_kses_post( __( 'If your host strips the <code>Authorization</code> header, append <code>?token=…</code> (or <code>&amp;token=…</code>) to any endpoint above.', 'wp-claude-bridge' ) ); ?></p>
 
 		<form method="post"><?php wp_nonce_field( 'cb_regen' ); ?>
-			<input type="hidden" name="cb_regen" value="1"><?php submit_button( 'Regenerate token', 'secondary' ); ?>
+			<input type="hidden" name="cb_regen" value="1"><?php submit_button( __( 'Regenerate token', 'wp-claude-bridge' ), 'secondary' ); ?>
 		</form>
 
 		<hr style="margin:28px 0">
-		<h2>🔗 Hub Connector Mode <span style="font-size:12px;color:#888">— route everything through your server</span></h2>
+		<h2>🔗 <?php esc_html_e( 'Hub Connector Mode', 'wp-claude-bridge' ); ?> <span style="font-size:12px;color:#888"><?php esc_html_e( '— route everything through your server', 'wp-claude-bridge' ); ?></span></h2>
 		<?php $conn = cb_connector(); ?>
-		<p>Turn this plugin into a <b>bridge</b> instead of a directly-operable endpoint. When on, this site accepts MCP requests <b>only</b> when they are signed by your paired hub server — direct token, Application&nbsp;Password and logged-in access are refused. Nothing happens on the site except through <b>your</b> server (the واسط).</p>
+		<p><?php echo wp_kses_post( __( 'Turn this plugin into a <b>bridge</b> instead of a directly-operable endpoint. When on, this site accepts MCP requests <b>only</b> when they are signed by your paired hub server — direct token, Application&nbsp;Password and logged-in access are refused. Nothing happens on the site except through <b>your</b> server (the relay).', 'wp-claude-bridge' ) ); ?></p>
 		<?php if ( cb_connector_enabled() ) : ?>
-			<div class="notice notice-success inline" style="margin:10px 0;padding:10px 12px"><b>Connector mode is ON.</b> Direct MCP endpoints are locked; only <code><?php echo esc_html( $conn['server_url'] ?: 'your hub server' ); ?></code> can operate this site (HMAC-signed).</div>
+			<div class="notice notice-success inline" style="margin:10px 0;padding:10px 12px"><?php
+			echo wp_kses_post( sprintf(
+				/* translators: %s: hub server URL, wrapped in <code>. */
+				__( '<b>Connector mode is ON.</b> Direct MCP endpoints are locked; only %s can operate this site (HMAC-signed).', 'wp-claude-bridge' ),
+				'<code>' . esc_html( $conn['server_url'] ? $conn['server_url'] : __( 'your hub server', 'wp-claude-bridge' ) ) . '</code>'
+			) );
+			?></div>
 		<?php else : ?>
-			<div class="notice notice-info inline" style="margin:10px 0;padding:10px 12px">Connector mode is <b>off</b> — this site still works as a standalone MCP server via the URLs above.</div>
+			<div class="notice notice-info inline" style="margin:10px 0;padding:10px 12px"><?php echo wp_kses_post( __( 'Connector mode is <b>off</b> — this site still works as a standalone MCP server via the URLs above.', 'wp-claude-bridge' ) ); ?></div>
 		<?php endif; ?>
 		<form method="post"><?php wp_nonce_field( 'cb_connector' ); ?>
 			<input type="hidden" name="cb_connector_save" value="1">
 			<table class="form-table">
-				<tr><th scope="row">Enable connector mode</th><td>
-					<label><input type="checkbox" name="cb_conn_enabled" value="1" <?php checked( ! empty( $conn['enabled'] ) ); ?>> Only accept commands signed by my hub server</label>
+				<tr><th scope="row"><?php esc_html_e( 'Enable connector mode', 'wp-claude-bridge' ); ?></th><td>
+					<label><input type="checkbox" name="cb_conn_enabled" value="1" <?php checked( ! empty( $conn['enabled'] ) ); ?>> <?php esc_html_e( 'Only accept commands signed by my hub server', 'wp-claude-bridge' ); ?></label>
 				</td></tr>
-				<tr><th scope="row">Hub server URL</th><td>
+				<tr><th scope="row"><?php esc_html_e( 'Hub server URL', 'wp-claude-bridge' ); ?></th><td>
 					<input type="url" name="cb_conn_server" class="regular-text" placeholder="https://api.digiwp.com/v1" value="<?php echo esc_attr( $conn['server_url'] ); ?>">
-					<p class="description">Your server's API base — the only origin allowed to drive this site.</p>
+					<p class="description"><?php esc_html_e( 'Your server’s API base — the only origin allowed to drive this site.', 'wp-claude-bridge' ); ?></p>
 				</td></tr>
-				<tr><th scope="row">Shared secret</th><td>
-					<input type="password" name="cb_conn_secret" class="regular-text" autocomplete="new-password" placeholder="<?php echo $conn['secret'] ? '•••••••• (saved — leave blank to keep)' : 'paste the secret generated by your hub'; ?>">
-					<p class="description">Used to HMAC-sign every request. Generate it on your hub and paste it here once.</p>
+				<tr><th scope="row"><?php esc_html_e( 'Shared secret', 'wp-claude-bridge' ); ?></th><td>
+					<input type="password" name="cb_conn_secret" class="regular-text" autocomplete="new-password" placeholder="<?php echo $conn['secret'] ? esc_attr__( '•••••••• (saved — leave blank to keep)', 'wp-claude-bridge' ) : esc_attr__( 'paste the secret generated by your hub', 'wp-claude-bridge' ); ?>">
+					<p class="description"><?php esc_html_e( 'Used to HMAC-sign every request. Generate it on your hub and paste it here once.', 'wp-claude-bridge' ); ?></p>
 				</td></tr>
-				<tr><th scope="row">Site key</th><td>
-					<code><?php echo esc_html( $conn['site_id'] ?: '— (created on save)' ); ?></code>
-					<p class="description">Give this to your hub so it can address this site.</p>
+				<tr><th scope="row"><?php esc_html_e( 'Site key', 'wp-claude-bridge' ); ?></th><td>
+					<code><?php echo esc_html( $conn['site_id'] ? $conn['site_id'] : __( '— (created on save)', 'wp-claude-bridge' ) ); ?></code>
+					<p class="description"><?php esc_html_e( 'Give this to your hub so it can address this site.', 'wp-claude-bridge' ); ?></p>
 				</td></tr>
-				<tr><th scope="row">On save</th><td>
-					<label><input type="checkbox" name="cb_conn_register" value="1"> Announce this site to the hub now (POST <code>/connector/register</code>)</label>
+				<tr><th scope="row"><?php esc_html_e( 'On save', 'wp-claude-bridge' ); ?></th><td>
+					<label><input type="checkbox" name="cb_conn_register" value="1"> <?php echo wp_kses_post( __( 'Announce this site to the hub now (POST <code>/connector/register</code>)', 'wp-claude-bridge' ) ); ?></label>
 				</td></tr>
 			</table>
-			<?php submit_button( 'Save connector settings' ); ?>
+			<?php submit_button( __( 'Save connector settings', 'wp-claude-bridge' ) ); ?>
 		</form>
 
 		<hr style="margin:28px 0">
-		<h2 id="cb-activity">📓 Activity log <span style="font-size:12px;color:#888">— the last <?php echo (int) CB_ACTIVITY_MAX; ?> tool calls</span></h2>
+		<h2 id="cb-activity">📓 <?php esc_html_e( 'Activity log', 'wp-claude-bridge' ); ?> <span style="font-size:12px;color:#888"><?php
+		echo esc_html( sprintf(
+			/* translators: %d: maximum number of log entries kept. */
+			__( '— the last %d tool calls', 'wp-claude-bridge' ),
+			(int) CB_ACTIVITY_MAX
+		) );
+		?></span></h2>
 		<?php
 		$cb_last = cb_last_seen();
 		$cb_log  = cb_activity_entries();
 		?>
-		<p>Last authorized call: <b><?php echo $cb_last ? esc_html( cb_time_ago( $cb_last ) . ' (' . wp_date( 'Y-m-d H:i', $cb_last ) . ')' ) : 'never'; ?></b>.</p>
+		<p><?php esc_html_e( 'Last authorized call:', 'wp-claude-bridge' ); ?> <b><?php echo esc_html( $cb_last ? cb_time_ago( $cb_last ) . ' (' . wp_date( 'Y-m-d H:i', $cb_last ) . ')' : __( 'never', 'wp-claude-bridge' ) ); ?></b>.</p>
 		<?php if ( $cb_log ) : ?>
 			<table class="widefat striped" style="max-width:820px">
-				<thead><tr><th>When</th><th>Call</th><th>Result</th><th style="text-align:right">Took</th></tr></thead>
+				<thead><tr><th><?php esc_html_e( 'When', 'wp-claude-bridge' ); ?></th><th><?php esc_html_e( 'Call', 'wp-claude-bridge' ); ?></th><th><?php esc_html_e( 'Result', 'wp-claude-bridge' ); ?></th><th style="text-align:right"><?php esc_html_e( 'Took', 'wp-claude-bridge' ); ?></th></tr></thead>
 				<tbody>
 				<?php foreach ( $cb_log as $cb_e ) : ?>
 					<tr>
 						<td style="white-space:nowrap"><?php echo esc_html( wp_date( 'Y-m-d H:i:s', $cb_e['t'] ) ); ?></td>
 						<td><code style="font-size:12px"><?php echo esc_html( cb_activity_label( $cb_e ) ); ?></code></td>
-						<td><?php echo empty( $cb_e['ok'] ) ? '<span style="color:#b32d2e">error</span>' : 'ok'; ?></td>
-						<td style="text-align:right"><?php echo (int) $cb_e['ms']; ?> ms</td>
+						<td><?php echo empty( $cb_e['ok'] ) ? '<span style="color:#b32d2e">' . esc_html__( 'error', 'wp-claude-bridge' ) . '</span>' : esc_html__( 'ok', 'wp-claude-bridge' ); ?></td>
+						<td style="text-align:right"><?php
+						/* translators: %d: duration in milliseconds. */
+						echo esc_html( sprintf( __( '%d ms', 'wp-claude-bridge' ), (int) $cb_e['ms'] ) );
+						?></td>
 					</tr>
 				<?php endforeach; ?>
 				</tbody>
 			</table>
 		<?php else : ?>
-			<p class="description">Nothing logged yet — the log fills up as Claude works on this site.</p>
+			<p class="description"><?php esc_html_e( 'Nothing logged yet — the log fills up as Claude works on this site.', 'wp-claude-bridge' ); ?></p>
 		<?php endif; ?>
 		<form method="post" style="margin-top:12px"><?php wp_nonce_field( 'cb_activity' ); ?>
 			<input type="hidden" name="cb_activity_save" value="1">
-			<p><label><input type="checkbox" name="cb_activity_on" value="1" <?php checked( cb_activity_enabled() ); ?>> Log tool calls (tool name, transport, result and duration — never arguments or content)</label></p>
-			<p><label><input type="checkbox" name="cb_activity_clear" value="1"> Clear the log now</label></p>
-			<?php submit_button( 'Save log settings', 'secondary' ); ?>
+			<p><label><input type="checkbox" name="cb_activity_on" value="1" <?php checked( cb_activity_enabled() ); ?>> <?php esc_html_e( 'Log tool calls (tool name, transport, result and duration — never arguments or content)', 'wp-claude-bridge' ); ?></label></p>
+			<p><label><input type="checkbox" name="cb_activity_clear" value="1"> <?php esc_html_e( 'Clear the log now', 'wp-claude-bridge' ); ?></label></p>
+			<?php submit_button( __( 'Save log settings', 'wp-claude-bridge' ), 'secondary' ); ?>
 		</form>
 	</div>
 	<?php
@@ -6946,13 +7026,13 @@ function cb_stack_labels() {
 	return array(
 		'woocommerce'   => 'WooCommerce',
 		'elementor'     => 'Elementor',
-		'seo'           => 'SEO plugin',
+		'seo'           => __( 'SEO plugin', 'wp-claude-bridge' ),
 		'acf'           => 'ACF',
-		'forms'         => 'Forms',
-		'cache'         => 'Caching plugin',
-		'block-theme'   => 'Block theme',
-		'classic-theme' => 'Classic theme',
-		'multisite'     => 'Multisite',
+		'forms'         => __( 'Forms', 'wp-claude-bridge' ),
+		'cache'         => __( 'Caching plugin', 'wp-claude-bridge' ),
+		'block-theme'   => __( 'Block theme', 'wp-claude-bridge' ),
+		'classic-theme' => __( 'Classic theme', 'wp-claude-bridge' ),
+		'multisite'     => __( 'Multisite', 'wp-claude-bridge' ),
 	);
 }
 
@@ -7759,7 +7839,7 @@ function cb_op_get_recipe( $args ) {
  * ========================================================================== */
 
 add_action( 'admin_menu', function () {
-	add_management_page( 'Claude Cookbook', 'Claude Cookbook', 'manage_options', 'claude-bridge-cookbook', 'cb_cookbook_page' );
+	add_management_page( __( 'Claude Cookbook', 'wp-claude-bridge' ), __( 'Claude Cookbook', 'wp-claude-bridge' ), 'manage_options', 'claude-bridge-cookbook', 'cb_cookbook_page' );
 } );
 
 add_action( 'wp_dashboard_setup', function () {
@@ -7819,7 +7899,7 @@ function cb_print_copy_js() {
 		function flash(btn){
 			var old = btn.getAttribute('data-cb-label') || btn.textContent;
 			btn.setAttribute('data-cb-label', old);
-			btn.textContent = 'Copied ✓';
+			btn.textContent = <?php echo wp_json_encode( __( 'Copied ✓', 'wp-claude-bridge' ) ); ?>;
 			setTimeout(function(){ btn.textContent = old; }, 1800);
 		}
 		document.addEventListener('click', function(e){
@@ -7847,12 +7927,13 @@ function cb_print_copy_js() {
 	<?php
 }
 
-/** "active 2 hours ago" / "never" */
+/** "2 hours ago" / "never" — for display only. */
 function cb_time_ago( $ts ) {
 	if ( ! $ts ) {
-		return 'never';
+		return __( 'never', 'wp-claude-bridge' );
 	}
-	return human_time_diff( $ts, time() ) . ' ago';
+	/* translators: %s: human-readable time difference, e.g. "2 hours". */
+	return sprintf( __( '%s ago', 'wp-claude-bridge' ), human_time_diff( $ts, time() ) );
 }
 
 /** The Dashboard widget: connection state, what ran, and recipes for this site. */
@@ -7865,23 +7946,26 @@ function cb_dashboard_widget() {
 	$picks  = cb_cookbook_picks( 3 );
 	$fresh  = $last && ( time() - $last ) < WEEK_IN_SECONDS;
 	$dot    = $last ? ( $fresh ? '' : ' cb-idle' ) : ' cb-off';
-	$state  = $last ? ( $fresh ? 'Connected' : 'Idle' ) : 'Not connected yet';
+	$state  = $last ? ( $fresh ? __( 'Connected', 'wp-claude-bridge' ) : __( 'Idle', 'wp-claude-bridge' ) ) : __( 'Not connected yet', 'wp-claude-bridge' );
 	?>
 	<p style="margin:0 0 4px">
 		<span class="cb-ui-dot<?php echo esc_attr( $dot ); ?>"></span>
 		<b><?php echo esc_html( $state ); ?></b>
 		<?php if ( $last ) : ?>
-			<span style="color:#787c82">&middot; active <?php echo esc_html( cb_time_ago( $last ) ); ?></span>
+			<span style="color:#787c82">&middot; <?php
+			/* translators: %s: relative time, e.g. "2 hours ago". */
+			echo esc_html( sprintf( __( 'active %s', 'wp-claude-bridge' ), cb_time_ago( $last ) ) );
+			?></span>
 		<?php else : ?>
-			<span style="color:#787c82">&middot; <a href="<?php echo esc_url( admin_url( 'tools.php?page=claude-bridge' ) ); ?>">connect Claude to this site</a></span>
+			<span style="color:#787c82">&middot; <a href="<?php echo esc_url( admin_url( 'tools.php?page=claude-bridge' ) ); ?>"><?php esc_html_e( 'connect Claude to this site', 'wp-claude-bridge' ); ?></a></span>
 		<?php endif; ?>
 		<?php if ( cb_connector_enabled() ) : ?>
-			<span class="cb-ui-chip" style="margin-left:6px">Hub connector</span>
+			<span class="cb-ui-chip" style="margin-left:6px"><?php esc_html_e( 'Hub connector', 'wp-claude-bridge' ); ?></span>
 		<?php endif; ?>
 	</p>
 
 	<?php if ( $recent ) : ?>
-		<div class="cb-ui-hd">Recent activity</div>
+		<div class="cb-ui-hd"><?php esc_html_e( 'Recent activity', 'wp-claude-bridge' ); ?></div>
 		<?php foreach ( $recent as $e ) : ?>
 			<div class="cb-ui-row">
 				<span class="cb-ui-grow cb-ui-mono<?php echo empty( $e['ok'] ) ? ' cb-ui-fail' : ''; ?>"><?php echo esc_html( cb_activity_label( $e ) ); ?></span>
@@ -7890,7 +7974,7 @@ function cb_dashboard_widget() {
 		<?php endforeach; ?>
 	<?php endif; ?>
 
-	<div class="cb-ui-hd">Recipes picked for this site</div>
+	<div class="cb-ui-hd"><?php esc_html_e( 'Recipes picked for this site', 'wp-claude-bridge' ); ?></div>
 	<?php foreach ( $picks as $i => $r ) : $tid = 'cb-w-prompt-' . $r['id']; ?>
 		<div class="cb-ui-row">
 			<span class="cb-ui-grow">
@@ -7899,18 +7983,22 @@ function cb_dashboard_widget() {
 					<span class="cb-ui-chip" style="margin-left:6px"><?php echo esc_html( $t ); ?></span>
 				<?php endforeach; ?>
 			</span>
-			<button type="button" class="button button-small" data-cb-copy="<?php echo esc_attr( $tid ); ?>">Copy prompt</button>
+			<button type="button" class="button button-small" data-cb-copy="<?php echo esc_attr( $tid ); ?>"><?php esc_html_e( 'Copy prompt', 'wp-claude-bridge' ); ?></button>
 			<textarea id="<?php echo esc_attr( $tid ); ?>" readonly hidden><?php echo esc_textarea( cb_recipe_clipboard( $r ) ); ?></textarea>
 		</div>
 	<?php endforeach; ?>
 
-	<p class="cb-ui-note">Prompts copy with the recipe link. Fill the [bracketed] parts, or let your AI ask.</p>
-	<p style="margin:0"><a href="<?php echo esc_url( cb_cookbook_url() ); ?>">Browse all <?php echo count( cb_cookbook_recipes() ); ?> recipes &rarr;</a></p>
+	<p class="cb-ui-note"><?php esc_html_e( 'Prompts copy with the recipe link. Fill the [bracketed] parts, or let your AI ask.', 'wp-claude-bridge' ); ?></p>
+	<p style="margin:0"><a href="<?php echo esc_url( cb_cookbook_url() ); ?>"><?php
+	$cb_n_recipes = count( cb_cookbook_recipes() );
+	/* translators: %d: number of recipes in the cookbook. */
+	echo esc_html( sprintf( _n( 'Browse all %d recipe', 'Browse all %d recipes', $cb_n_recipes, 'wp-claude-bridge' ), $cb_n_recipes ) );
+	?> &rarr;</a></p>
 
 	<div class="cb-ui-foot">
-		<a href="<?php echo esc_url( admin_url( 'tools.php?page=claude-bridge#cb-activity' ) ); ?>">Activity log</a> &middot;
-		<a href="<?php echo esc_url( admin_url( 'tools.php?page=claude-bridge' ) ); ?>">Connection</a> &middot;
-		<a href="<?php echo esc_url( cb_cookbook_url() ); ?>">Cookbook</a>
+		<a href="<?php echo esc_url( admin_url( 'tools.php?page=claude-bridge#cb-activity' ) ); ?>"><?php esc_html_e( 'Activity log', 'wp-claude-bridge' ); ?></a> &middot;
+		<a href="<?php echo esc_url( admin_url( 'tools.php?page=claude-bridge' ) ); ?>"><?php esc_html_e( 'Connection', 'wp-claude-bridge' ); ?></a> &middot;
+		<a href="<?php echo esc_url( cb_cookbook_url() ); ?>"><?php esc_html_e( 'Cookbook', 'wp-claude-bridge' ); ?></a>
 	</div>
 	<?php
 }
@@ -7918,7 +8006,7 @@ function cb_dashboard_widget() {
 /** Tools &rarr; Claude Cookbook: every recipe, filterable, with copy buttons. */
 function cb_cookbook_page() {
 	if ( ! current_user_can( 'manage_options' ) ) {
-		wp_die( 'Insufficient permissions.' );
+		wp_die( esc_html__( 'Insufficient permissions.', 'wp-claude-bridge' ) );
 	}
 	cb_print_ui_css();
 	cb_print_copy_js();
@@ -7962,30 +8050,30 @@ function cb_cookbook_page() {
 	}
 	?>
 	<div class="wrap">
-		<h1>Claude Cookbook</h1>
-		<p style="max-width:820px">Prompts for the jobs people actually hand to an AI on a WordPress site. Copy one, fill in the [bracketed] parts, and paste it into Claude with this site connected — every recipe is written for the tools this bridge exposes.</p>
-		<p class="cb-ui-note">This site looks like: <?php echo wp_kses_post( implode( ' &middot; ', $stack_names ) ); // Parts are esc_html'd above; wp_kses_post keeps the &middot; separators. ?>
+		<h1><?php esc_html_e( 'Claude Cookbook', 'wp-claude-bridge' ); ?></h1>
+		<p style="max-width:820px"><?php esc_html_e( 'Prompts for the jobs people actually hand to an AI on a WordPress site. Copy one, fill in the [bracketed] parts, and paste it into Claude with this site connected — every recipe is written for the tools this bridge exposes.', 'wp-claude-bridge' ); ?></p>
+		<p class="cb-ui-note"><?php esc_html_e( 'This site looks like:', 'wp-claude-bridge' ); ?> <?php echo wp_kses_post( implode( ' &middot; ', $stack_names ) ); // Parts are esc_html'd above; wp_kses_post keeps the &middot; separators. ?>
 
 		<form method="get" action="<?php echo esc_url( admin_url( 'tools.php' ) ); ?>" style="margin:14px 0 0">
 			<input type="hidden" name="page" value="claude-bridge-cookbook">
 			<?php if ( $tag !== '' ) : ?><input type="hidden" name="tag" value="<?php echo esc_attr( $tag ); ?>"><?php endif; ?>
-			<input type="search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="Search recipes&hellip;" style="width:280px">
-			<label style="margin-left:10px"><input type="checkbox" name="fits" value="1" <?php checked( $only ); ?>> Only what fits this site</label>
-			<?php submit_button( 'Filter', 'secondary', '', false ); ?>
+			<input type="search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="<?php esc_attr_e( 'Search recipes…', 'wp-claude-bridge' ); ?>" style="width:280px">
+			<label style="margin-left:10px"><input type="checkbox" name="fits" value="1" <?php checked( $only ); ?>> <?php esc_html_e( 'Only what fits this site', 'wp-claude-bridge' ); ?></label>
+			<?php submit_button( __( 'Filter', 'wp-claude-bridge' ), 'secondary', '', false ); ?>
 			<?php if ( $search !== '' || $only || $tag !== '' ) : ?>
-				<a href="<?php echo esc_url( $base ); ?>" style="margin-left:8px">Reset</a>
+				<a href="<?php echo esc_url( $base ); ?>" style="margin-left:8px"><?php esc_html_e( 'Reset', 'wp-claude-bridge' ); ?></a>
 			<?php endif; ?>
 		</form>
 
 		<div class="cb-filters">
-			<a href="<?php echo esc_url( add_query_arg( array( 's' => $search ? $search : null, 'fits' => $only ? 1 : null ), $base ) ); ?>" class="<?php echo $tag === '' ? 'cb-on' : ''; ?>">All</a>
+			<a href="<?php echo esc_url( add_query_arg( array( 's' => $search ? $search : null, 'fits' => $only ? 1 : null ), $base ) ); ?>" class="<?php echo $tag === '' ? 'cb-on' : ''; ?>"><?php esc_html_e( 'All', 'wp-claude-bridge' ); ?></a>
 			<?php foreach ( cb_cookbook_tags() as $t => $n ) : ?>
 				<a href="<?php echo esc_url( add_query_arg( array( 'tag' => $t, 's' => $search ? $search : null, 'fits' => $only ? 1 : null ), $base ) ); ?>" class="<?php echo $tag === $t ? 'cb-on' : ''; ?>"><?php echo esc_html( $t ); ?> <span style="opacity:.6"><?php echo (int) $n; ?></span></a>
 			<?php endforeach; ?>
 		</div>
 
 		<?php if ( ! $recipes ) : ?>
-			<p>No recipe matches that. <a href="<?php echo esc_url( $base ); ?>">Show everything</a>.</p>
+			<p><?php esc_html_e( 'No recipe matches that.', 'wp-claude-bridge' ); ?> <a href="<?php echo esc_url( $base ); ?>"><?php esc_html_e( 'Show everything', 'wp-claude-bridge' ); ?></a>.</p>
 		<?php endif; ?>
 
 		<div class="cb-cols">
@@ -8004,17 +8092,21 @@ function cb_cookbook_page() {
 						<span class="cb-ui-chip"><?php echo esc_html( $t ); ?></span>
 					<?php endforeach; ?>
 					<?php if ( $need ) : ?>
-						<span class="cb-ui-chip<?php echo $r['fits'] ? ' cb-fit' : ''; ?>">Needs <?php echo esc_html( implode( ' / ', $need ) ); ?><?php echo $r['fits'] ? ' &check;' : ' &mdash; not installed'; ?></span>
+						<span class="cb-ui-chip<?php echo $r['fits'] ? ' cb-fit' : ''; ?>"><?php
+						/* translators: %s: required stack components, e.g. "WooCommerce / Elementor". */
+						echo esc_html( sprintf( __( 'Needs %s', 'wp-claude-bridge' ), implode( ' / ', $need ) ) );
+						echo $r['fits'] ? ' &check;' : ' &mdash; ' . esc_html__( 'not installed', 'wp-claude-bridge' );
+						?></span>
 					<?php endif; ?>
 					<span style="margin-left:6px"><?php echo esc_html( $r['time'] ); ?></span>
 				</p>
 				<p class="cb-sum"><?php echo esc_html( $r['summary'] ); ?></p>
 				<p style="margin:0 0 6px">
-					<button type="button" class="button button-primary button-small" data-cb-copy="<?php echo esc_attr( $tid ); ?>">Copy prompt</button>
-					<span class="cb-ui-note" style="margin-left:8px">Tools: <code style="font-size:11px"><?php echo esc_html( implode( ', ', $r['tools'] ) ); ?></code></span>
+					<button type="button" class="button button-primary button-small" data-cb-copy="<?php echo esc_attr( $tid ); ?>"><?php esc_html_e( 'Copy prompt', 'wp-claude-bridge' ); ?></button>
+					<span class="cb-ui-note" style="margin-left:8px"><?php esc_html_e( 'Tools:', 'wp-claude-bridge' ); ?> <code style="font-size:11px"><?php echo esc_html( implode( ', ', $r['tools'] ) ); ?></code></span>
 				</p>
 				<details<?php echo $open ? ' open' : ''; ?>>
-					<summary>Show the prompt</summary>
+					<summary><?php esc_html_e( 'Show the prompt', 'wp-claude-bridge' ); ?></summary>
 					<pre><?php echo esc_html( $r['prompt'] ); ?></pre>
 				</details>
 				<textarea id="<?php echo esc_attr( $tid ); ?>" readonly hidden><?php echo esc_textarea( cb_recipe_clipboard( $r ) ); ?></textarea>
@@ -8022,7 +8114,7 @@ function cb_cookbook_page() {
 		<?php endforeach; ?>
 		</div>
 
-		<p style="margin-top:18px">Connected model? It can read this cookbook itself with the <code>list_recipes</code> and <code>get_recipe</code> tools &mdash; ask Claude &ldquo;what recipes fit this site?&rdquo;</p>
+		<p style="margin-top:18px"><?php echo wp_kses_post( __( 'Connected model? It can read this cookbook itself with the <code>list_recipes</code> and <code>get_recipe</code> tools — ask Claude “what recipes fit this site?”', 'wp-claude-bridge' ) ); ?></p>
 	</div>
 	<?php
 }

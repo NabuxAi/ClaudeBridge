@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Icon from '../lib/icons.jsx'
 import { auth as authApi } from '../lib/api.js'
+import { t } from '../lib/i18n.js'
 
 /**
  * The math challenge.
@@ -29,8 +30,8 @@ export default function Captcha({ value, onChange, onReady, refreshKey = 0, erro
       onReady?.(c.id)
       onChange?.('')
     } catch (e) {
-      // خطای شبکه پیام انگلیسی خام «Failed to fetch» می‌دهد؛ فقط پیام فارسیِ خطای سرور را نشان بده
-      setFailed(e?.name === 'ApiError' && e?.message ? e.message : 'سؤال امنیتی بارگذاری نشد؛ اتصال به سرور برقرار نیست.')
+      // A network error carries the raw browser text («Failed to fetch»); show only the server's localised ApiError message.
+      setFailed(e?.name === 'ApiError' && e?.message ? e.message : t('components.captcha.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -47,7 +48,7 @@ export default function Captcha({ value, onChange, onReady, refreshKey = 0, erro
         onReady?.(c.id)
         onChange?.('')
       })
-      .catch((e) => { if (alive) setFailed(e?.name === 'ApiError' && e?.message ? e.message : 'سؤال امنیتی بارگذاری نشد؛ اتصال به سرور برقرار نیست.') })
+      .catch((e) => { if (alive) setFailed(e?.name === 'ApiError' && e?.message ? e.message : t('components.captcha.loadFailed')) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [refreshKey, onReady, onChange])
@@ -56,7 +57,7 @@ export default function Captcha({ value, onChange, onReady, refreshKey = 0, erro
     return (
       <div style={box}>
         <span style={{ fontSize: 12.5, color: 'var(--gd-danger-text)' }}>{failed}</span>
-        <button type="button" onClick={load} style={linkBtn}>تلاش دوباره</button>
+        <button type="button" onClick={load} style={linkBtn}>{t('common.retry')}</button>
       </div>
     )
   }
@@ -64,7 +65,7 @@ export default function Captcha({ value, onChange, onReady, refreshKey = 0, erro
   return (
     <div>
       <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>
-        سؤال امنیتی
+        {t('components.captcha.label')}
       </label>
       <div style={box}>
         <span style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--gd-font-mono)', minWidth: 84 }}>
@@ -76,15 +77,15 @@ export default function Captcha({ value, onChange, onReady, refreshKey = 0, erro
           autoComplete="off"
           value={value || ''}
           onChange={(e) => onChange?.(e.target.value)}
-          placeholder="پاسخ"
-          aria-label={challenge?.question || 'سؤال امنیتی'}
+          placeholder={t('components.captcha.answer')}
+          aria-label={challenge?.question || t('components.captcha.label')}
           style={{
             flex: 1, minWidth: 70, padding: '9px 12px', fontSize: 14,
             borderRadius: 'var(--gd-radius-md)', border: '1px solid var(--gd-border)',
             background: 'var(--gd-bg-surface)', fontFamily: 'inherit',
           }}
         />
-        <button type="button" onClick={load} title="سؤال تازه" style={iconBtn} aria-label="سؤال تازه">
+        <button type="button" onClick={load} title={t('components.captcha.refresh')} style={iconBtn} aria-label={t('components.captcha.refresh')}>
           <Icon name="refresh-cw" size={15} />
         </button>
       </div>

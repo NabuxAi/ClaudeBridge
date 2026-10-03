@@ -1,0 +1,36 @@
+{
+  "listSep": ", ",
+  "proposals": {
+    "title": "Waiting for your approval: {count}",
+    "more": "…and {count} more"
+  },
+  "sweep": {
+    "label": "Automatic check:",
+    "neverRan": "on, but it has not run yet.",
+    "stale": "last run {hours} hours ago — at least one run was missed.",
+    "sites_one": "{count} site",
+    "sites_other": "{count} sites",
+    "proposed_one": "{count} proposal",
+    "proposed_other": "{count} proposals",
+    "performed_one": "{count} action",
+    "performed_other": "{count} actions",
+    "failed": "{count} failed",
+    "degraded": "{count} without a model",
+    "skipped": "{count} over the cap",
+    "quiet": " — nothing to do."
+  },
+  "outdated": {
+    "title": "Plugin not up to date: {count}",
+    "unknown_one": "{count} site has not reported its version",
+    "unknown_other": "{count} sites have not reported their version"
+  },
+  "report": {
+    "title": "Daily security report — DigiWP",
+    "totals": "Sites: <b>{sites}</b> · Critical: <b>{critical}</b> · Suspicious: <b>{suspicious}</b>",
+    "scanFailed": "scan failed ({error})",
+    "error": "error",
+    "siteCounts": "critical:{critical} suspicious:{suspicious}",
+    "robots": "robots infected",
+    "noSites": "No paired sites."
+  }
+}

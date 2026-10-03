@@ -4,11 +4,15 @@ import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input, Select, AlertCard, Dialog } from '../../components/index.js'
 import { account, setToken } from '../../lib/api.js'
-
-/** عبارتی که کاربر باید برای تأیید تایپ کند — همان الگوی «تأیید بازگردانی» بکاپ‌ها. */
-const DELETE_PHRASE = 'حذف حساب'
+import Trans from '../../components/Trans.jsx'
+import { t, LANGS, getLang } from '../../lib/i18n.js'
+import { useI18n } from '../../lib/I18nProvider.jsx'
 
 export default function Profile() {
+  // The phrase the user types to confirm deletion (same pattern as the
+  // backup-restore confirmation), in the active UI language.
+  const DELETE_PHRASE = t('profile.delete.phrase')
+  const { setLang } = useI18n()
   const [data, setData] = useState(null)
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -26,11 +30,12 @@ export default function Profile() {
         // بدون کلید «twoFactor»: از این موج، وضعیت ورود دومرحله‌ای فقط از
         // راه /auth/2fa/* در «امنیت حساب» تغییر می‌کند و یک ذخیرهٔ پروفایل
         // نباید بتواند پرچمی را جابه‌جا کند که secretی پشتش نیست.
-        setForm({ name: d.name || '', lang: d.lang || 'fa', timezone: d.timezone || 'Asia/Tehran' })
+        // The language select starts on the language the panel is showing now.
+        setForm({ name: d.name || '', lang: getLang(), timezone: d.timezone || 'Asia/Tehran' })
       })
       .catch((e) => {
         // A failed request must not leave the page hung on the empty header.
-        if (alive) setLoadError(e?.message || 'بارگذاری پروفایل انجام نشد.')
+        if (alive) setLoadError(e?.message || t('profile.loadFailed'))
       })
     return () => { alive = false }
   }, [reloadKey])
@@ -42,9 +47,12 @@ export default function Profile() {
     try {
       const next = await account.saveProfile(form)
       setData((d) => ({ ...d, ...next }))
-      setSaved('ذخیره شد.')
+      setSaved(t('profile.saved'))
+      // Apply the chosen language only after the save succeeded. setLang
+      // remounts the app in the new language (and persists it to the account).
+      if (form.lang !== getLang()) await setLang(form.lang)
     } catch (e) {
-      setError(e?.message || 'ذخیره نشد.')
+      setError(e?.message || t('profile.saveFailed'))
     } finally { setSaving(false) }
   }
 
@@ -71,7 +79,7 @@ export default function Profile() {
     } catch (e) {
       // ۴۰۱ وسط راه یعنی خود نشست مرده (خارج شده یا منقضی)؛ کلاینت همین را
       // مسیر جهانی ۴۰۱ می‌برد و پیامش اینجا نمی‌ماند.
-      setDelError(e?.message || 'حذف حساب ناموفق بود. دوباره تلاش کنید.')
+      setDelError(e?.message || t('profile.delete.failed'))
       setDelBusy(false)
     }
   }
@@ -79,15 +87,15 @@ export default function Profile() {
   if (loadError) {
     return (
       <>
-        <PageHead title="پروفایل و تنظیمات حساب" subtitle="اطلاعات حساب" />
+        <PageHead title={t('profile.title')} subtitle={t('profile.subtitle')} />
         <AlertCard
           severity="critical"
-          title="بارگذاری پروفایل ناموفق بود"
+          title={t('profile.loadFailedTitle')}
           desc={loadError}
           className="dwp-acc-alert"
           actions={(
             <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={() => { setLoadError(null); setReloadKey((k) => k + 1) }}>
-              تلاش دوباره
+              {t('common.retry')}
             </Button>
           )}
         />
@@ -95,11 +103,11 @@ export default function Profile() {
     )
   }
 
-  if (!data || !form) return <PageHead title="پروفایل و تنظیمات حساب" subtitle="اطلاعات حساب" />
+  if (!data || !form) return <PageHead title={t('profile.title')} subtitle={t('profile.subtitle')} />
 
   return (
     <>
-      <PageHead title="پروفایل و تنظیمات حساب" subtitle="اطلاعات حساب" />
+      <PageHead title={t('profile.title')} subtitle={t('profile.subtitle')} />
 
       <div className="dwp-profile-grid" style={{ marginBottom: 22 }}>
         {/* Profile card */}
@@ -112,7 +120,7 @@ export default function Profile() {
                 them. The initials are generated from the name, which is the
                 one avatar this system actually has. */}
             <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', lineHeight: 1.8 }}>
-              تصویر پروفایل از حروف اول نام ساخته می‌شود.
+              {t('profile.avatarNote')}
             </div>
           </div>
           {/* The mobile-number field held "۰۹۱۲ ••• ۴۵۶۷" for every account —
@@ -120,23 +128,22 @@ export default function Profile() {
               read-only because changing it is an identity change and needs a
               verification flow that does not exist yet. */}
           <div className="dwp-acc-form-grid">
-            <Input label="نام و نام خانوادگی" value={form.name} onChange={(e) => set('name')(e.target.value)} />
-            <Input label="ایمیل" value={data.email} leftIcon="mail" disabled readOnly />
-            <Select label="زبان پنل" value={form.lang} onChange={(e) => set('lang')(e.target.value)}>
-              <option value="fa">فارسی</option>
-              <option value="en">English</option>
+            <Input label={t('profile.fields.name')} value={form.name} onChange={(e) => set('name')(e.target.value)} />
+            <Input label={t('profile.fields.email')} value={data.email} leftIcon="mail" disabled readOnly />
+            <Select label={t('profile.fields.lang')} value={form.lang} onChange={(e) => set('lang')(e.target.value)}>
+              {LANGS.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
             </Select>
-            <Select label="منطقهٔ زمانی" value={form.timezone} onChange={(e) => set('timezone')(e.target.value)}>
-              <option value="Asia/Tehran">تهران (GMT+3:30)</option>
-              <option value="Asia/Dubai">دبی (GMT+4)</option>
-              <option value="UTC">UTC</option>
+            <Select label={t('profile.fields.timezone')} value={form.timezone} onChange={(e) => set('timezone')(e.target.value)}>
+              <option value="Asia/Tehran">{t('profile.tz.tehran')}</option>
+              <option value="Asia/Dubai">{t('profile.tz.dubai')}</option>
+              <option value="UTC">{t('profile.tz.utc')}</option>
             </Select>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 18 }}>
             {saved && <span style={{ fontSize: 12.5, color: 'var(--gd-success)' }}>{saved}</span>}
             {error && <span style={{ fontSize: 12.5, color: 'var(--gd-danger-text)' }}>{error}</span>}
             <Button variant="primary" size="md" leftIcon="check" disabled={saving} onClick={save}>
-              {saving ? 'در حال ذخیره…' : 'ذخیرهٔ پروفایل'}
+              {saving ? t('common.saving') : t('profile.saveProfile')}
             </Button>
           </div>
         </div>
@@ -150,13 +157,13 @@ export default function Profile() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div className="dwp-card" style={{ padding: '20px 22px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
-              <Icon name="key-round" size={17} style={{ color: 'var(--gd-primary)' }} /> امنیت حساب
+              <Icon name="key-round" size={17} style={{ color: 'var(--gd-primary)' }} /> {t('profile.security.title')}
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.9 }}>
-              دستگاه‌های واردشده به حساب، خروج از هرکدام، و فعال‌سازی ورود دومرحله‌ای در{' '}
-              <Link to="/app/security" style={{ color: 'var(--gd-primary)', fontWeight: 600 }}>امنیت حساب</Link> مدیریت می‌شود.
-              تغییر رمز عبور داخل پنل هنوز ساخته نشده است؛ برای تغییر رمز، از
-              «فراموشی رمز عبور» در صفحهٔ ورود استفاده کنید.
+              <Trans
+                k="profile.security.body"
+                components={{ link: (c) => <Link to="/app/security" style={{ color: 'var(--gd-primary)', fontWeight: 600 }}>{c}</Link> }}
+              />
             </p>
           </div>
         </div>
@@ -169,34 +176,34 @@ export default function Profile() {
           <Icon name="trash-2" size={20} />
         </span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gd-danger-text)' }}>حذف حساب کاربری</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gd-danger-text)' }}>{t('profile.delete.title')}</div>
           <div style={{ fontSize: 12.5, color: 'var(--gd-danger-text)', opacity: 0.85, marginTop: 2 }}>
-            همهٔ سایت‌ها از پایش خارج، نشست‌ها باطل و داده‌های شخصی حساب برای همیشه حذف می‌شود. این تغییر بازگشت‌پذیر نیست.
+            {t('profile.delete.zoneDesc')}
           </div>
         </div>
         <Button variant="danger" size="md" leftIcon="trash-2" onClick={() => { setDelOpen(true); setDelError('') }}>
-          حذف حساب…
+          {t('profile.delete.open')}
         </Button>
       </div>
 
       {/* تأیید دومرحله‌ای: تایپ عبارت + رمز فعلی. هیچ‌کدام به‌تنهایی کافی نیست. */}
       <Dialog
-        title="حذف حساب کاربری"
+        title={t('profile.delete.title')}
         open={delOpen}
         onClose={() => { if (!delBusy) { setDelOpen(false); resetDeleteForm() } }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ background: 'var(--gd-danger-bg)', border: '1px solid var(--gd-danger-border)', borderRadius: 'var(--gd-radius-md)', padding: '12px 14px', color: 'var(--gd-danger-text)', fontSize: 13, lineHeight: 1.9 }}>
-            <strong>این کار بازگشت‌پذیر نیست.</strong> با حذف حساب:
+            <strong>{t('profile.delete.irreversible')}</strong> {t('profile.delete.intro')}
             <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
-              <li>همهٔ سایت‌های شما بلافاصله از پایش خارج می‌شوند و اعتبارنامهٔ جفت‌سازی هرکدام باطل می‌شود؛ افزونهٔ روی سایت دیگر به این پنل وصل نخواهد شد.</li>
-              <li>همهٔ نشست‌های واردشده به حساب (هر دستگاهی) همان لحظه از حساب خارج می‌شوند.</li>
-              <li>ایمیل، نام، شماره تماس و توکن‌های اعلان شما از حساب حذف می‌شود. آدرس ایمیل‌تان آزاد می‌شود و بعداً می‌توان با همان آدرس دوباره ثبت‌نام کرد.</li>
-              <li>سابقهٔ رویدادها بدون دادهٔ شخصی برای ممیزی می‌ماند.</li>
+              <li>{t('profile.delete.items.sites')}</li>
+              <li>{t('profile.delete.items.sessions')}</li>
+              <li>{t('profile.delete.items.personal')}</li>
+              <li>{t('profile.delete.items.audit')}</li>
             </ul>
           </div>
           <p style={{ fontSize: 13, color: 'var(--gd-text-secondary)', margin: 0, lineHeight: 1.9 }}>
-            برای تأیید، عبارت <strong>«{DELETE_PHRASE}»</strong> را تایپ کنید و رمز عبور فعلی‌تان را وارد کنید:
+            <Trans k="profile.delete.confirm" vars={{ phrase: DELETE_PHRASE }} />
           </p>
           <input
             type="text"
@@ -207,7 +214,7 @@ export default function Profile() {
             style={{ padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}
           />
           <Input
-            label="رمز عبور فعلی"
+            label={t('profile.delete.password')}
             type="password"
             value={delPassword}
             onChange={(e) => setDelPassword(e.target.value)}
@@ -218,7 +225,7 @@ export default function Profile() {
           )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
             <Button variant="subtle" disabled={delBusy} onClick={() => { setDelOpen(false); resetDeleteForm() }}>
-              انصراف
+              {t('common.cancel')}
             </Button>
             <Button
               variant="danger"
@@ -227,7 +234,7 @@ export default function Profile() {
               disabled={delPhrase.trim() !== DELETE_PHRASE || !delPassword}
               onClick={deleteAccount}
             >
-              {delBusy ? 'در حال حذف…' : 'حذف همیشگی حساب'}
+              {delBusy ? t('profile.delete.deleting') : t('profile.delete.submit')}
             </Button>
           </div>
         </div>

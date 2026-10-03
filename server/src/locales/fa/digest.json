@@ -1,0 +1,32 @@
+{
+  "listSep": "، ",
+  "proposals": {
+    "title": "در انتظار تأیید شما: {count}",
+    "more": "…و {count} مورد دیگر"
+  },
+  "sweep": {
+    "label": "بررسی خودکار:",
+    "neverRan": "روشن است ولی تا حالا اجرا نشده.",
+    "stale": "آخرین اجرا {hours} ساعت پیش — یعنی حداقل یک نوبت اجرا نشده.",
+    "sites_other": "{count} سایت",
+    "proposed_other": "{count} پیشنهاد",
+    "performed_other": "{count} اقدام",
+    "failed": "{count} ناموفق",
+    "degraded": "{count} بدون مدل",
+    "skipped": "{count} خارج از سقف",
+    "quiet": " — چیزی برای انجام نبود."
+  },
+  "outdated": {
+    "title": "افزونه به‌روز نیست: {count}",
+    "unknown_other": "{count} سایت نسخه‌اش را گزارش نکرده"
+  },
+  "report": {
+    "title": "گزارش امنیتی روزانه — DigiWP",
+    "totals": "سایت‌ها: <b>{sites}</b> · بحرانی: <b>{critical}</b> · مشکوک: <b>{suspicious}</b>",
+    "scanFailed": "اسکن ناموفق ({error})",
+    "error": "خطا",
+    "siteCounts": "بحرانی:{critical} مشکوک:{suspicious}",
+    "robots": "robots آلوده",
+    "noSites": "هیچ سایت جفت‌شده‌ای نیست."
+  }
+}

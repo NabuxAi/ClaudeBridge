@@ -1,0 +1,73 @@
+{
+  "title": "Notifications & alert channels",
+  "subtitle": "Channels and notification preferences",
+  "loading": "Loading…",
+  "errors": {
+    "load": "Couldn't load your settings.",
+    "loadNotFound": "Notification settings aren't enabled on the server yet.",
+    "pushStatus": "Browser notification status is unknown.",
+    "pushStatusNotFound": "Browser notifications aren't enabled on the server yet.",
+    "save": "Not saved.",
+    "saveNotFound": "Saving notification settings isn't enabled on the server yet.",
+    "addContact": "Couldn't add the contact.",
+    "addContactNotFound": "Adding contacts isn't enabled on the server yet.",
+    "verifyContact": "Couldn't verify the contact.",
+    "verifyContactNotFound": "Verifying contacts isn't enabled on the server yet.",
+    "removeContact": "Couldn't remove the contact.",
+    "removeContactNotFound": "Removing contacts isn't enabled on the server yet.",
+    "pushEnable": "Couldn't enable notifications.",
+    "pushEnableNotFound": "Registering notification subscriptions isn't enabled on the server yet.",
+    "pushRemove": "Couldn't remove the subscription.",
+    "pushRemoveNotFound": "Removing subscriptions isn't enabled on the server yet."
+  },
+  "saved": "Saved.",
+  "confirmRemoveContact": "This contact will be removed. Continue?",
+  "confirmRemoveSubscription": "This subscription will be removed and will no longer receive notifications. Continue?",
+  "push": {
+    "title": "Browser notifications",
+    "intro": "Urgent alerts sent straight from the server to browsers you've allowed. A notification being accepted doesn't mean it was seen.",
+    "loadingStatus": "Checking status…",
+    "disabled": "Disabled",
+    "notConfigured": "Browser notifications aren't enabled on this server: VAPID keys aren't configured.",
+    "unsupported": "This browser doesn't support browser notifications.",
+    "permissionDenied": "Notification permission wasn't granted. Without browser permission, no notifications are sent.",
+    "swNotReady": "The service worker isn't ready yet; reload the page.",
+    "enabled": "Browser notifications are on for this device.",
+    "removed": "Subscription removed.",
+    "unknownDevice": "Unknown device",
+    "enable": "Enable notifications on this device",
+    "enabling": "Enabling…"
+  },
+  "channel": {
+    "destination": "Destination",
+    "hintEmail": "e.g. your@email.com",
+    "hintSms": "e.g. 09123456789",
+    "hintPush": "Push token or subscription",
+    "quietStart": "Quiet hours start",
+    "quietEnd": "Quiet hours end",
+    "off": "Off",
+    "save": "Save channel",
+    "saving": "Saving…"
+  },
+  "contacts": {
+    "title": "Registered contacts",
+    "intro": "Every email, number, or device you want us to notify must be registered here, and ideally verified.",
+    "empty": "No contacts registered yet.",
+    "verified": "Verified",
+    "unverified": "Not verified",
+    "verify": "Verify",
+    "remove": "Remove",
+    "type": "Type",
+    "value": "Value",
+    "placeholderSms": "09123456789",
+    "placeholderPush": "Push token",
+    "add": "Add contact",
+    "adding": "Adding…"
+  },
+  "types": {
+    "email": "Email",
+    "sms": "SMS",
+    "push": "Browser notification"
+  },
+  "deliveryNote": "When an alert is sent, we only know the service accepted it — not that it actually reached you. That's why having several active channels matters."
+}

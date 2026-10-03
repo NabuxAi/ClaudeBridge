@@ -1,0 +1,67 @@
+{
+  "head": {
+    "title": "بکاپ خارجی",
+    "subtitle": "ارسال رمزنگاری‌شدهٔ نسخه‌های پشتیبان به سرویس S3 سازگار",
+    "add": "افزودن هدف"
+  },
+  "errors": {
+    "load": "بارگذاری انجام نشد.",
+    "save": "ذخیره نشد.",
+    "delete": "حذف نشد.",
+    "start": "شروع نشد."
+  },
+  "confirmDelete": "این هدف و تاریخچهٔ بکاپ‌هایش حذف می‌شود. ادامه می‌دهید؟",
+  "notPaired": "سایت هنوز به سرور ما وصل نشده — افزونهٔ واسط را نصب و جفت کنید.",
+  "loadFailed": "بکاپ خارجی خوانده نشد",
+  "form": {
+    "editTitle": "ویرایش هدف",
+    "newTitle": "هدف بکاپ خارجی جدید",
+    "endpoint": "نشانی S3",
+    "endpointHint": "مثلاً https://s3.example.com",
+    "bucket": "نام باکت",
+    "region": "Region",
+    "regionHint": "مثلاً us-east-1",
+    "accessKey": "Access Key ID",
+    "secretKey": "Secret Access Key",
+    "secretHint": "خالی بگذارید تا تغییر نکند",
+    "pathPrefix": "پیشوند مسیر (path prefix)",
+    "optional": "اختیاری",
+    "retention": "دوره نگهداری (روز)",
+    "update": "به‌روزرسانی"
+  },
+  "metrics": {
+    "targets": "اهداف فعال",
+    "targetsHint": "S3-compatible",
+    "lastSuccess": "آخرین بکاپ موفق",
+    "lastSuccessHint": "براساس تاریخچه",
+    "lastSize": "حجم آخرین بکاپ",
+    "encryption": "رمزنگاری",
+    "encryptionHint": "در حالت استراحت"
+  },
+  "targets": {
+    "title": "اهداف ذخیره‌سازی",
+    "colEndpoint": "نشانی / باکت",
+    "colRegion": "Region",
+    "colPath": "مسیر",
+    "colRetention": "نگهداری",
+    "colStatus": "وضعیت",
+    "empty": "هنوز هدفی افزوده نشده.",
+    "days_other": "{count} روز",
+    "configured": "پیکربندی‌شده",
+    "starting": "در حال شروع…",
+    "run": "بکاپ بگیر"
+  },
+  "jobs": {
+    "title": "تاریخچهٔ ارسال",
+    "colTime": "زمان",
+    "colTarget": "هدف",
+    "colSize": "حجم",
+    "colStatus": "وضعیت",
+    "colMessage": "پیام",
+    "empty": "هنوز هیچ بکاپ خارجی ارسال نشده.",
+    "queued": "در صف",
+    "running": "در حال اجرا",
+    "done": "موفق",
+    "failed": "ناموفق"
+  }
+}

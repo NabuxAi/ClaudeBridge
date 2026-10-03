@@ -21,6 +21,7 @@
 // ============================================================
 import { all } from '../db.js'
 import { compareVersions, slugOf } from './match.js'
+import { t, DEFAULT_LOCALE } from '../i18n.js'
 
 // Re-exported so callers have one import for "the vulnerability feature".
 export { slugOf }
@@ -54,7 +55,9 @@ async function knownFor(slugs) {
  * Nothing is fetched from the site here — the caller owns that — so this stays
  * a pure database question and can be tested without a WordPress install.
  */
-export async function checkInventory(inventory = []) {
+export async function checkInventory(inventory = [], { locale = DEFAULT_LOCALE } = {}) {
+  const tr = (key, vars) => t(locale, key, vars)
+  const describe = (cve, item) => describeHit(cve, item, tr)
   const items = inventory.filter((i) => i && i.slug)
   const rows = await knownFor([...new Set(items.map((i) => i.slug))])
 
@@ -74,11 +77,11 @@ export async function checkInventory(inventory = []) {
       if (!cve.fixed_in) {
         // Honest third category. Reporting these as safe would be a lie and
         // reporting them as hits would bury the real ones in noise.
-        unknownVersion.push({ ...describe(cve, item), why: 'نسخهٔ اصلاح‌شده در گزارش اصلی ذکر نشده' })
+        unknownVersion.push({ ...describe(cve, item), why: tr('intel.vulns.noFixedVersion') })
         continue
       }
       if (!item.version) {
-        unknownVersion.push({ ...describe(cve, item), why: 'نسخهٔ نصب‌شده خوانده نشد' })
+        unknownVersion.push({ ...describe(cve, item), why: tr('intel.vulns.noInstalledVersion') })
         continue
       }
       if (compareVersions(item.version, cve.fixed_in) < 0) {
@@ -97,14 +100,11 @@ export async function checkInventory(inventory = []) {
     // Said explicitly, because an empty result is the one people over-read.
     // Our database is a keyword walk of NVD; plenty of WordPress plugin
     // vulnerabilities are only ever published in vendor advisories.
-    note:
-      'این بررسی روی پایگاه CVE خودمان انجام می‌شود که از NVD ساخته شده، و فقط مواردی گزارش می‌شود که ' +
-      'اسلاگشان با مخزن وردپرس تطبیق داده شده. خالی بودن نتیجه یعنی در این پایگاه چیز تأییدشده‌ای نبود، ' +
-      'نه اینکه افزونه‌ها قطعاً امن‌اند.',
+    note: tr('intel.vulns.note'),
   }
 }
 
-function describe(cve, item) {
+function describeHit(cve, item, tr) {
   return {
     cve: cve.cve_id,
     slug: item.slug,
@@ -121,7 +121,7 @@ function describe(cve, item) {
     // with a known hole is still a file on disk that can be reached directly,
     // so "deactivate it" is not the fix — updating or deleting it is.
     advice: cve.fixed_in
-      ? `به نسخهٔ ${cve.fixed_in} یا بالاتر به‌روزرسانی کنید.`
-      : 'نسخهٔ اصلاح‌شده مشخص نیست؛ سایت سازنده را بررسی کنید.',
+      ? tr('intel.vulns.adviceUpdate', { version: cve.fixed_in })
+      : tr('intel.vulns.adviceUnknown'),
   }
 }

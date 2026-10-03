@@ -15,6 +15,7 @@ import * as proposals from './proposals.js'
 // it fails or works depending purely on which side is evaluated first.
 import * as sweep from './sweep.js'
 import { config } from './config.js'
+import { t } from './i18n.js'
 import { alertChannelStatus } from './alerts/index.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -78,11 +79,10 @@ export async function scanAllSites() {
       results.push({ id: s.id, name: s.title || s.name, url: s.url, ok: false, error: e.message })
       await events.record({
         siteId: s.id, kind: 'scan_failed', severity: 'warning',
-        title: 'اسکن امنیتی به سایت نرسید',
         // The status separates "the plugin refused us" from "the host is
         // returning 500" from "nothing answered" — three failures with three
         // different fixes, which the message alone did not distinguish.
-        detail: { error: e.message, status: e.status || null },
+        ...events.i18nTitle('events.scan.unreachable', {}, { error: e.message, status: e.status || null }),
         fingerprint: 'scan:unreachable',
       })
     }
@@ -110,10 +110,11 @@ async function recordScanEvents(siteId, scan) {
       siteId,
       kind: 'malware',
       severity: f.severity === 'critical' ? 'critical' : 'warning',
-      title: f.severity === 'critical'
-        ? `فایل آلوده پیدا شد: ${f.file}`
-        : `فایل مشکوک: ${f.file}`,
-      detail: { file: f.file, rule: f.rule || null, severity: f.severity, why: f.why || null },
+      ...events.i18nTitle(
+        f.severity === 'critical' ? 'events.scan.infectedFile' : 'events.scan.suspiciousFile',
+        { file: f.file },
+        { file: f.file, rule: f.rule || null, severity: f.severity, why: f.why || null },
+      ),
       fingerprint: fp,
     })
   }
@@ -122,8 +123,9 @@ async function recordScanEvents(siteId, scan) {
     seen.add('scan:robots')
     await events.record({
       siteId, kind: 'malware', severity: 'critical',
-      title: 'فایل robots.txt دستکاری شده',
-      detail: scan.robots_injection,
+      // The detail is whatever the plugin reported, kept as-is; i18nTitle only
+      // adds the key when that is an object.
+      ...events.i18nTitle('events.scan.robotsTampered', {}, scan.robots_injection),
       fingerprint: 'scan:robots',
     })
   }
@@ -151,7 +153,7 @@ async function recordScanEvents(siteId, scan) {
  *
  * Rendered from the same rows the panel reads, so the two cannot disagree.
  */
-export function renderPendingProposals(pending) {
+export function renderPendingProposals(pending, locale = config.operatorLocale) {
   if (!pending?.length) return ''
 
   const lines = pending.slice(0, 10).map((p) => {
@@ -163,9 +165,9 @@ export function renderPendingProposals(pending) {
   })
 
   // Saying how many were withheld beats a list that silently stops at ten.
-  const more = pending.length > 10 ? `\n   …و ${pending.length - 10} مورد دیگر` : ''
+  const more = pending.length > 10 ? `\n   ${t(locale, 'digest.proposals.more', { count: pending.length - 10 })}` : ''
 
-  return `\n\n⏳ <b>در انتظار تأیید شما: ${pending.length}</b>\n` + lines.join('\n') + more
+  return `\n\n⏳ <b>${t(locale, 'digest.proposals.title', { count: pending.length })}</b>\n` + lines.join('\n') + more
 }
 
 /**
@@ -184,37 +186,39 @@ export function renderPendingProposals(pending) {
  * `now` is passed in rather than read, so the staleness wording can be tested
  * without waiting a day.
  */
-export function renderSweep(run, now = Date.now(), enabled = config.sweep.enabled) {
+export function renderSweep(run, now = Date.now(), enabled = config.sweep.enabled, locale = config.operatorLocale) {
   if (!enabled) return ''
+  const tr = (key, vars) => t(locale, key, vars)
+  const head = `\n\n🤖 <b>${tr('digest.sweep.label')}</b> `
 
   // On, and never run. Worth saying plainly: the setting is a promise the
   // deployment has not kept, and nothing else would reveal it.
   if (!run) {
-    return '\n\n🤖 <b>بررسی خودکار:</b> روشن است ولی تا حالا اجرا نشده.'
+    return head + tr('digest.sweep.neverRan')
   }
 
   const hours = Math.floor((now - Number(run.finished_at)) / 3_600_000)
   // More than a day and a half means a run was missed. The scheduler ticks every
   // four minutes, so this is not a rounding artefact.
   if (hours >= 36) {
-    return `\n\n🤖 <b>بررسی خودکار:</b> آخرین اجرا ${hours} ساعت پیش — یعنی حداقل یک نوبت اجرا نشده.`
+    return head + tr('digest.sweep.stale', { hours })
   }
 
-  const bits = [`${run.sites} سایت`]
-  if (run.proposed) bits.push(`${run.proposed} پیشنهاد`)
-  if (run.performed) bits.push(`${run.performed} اقدام`)
-  if (run.failed) bits.push(`${run.failed} ناموفق`)
+  const bits = [tr('digest.sweep.sites', { count: Number(run.sites) })]
+  if (run.proposed) bits.push(tr('digest.sweep.proposed', { count: Number(run.proposed) }))
+  if (run.performed) bits.push(tr('digest.sweep.performed', { count: Number(run.performed) }))
+  if (run.failed) bits.push(tr('digest.sweep.failed', { count: Number(run.failed) }))
   // Ran, but with no model to think with — so proposing nothing says nothing
   // about the sites. Distinguished, or a degraded run reads as a clean bill.
-  if (run.degraded) bits.push(`${run.degraded} بدون مدل`)
-  if (run.skipped) bits.push(`${run.skipped} خارج از سقف`)
+  if (run.degraded) bits.push(tr('digest.sweep.degraded', { count: Number(run.degraded) }))
+  if (run.skipped) bits.push(tr('digest.sweep.skipped', { count: Number(run.skipped) }))
 
   // A degraded run counts against "nothing to do": it proposed nothing because
   // there was no model to think with, not because the sites are healthy. The
   // first version left it out and a broken gateway rendered as a clean fleet —
   // caught by the test that exists for exactly that pair.
   const quiet = !run.proposed && !run.performed && !run.failed && !run.degraded
-  return `\n\n🤖 <b>بررسی خودکار:</b> ${bits.join('، ')}${quiet ? ' — چیزی برای انجام نبود.' : ''}`
+  return head + bits.join(tr('digest.listSep')) + (quiet ? tr('digest.sweep.quiet') : '')
 }
 
 /** Telegram's HTML mode needs these escaped, and a tool's arguments are data. */
@@ -234,7 +238,7 @@ function escapeHtml(v) {
  * An outdated bridge is reported rather than alerted on: it is not an
  * emergency, and treating it as one is how people learn to skim the digest.
  */
-export function renderOutdatedSites(rows, current) {
+export function renderOutdatedSites(rows, current, locale = config.operatorLocale) {
   if (!current || !rows?.length) return ''
 
   const behind = rows
@@ -257,29 +261,30 @@ export function renderOutdatedSites(rows, current) {
   if (!behind.length && unknown <= 0) return ''
 
   const lines = behind.map((r) => `📦 <b>${escapeHtml(r.name)}</b> — ${escapeHtml(r.version)} → ${escapeHtml(current)}`)
-  if (unknown > 0) lines.push(`❔ ${unknown} سایت نسخه‌اش را گزارش نکرده`)
+  if (unknown > 0) lines.push(`❔ ${t(locale, 'digest.outdated.unknown', { count: unknown })}`)
 
-  return `\n\n🔄 <b>افزونه به‌روز نیست: ${behind.length}</b>\n` + lines.join('\n')
+  return `\n\n🔄 <b>${t(locale, 'digest.outdated.title', { count: behind.length })}</b>\n` + lines.join('\n')
 }
 
 /** Build the Telegram digest text from scan results. */
-export function renderDigest(results) {
+export function renderDigest(results, locale = config.operatorLocale) {
+  const tr = (key, vars) => t(locale, key, vars)
   const when = new Date().toISOString().slice(0, 16).replace('T', ' ')
   const totalCrit = results.reduce((a, r) => a + (r.critical || 0), 0)
   const totalSusp = results.reduce((a, r) => a + (r.suspicious || 0), 0)
   const head =
-    `🛡️ <b>گزارش امنیتی روزانه — DigiWP</b>\n` +
+    `🛡️ <b>${tr('digest.report.title')}</b>\n` +
     `📅 ${when} UTC\n` +
-    `🖥️ سایت‌ها: <b>${results.length}</b> · بحرانی: <b>${totalCrit}</b> · مشکوک: <b>${totalSusp}</b>\n`
+    `🖥️ ${tr('digest.report.totals', { sites: results.length, critical: totalCrit, suspicious: totalSusp })}\n`
   const lines = results.map((r) => {
-    if (!r.ok) return `❓ <b>${r.name}</b> — اسکن ناموفق (${r.error || 'خطا'})`
+    if (!r.ok) return `❓ <b>${r.name}</b> — ${tr('digest.report.scanFailed', { error: r.error || tr('digest.report.error') })}`
     const icon = r.critical ? '🚨' : r.robots ? '🚨' : r.suspicious ? '⚠️' : '✅'
-    let line = `${icon} <b>${r.name}</b> — بحرانی:${r.critical} مشکوک:${r.suspicious}`
-    if (r.robots) line += ' · robots آلوده'
+    let line = `${icon} <b>${r.name}</b> — ${tr('digest.report.siteCounts', { critical: r.critical, suspicious: r.suspicious })}`
+    if (r.robots) line += ` · ${tr('digest.report.robots')}`
     if (r.critical && r.findings.length) line += `\n   <code>${r.findings.filter((f) => f.severity === 'critical').map((f) => f.file).slice(0, 3).join(', ')}</code>`
     return line
   })
-  return head + '\n' + (lines.join('\n') || 'هیچ سایت جفت‌شده‌ای نیست.')
+  return head + '\n' + (lines.join('\n') || tr('digest.report.noSites'))
 }
 
 /** Full daily run: scan + render + send. Returns a summary object. */

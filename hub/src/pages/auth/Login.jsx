@@ -5,7 +5,8 @@ import Captcha from '../../components/captcha.jsx'
 import Icon from '../../lib/icons.jsx'
 import { useAuth } from '../../lib/auth.jsx'
 import { auth as authApi } from '../../lib/api.js'
-import { PasswordField } from './shared.jsx'
+import { AuthTitle, PasswordField } from './shared.jsx'
+import { t } from '../../lib/i18n.js'
 
 export default function Login() {
   const { login } = useAuth()
@@ -57,7 +58,7 @@ export default function Login() {
       sessionStorage.removeItem('loginReturnTo')
       nav(returnTo, { replace: true })
     } catch (e2) {
-      setErr(e2?.message || 'ورود ناموفق بود. دوباره تلاش کنید.')
+      setErr(e2?.message || t('auth.login.failed'))
       // The server tells us when the next attempt needs one. A challenge is
       // single-use, so any failed submit also burns the current one.
       if (e2?.data?.captchaRequired) setNeedCaptcha(true)
@@ -71,13 +72,13 @@ export default function Login() {
   return (
     <>
       <div className="dwp-auth-head">
-        <span className="gd-sec-head__eyebrow"><Icon name="lock-keyhole" size={13} /> حساب کاربری</span>
-        <h2 className="dwp-auth-title">{totpStep ? <>تأیید <span className="gd-gradient-text">دومرحله‌ای</span></> : <>ورود به <span className="gd-gradient-text">حساب</span></>}</h2>
-        <p className="dwp-auth-sub">{totpStep ? 'کد شش‌رقمی اپلیکیشن احراز هویت — یا یکی از کدهای بازیابی — را وارد کنید.' : 'به پنل پشتیبان هوشمند سایت خود وارد شوید.'}</p>
+        <span className="gd-sec-head__eyebrow"><Icon name="lock-keyhole" size={13} /> {t('auth.login.eyebrow')}</span>
+        <h2 className="dwp-auth-title"><AuthTitle k={totpStep ? 'auth.login.titleTotp' : 'auth.login.title'} /></h2>
+        <p className="dwp-auth-sub">{totpStep ? t('auth.login.subTotp') : t('auth.login.sub')}</p>
       </div>
       <form onSubmit={submit} className="dwp-auth-form">
         {/* autoFocus: the email is the first thing every visitor types. */}
-        <Input label="ایمیل" type="email" placeholder="you@example.com" leftIcon="mail"
+        <Input label={t('auth.shared.emailLabel')} type="email" placeholder={t('auth.shared.emailPlaceholder')} leftIcon="mail"
           value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus={!totpStep}
           disabled={totpStep}
           autoComplete="username" inputMode="email" />
@@ -87,16 +88,16 @@ export default function Login() {
             real session-length handling exists. */}
         <PasswordField
           id="login-password"
-          label="رمز عبور"
-          labelExtra={<Link to="/reset-password" className="dwp-auth-link">فراموشی رمز؟</Link>}
+          label={t('auth.shared.passwordLabel')}
+          labelExtra={<Link to="/reset-password" className="dwp-auth-link">{t('auth.login.forgot')}</Link>}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           disabled={totpStep}
         />
         {totpStep && (
           <Input
-            label="کد تأیید دومرحله‌ای"
-            placeholder="۱۲۳۴۵۶"
+            label={t('auth.login.codeLabel')}
+            placeholder={t('auth.login.codePlaceholder')}
             leftIcon="smartphone"
             value={totpCode}
             onChange={(e) => setTotpCode(e.target.value)}
@@ -119,14 +120,14 @@ export default function Login() {
           <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{err}</div>
         )}
         <Button variant="primary" size="lg" fullWidth rightIcon="arrow-left" type="submit" loading={busy}>
-          {totpStep ? 'تأیید و ورود' : 'ورود'}
+          {totpStep ? t('auth.login.submitTotp') : t('auth.login.submit')}
         </Button>
       </form>
       {/* A "sign in with Google" button used to sit here with no handler and no
           OAuth client — clicking it did nothing, on the one screen where a dead
           control makes someone think their account is broken. */}
       <p className="dwp-auth-foot">
-        حساب ندارید؟ <Link to="/register" className="dwp-auth-link dwp-auth-link--strong">ثبت‌نام کنید</Link>
+        {t('auth.login.noAccount')} <Link to="/register" className="dwp-auth-link dwp-auth-link--strong">{t('auth.login.registerLink')}</Link>
       </p>
     </>
   )

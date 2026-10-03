@@ -1,0 +1,1288 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the WP Claude Bridge package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: WP Claude Bridge 3.9.1\n"
+"Report-Msgid-Bugs-To: https://github.com/\n"
+"POT-Creation-Date: 2026-10-03 03:17+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#: wp-claude-bridge.php:801
+msgid "The uploads directory is not available; the backup could not be made."
+msgstr ""
+
+#: wp-claude-bridge.php:810
+msgid ""
+"Less than 50 MB of free disk space is left on the host; the backup was "
+"stopped so it would not fill the disk."
+msgstr ""
+
+#: wp-claude-bridge.php:952
+msgid "Invalid settings."
+msgstr ""
+
+#: wp-claude-bridge.php:1109
+msgid "No journal was found for this run ID."
+msgstr ""
+
+#: wp-claude-bridge.php:1115
+msgid "No wave-by-wave update run has been recorded yet."
+msgstr ""
+
+#: wp-claude-bridge.php:1119
+msgid "The journal of the latest run could not be read."
+msgstr ""
+
+#: wp-claude-bridge.php:1143
+msgid "No run was found to roll back."
+msgstr ""
+
+#: wp-claude-bridge.php:1147
+msgid "The journal of this run could not be read, or it has no waves."
+msgstr ""
+
+#: wp-claude-bridge.php:1164
+msgid "This run has no wave with a restorable snapshot (core has no snapshot)."
+msgstr ""
+
+#: wp-claude-bridge.php:1189
+msgid "The wave was rolled back and site health was measured again."
+msgstr ""
+
+#: wp-claude-bridge.php:1255
+msgctxt "backup component"
+msgid "Database (SQL)"
+msgstr ""
+
+#: wp-claude-bridge.php:1256
+msgid "Includes the posts, users, settings and orders tables"
+msgstr ""
+
+#: wp-claude-bridge.php:1264
+msgctxt "backup component"
+msgid "Plugins"
+msgstr ""
+
+#: wp-claude-bridge.php:1265
+msgid "The folder of every plugin installed on WordPress"
+msgstr ""
+
+#: wp-claude-bridge.php:1273
+msgctxt "backup component"
+msgid "Themes"
+msgstr ""
+
+#: wp-claude-bridge.php:1274
+msgid "The active theme folder and every other installed theme"
+msgstr ""
+
+#: wp-claude-bridge.php:1282
+msgctxt "backup component"
+msgid "Media and uploads"
+msgstr ""
+
+#: wp-claude-bridge.php:1283
+msgid "Images, videos and Media Library files"
+msgstr ""
+
+#: wp-claude-bridge.php:1298
+msgid "Unknown"
+msgstr ""
+
+#: wp-claude-bridge.php:1324 wp-claude-bridge.php:3877
+msgid "A backup ID is required."
+msgstr ""
+
+#: wp-claude-bridge.php:1328 wp-claude-bridge.php:1333
+#: wp-claude-bridge.php:3883 wp-claude-bridge.php:3889
+msgid "This backup was not found."
+msgstr ""
+
+#: wp-claude-bridge.php:1337
+msgid "This backup has no such file."
+msgstr ""
+
+#: wp-claude-bridge.php:1346
+msgid "The backup file could not be read."
+msgstr ""
+
+#: wp-claude-bridge.php:1367 wp-claude-bridge.php:3926
+msgid "The backup file could not be opened."
+msgstr ""
+
+#: wp-claude-bridge.php:1471
+msgid ""
+"Always download commercial plugin files from the vendor site, not from this "
+"infected server — otherwise the same backdoor comes back."
+msgstr ""
+
+#: wp-claude-bridge.php:1564
+msgid ""
+"Report only. Nothing is deleted automatically — uploads also holds real "
+"media."
+msgstr ""
+
+#: wp-claude-bridge.php:1623
+msgid ""
+"This is a report, not an action. Deleting a user needs the site owner’s "
+"approval — an automatic deletion could lock the owner out."
+msgstr ""
+
+#: wp-claude-bridge.php:1637
+msgid ""
+"Rotating the keys requires confirm=true. It logs every user out of the site."
+msgstr ""
+
+#: wp-claude-bridge.php:1645
+msgid "wp-config.php is not writable."
+msgstr ""
+
+#: wp-claude-bridge.php:1653
+msgid "Fetching new keys failed."
+msgstr ""
+
+#: wp-claude-bridge.php:1664
+msgid "The edit failed; wp-config.php was left untouched."
+msgstr ""
+
+#: wp-claude-bridge.php:1668
+msgid ""
+"The keys were rotated. Every session was invalidated — including the "
+"attacker’s."
+msgstr ""
+
+#: wp-claude-bridge.php:1689
+msgid ""
+"Core matches the official release, the malware scan is empty, and no "
+"critical file remains."
+msgstr ""
+
+#: wp-claude-bridge.php:1690
+msgid ""
+"Something still remains — until it is fixed, do not consider the site clean."
+msgstr ""
+
+#: wp-claude-bridge.php:2419
+msgid "The page is healthy right now — there is nothing to find."
+msgstr ""
+
+#. translators: %s: theme stylesheet (folder name).
+#: wp-claude-bridge.php:2431
+#, php-format
+msgid ""
+"The theme “%s” is the cause — the page was healthy with the default theme."
+msgstr ""
+
+#: wp-claude-bridge.php:2435
+msgid "There was no active plugin to check, and the theme is not the cause."
+msgstr ""
+
+#. translators: 1: plugin file, 2: number of bisection steps taken, 3: number of active plugins (one-by-one toggles avoided).
+#: wp-claude-bridge.php:2443
+#, php-format
+msgid ""
+"The plugin “%1$s” is the cause. Found in %2$d steps instead of switching "
+"plugins off and on %3$d times."
+msgstr ""
+
+#: wp-claude-bridge.php:2447
+msgid ""
+"Switching plugins off did not fix the page — the problem is probably in "
+"core, the host or the database."
+msgstr ""
+
+#. translators: %s: comma-separated list of plugin files that are not active again.
+#: wp-claude-bridge.php:2477
+#, php-format
+msgid "The active plugins do not match the original state: %s"
+msgstr ""
+
+#. translators: 1: theme that is active now, 2: theme that should have been restored.
+#: wp-claude-bridge.php:2479
+#, php-format
+msgid "The theme stayed on “%1$s”, not “%2$s”."
+msgstr ""
+
+#: wp-claude-bridge.php:2557
+msgid "Queued"
+msgstr ""
+
+#: wp-claude-bridge.php:2644
+msgid "Done"
+msgstr ""
+
+#: wp-claude-bridge.php:2686
+msgid "Backup created"
+msgstr ""
+
+#: wp-claude-bridge.php:2686
+msgid "Backup failed"
+msgstr ""
+
+#: wp-claude-bridge.php:2977
+msgid ""
+"Counting starts when plugins load; a few early core queries are not included."
+msgstr ""
+
+#. translators: %d: number of expired transients deleted.
+#: wp-claude-bridge.php:3047
+#, php-format
+msgid "%d expired transient deleted."
+msgid_plural "%d expired transients deleted."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %d: number of expired transients still left.
+#: wp-claude-bridge.php:3050
+#, php-format
+msgid "%d remains — run it again."
+msgid_plural "%d remain — run it again."
+msgstr[0] ""
+msgstr[1] ""
+
+#: wp-claude-bridge.php:3074
+msgid "Site-wide check done"
+msgstr ""
+
+#. translators: %s: error message.
+#: wp-claude-bridge.php:3095
+#, php-format
+msgid "The page did not load: %s"
+msgstr ""
+
+#: wp-claude-bridge.php:3099
+msgid ""
+"No page report was recorded. This usually means the page was served from "
+"cache and never reached PHP — which is good news in itself."
+msgstr ""
+
+#: wp-claude-bridge.php:3105
+msgid "Speed check done"
+msgstr ""
+
+#: wp-claude-bridge.php:3226
+msgid "Core has no per-item files to snapshot."
+msgstr ""
+
+#. translators: %s: plugin or theme slug.
+#: wp-claude-bridge.php:3244
+#, php-format
+msgid "Theme folder not found: %s"
+msgstr ""
+
+#: wp-claude-bridge.php:3263
+msgid "Invalid plugin name."
+msgstr ""
+
+#. translators: %s: plugin or theme slug.
+#: wp-claude-bridge.php:3270
+#, php-format
+msgid "Plugin file not found: %s"
+msgstr ""
+
+#. translators: %s: plugin or theme slug.
+#: wp-claude-bridge.php:3275
+#, php-format
+msgid "Plugin folder not found: %s"
+msgstr ""
+
+#: wp-claude-bridge.php:3283
+msgid "ZipArchive or the run directory is not available."
+msgstr ""
+
+#: wp-claude-bridge.php:3293
+msgid "Opening the zip for the snapshot failed."
+msgstr ""
+
+#: wp-claude-bridge.php:3312
+msgid "The snapshot was written empty."
+msgstr ""
+
+#: wp-claude-bridge.php:3345
+msgid "The snapshot is not available; the rollback could not be done."
+msgstr ""
+
+#: wp-claude-bridge.php:3355
+msgid "Creating the temporary rollback folder failed."
+msgstr ""
+
+#: wp-claude-bridge.php:3359 wp-claude-bridge.php:3374
+#: wp-claude-bridge.php:3395
+msgid "Opening the snapshot failed."
+msgstr ""
+
+#: wp-claude-bridge.php:3364
+msgid "Extracting the snapshot failed."
+msgstr ""
+
+#: wp-claude-bridge.php:3369
+msgid "Replacing the files with the restored copy failed."
+msgstr ""
+
+#: wp-claude-bridge.php:3385
+msgid "The snapshot is empty."
+msgstr ""
+
+#: wp-claude-bridge.php:3388
+msgid "Removing the broken version failed."
+msgstr ""
+
+#: wp-claude-bridge.php:3391
+msgid "Creating the rollback folder failed."
+msgstr ""
+
+#: wp-claude-bridge.php:3400
+msgid "Extracting the snapshot did not complete."
+msgstr ""
+
+#: wp-claude-bridge.php:3589
+msgid "There was nothing to update."
+msgstr ""
+
+#: wp-claude-bridge.php:3631
+msgid ""
+"Less than 100 MB of free disk space is left on the host; the run was stopped "
+"because snapshots and rollback need room."
+msgstr ""
+
+#: wp-claude-bridge.php:3647
+msgid "Preflight complete; the wave-by-wave update is starting."
+msgstr ""
+
+#. translators: %d: number of items updated.
+#: wp-claude-bridge.php:3666
+#, php-format
+msgid "%d item updated"
+msgid_plural "%d items updated"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %d: number of items whose update failed.
+#: wp-claude-bridge.php:3668
+#, php-format
+msgid "%d failed"
+msgid_plural "%d failed"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %d: number of updates that broke the site and were rolled back.
+#: wp-claude-bridge.php:3672
+#, php-format
+msgid "%d update broke the site and was rolled back"
+msgid_plural "%d updates broke the site and were rolled back"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %d: number of queued items not run because the queue stopped.
+#: wp-claude-bridge.php:3676
+#, php-format
+msgid "%d item was not run after the queue stopped"
+msgid_plural "%d items were not run after the queue stopped"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: Ends the update summary sentence; %s is the comma-joined list of counts.
+#: wp-claude-bridge.php:3681
+#, php-format
+msgctxt "update summary"
+msgid "%s."
+msgstr ""
+
+#: wp-claude-bridge.php:3681 wp-claude-bridge.php:4792
+msgctxt "list separator"
+msgid ", "
+msgstr ""
+
+#: wp-claude-bridge.php:3722
+msgid "No core update is available"
+msgstr ""
+
+#: wp-claude-bridge.php:3760
+msgid "The update did not complete"
+msgstr ""
+
+#: wp-claude-bridge.php:3805
+msgid ""
+"Site health dropped after the core update. Core is not rolled back "
+"automatically (the database schema has already moved forward); the safety "
+"backup exists and the decision is a human one."
+msgstr ""
+
+#: wp-claude-bridge.php:3822
+msgid "No snapshot was available; automatic rollback was not possible."
+msgstr ""
+
+#. translators: %s: plugin, theme or core item name.
+#: wp-claude-bridge.php:3848
+#, php-format
+msgid "Site health dropped after this wave and the queue was stopped: %s"
+msgstr ""
+
+#. translators: 1: position in the queue, 2: queue length, 3: item name.
+#: wp-claude-bridge.php:3854
+#, php-format
+msgid "Updating %1$d of %2$d: %3$s"
+msgstr ""
+
+#: wp-claude-bridge.php:3894
+msgid "The database file of this backup could not be read."
+msgstr ""
+
+#: wp-claude-bridge.php:3911
+msgid ""
+"The safety backup before the restore could not be taken — the restore was "
+"not performed."
+msgstr ""
+
+#. translators: %d: number of SQL statements replayed so far.
+#: wp-claude-bridge.php:3983
+#, php-format
+msgid "Restore: %d statement executed"
+msgid_plural "Restore: %d statements executed"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %d: number of SQL errors during the restore.
+#: wp-claude-bridge.php:3993
+#, php-format
+msgid "Restore finished with %d error"
+msgid_plural "Restore finished with %d errors"
+msgstr[0] ""
+msgstr[1] ""
+
+#: wp-claude-bridge.php:3994
+msgid "Restore complete"
+msgstr ""
+
+#. translators: 1: current file number, 2: total files.
+#: wp-claude-bridge.php:4049
+#, php-format
+msgid "Checking file %1$d of %2$d"
+msgstr ""
+
+#: wp-claude-bridge.php:4067
+msgid "Integrity check complete"
+msgstr ""
+
+#. translators: 1: current file number, 2: total files.
+#: wp-claude-bridge.php:4117
+#, php-format
+msgid "Scanning file %1$d of %2$d"
+msgstr ""
+
+#: wp-claude-bridge.php:4121
+msgid "Scan complete"
+msgstr ""
+
+#: wp-claude-bridge.php:4133
+msgid "Check finished"
+msgstr ""
+
+#: wp-claude-bridge.php:4605
+msgid "The block structure is nested too deeply (maximum 10 levels)."
+msgstr ""
+
+#: wp-claude-bridge.php:4608
+msgid "The block specs list is empty or not an array."
+msgstr ""
+
+#: wp-claude-bridge.php:4612
+msgid "Every block must be an object with a name key."
+msgstr ""
+
+#. translators: %s: block name as supplied.
+#: wp-claude-bridge.php:4616
+#, php-format
+msgid "Invalid block name: “%s” — it must look like core/paragraph."
+msgstr ""
+
+#. translators: %s: block name or widget type.
+#: wp-claude-bridge.php:4622
+#, php-format
+msgid ""
+"The block “%s” is not registered on this site; see the allowed list with "
+"list_block_types."
+msgstr ""
+
+#. translators: %s: block name or widget type.
+#: wp-claude-bridge.php:4626
+#, php-format
+msgid "The attributes of block “%s” must be an object."
+msgstr ""
+
+#. translators: %s: block name or widget type.
+#: wp-claude-bridge.php:4629
+#, php-format
+msgid "The content of block “%s” must be a string."
+msgstr ""
+
+#. translators: %s: block name or widget type.
+#: wp-claude-bridge.php:4633
+#, php-format
+msgid "The inner list of block “%s” must be an array."
+msgstr ""
+
+#: wp-claude-bridge.php:4736
+msgid "The WordPress block registry is not available on this site."
+msgstr ""
+
+#: wp-claude-bridge.php:4740
+msgid "No block types are registered on this site."
+msgstr ""
+
+#: wp-claude-bridge.php:4784
+msgid ""
+"The number of blocks parsed back does not match the input; review before "
+"writing."
+msgstr ""
+
+#. translators: %s: list of block names that had no content.
+#: wp-claude-bridge.php:4792
+#, php-format
+msgid ""
+"These blocks had no content at all (no content, no attributes.content, no "
+"inner) and were inserted as self-closing blocks; if they are meant to show "
+"text, nothing renders on the front end: %s"
+msgstr ""
+
+#: wp-claude-bridge.php:4798
+msgid ""
+"This is a preview; nothing has been saved. You can pass the same specs to "
+"create_block_page or append_blocks."
+msgstr ""
+
+#: wp-claude-bridge.php:4813 wp-claude-bridge.php:5160
+msgid "A title is required."
+msgstr ""
+
+#: wp-claude-bridge.php:4817
+msgid "post_type can only be page or post."
+msgstr ""
+
+#: wp-claude-bridge.php:4821 wp-claude-bridge.php:5164
+msgid "status must be draft, pending, private or publish."
+msgstr ""
+
+#. translators: %s: error message.
+#: wp-claude-bridge.php:4838
+#, php-format
+msgid "Creating the post failed: %s"
+msgstr ""
+
+#. translators: 1: post type (page or post), 2: new post ID.
+#: wp-claude-bridge.php:4845
+#, php-format
+msgid "Created %1$s with ID %2$d."
+msgstr ""
+
+#: wp-claude-bridge.php:4845
+msgid "The page was created as a draft so a human can review it first."
+msgstr ""
+
+#: wp-claude-bridge.php:4854
+msgid "Invalid post ID (post_id)."
+msgstr ""
+
+#: wp-claude-bridge.php:4858
+msgid "No post was found with this ID."
+msgstr ""
+
+#: wp-claude-bridge.php:4861
+msgid "This post is in the trash; it must be restored first."
+msgstr ""
+
+#: wp-claude-bridge.php:4864
+msgid "This post type has no editor; appending blocks to it makes no sense."
+msgstr ""
+
+#: wp-claude-bridge.php:4871
+msgid ""
+"This page was built with Elementor and renders from Elementor data; "
+"Gutenberg blocks appended to its content would not be visible. Use the "
+"elementor_section_append tool to add sections."
+msgstr ""
+
+#. translators: %s: error message.
+#: wp-claude-bridge.php:4884
+#, php-format
+msgid "Updating the content failed: %s"
+msgstr ""
+
+#: wp-claude-bridge.php:4895
+msgid ""
+"The blocks were appended to the end of this post’s content; earlier versions "
+"are kept in revisions."
+msgstr ""
+
+#: wp-claude-bridge.php:4896
+msgid ""
+"The blocks were appended to the end of this post’s content. Note: revisions "
+"are disabled for this post type, so there is no automatic way back."
+msgstr ""
+
+#: wp-claude-bridge.php:4969
+msgid "The sections list is empty or not an array."
+msgstr ""
+
+#: wp-claude-bridge.php:4972
+msgid "No Elementor widgets are registered on this site."
+msgstr ""
+
+#: wp-claude-bridge.php:4976
+msgid "A section must be an object."
+msgstr ""
+
+#: wp-claude-bridge.php:4979
+msgid "Section settings must be an object."
+msgstr ""
+
+#: wp-claude-bridge.php:4983
+msgid "Every section needs at least one column."
+msgstr ""
+
+#: wp-claude-bridge.php:4987
+msgid "A column must be an object."
+msgstr ""
+
+#: wp-claude-bridge.php:4990
+msgid "Column settings must be an object."
+msgstr ""
+
+#: wp-claude-bridge.php:4994
+msgid "Every column needs at least one widget."
+msgstr ""
+
+#: wp-claude-bridge.php:4998
+msgid "A widget must be an object."
+msgstr ""
+
+#. translators: %s: Elementor widget type as supplied.
+#: wp-claude-bridge.php:5002
+#, php-format
+msgid ""
+"The widget “%s” is not registered on this site; see the allowed list with "
+"list_elementor_widgets."
+msgstr ""
+
+#. translators: %s: block name or widget type.
+#: wp-claude-bridge.php:5005
+#, php-format
+msgid "The settings of widget “%s” must be an object."
+msgstr ""
+
+#: wp-claude-bridge.php:5120
+msgid ""
+"Elementor is not active on this site; there is no Elementor widget list."
+msgstr ""
+
+#: wp-claude-bridge.php:5124
+msgid ""
+"Elementor is active but its widget manager is not available (incompatible "
+"Elementor version)."
+msgstr ""
+
+#: wp-claude-bridge.php:5128
+msgid "Elementor is active but no widgets are registered on this site."
+msgstr ""
+
+#: wp-claude-bridge.php:5156
+msgid ""
+"Elementor is not active on this site; an Elementor page cannot be created."
+msgstr ""
+
+#: wp-claude-bridge.php:5168 wp-claude-bridge.php:5228
+msgid ""
+"Elementor is active but its widgets could not be read; the Elementor version "
+"is incompatible."
+msgstr ""
+
+#. translators: %s: error message.
+#: wp-claude-bridge.php:5185
+#, php-format
+msgid "Creating the page failed: %s"
+msgstr ""
+
+#: wp-claude-bridge.php:5188
+msgid ""
+"The page was created but writing the Elementor data failed; review or delete "
+"the page in the dashboard."
+msgstr ""
+
+#: wp-claude-bridge.php:5196
+msgid ""
+"The Elementor page was created as a draft so a human can review it first."
+msgstr ""
+
+#: wp-claude-bridge.php:5196
+msgid "The Elementor page was created."
+msgstr ""
+
+#: wp-claude-bridge.php:5204
+msgid "Elementor is not active on this site; sections cannot be appended."
+msgstr ""
+
+#: wp-claude-bridge.php:5208
+msgid "Invalid page ID (post_id)."
+msgstr ""
+
+#: wp-claude-bridge.php:5212
+msgid "No page was found with this ID."
+msgstr ""
+
+#: wp-claude-bridge.php:5215
+msgid "This page is in the trash; it must be restored first."
+msgstr ""
+
+#: wp-claude-bridge.php:5219
+msgid ""
+"This page was not built with Elementor (_elementor_edit_mode is not "
+"builder); nothing was changed."
+msgstr ""
+
+#: wp-claude-bridge.php:5224
+msgid "The Elementor data of this page could not be read; nothing was changed."
+msgstr ""
+
+#: wp-claude-bridge.php:5240
+msgid "Writing the Elementor data failed; nothing was changed."
+msgstr ""
+
+#: wp-claude-bridge.php:5247
+msgid ""
+"The sections were appended to the end of the Elementor page and the old CSS "
+"was cleared so it gets rebuilt."
+msgstr ""
+
+#: wp-claude-bridge.php:5961
+msgid "Update from the DigiWP server."
+msgstr ""
+
+#: wp-claude-bridge.php:6438
+msgid "Unknown client_id."
+msgstr ""
+
+#: wp-claude-bridge.php:6441
+msgid "redirect_uri does not match the registered client."
+msgstr ""
+
+#: wp-claude-bridge.php:6485
+msgid "You must be logged in as an administrator to authorize this connection."
+msgstr ""
+
+#: wp-claude-bridge.php:6508
+msgid "Connect to Claude"
+msgstr ""
+
+#: wp-claude-bridge.php:6517
+msgid "Allow this connection"
+msgstr ""
+
+#. translators: %s: name of the client application asking for access.
+#: wp-claude-bridge.php:6521
+#, php-format
+msgid ""
+"The application %s wants to connect to your site with administrator access "
+"(themes, plugins, products, orders and settings)."
+msgstr ""
+
+#. translators: %s: login name of the signed-in administrator.
+#: wp-claude-bridge.php:6528
+#, php-format
+msgid "Signed in as: %s"
+msgstr ""
+
+#: wp-claude-bridge.php:6532
+msgid "Approve and connect"
+msgstr ""
+
+#: wp-claude-bridge.php:6533
+msgid "Deny"
+msgstr ""
+
+#: wp-claude-bridge.php:6548
+msgid ""
+"This authorization request has expired. Please start the connection from "
+"Claude again."
+msgstr ""
+
+#: wp-claude-bridge.php:6737
+msgid ""
+"This site is now a self-hosted MCP server: theme & plugin file editing, "
+"plugin creation, theme/plugin activation, preview, cache, and full WordPress "
+"+ WooCommerce control (90+ tools)."
+msgstr ""
+
+#: wp-claude-bridge.php:6739
+msgid "Easiest: connect with the token in the URL (no header)"
+msgstr ""
+
+#: wp-claude-bridge.php:6740
+msgid ""
+"In Claude, add a <b>Custom Connector</b> and paste this single URL. Nothing "
+"else to configure — the token is built in."
+msgstr ""
+
+#: wp-claude-bridge.php:6742
+msgid ""
+"Keep this URL secret — anyone with it has admin access. Regenerate the token "
+"below to revoke it."
+msgstr ""
+
+#: wp-claude-bridge.php:6744
+msgid "Alternative: OAuth via native Application Passwords"
+msgstr ""
+
+#: wp-claude-bridge.php:6745
+msgid ""
+"Add a Custom Connector with the plain URL below. Claude sends you to "
+"WordPress’s own <b>Authorize Application</b> screen (one click, no header). "
+"Access is a standard Application Password you can revoke any time under "
+"<b>Users &rarr; Profile &rarr; Application Passwords</b>."
+msgstr ""
+
+#: wp-claude-bridge.php:6748
+msgid "Alternative: Bearer header"
+msgstr ""
+
+#: wp-claude-bridge.php:6750
+msgid "URL"
+msgstr ""
+
+#: wp-claude-bridge.php:6751
+msgid "Header"
+msgstr ""
+
+#: wp-claude-bridge.php:6755
+msgid "WordPress engineering playbooks"
+msgstr ""
+
+#: wp-claude-bridge.php:6761
+#, php-format
+msgid ""
+"%s playbook is available to the connected model as tools, MCP resources, and "
+"prompts. DigiWP installations load requested text on demand; the documents "
+"are not stored in this site’s webroot."
+msgid_plural ""
+"%s playbooks are available to the connected model as tools, MCP resources, "
+"and prompts. DigiWP installations load requested text on demand; the "
+"documents are not stored in this site’s webroot."
+msgstr[0] ""
+msgstr[1] ""
+
+#: wp-claude-bridge.php:6771
+msgid "Engineering guidance"
+msgstr ""
+
+#: wp-claude-bridge.php:6772
+msgid ""
+"The playbook service is not configured or is temporarily unavailable. The "
+"built-in cookbook and all site-management tools remain available."
+msgstr ""
+
+#: wp-claude-bridge.php:6775 wp-claude-bridge.php:8001
+msgid "Cookbook"
+msgstr ""
+
+#: wp-claude-bridge.php:6781
+#, php-format
+msgid ""
+"The plugin ships %s ready-to-paste recipe — the jobs people actually hand to "
+"an AI on a WordPress site, each written for the tools above. The ones that "
+"fit this site’s stack also show on your <b>Dashboard</b>. The connected "
+"model can read them itself with <code>list_recipes</code> and "
+"<code>get_recipe</code>."
+msgid_plural ""
+"The plugin ships %s ready-to-paste recipes — the jobs people actually hand "
+"to an AI on a WordPress site, each written for the tools above. The ones "
+"that fit this site’s stack also show on your <b>Dashboard</b>. The connected "
+"model can read them itself with <code>list_recipes</code> and "
+"<code>get_recipe</code>."
+msgstr[0] ""
+msgstr[1] ""
+
+#: wp-claude-bridge.php:6789
+msgid "Browse the cookbook"
+msgstr ""
+
+#: wp-claude-bridge.php:6791
+msgid "Connection modes (built-in fallback)"
+msgstr ""
+
+#: wp-claude-bridge.php:6792
+msgid ""
+"All endpoints below speak the same MCP protocol and accept the same token. "
+"If a host, security plugin, or proxy blocks one, point Claude at another:"
+msgstr ""
+
+#: wp-claude-bridge.php:6794
+msgid "Primary (REST)"
+msgstr ""
+
+#: wp-claude-bridge.php:6795
+msgid "REST aliases"
+msgstr ""
+
+#: wp-claude-bridge.php:6796
+msgid "— when <code>/wp-json/</code> REST routes are disabled"
+msgstr ""
+
+#: wp-claude-bridge.php:6797
+msgid "Query-var"
+msgstr ""
+
+#: wp-claude-bridge.php:6797
+msgid "— when the REST API is fully off"
+msgstr ""
+
+#: wp-claude-bridge.php:6798
+msgid ""
+"JSON by default · append <code>&amp;transport=sse</code> for Server-Sent "
+"Events"
+msgstr ""
+
+#: wp-claude-bridge.php:6798
+msgid "Response format"
+msgstr ""
+
+#: wp-claude-bridge.php:6800
+msgid ""
+"If your host strips the <code>Authorization</code> header, append <code>?"
+"token=…</code> (or <code>&amp;token=…</code>) to any endpoint above."
+msgstr ""
+
+#: wp-claude-bridge.php:6803
+msgid "Regenerate token"
+msgstr ""
+
+#: wp-claude-bridge.php:6807
+msgid "Hub Connector Mode"
+msgstr ""
+
+#: wp-claude-bridge.php:6807
+msgid "— route everything through your server"
+msgstr ""
+
+#: wp-claude-bridge.php:6809
+msgid ""
+"Turn this plugin into a <b>bridge</b> instead of a directly-operable "
+"endpoint. When on, this site accepts MCP requests <b>only</b> when they are "
+"signed by your paired hub server — direct token, Application&nbsp;Password "
+"and logged-in access are refused. Nothing happens on the site except through "
+"<b>your</b> server (the relay)."
+msgstr ""
+
+#. translators: %s: hub server URL, wrapped in <code>.
+#: wp-claude-bridge.php:6814
+#, php-format
+msgid ""
+"<b>Connector mode is ON.</b> Direct MCP endpoints are locked; only %s can "
+"operate this site (HMAC-signed)."
+msgstr ""
+
+#: wp-claude-bridge.php:6815
+msgid "your hub server"
+msgstr ""
+
+#: wp-claude-bridge.php:6819
+msgid ""
+"Connector mode is <b>off</b> — this site still works as a standalone MCP "
+"server via the URLs above."
+msgstr ""
+
+#: wp-claude-bridge.php:6824
+msgid "Enable connector mode"
+msgstr ""
+
+#: wp-claude-bridge.php:6825
+msgid "Only accept commands signed by my hub server"
+msgstr ""
+
+#: wp-claude-bridge.php:6827
+msgid "Hub server URL"
+msgstr ""
+
+#: wp-claude-bridge.php:6829
+msgid "Your server’s API base — the only origin allowed to drive this site."
+msgstr ""
+
+#: wp-claude-bridge.php:6831
+msgid "Shared secret"
+msgstr ""
+
+#: wp-claude-bridge.php:6832
+msgid "paste the secret generated by your hub"
+msgstr ""
+
+#: wp-claude-bridge.php:6832
+msgid "•••••••• (saved — leave blank to keep)"
+msgstr ""
+
+#: wp-claude-bridge.php:6833
+msgid ""
+"Used to HMAC-sign every request. Generate it on your hub and paste it here "
+"once."
+msgstr ""
+
+#: wp-claude-bridge.php:6835
+msgid "Site key"
+msgstr ""
+
+#: wp-claude-bridge.php:6836
+msgid "— (created on save)"
+msgstr ""
+
+#: wp-claude-bridge.php:6837
+msgid "Give this to your hub so it can address this site."
+msgstr ""
+
+#: wp-claude-bridge.php:6839
+msgid "On save"
+msgstr ""
+
+#: wp-claude-bridge.php:6840
+msgid ""
+"Announce this site to the hub now (POST <code>/connector/register</code>)"
+msgstr ""
+
+#: wp-claude-bridge.php:6843
+msgid "Save connector settings"
+msgstr ""
+
+#: wp-claude-bridge.php:6847 wp-claude-bridge.php:7999
+msgid "Activity log"
+msgstr ""
+
+#. translators: %d: maximum number of log entries kept.
+#: wp-claude-bridge.php:6850
+#, php-format
+msgid "— the last %d tool calls"
+msgstr ""
+
+#: wp-claude-bridge.php:6858
+msgid "Last authorized call:"
+msgstr ""
+
+#: wp-claude-bridge.php:6858 wp-claude-bridge.php:7933
+msgid "never"
+msgstr ""
+
+#: wp-claude-bridge.php:6861
+msgid "Call"
+msgstr ""
+
+#: wp-claude-bridge.php:6861
+msgid "Result"
+msgstr ""
+
+#: wp-claude-bridge.php:6861
+msgid "Took"
+msgstr ""
+
+#: wp-claude-bridge.php:6861
+msgid "When"
+msgstr ""
+
+#: wp-claude-bridge.php:6867
+msgid "error"
+msgstr ""
+
+#: wp-claude-bridge.php:6867
+msgid "ok"
+msgstr ""
+
+#. translators: %d: duration in milliseconds.
+#: wp-claude-bridge.php:6870
+#, php-format
+msgid "%d ms"
+msgstr ""
+
+#: wp-claude-bridge.php:6877
+msgid "Nothing logged yet — the log fills up as Claude works on this site."
+msgstr ""
+
+#: wp-claude-bridge.php:6881
+msgid ""
+"Log tool calls (tool name, transport, result and duration — never arguments "
+"or content)"
+msgstr ""
+
+#: wp-claude-bridge.php:6882
+msgid "Clear the log now"
+msgstr ""
+
+#: wp-claude-bridge.php:6883
+msgid "Save log settings"
+msgstr ""
+
+#: wp-claude-bridge.php:7029
+msgid "SEO plugin"
+msgstr ""
+
+#: wp-claude-bridge.php:7031
+msgid "Forms"
+msgstr ""
+
+#: wp-claude-bridge.php:7032
+msgid "Caching plugin"
+msgstr ""
+
+#: wp-claude-bridge.php:7033
+msgid "Block theme"
+msgstr ""
+
+#: wp-claude-bridge.php:7034
+msgid "Classic theme"
+msgstr ""
+
+#: wp-claude-bridge.php:7035
+msgid "Multisite"
+msgstr ""
+
+#: wp-claude-bridge.php:7842 wp-claude-bridge.php:8053
+msgid "Claude Cookbook"
+msgstr ""
+
+#: wp-claude-bridge.php:7902
+msgid "Copied ✓"
+msgstr ""
+
+#. translators: %s: human-readable time difference, e.g. "2 hours".
+#: wp-claude-bridge.php:7936
+#, php-format
+msgid "%s ago"
+msgstr ""
+
+#: wp-claude-bridge.php:7949
+msgid "Connected"
+msgstr ""
+
+#: wp-claude-bridge.php:7949
+msgid "Idle"
+msgstr ""
+
+#: wp-claude-bridge.php:7949
+msgid "Not connected yet"
+msgstr ""
+
+#. translators: %s: relative time, e.g. "2 hours ago".
+#: wp-claude-bridge.php:7957
+#, php-format
+msgid "active %s"
+msgstr ""
+
+#: wp-claude-bridge.php:7960
+msgid "connect Claude to this site"
+msgstr ""
+
+#: wp-claude-bridge.php:7963
+msgid "Hub connector"
+msgstr ""
+
+#: wp-claude-bridge.php:7968
+msgid "Recent activity"
+msgstr ""
+
+#: wp-claude-bridge.php:7977
+msgid "Recipes picked for this site"
+msgstr ""
+
+#: wp-claude-bridge.php:7986 wp-claude-bridge.php:8105
+msgid "Copy prompt"
+msgstr ""
+
+#: wp-claude-bridge.php:7991
+msgid ""
+"Prompts copy with the recipe link. Fill the [bracketed] parts, or let your "
+"AI ask."
+msgstr ""
+
+#. translators: %d: number of recipes in the cookbook.
+#: wp-claude-bridge.php:7995
+#, php-format
+msgid "Browse all %d recipe"
+msgid_plural "Browse all %d recipes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: wp-claude-bridge.php:8000
+msgid "Connection"
+msgstr ""
+
+#: wp-claude-bridge.php:8009
+msgid "Insufficient permissions."
+msgstr ""
+
+#: wp-claude-bridge.php:8054
+msgid ""
+"Prompts for the jobs people actually hand to an AI on a WordPress site. Copy "
+"one, fill in the [bracketed] parts, and paste it into Claude with this site "
+"connected — every recipe is written for the tools this bridge exposes."
+msgstr ""
+
+#: wp-claude-bridge.php:8055
+msgid "This site looks like:"
+msgstr ""
+
+#: wp-claude-bridge.php:8060
+msgid "Search recipes…"
+msgstr ""
+
+#: wp-claude-bridge.php:8061
+msgid "Only what fits this site"
+msgstr ""
+
+#: wp-claude-bridge.php:8062
+msgid "Filter"
+msgstr ""
+
+#: wp-claude-bridge.php:8064
+msgid "Reset"
+msgstr ""
+
+#: wp-claude-bridge.php:8069
+msgid "All"
+msgstr ""
+
+#: wp-claude-bridge.php:8076
+msgid "No recipe matches that."
+msgstr ""
+
+#: wp-claude-bridge.php:8076
+msgid "Show everything"
+msgstr ""
+
+#. translators: %s: required stack components, e.g. "WooCommerce / Elementor".
+#: wp-claude-bridge.php:8097
+#, php-format
+msgid "Needs %s"
+msgstr ""
+
+#: wp-claude-bridge.php:8098
+msgid "not installed"
+msgstr ""
+
+#: wp-claude-bridge.php:8106
+msgid "Tools:"
+msgstr ""
+
+#: wp-claude-bridge.php:8109
+msgid "Show the prompt"
+msgstr ""
+
+#: wp-claude-bridge.php:8117
+msgid ""
+"Connected model? It can read this cookbook itself with the "
+"<code>list_recipes</code> and <code>get_recipe</code> tools — ask Claude "
+"“what recipes fit this site?”"
+msgstr ""

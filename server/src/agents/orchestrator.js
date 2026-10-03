@@ -1,6 +1,10 @@
 // ============================================================
 // Multi-Agent WordPress Support Orchestrator (L0 Supervisor)
-// مدیر هماهنگی و عارضه‌یابی چند لایه هوشمند وردپرس
+//
+// Language: `options.locale` (the caller's req.locale, or the owner's
+// users.lang for unattended runs) decides the language of everything a person
+// reads — specialist findings, the deterministic summary, and the model's
+// reply, which the English system prompt asks for in that language.
 // ============================================================
 import { SECURITY_AGENT } from './specialists/security.js'
 import { PERFORMANCE_AGENT } from './specialists/performance.js'
@@ -8,12 +12,13 @@ import { UPDATES_AGENT } from './specialists/updates.js'
 import { RESCUE_AGENT } from './specialists/rescue.js'
 import { ECOMMERCE_AGENT } from './specialists/ecommerce.js'
 import { SAFETY_CONTROLLER } from './safety.js'
-import { completionsEndpoint, plainReply } from '../assistant.js'
+import { completionsEndpoint, plainReply, languageName } from '../assistant.js'
 import { config } from '../config.js'
 import * as events from '../events.js'
 import * as proposalStore from '../proposals.js'
 import * as connector from '../connector.js'
 import { readAuthority } from '../authority.js'
+import { t, DEFAULT_LOCALE } from '../i18n.js'
 
 export class WordPressMultiAgentOrchestrator {
   constructor() {
@@ -58,6 +63,7 @@ export class WordPressMultiAgentOrchestrator {
       authorityLevel,
       query: options.query,
       results: specialistResults,
+      locale: options.locale,
     })
 
     return {
@@ -72,9 +78,10 @@ export class WordPressMultiAgentOrchestrator {
   }
 
   /**
-   * Use NabuGate AI gateway to synthesize insights and generate actionable Persian advice.
+   * Use NabuGate AI gateway to synthesize insights and generate actionable advice
+   * in the reader's language.
    */
-  async synthesizeReport({ site, authorityLevel, query, results }) {
+  async synthesizeReport({ site, authorityLevel, query, results, locale = DEFAULT_LOCALE }) {
     const target = { url: site.url, secret: site.secret, siteKey: site.site_key }
     const proposals = []
     const performedActions = []
@@ -83,18 +90,18 @@ export class WordPressMultiAgentOrchestrator {
     if (config.assistantUrl && config.assistantApiKey) {
       try {
         const endpoint = completionsEndpoint(config.assistantUrl)
-        const systemPrompt = `شما «سرپرست هوشمند پشتیبانی چند لایه وردپرس (DigiWP / NabuGate)» هستید.
-وظیفه شما ارزیابی یافته‌های ۵ عامل تخصصی (امنیت، سرعت و دیتابیس، به‌روزرسانی‌ها، عملیات نجات و ووکامرس) و ارائه گزارشی صریح، شفاف و کاربردی به زبان فارسی است.
+        const systemPrompt = `You are the supervisor of DigiWP / NabuGate's multi-layer WordPress support.
+Your job is to assess the findings of five specialist agents (security, speed and database, updates, rescue operations, and WooCommerce) and give a direct, clear and practical report. Always write the report in ${languageName(locale)}, the site owner's language.
 
-اصول کار:
-۱. هیچ عدد یا ادعایی را اختراع نکنید؛ تنها بر اساس داده‌های واقعی عوامل گزارش دهید.
-۲. اگر مشکلی حاد وجود دارد (بدافزار، خطای مهلک، حجم بالای اتولود)، اولویت رفع آن را مشخص کنید.
-۳. در صورت نیاز به اقدام، نوع ابزار و پارامترها را با دقت نام ببرید.
-۴. سطح اختیار سایت: «${authorityLevel}» است.`
+Rules:
+1. Never invent a number or a claim; report only from the agents' real data.
+2. If there is an acute problem (malware, a fatal error, a large autoload), say which fix comes first.
+3. When an action is needed, name the exact tool and its parameters.
+4. The site's authority level is "${authorityLevel}".`
 
         const userMessage = query
-          ? `پرسش یا درخواست کاربر: ${query}\n\nیافته‌های عوامل تخصصی:\n${JSON.stringify(results, null, 2)}`
-          : `بررسی دوره‌ای سلامت سایت. یافته‌های عوامل تخصصی:\n${JSON.stringify(results, null, 2)}`
+          ? `The user's question or request: ${query}\n\nSpecialist findings:\n${JSON.stringify(results, null, 2)}`
+          : `Periodic site health review. Specialist findings:\n${JSON.stringify(results, null, 2)}`
 
         const res = await fetch(endpoint, {
           method: 'POST',
@@ -141,40 +148,41 @@ export class WordPressMultiAgentOrchestrator {
     }
 
     // Deterministic fallback if NabuGate is unavailable
-    const fallbackSummary = this.renderDeterministicSummary(results)
+    const fallbackSummary = this.renderDeterministicSummary(results, locale)
     return { summary: fallbackSummary, proposals, performedActions }
   }
 
   /**
-   * Deterministic Persian summary when AI gateway is offline
+   * Deterministic summary, in `locale`, when the AI gateway is offline.
    */
-  renderDeterministicSummary(results) {
+  renderDeterministicSummary(results, locale = DEFAULT_LOCALE) {
+    const tr = (key, vars) => t(locale, key, vars)
     const lines = []
-    
+
     // Security
     if (results.security?.threats?.length) {
-      lines.push(`⚠️ امنیت: ${results.security.threats.length} مورد مشکوک یا تغییر در هسته مشاهده شد.`)
+      lines.push(`⚠️ ${tr('agents.summary.securityThreats', { count: results.security.threats.length })}`)
     } else {
-      lines.push('✅ امنیت: فایل‌های هسته سالم و هیچ بدافزار شناخته‌شده‌ای یافت نشد.')
+      lines.push(`✅ ${tr('agents.summary.securityClean')}`)
     }
 
     // Performance
     if (results.performance?.autoloadSizeKb > 800) {
-      lines.push(`⚡ عملکرد: حجم Autoload بالاست (${results.performance.autoloadSizeKb} KB) و نیاز به پاکسازی دارد.`)
+      lines.push(`⚡ ${tr('agents.summary.performanceHeavy', { size: results.performance.autoloadSizeKb })}`)
     } else {
-      lines.push('⚡ عملکرد: وضعیت بارگذاری پایگاه داده در محدوده مطلوب است.')
+      lines.push(`⚡ ${tr('agents.summary.performanceOk')}`)
     }
 
     // Updates
     if (results.updates?.plugins?.pending > 0 || results.updates?.core?.updateAvailable) {
-      lines.push(`🔄 به‌روزرسانی: ${results.updates.plugins.pending} افزونه و هسته نیازمند آپدیت هستند.`)
+      lines.push(`🔄 ${tr('agents.summary.updatesPending', { count: results.updates.plugins?.pending || 0 })}`)
     } else {
-      lines.push('🔄 به‌روزرسانی: تمام افزونه‌ها و هسته وردپرس به‌روز هستند.')
+      lines.push(`🔄 ${tr('agents.summary.updatesNone')}`)
     }
 
     // Rescue
     if (results.rescue?.isDegraded) {
-      lines.push(`🚨 عملیات نجات: خطای مهلک در لاگ‌ها ثبت شده است (افزونه‌های مشکوک: ${results.rescue.suspectPlugins.join('، ')}).`)
+      lines.push(`🚨 ${tr('agents.summary.rescueFatal', { plugins: results.rescue.suspectPlugins.join(tr('agents.summary.listSep')) })}`)
     }
 
     return lines.join('\n')
@@ -186,8 +194,8 @@ export class WordPressMultiAgentOrchestrator {
       await events.record(siteId, {
         kind: 'proposal_created',
         severity: 'info',
-        title: `پیشنهاد اقدام ثبت شد: ${prop.tool}`,
-        detail: prop.reason,
+        title: t('en', 'events.proposal.recorded', { tool: prop.tool }),
+        detail: { reason: prop.reason, i18n: { key: 'events.proposal.recorded', vars: { tool: prop.tool } } },
       })
     } catch {
       // Ignored if DB write fails in memory tests

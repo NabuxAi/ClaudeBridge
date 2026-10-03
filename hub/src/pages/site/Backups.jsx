@@ -5,7 +5,8 @@ import Icon from '../../lib/icons.jsx'
 import { Button, MetricCard, Badge, Switch, NotMeasured, SkeletonStats, SkeletonTable, Dialog } from '../../components/index.js'
 import { site as siteApi } from '../../lib/api.js'
 import { useTask } from '../../lib/tasks.jsx'
-import { faNum } from '../../lib/format.js'
+import { t, digits, num, dateTime } from '../../lib/i18n.js'
+import Trans from '../../components/Trans.jsx'
 
 export default function Backups() {
   const { siteId } = useOutletContext()
@@ -102,14 +103,14 @@ export default function Backups() {
           if (d?.list && Array.isArray(d.list)) {
             const todayStart = new Date().setHours(0, 0, 0, 0)
             const countToday = d.list.filter((b) => {
-              const t = b.created_at ? (b.created_at * 1000) : (b.timestamp || 0)
-              return t >= todayStart
+              const ts = b.created_at ? (b.created_at * 1000) : (b.timestamp || 0)
+              return ts >= todayStart
             }).length
             setBackupsToday((prev) => (countToday > 0 ? countToday : prev))
           }
         }
       })
-      .catch((e) => { if (aliveRef.current) setError(e?.message || 'خطا در دریافت لیست بکاپ‌ها') })
+      .catch((e) => { if (aliveRef.current) setError(e?.message || t('backups.errors.loadList')) })
       .finally(() => { if (aliveRef.current) setLoading(false) })
   }, [siteId])
 
@@ -133,7 +134,7 @@ export default function Backups() {
       setPreflightData(res)
     } catch (e) {
       setPreflightData(null)
-      setError(e?.message || 'خطا در محاسبه فضای دیسک و حجم بکاپ')
+      setError(e?.message || t('backups.errors.preflight'))
     } finally {
       setPreflightLoading(false)
     }
@@ -143,10 +144,10 @@ export default function Backups() {
   // preflight measurement — when it has not run (or failed) we render "—",
   // never invented numbers.
   const sectionsInfo = preflightData?.sections || {
-    db: { key: 'db', title: 'پایگاه داده (SQL)', description: 'جداول و رکوردهای دیتابیس', required: true },
-    plugins: { key: 'plugins', title: 'افزونه‌ها (Plugins)', description: 'پوشه wp-content/plugins' },
-    themes: { key: 'themes', title: 'قالب‌ها (Themes)', description: 'پوشه wp-content/themes' },
-    uploads: { key: 'uploads', title: 'رسانه‌ها و آپلودها (Uploads)', description: 'پوشه wp-content/uploads' },
+    db: { key: 'db', title: t('backups.sections.dbTitle'), description: t('backups.sections.dbDesc'), required: true },
+    plugins: { key: 'plugins', title: t('backups.sections.pluginsTitle'), description: t('backups.sections.pluginsDesc') },
+    themes: { key: 'themes', title: t('backups.sections.themesTitle'), description: t('backups.sections.themesDesc') },
+    uploads: { key: 'uploads', title: t('backups.sections.uploadsTitle'), description: t('backups.sections.uploadsDesc') },
   }
   const sizesKnown = Boolean(preflightData?.sections)
 
@@ -177,14 +178,14 @@ export default function Backups() {
       if (started?.id) {
         startTask({
           id: started.id,
-          title: 'تهیه بکاپ دستی',
+          title: t('backups.task.backup'),
           type: 'backup',
         })
       }
       load()
       loadPolicy()
     } catch (e) {
-      setError(e?.message || 'شروع تهیه بکاپ با خطا مواجه شد.')
+      setError(e?.message || t('backups.errors.startBackup'))
     } finally {
       setBusy('')
     }
@@ -196,18 +197,18 @@ export default function Backups() {
     setSuccessMsg('')
     try {
       await siteApi(siteId).setBackupPolicy(policy)
-      setSuccessMsg('تنظیمات نگهداری و ذخیره‌سازی بکاپ با موفقیت ذخیره شد.')
+      setSuccessMsg(t('backups.success.policySaved'))
       setPolicyModal(false)
       loadPolicy()
     } catch (e) {
-      setError(e?.message || 'خطا در ذخیره تنظیمات نگهداری بکاپ')
+      setError(e?.message || t('backups.errors.savePolicy'))
     } finally {
       setSavingPolicy(false)
     }
   }
 
   async function handleManualPrune() {
-    if (!window.confirm('آیا مایلید فایل‌های بکاپ قدیمی‌تر از سقف نگهداری برای آزادسازی فضای هاست حذف شوند؟')) return
+    if (!window.confirm(t('backups.confirm.prune'))) return
     setBusy('pruning')
     setError('')
     setSuccessMsg('')
@@ -217,12 +218,12 @@ export default function Backups() {
         days: policy.retentionDays,
         max_mb: policy.maxStorageMb,
       })
-      const freedMb = res?.freed_bytes ? (res.freed_bytes / (1024 * 1024)).toFixed(1) : '۰'
-      setSuccessMsg(`پاک‌سازی انجام شد: ${faNum(res?.pruned || 0)} نسخه حذف و ${faNum(freedMb)} مگابایت حافظه آزاد شد.`)
+      const freedMb = res?.freed_bytes ? (res.freed_bytes / (1024 * 1024)).toFixed(1) : '0'
+      setSuccessMsg(t('backups.success.pruned', { count: Number(res?.pruned) || 0, mb: digits(freedMb) }))
       load()
       loadPolicy()
     } catch (e) {
-      setError(e?.message || 'خطا در اجرای پاک‌سازی بکاپ‌ها')
+      setError(e?.message || t('backups.errors.prune'))
     } finally {
       setBusy('')
     }
@@ -240,13 +241,13 @@ export default function Backups() {
       if (started?.id) {
         startTask({
           id: started.id,
-          title: `بازگردانی بکاپ ${id}`,
+          title: t('backups.task.restore', { id }),
           type: 'restore',
         })
       }
       load()
     } catch (e) {
-      setError(e?.message || 'بازگردانی شروع نشد.')
+      setError(e?.message || t('backups.errors.restore'))
     } finally {
       setBusy('')
     }
@@ -260,7 +261,7 @@ export default function Backups() {
       const r = await siteApi(siteId).downloadBackup(id, what)
       if (r && r.ok === false && r.message) setError(r.message)
     } catch (e) {
-      setError(e?.message || 'دانلود انجام نشد.')
+      setError(e?.message || t('backups.errors.download'))
     } finally {
       setBusy('')
     }
@@ -274,21 +275,21 @@ export default function Backups() {
       setTargetModal(false)
       loadOffsite()
     } catch (e) {
-      setError(e?.message || 'ثبت مقصد ابری با خطا مواجه شد.')
+      setError(e?.message || t('backups.errors.saveTarget'))
     } finally {
       setBusy('')
     }
   }
 
   async function deleteTarget(targetId) {
-    if (!window.confirm('آیا از حذف این مقصد ابری اطمینان دارید؟')) return
+    if (!window.confirm(t('backups.confirm.deleteTarget'))) return
     setBusy(`del-${targetId}`)
     setError('')
     try {
       await siteApi(siteId).deleteOffsiteTarget(targetId)
       loadOffsite()
     } catch (e) {
-      setError(e?.message || 'حذف مقصد ابری با خطا مواجه شد.')
+      setError(e?.message || t('backups.errors.deleteTarget'))
     } finally {
       setBusy('')
     }
@@ -303,13 +304,13 @@ export default function Backups() {
       if (started?.id) {
         startTask({
           id: started.id,
-          title: 'همگام‌سازی پشتیبان با فضای ابری S3',
+          title: t('backups.task.sync'),
           type: 'backup',
         })
       }
       loadOffsite()
     } catch (e) {
-      setError(e?.message || 'شروع همگام‌سازی ابری با خطا مواجه شد.')
+      setError(e?.message || t('backups.errors.sync'))
     } finally {
       setBusy('')
     }
@@ -317,8 +318,8 @@ export default function Backups() {
 
   const head = (
     <PageHead
-      title="بکاپ‌ها و بازیابی"
-      subtitle="مدیریت محل ذخیره (سرور ما / سرور شما)، سقف روزانه، حذف خودکار و دانلود فوق‌سریع"
+      title={t('backups.head.title')}
+      subtitle={t('backups.head.subtitle')}
       action={(
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Button
@@ -327,7 +328,7 @@ export default function Backups() {
             leftIcon="settings"
             onClick={() => setPolicyModal(true)}
           >
-            تنظیمات نگهداری و ذخیره
+            {t('backups.head.policyButton')}
           </Button>
           <Button
             variant="subtle"
@@ -336,7 +337,7 @@ export default function Backups() {
             disabled={busy === 'pruning'}
             onClick={handleManualPrune}
           >
-            {busy === 'pruning' ? 'در حال پاک‌سازی…' : 'پاک‌سازی نسخه‌های قدیمی'}
+            {busy === 'pruning' ? t('backups.head.pruning') : t('backups.head.prune')}
           </Button>
           <Button
             variant="primary"
@@ -345,7 +346,7 @@ export default function Backups() {
             disabled={Boolean(busy) || activeTask?.state === 'running'}
             onClick={openPreflightModal}
           >
-            تهیه بکاپ دستی
+            {t('backups.head.takeBackup')}
           </Button>
         </div>
       )}
@@ -368,22 +369,22 @@ export default function Backups() {
     return (
       <>
         {head}
-        <NotMeasured title="بکاپ‌ها و بازیابی" reason={data.provenance.unavailable} />
+        <NotMeasured title={t('backups.head.title')} reason={data.provenance.unavailable} />
       </>
     )
   }
 
   if (!data) {
-    // A failed list load must not fall through to the "هیچ نسخه‌ای ذخیره نشده"
+    // A failed list load must not fall through to the "no backups stored"
     // empty state — that would turn a broken read into the claim that no
     // backup was ever taken.
     return (
       <>
         {head}
-        <NotMeasured title="فهرست بکاپ‌ها خوانده نشد" reason={error || 'پاسخی از سرور دریافت نشد.'} icon="alert-triangle" />
+        <NotMeasured title={t('backups.loadFailed.title')} reason={error || t('backups.loadFailed.noResponse')} icon="alert-triangle" />
         <div style={{ textAlign: 'center', marginTop: 14 }}>
           <Button variant="secondary" size="sm" leftIcon="refresh-cw" disabled={loading} onClick={load}>
-            تلاش دوباره
+            {t('common.retry')}
           </Button>
         </div>
       </>
@@ -393,7 +394,7 @@ export default function Backups() {
   const list = data?.list || []
   // Newest entry first — the server (and the mock) both order it this way.
   const latest = list[0]
-  const confirmWord = 'بازگردانی'
+  const confirmWord = t('backups.restore.confirmWord')
 
   return (
     <>
@@ -404,34 +405,34 @@ export default function Backups() {
         {/* The newest entry is list[0] — the same record the server derives
             data.lastBackup from (server/src/routes/sites.js:292) — so its
             verified flag is the only honest source for this card's claim.
-            «تأییدشده و سالم» was previously hardcoded, even for «ثبت نشده». */}
+            "Verified and healthy" was previously hardcoded, even for "none recorded". */}
         <MetricCard
           icon="clock"
           iconTone={latest ? (latest.verified ? 'success' : 'danger') : 'neutral'}
-          label="آخرین بکاپ"
-          value={data?.lastBackup || 'ثبت نشده'}
-          hint={latest ? (latest.verified ? 'کامل و سالم' : 'تأییدنشده') : 'هنوز نسخه‌ای تهیه نشده است'}
+          label={t('backups.metrics.lastBackup')}
+          value={data?.lastBackup || t('backups.metrics.notRecorded')}
+          hint={latest ? (latest.verified ? t('backups.metrics.verified') : t('backups.metrics.unverified')) : t('backups.metrics.noneYet')}
         />
         <MetricCard
           icon="hard-drive"
           iconTone="primary"
-          label="محل نگهداری نسخه‌ها"
-          value="سرور وردپرس (هاست)"
-          hint={`سقف نگهداری: ${faNum(policy.retentionDays)} روز`}
+          label={t('backups.metrics.location')}
+          value={t('backups.metrics.locationValue')}
+          hint={t('backups.metrics.retentionHint', { count: policy.retentionDays })}
         />
         <MetricCard
           icon="history"
           iconTone="neutral"
-          label="بکاپ‌های امروز"
-          value={`${faNum(backupsToday)} از ${faNum(policy.maxDaily)}`}
-          hint={backupsToday >= policy.maxDaily ? 'سقف روزانه تکمیل است' : 'مجاز برای تهیه نسخه جدید'}
+          label={t('backups.metrics.today')}
+          value={t('backups.metrics.todayValue', { done: backupsToday, max: policy.maxDaily })}
+          hint={backupsToday >= policy.maxDaily ? t('backups.metrics.dailyFull') : t('backups.metrics.dailyOk')}
         />
         <MetricCard
           icon="database"
           iconTone="accent"
-          label="فضای آزاد دیسک"
+          label={t('backups.metrics.freeDisk')}
           value={preflightData?.free_disk_formatted || '—'}
-          hint={preflightData?.free_disk_formatted ? `سقف حجم پوشه: ${faNum(policy.maxStorageMb)} MB` : 'با «تهیه بکاپ دستی» بررسی می‌شود'}
+          hint={preflightData?.free_disk_formatted ? t('backups.metrics.quotaHint', { mb: digits(policy.maxStorageMb) }) : t('backups.metrics.diskUnchecked')}
         />
       </div>
 
@@ -449,40 +450,42 @@ export default function Backups() {
           <Icon name="calendar-clock" size={21} />
         </span>
         <div className="pbk-banner__grow">
-          <div style={{ fontSize: 14, fontWeight: 700 }}>سیاست نگهداری و پاک‌سازی خودکار</div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{t('backups.banner.title')}</div>
           <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', marginTop: 2 }}>
-            بکاپ‌ها روی هاست وردپرس شما، در پوشه‌ای امن خارج از دسترسی وب نگهداری می‌شوند · حذف خودکار نسخه‌های قدیمی‌تر از {faNum(policy.retentionDays)} روز یا پس از پر شدن {faNum(policy.maxStorageMb)} مگابایت
+            {t('backups.banner.body', { days: digits(policy.retentionDays), mb: digits(policy.maxStorageMb) })}
           </div>
         </div>
         <Button size="sm" variant="subtle" onClick={() => setPolicyModal(true)}>
-          تغییر سیاست
+          {t('backups.banner.change')}
         </Button>
       </div>
 
       {/* Backups table */}
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span>نسخه‌های پشتیبان موجود</span>
+        <span>{t('backups.list.title')}</span>
         <span style={{ fontSize: 12, color: 'var(--gd-text-muted)', fontWeight: 400 }}>
-          {faNum(list.length)} نسخه ذخیره‌شده
+          {t('backups.list.count', { count: list.length })}
         </span>
       </div>
 
       <div className="pbk-panel">
         <div className="pbk-trow pbk-trow--head pbk-cols-backups">
-          <span>تاریخ و ساعت</span>
-          <span>نوع و بخش‌ها</span>
-          <span>محل ذخیره</span>
-          <span>حجم</span>
-          <span>وضعیت سلامت</span>
+          <span>{t('backups.list.colDate')}</span>
+          <span>{t('backups.list.colType')}</span>
+          <span>{t('backups.list.colLocation')}</span>
+          <span>{t('backups.list.colSize')}</span>
+          <span>{t('backups.list.colHealth')}</span>
           <span />
         </div>
 
         {list.length === 0 ? (
           <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--gd-text-muted)', fontSize: 13.5 }}>
-            هیچ نسخه‌ای ذخیره نشده است. با دکمهٔ «تهیه بکاپ دستی» اولین بکاپ را ایجاد کنید.
+            {t('backups.list.empty')}
           </div>
         ) : list.map((b, i) => {
-          const preAction = b.type?.includes('پیش از اقدام') || b.type?.includes('pre-update')
+          // Matched on the machine label only — never on the display text,
+          // which the server localises.
+          const preAction = /pre-update/.test(`${b.label || ''} ${b.type || ''}`)
           // The server (and the mock) only send `verified` — the dump ends the
           // way a complete dump ends — and a boolean `files` for the ZIP part.
           const isFilesZip = Boolean(b.files)
@@ -494,18 +497,18 @@ export default function Backups() {
               </div>
 
               <span>
-                <Badge variant={preAction ? 'warning' : 'info'} appearance="soft">{b.type || 'دستی'}</Badge>
+                <Badge variant={preAction ? 'warning' : 'info'} appearance="soft">{b.type || t('backups.list.typeManual')}</Badge>
               </span>
 
               <span>
-                <Badge variant="neutral" appearance="soft">سرور وردپرس</Badge>
+                <Badge variant="neutral" appearance="soft">{t('backups.list.locationBadge')}</Badge>
               </span>
 
               <span className="dwp-mono" style={{ color: 'var(--gd-text-secondary)' }}>{b.size || '—'}</span>
 
               <span>
                 <Badge variant={b.verified ? 'success' : 'danger'} appearance="soft" dot>
-                  {b.verified ? 'کامل و سالم' : 'تأییدنشده'}
+                  {b.verified ? t('backups.metrics.verified') : t('backups.metrics.unverified')}
                 </Badge>
               </span>
 
@@ -516,9 +519,9 @@ export default function Backups() {
                   leftIcon="download"
                   onClick={() => download(b.id, 'db')}
                   disabled={busy === `dl-${b.id}`}
-                  title="دانلود مستقیم و سریع استریم SQL"
+                  title={t('backups.list.downloadSqlTitle')}
                 >
-                  {busy === `dl-${b.id}` ? 'دریافت…' : 'دانلود SQL'}
+                  {busy === `dl-${b.id}` ? t('backups.list.downloading') : t('backups.list.downloadSql')}
                 </Button>
                 {isFilesZip && (
                   <Button
@@ -527,13 +530,13 @@ export default function Backups() {
                     leftIcon="boxes"
                     onClick={() => download(b.id, 'files')}
                     disabled={busy === `dl-${b.id}`}
-                    title="دانلود فایل فشرده رسانه‌ها و افزونه‌ها"
+                    title={t('backups.list.downloadZipTitle')}
                   >
-                    دانلود ZIP
+                    {t('backups.list.downloadZip')}
                   </Button>
                 )}
                 <Button size="sm" variant="subtle" leftIcon="rotate-ccw" onClick={() => setConfirming(b.id)} disabled={Boolean(busy) || activeTask?.state === 'running'}>
-                  بازگردانی
+                  {t('backups.list.restore')}
                 </Button>
               </div>
             </div>
@@ -544,7 +547,7 @@ export default function Backups() {
       {/* Policy & Storage Settings Modal */}
       {policyModal && (
         <Dialog
-          title="تنظیمات سقف روزانه و نگهداری بکاپ"
+          title={t('backups.policy.title')}
           open={policyModal}
           onClose={() => setPolicyModal(false)}
         >
@@ -553,73 +556,66 @@ export default function Backups() {
                 always writes to its protected local directory. Off-site copy
                 is the S3 section below. */}
             <div className="pbk-note pbk-note--info pbk-note--flat">
-              نسخه‌های پشتیبان روی <strong>هاست وردپرس شما</strong>، در پوشه‌ای امن خارج از دسترسی وب ذخیره می‌شوند.
-              {' '}برای نگهداری خارج از هاست، از بخش «پشتیبان‌گیری ابری اختصاصی (S3)» در پایین همین صفحه استفاده کنید.
+              <Trans k="backups.policy.info" />
             </div>
 
             {/* Daily limit */}
             <div>
               <label style={{ fontSize: 13, fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                حداکثر تعداد بکاپ در طول روز (سقف روزانه):
+                {t('backups.policy.dailyLabel')}
               </label>
               <select
                 value={policy.maxDaily}
                 onChange={(e) => setPolicy({ ...policy, maxDaily: Number(e.target.value) })}
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--gd-radius-md)', border: '1px solid var(--gd-border)', fontSize: 13 }}
               >
-                <option value={1}>۱ بار در روز</option>
-                <option value={2}>۲ بار در روز</option>
-                <option value={3}>۳ بار در روز</option>
-                <option value={5}>۵ بار در روز (پیش‌فرض)</option>
-                <option value={10}>۱۰ بار در روز</option>
-                <option value={20}>۲۰ بار در روز</option>
+                {[1, 2, 3, 5, 10, 20].map((n) => (
+                  <option key={n} value={n}>
+                    {t(n === 5 ? 'backups.policy.dailyOptionDefault' : 'backups.policy.dailyOption', { count: n })}
+                  </option>
+                ))}
               </select>
               <span style={{ fontSize: 11.5, color: 'var(--gd-text-muted)', display: 'block', marginTop: 4 }}>
-                برای جلوگیری از بار اضافی و مصرف مکرر منابع هاست در طول ۲۴ ساعت.
+                {t('backups.policy.dailyHint')}
               </span>
             </div>
 
             {/* Retention Days */}
             <div>
               <label style={{ fontSize: 13, fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                دوره نگهداری نسخه‌ها (حذف خودکار قدیمی‌تر از چند روز):
+                {t('backups.policy.retentionLabel')}
               </label>
               <select
                 value={policy.retentionDays}
                 onChange={(e) => setPolicy({ ...policy, retentionDays: Number(e.target.value) })}
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--gd-radius-md)', border: '1px solid var(--gd-border)', fontSize: 13 }}
               >
-                <option value={7}>۷ روز (۱ هفته)</option>
-                <option value={14}>۱۴ روز (۲ هفته)</option>
-                <option value={30}>۳۰ روز (۱ ماه - پیشنهادی)</option>
-                <option value={60}>۶۰ روز (۲ ماه)</option>
-                <option value={90}>۹۰ روز (۳ ماه)</option>
-                <option value={180}>۱۸۰ روز (۶ ماه)</option>
+                {[7, 14, 30, 60, 90, 180].map((n) => (
+                  <option key={n} value={n}>{t(`backups.policy.retention.d${n}`)}</option>
+                ))}
               </select>
             </div>
 
             {/* Storage Quota & Auto Prune */}
             <div>
               <label style={{ fontSize: 13, fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                سقف حجم کل پوشه بکاپ (حذف نسخه‌های قدیمی در صورت پر شدن):
+                {t('backups.policy.storageLabel')}
               </label>
               <select
                 value={policy.maxStorageMb}
                 onChange={(e) => setPolicy({ ...policy, maxStorageMb: Number(e.target.value) })}
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--gd-radius-md)', border: '1px solid var(--gd-border)', fontSize: 13 }}
               >
-                <option value={500}>۵۰۰ مگابایت</option>
-                <option value={1024}>۱ گیگابایت (۱۰۲۴ MB)</option>
-                <option value={2048}>۲ گیگابایت (۲۰۴۸ MB - استاندارد)</option>
-                <option value={5120}>۵ گیگابایت (۵۱۲۰ MB)</option>
-                <option value={10240}>۱۰ گیگابایت (۱۰۲۴۰ MB)</option>
+                {[500, 1024, 2048, 5120, 10240].map((n) => (
+                  <option key={n} value={n}>{t(`backups.policy.storage.mb${n}`)}</option>
+                ))}
               </select>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--gd-bg-subtle)', borderRadius: 'var(--gd-radius-md)' }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>پاک‌سازی خودکار در زمان پر شدن سقف حجم</div>
-                <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)' }}>قدیمی‌ترین نسخه‌ها به طور هوشمند حذف می‌شوند تا هاست پر نشود.</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{t('backups.policy.autoPruneTitle')}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--gd-text-muted)' }}>{t('backups.policy.autoPruneDesc')}</div>
               </div>
               <Switch
                 checked={policy.autoPruneOnFull}
@@ -628,14 +624,14 @@ export default function Backups() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
-              <Button variant="subtle" onClick={() => setPolicyModal(false)}>انصراف</Button>
+              <Button variant="subtle" onClick={() => setPolicyModal(false)}>{t('common.cancel')}</Button>
               <Button
                 variant="primary"
                 leftIcon="check"
                 disabled={savingPolicy}
                 onClick={handleSavePolicy}
               >
-                {savingPolicy ? 'در حال ذخیره…' : 'ذخیره تنظیمات'}
+                {savingPolicy ? t('common.saving') : t('backups.policy.save')}
               </Button>
             </div>
           </div>
@@ -648,11 +644,11 @@ export default function Backups() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Icon name="cloud" size={20} style={{ color: 'var(--gd-primary)' }} />
-              <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>پشتیبان‌گیری ابری اختصاصی (S3 Storage)</h3>
-              <Badge variant="primary" appearance="soft">رمزنگاری AES-256</Badge>
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{t('backups.offsite.title')}</h3>
+              <Badge variant="primary" appearance="soft">{t('backups.offsite.badge')}</Badge>
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '4px 0 0 0' }}>
-              انتقال مستقیم نسخه‌های پشتیبان به فضاهای ذخیره‌سازی ابری سازگار با پروتکل S3 (ابر آروان، لیارا، AWS S3، مین‌آی‌او)
+              {t('backups.offsite.desc')}
             </p>
           </div>
           <Button
@@ -661,7 +657,7 @@ export default function Backups() {
             leftIcon="plus"
             onClick={() => setTargetModal(true)}
           >
-            افزودن مقصد S3
+            {t('backups.offsite.add')}
           </Button>
         </div>
 
@@ -670,12 +666,12 @@ export default function Backups() {
             <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--gd-bg-subtle)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gd-text-muted)', marginBottom: 12 }}>
               <Icon name="cloud" size={22} />
             </div>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--gd-text)' }}>هنوز مقصد ابری S3 اضافه نشده است</div>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--gd-text)' }}>{t('backups.offsite.emptyTitle')}</div>
             <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', maxWidth: 440, margin: '6px auto 16px auto', lineHeight: 1.6 }}>
-              می‌توانید باکت‌های اختصاصی خود در ابر آروان، لیارا، یا آمازون را برای پشتیبان‌گیری ثانویه و ایزوله متصل کنید.
+              {t('backups.offsite.emptyBody')}
             </p>
             <Button size="sm" variant="subtle" leftIcon="plus" onClick={() => setTargetModal(true)}>
-              پیکربندی باکت S3
+              {t('backups.offsite.configure')}
             </Button>
           </div>
         ) : (
@@ -709,7 +705,7 @@ export default function Backups() {
                       {target.endpoint}
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--gd-text-secondary)' }}>
-                      منطقه: <span className="dwp-mono">{target.region}</span> · نگهداری: {faNum(target.retentionDays)} روز
+                      <Trans k="backups.offsite.targetMeta" vars={{ region: target.region || '—', count: Number(target.retentionDays) || 0 }} />
                     </div>
                   </div>
 
@@ -721,7 +717,7 @@ export default function Backups() {
                       onClick={() => deleteTarget(target.id)}
                       disabled={busy === `del-${target.id}`}
                     >
-                      حذف
+                      {t('common.delete')}
                     </Button>
                     <Button
                       size="sm"
@@ -730,7 +726,7 @@ export default function Backups() {
                       onClick={() => syncOffsiteNow(target.id)}
                       disabled={busy === 'offsite-sync' || activeTask?.state === 'running'}
                     >
-                      همگام‌سازی فوری
+                      {t('backups.offsite.syncNow')}
                     </Button>
                   </div>
                 </div>
@@ -741,7 +737,7 @@ export default function Backups() {
             {offsiteJobs.length > 0 && (
               <div style={{ marginTop: 20 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--gd-text)' }}>
-                  تاریخچه آخرین انتقال‌های ابری:
+                  {t('backups.offsite.historyTitle')}
                 </div>
                 <div style={{ border: '1px solid var(--gd-border-subtle)', borderRadius: 'var(--gd-radius-md)', overflow: 'hidden' }}>
                   {offsiteJobs.slice(0, 5).map((job, idx) => (
@@ -763,16 +759,16 @@ export default function Backups() {
                           appearance="soft"
                           dot
                         >
-                          {job.status === 'done' ? 'موفق' : job.status === 'failed' ? 'ناموفق' : 'در حال انتقال'}
+                          {job.status === 'done' ? t('backups.offsite.jobDone') : job.status === 'failed' ? t('backups.offsite.jobFailed') : t('backups.offsite.jobRunning')}
                         </Badge>
                         <span className="dwp-mono" style={{ color: 'var(--gd-text-secondary)' }}>
-                          {new Date(job.createdAt).toLocaleString('fa-IR')}
+                          {dateTime(job.createdAt)}
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         {job.sizeBytes && (
                           <span className="dwp-mono" style={{ color: 'var(--gd-text-muted)' }}>
-                            {faNum((job.sizeBytes / (1024 * 1024)).toFixed(1))} MB
+                            {num(job.sizeBytes / (1024 * 1024), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB
                           </span>
                         )}
                         {job.error && (
@@ -793,20 +789,20 @@ export default function Backups() {
       {/* Off-site S3 Target Configuration Modal */}
       {targetModal && (
         <Dialog
-          title="پیکربندی مقصد ذخیره‌سازی ابری (S3)"
+          title={t('backups.target.title')}
           open={targetModal}
           onClose={() => setTargetModal(false)}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.6 }}>
-              مشخصات باکت سازگار با S3 خود را وارد کنید. کلیدهای امنیتی به صورت رمزنگاری‌شده (AES-256-GCM) ذخیره می‌شوند.
+              {t('backups.target.intro')}
             </p>
 
             <div>
-              <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>نشانی اندپوینت S3 (Endpoint URL):</label>
+              <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>{t('backups.target.endpoint')}</label>
               <input
                 type="text"
-                placeholder="https://s3.ir-thr-at1.arvanstorage.ir یا https://s3.amazonaws.com"
+                placeholder={t('backups.target.endpointPlaceholder')}
                 value={newTarget.endpoint}
                 onChange={(e) => setNewTarget({ ...newTarget, endpoint: e.target.value })}
                 style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 13, direction: 'ltr', outline: 'none' }}
@@ -815,7 +811,7 @@ export default function Backups() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
-                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>نام باکت (Bucket Name):</label>
+                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>{t('backups.target.bucket')}</label>
                 <input
                   type="text"
                   placeholder="my-wordpress-backups"
@@ -825,10 +821,10 @@ export default function Backups() {
                 />
               </div>
               <div>
-                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>منطقه (Region):</label>
+                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>{t('backups.target.region')}</label>
                 <input
                   type="text"
-                  placeholder="us-east-1 یا ir-thr-at1"
+                  placeholder={t('backups.target.regionPlaceholder')}
                   value={newTarget.region}
                   onChange={(e) => setNewTarget({ ...newTarget, region: e.target.value })}
                   style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 13, direction: 'ltr', outline: 'none' }}
@@ -837,7 +833,7 @@ export default function Backups() {
             </div>
 
             <div>
-              <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>شناسه کلید دسترسی (Access Key ID):</label>
+              <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>{t('backups.target.accessKey')}</label>
               <input
                 type="text"
                 placeholder="AKIAIOSFODNN7EXAMPLE"
@@ -848,7 +844,7 @@ export default function Backups() {
             </div>
 
             <div>
-              <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>کلید محرمانه (Secret Access Key):</label>
+              <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>{t('backups.target.secretKey')}</label>
               <input
                 type="password"
                 placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -860,7 +856,7 @@ export default function Backups() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
-                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>پیشوند مسیر (Path Prefix):</label>
+                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>{t('backups.target.pathPrefix')}</label>
                 <input
                   type="text"
                   placeholder="backups/site1"
@@ -870,7 +866,7 @@ export default function Backups() {
                 />
               </div>
               <div>
-                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>دوره نگهداری (روز):</label>
+                <label style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>{t('backups.target.retention')}</label>
                 <input
                   type="number"
                   min="1"
@@ -883,14 +879,14 @@ export default function Backups() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
-              <Button variant="subtle" onClick={() => setTargetModal(false)}>انصراف</Button>
+              <Button variant="subtle" onClick={() => setTargetModal(false)}>{t('common.cancel')}</Button>
               <Button
                 variant="primary"
                 leftIcon="check"
                 disabled={!newTarget.endpoint || !newTarget.bucket || !newTarget.accessKeyId || !newTarget.secretAccessKey || busy === 'saving-target'}
                 onClick={saveTarget}
               >
-                ذخیره مقصد ابری
+                {t('backups.target.save')}
               </Button>
             </div>
           </div>
@@ -900,7 +896,7 @@ export default function Backups() {
       {/* Preflight & Section Selection Modal */}
       {preflightModal && (
         <Dialog
-          title="تهیه نسخه پشتیبان سفارشی"
+          title={t('backups.preflight.title')}
           open={preflightModal}
           onClose={() => setPreflightModal(false)}
         >
@@ -913,26 +909,26 @@ export default function Backups() {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: isSpaceInsufficient ? 'var(--gd-danger-text)' : 'var(--gd-text)' }}>
-                  فضای آزاد دیسک هاست: {preflightData?.free_disk_formatted || (preflightLoading ? 'در حال محاسبه…' : '—')}
+                  {t('backups.preflight.freeDisk', { value: preflightData?.free_disk_formatted || (preflightLoading ? t('backups.preflight.calculating') : '—') })}
                 </span>
                 <Badge
                   variant={isSpaceInsufficient ? 'danger' : preflightLoading ? 'info' : freeDiskKnown ? 'success' : 'neutral'}
                   appearance="soft"
                 >
-                  {preflightLoading ? 'در حال بررسی' : isSpaceInsufficient ? 'فضای ناکافی' : freeDiskKnown ? 'فضای کافی' : 'بررسی نشد'}
+                  {preflightLoading ? t('backups.preflight.checking') : isSpaceInsufficient ? t('backups.preflight.insufficient') : freeDiskKnown ? t('backups.preflight.sufficient') : t('backups.preflight.unchecked')}
                 </Badge>
               </div>
               <p style={{ fontSize: 12, color: 'var(--gd-text-muted)', margin: 0, lineHeight: 1.6 }}>
                 {isSpaceInsufficient
-                  ? 'فضای خالی دیسک هاست برای این حجم کافی نیست. نسخه‌های قدیمی‌تر را پاک‌سازی کنید یا بخش‌های کمتری را انتخاب کنید.'
+                  ? t('backups.preflight.msgInsufficient')
                   : freeDiskKnown
-                    ? 'فضای هاست به صورت زنده بررسی شد و برای ایجاد بکاپ انتخابی مناسب است.'
-                    : 'بررسی خودکار فضای دیسک انجام نشد. برای دیدن فضای موجود، پنجره را ببندید و دوباره تلاش کنید.'}
+                    ? t('backups.preflight.msgOk')
+                    : t('backups.preflight.msgUnchecked')}
               </p>
             </div>
 
             {/* Selectable Sections */}
-            <div style={{ fontSize: 13.5, fontWeight: 700 }}>بخش‌های مورد نظر برای بکاپ:</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700 }}>{t('backups.preflight.sectionsTitle')}</div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {Object.keys(sectionsInfo).map((key) => {
@@ -958,13 +954,13 @@ export default function Backups() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 700, color: isSelected ? 'var(--gd-primary)' : 'var(--gd-text)' }}>
                         {sec.title}
-                        {sec.required && <span style={{ fontSize: 11, color: 'var(--gd-text-muted)', marginInlineStart: 6 }}>(ضروری)</span>}
+                        {sec.required && <span style={{ fontSize: 11, color: 'var(--gd-text-muted)', marginInlineStart: 6 }}>{t('backups.preflight.required')}</span>}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 2 }}>{sec.description}</div>
                     </div>
-                    <div style={{ textAlign: 'left', minWidth: 100 }}>
+                    <div style={{ textAlign: 'end', minWidth: 100 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--gd-font-mono)' }}>{sec.formatted || '—'}</div>
-                      <div style={{ fontSize: 11, color: 'var(--gd-text-muted)' }}>{sec.duration_sec != null ? `~${faNum(sec.duration_sec)} ثانیه` : '—'}</div>
+                      <div style={{ fontSize: 11, color: 'var(--gd-text-muted)' }}>{sec.duration_sec != null ? t('backups.preflight.seconds', { s: digits(sec.duration_sec) }) : '—'}</div>
                     </div>
                   </label>
                 )
@@ -978,27 +974,27 @@ export default function Backups() {
               border: '1px solid var(--gd-border)', marginTop: 4,
             }}>
               <div>
-                <span style={{ fontSize: 12.5, color: 'var(--gd-text-secondary)' }}>حجم تقریبی بکاپ: </span>
+                <span style={{ fontSize: 12.5, color: 'var(--gd-text-secondary)' }}>{t('backups.preflight.estSize')}</span>
                 <strong style={{ fontSize: 14, fontFamily: 'var(--gd-font-mono)', color: 'var(--gd-primary)' }}>
-                  {sizesKnown ? `${faNum((totalSelectedBytes / (1024 * 1024)).toFixed(1))} مگابایت` : '—'}
+                  {sizesKnown ? t('backups.preflight.megabytes', { mb: digits((totalSelectedBytes / (1024 * 1024)).toFixed(1)) }) : '—'}
                 </strong>
               </div>
               <div>
-                <span style={{ fontSize: 12.5, color: 'var(--gd-text-secondary)' }}>مدت تقریبی: </span>
-                <strong style={{ fontSize: 14, fontFamily: 'var(--gd-font-mono)' }}>{sizesKnown ? `~${faNum(totalSelectedDuration)} ثانیه` : '—'}</strong>
+                <span style={{ fontSize: 12.5, color: 'var(--gd-text-secondary)' }}>{t('backups.preflight.estDuration')}</span>
+                <strong style={{ fontSize: 14, fontFamily: 'var(--gd-font-mono)' }}>{sizesKnown ? t('backups.preflight.seconds', { s: digits(totalSelectedDuration) }) : '—'}</strong>
               </div>
             </div>
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
-              <Button variant="subtle" onClick={() => setPreflightModal(false)}>انصراف</Button>
+              <Button variant="subtle" onClick={() => setPreflightModal(false)}>{t('common.cancel')}</Button>
               <Button
                 variant="primary"
                 leftIcon="database-backup"
                 disabled={isSpaceInsufficient || selectedKeys.length === 0 || preflightLoading}
                 onClick={takeBackup}
               >
-                شروع تهیه بکاپ
+                {t('backups.preflight.start')}
               </Button>
             </div>
           </div>
@@ -1008,16 +1004,16 @@ export default function Backups() {
       {/* Restore Confirmation Dialog */}
       {confirming && (
         <Dialog
-          title="تأیید بازگردانی نسخه پشتیبان"
+          title={t('backups.restore.title')}
           open={Boolean(confirming)}
           onClose={() => { setConfirming(null); setTyped('') }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ background: 'var(--gd-danger-bg)', border: '1px solid var(--gd-danger-border)', borderRadius: 'var(--gd-radius-md)', padding: '12px 14px', color: 'var(--gd-danger-text)', fontSize: 13, lineHeight: 1.7 }}>
-              <strong>هشدار:</strong> با بازگردانی این بکاپ، تمامی اطلاعات دیتابیس (سفارش‌ها، دیدگاه‌ها و پست‌های جدید) به زمان این نسخه بازمی‌گردد.
+              <Trans k="backups.restore.warning" />
             </div>
             <p style={{ fontSize: 13, color: 'var(--gd-text-secondary)', margin: 0 }}>
-              جهت تأیید، کلمه <strong>«{confirmWord}»</strong> را در کادر زیر تایپ کنید:
+              <Trans k="backups.restore.prompt" vars={{ word: confirmWord }} />
             </p>
             <input
               type="text"
@@ -1027,9 +1023,9 @@ export default function Backups() {
               style={{ padding: '8px 12px', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}
             />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
-              <Button variant="subtle" onClick={() => { setConfirming(null); setTyped('') }}>انصراف</Button>
+              <Button variant="subtle" onClick={() => { setConfirming(null); setTyped('') }}>{t('common.cancel')}</Button>
               <Button variant="danger" disabled={typed.trim() !== confirmWord} onClick={() => doRestore(confirming)}>
-                تأیید و شروع بازگردانی
+                {t('backups.restore.confirm')}
               </Button>
             </div>
           </div>

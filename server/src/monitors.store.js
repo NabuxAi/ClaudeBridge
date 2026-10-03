@@ -9,25 +9,20 @@
 //     failed checks is one outage, however many 5-minute ticks it spanned.
 //     Counting raw failed checks instead would price one bad hour as twelve
 //     separate incidents.
+import { t, httpError } from './i18n.js'
 import { one, all, query, pool, newId } from './db.js'
 
 /** Monitors per site. Ten URLs is already far beyond "homepage + shop + api". */
 export const PER_SITE_LIMIT = 10
 
 /** What this feature measures, carried in every list/status response. */
-export const SCOPE_LABEL = 'بررسی دسترسی HTTP، نه سفر کاربری/پرداخت'
+// The scope label is a translation key; responses render it per request.
+export const SCOPE_LABEL = 'monitors.scope'
 
 /** Results are kept a little longer than the widest reported window (30 days). */
 export const RETENTION_MS = 35 * 24 * 60 * 60 * 1000
 export const WINDOW_7_MS = 7 * 24 * 60 * 60 * 1000
 export const WINDOW_30_MS = 30 * 24 * 60 * 60 * 1000
-
-function httpError(status, message, code) {
-  const e = new Error(message)
-  e.status = status
-  if (code) e.code = code
-  return e
-}
 
 const publicResult = (r) => r && ({
   id: r.id,
@@ -60,16 +55,16 @@ function normalizeFields(fields, { partial = false } = {}) {
 
   if (!partial || has('label')) {
     const label = String(fields.label ?? '').trim()
-    if (!label) throw httpError(400, 'برچسب مانیتور لازم است.')
-    if (label.length > 120) throw httpError(400, 'برچسب مانیتور بیش از حد بلند است.')
+    if (!label) throw httpError(400, 'monitors.labelRequired')
+    if (label.length > 120) throw httpError(400, 'monitors.labelTooLong')
     out.label = label
   }
   if (!partial || has('url')) {
     const url = String(fields.url ?? '').trim()
     let parsed
-    try { parsed = new URL(url) } catch { throw httpError(400, 'نشانی مانیتور معتبر نیست.') }
+    try { parsed = new URL(url) } catch { throw httpError(400, 'monitors.invalidUrl') }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      throw httpError(400, 'نشانی مانیتور باید با http یا https شروع شود.')
+      throw httpError(400, 'monitors.badScheme')
     }
     out.url = parsed.href
   }
@@ -77,13 +72,13 @@ function normalizeFields(fields, { partial = false } = {}) {
     const raw = fields.expectStatus ?? 200
     const status = Number(raw)
     if (!Number.isInteger(status) || status < 100 || status > 599) {
-      throw httpError(400, 'کد وضعیت مورد انتظار باید عددی بین ۱۰۰ تا ۵۹۹ باشد.')
+      throw httpError(400, 'monitors.badStatus', { min: 100, max: 599 })
     }
     out.expect_status = status
   }
   if (has('expectContains')) {
     const contains = String(fields.expectContains ?? '').trim()
-    if (contains.length > 500) throw httpError(400, 'عبارت مورد انتظار بیش از حد بلند است.')
+    if (contains.length > 500) throw httpError(400, 'monitors.containsTooLong')
     out.expect_contains = contains || null
   }
   if (has('enabled')) {
@@ -200,11 +195,7 @@ export const monitors = {
         [siteId],
       )
       if (rows[0].n >= PER_SITE_LIMIT) {
-        throw httpError(
-          400,
-          `سقف مانیتورهای این سایت پر است (حداکثر ${PER_SITE_LIMIT} مانیتور به‌ازای هر سایت).`,
-          'monitor_limit_reached',
-        )
+        throw httpError(400, 'monitors.limitReached', { count: PER_SITE_LIMIT }, 'monitor_limit_reached')
       }
       const id = newId('mon_')
       const { rows: inserted } = await client.query(
@@ -237,7 +228,7 @@ export const monitors = {
       'SELECT * FROM site_monitors WHERE id = $1 AND site_id = $2',
       [monitorId, siteId],
     )
-    if (!existing) throw httpError(404, 'مانیتور یافت نشد.')
+    if (!existing) throw httpError(404, 'monitors.notFound')
 
     const norm = normalizeFields(patch || {}, { partial: true })
     const sets = []
@@ -260,7 +251,7 @@ export const monitors = {
       'DELETE FROM site_monitors WHERE id = $1 AND site_id = $2 RETURNING id',
       [monitorId, siteId],
     )
-    if (!row) throw httpError(404, 'مانیتور یافت نشد.')
+    if (!row) throw httpError(404, 'monitors.notFound')
     // Results die with the monitor through ON DELETE CASCADE — history for a
     // monitor that no longer exists is not history anyone can read anyway.
     return { ok: true }
@@ -300,13 +291,13 @@ export const monitors = {
    * Site-wide availability for the status (overview) response: all monitors of
    * the site pooled, episodes counted per monitor and then summed.
    */
-  async siteAvailability(siteId) {
+  async siteAvailability(siteId, locale) {
     const [a7, a30] = await Promise.all([
       windowTotals(siteId, Date.now() - WINDOW_7_MS),
       windowTotals(siteId, Date.now() - WINDOW_30_MS),
     ])
     return {
-      scope: SCOPE_LABEL,
+      scope: t(locale, SCOPE_LABEL),
       days7: publicAvailability(a7),
       days30: publicAvailability(a30),
     }

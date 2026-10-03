@@ -3,7 +3,7 @@
 // jump, and nothing is invented to fill a gap.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { updatesFromStatus, PROVENANCE } from '../src/live.js'
+import { updatesFromStatus, PROVENANCE, provenanceFor } from '../src/live.js'
 
 const status = {
   wp_version: '6.5.4',
@@ -69,7 +69,8 @@ test('alerts come from the event log, and still name what they cannot see', () =
   // the important half stayed: a source existing does not make the view
   // complete, and the gaps have to keep being declared.
   assert.equal(PROVENANCE.incidents.unavailable, undefined)
-  assert.deepEqual(PROVENANCE.incidents.live, ['لاگ رخداد'])
+  assert.deepEqual(provenanceFor('incidents').live, ['Event log'])
+  assert.deepEqual(provenanceFor('incidents', 'fa').live, ['لاگ رخداد'])
   // We only see a site when we ask it, so downtime between scans is invisible
   // and this list must never be read as uptime monitoring.
   assert.ok(PROVENANCE.incidents.partial.downtime)

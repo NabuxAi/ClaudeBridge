@@ -2,6 +2,11 @@ import { Link, Outlet } from 'react-router-dom'
 import Brand from './Brand.jsx'
 import { Button } from '../components/index.js'
 import Icon from '../lib/icons.jsx'
+import LanguageSwitcher from '../components/LanguageSwitcher.jsx'
+import { t, date } from '../lib/i18n.js'
+
+// Copyright year: the year this bundle loaded, in the reader's calendar.
+const BUILD_TIME = Date.now()
 
 export default function MarketingLayout() {
   return (
@@ -11,13 +16,14 @@ export default function MarketingLayout() {
           <Brand />
           <span className="dwp-spacer" />
           <nav className="dwp-mkt-links">
-            <a href="#features">قابلیت‌ها</a>
-            <a href="#authority">سطوح اختیار</a>
-            <Link to="/pricing">قیمت‌ها</Link>
+            <a href="#features">{t('layout.mkt.features')}</a>
+            <a href="#authority">{t('layout.mkt.authority')}</a>
+            <Link to="/pricing">{t('layout.mkt.pricing')}</Link>
           </nav>
+          <LanguageSwitcher />
           <span className="dwp-desktop-only" style={{ width: 1, height: 24, background: 'var(--gd-border)' }} />
-          <Button as={Link} to="/login" variant="ghost" size="sm">ورود</Button>
-          <Button as={Link} to="/register" variant="primary" size="sm">ساخت حساب</Button>
+          <Button as={Link} to="/login" variant="ghost" size="sm">{t('layout.mkt.login')}</Button>
+          <Button as={Link} to="/register" variant="primary" size="sm">{t('layout.mkt.register')}</Button>
         </div>
       </header>
 
@@ -31,19 +37,19 @@ export default function MarketingLayout() {
               <span style={{ fontWeight: 800, fontSize: 15 }}>Digi<b style={{ color: 'var(--gd-primary)' }}>WP</b></span>
             </div>
             <p style={{ fontSize: 12.5, lineHeight: 1.75, color: 'var(--gd-text-muted)', margin: 0, maxWidth: 230 }}>
-              پشتیبان هوشمند وردپرس؛ مراقبت، آپدیت امن و بکاپ سالم به‌صورت خودکار — همه از طریق سرور شما.
+              {t('layout.footer.blurb')}
             </p>
           </div>
           {[
-            { h: 'محصول', links: [{ t: 'قابلیت‌ها' }, { t: 'سطوح اختیار' }, { t: 'قیمت‌ها' }] },
-            { h: 'شرکت', links: [{ t: 'دربارهٔ ما' }, { t: 'وبلاگ' }, { t: 'تماس با ما' }] },
+            { h: t('layout.footer.product'), links: [{ t: t('layout.mkt.features') }, { t: t('layout.mkt.authority') }, { t: t('layout.mkt.pricing') }] },
+            { h: t('layout.footer.company'), links: [{ t: t('layout.footer.about') }, { t: t('layout.footer.blog') }, { t: t('layout.footer.contact') }] },
             {
-              h: 'پشتیبانی',
+              h: t('layout.footer.support'),
               links: [
-                { t: 'راهنما' },
-                { t: 'وضعیت سرویس' },
-                { t: 'حریم خصوصی', to: '/privacy' },
-                { t: 'شرایط استفاده', to: '/terms' },
+                { t: t('layout.footer.guide') },
+                { t: t('layout.footer.status') },
+                { t: t('layout.footer.privacy'), to: '/privacy' },
+                { t: t('layout.footer.terms'), to: '/terms' },
               ],
             },
           ].map((c) => (
@@ -62,7 +68,7 @@ export default function MarketingLayout() {
         </div>
         <div style={{ borderTop: '1px solid var(--gd-border)' }}>
           <div className="dwp-container" style={{ padding: '16px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, color: 'var(--gd-text-muted)' }}>
-            <span>© ۱۴۰۵ DigiWP Ai Support — همهٔ حقوق محفوظ است.</span>
+            <span>{t('layout.footer.copyright', { year: date(BUILD_TIME, { year: 'numeric' }) })}</span>
             <span className="dwp-mono">ai.digiwp.com</span>
           </div>
         </div>

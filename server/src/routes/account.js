@@ -1,4 +1,7 @@
 import { Router } from 'express'
+import { describe as describeHosting } from '../hosting.js'
+import { httpError, normalizeLocale, i18nMiddleware } from '../i18n.js'
+import { localizeEvent, i18nTitle } from '../event-text.js'
 import { config, publicApiBase } from '../config.js'
 import { sites, users } from '../store.js'
 import * as events from '../events.js'
@@ -11,10 +14,18 @@ import { billing } from '../billing.store.js'
 import { limiter, hit, clientIp } from '../security/ratelimit.js'
 
 const router = Router()
+// Idempotent with the app-level middleware; keeps req.t/req.locale present
+// when a router is mounted on its own (tests build bare apps).
+router.use(i18nMiddleware)
 
 // The signed-in user's sites (empty for a brand-new account).
 router.get('/sites', async (req, res, next) => {
-  try { res.json(await sites.listByUser(req.user.sub)) } catch (e) { next(e) }
+  try {
+    // Hosting labels are rendered in the reader's language here; the store
+    // has no request and describes them in English.
+    const list = await sites.listByUser(req.user.sub)
+    res.json(list.map((s) => ({ ...s, hosting: describeHosting(s.hosting, req.locale) })))
+  } catch (e) { next(e) }
 })
 
 // Create a site → returns the one-time shared secret + server URL for the plugin.
@@ -28,7 +39,7 @@ router.get('/sites', async (req, res, next) => {
 router.post('/sites', async (req, res, next) => {
   try {
     const { name, title } = req.body || {}
-    await billing.canAddSite(req.user.sub)
+    await billing.canAddSite(req.user.sub, req.locale)
     const site = await sites.add(req.user.sub, { name, title })
     res.status(201).json({
       id: site.id, name: site.name, title: site.title, status: site.status,
@@ -37,10 +48,10 @@ router.post('/sites', async (req, res, next) => {
         siteKey: site.siteKey,
         secret: site.secret, // shown ONCE — paste into the plugin
         steps: [
-          'در سایت مقصد: افزونه‌ها → WP Claude Bridge را نصب و فعال کنید.',
-          'ابزارها → Claude Bridge → Hub Connector Mode را باز کنید.',
-          'حالت کانکتور را روشن کنید و «Hub server URL» و «Shared secret» بالا را وارد کنید.',
-          'ذخیره کنید؛ سپس اینجا «بررسی اتصال» را بزنید.',
+          req.t('account.pairing.step1'),
+          req.t('account.pairing.step2'),
+          req.t('account.pairing.step3'),
+          req.t('account.pairing.step4'),
         ],
       },
     })
@@ -61,21 +72,21 @@ const NOT_BUILT = (what) => ({
   provenance: { live: [], unavailable: what },
 })
 
-router.get('/billing/plans', (_req, res) => res.json(seed.plans))
-router.get('/billing', (_req, res) =>
-  res.json(NOT_BUILT('صورتحساب و پرداخت هنوز ساخته نشده — هیچ درگاه پرداختی متصل نیست و کارتی ذخیره نمی‌شود.')))
-router.get('/billing/invoices', (_req, res) =>
-  res.json({ ...NOT_BUILT('فاکتوری صادر نمی‌شود چون سیستم پرداخت هنوز وجود ندارد.'), list: [] }))
-router.get('/billing/invoices/:id', (_req, res) =>
-  res.status(404).json({ message: 'فاکتوری وجود ندارد — سیستم پرداخت هنوز ساخته نشده.' }))
+router.get('/billing/plans', (req, res) => res.json(billing.localizePlans(req.locale, seed.plans)))
+router.get('/billing', (req, res) =>
+  res.json(NOT_BUILT(req.t('account.notBuilt.billing'))))
+router.get('/billing/invoices', (req, res) =>
+  res.json({ ...NOT_BUILT(req.t('billing.noInvoices')), list: [] }))
+router.get('/billing/invoices/:id', (req, res) =>
+  res.status(404).json({ message: req.t('account.notBuilt.invoice') }))
 router.get('/team', async (req, res, next) => {
   try {
     // The one real member: whoever is signed in. Inviting others needs an
     // invitation flow and per-site permissions, neither of which exists.
     const me = await users.byId(req.user.sub)
     res.json({
-      ...NOT_BUILT('دعوت هم‌تیمی و دسترسی چندکاربره هنوز ساخته نشده. فقط حساب خودتان وجود دارد.'),
-      list: me ? [{ id: me.id, name: me.name, email: me.email, role: 'owner', roleLabel: 'مالک', initials: (me.name || me.email)[0], sites: 'همه' }] : [],
+      ...NOT_BUILT(req.t('account.notBuilt.team')),
+      list: me ? [{ id: me.id, name: me.name, email: me.email, role: 'owner', roleLabel: req.t('team.role.owner'), initials: (me.name || me.email)[0], sites: req.t('account.allSites') }] : [],
     })
   } catch (e) { next(e) }
 })
@@ -110,16 +121,16 @@ router.get('/alerts/readiness', async (req, res, next) => {
     const me = await users.byId(req.user.sub)
     const contact = await users.contact(req.user.sub)
     const rows = [
-      { id: 'firebase', label: 'اعلان مرورگر (Firebase)', server: Boolean(config.alerts.fcmServerKey), user: Boolean(contact.fcmToken) },
-      { id: 'najva', label: 'اعلان نجوا', server: Boolean(config.alerts.najvaApiKey), user: Boolean(contact.najvaToken) },
-      { id: 'sms', label: 'پیامک', server: Boolean(config.alerts.smsUrl && config.alerts.smsApiKey), user: Boolean(contact.phone) },
-      { id: 'email', label: 'ایمیل', server: Boolean(config.alerts.emailUrl), user: Boolean(me?.email) },
+      { id: 'firebase', label: req.t('account.readiness.firebase'), server: Boolean(config.alerts.fcmServerKey), user: Boolean(contact.fcmToken) },
+      { id: 'najva', label: req.t('account.readiness.najva'), server: Boolean(config.alerts.najvaApiKey), user: Boolean(contact.najvaToken) },
+      { id: 'sms', label: req.t('account.readiness.sms'), server: Boolean(config.alerts.smsUrl && config.alerts.smsApiKey), user: Boolean(contact.phone) },
+      { id: 'email', label: req.t('account.readiness.email'), server: Boolean(config.alerts.emailUrl), user: Boolean(me?.email) },
     ].map((r) => ({
       ...r,
       ready: r.server && r.user,
       why: r.server && r.user ? null
-        : !r.server ? 'این سرویس روی سرور ما تنظیم نشده'
-        : 'اطلاعات تماس شما برای این راه ثبت نشده',
+        : !r.server ? req.t('account.readiness.noServer')
+        : req.t('account.readiness.noContact'),
     }))
 
     const ready = rows.filter((r) => r.ready)
@@ -129,10 +140,10 @@ router.get('/alerts/readiness', async (req, res, next) => {
       // The sentence that matters. A single channel is not redundancy, and the
       // whole design of the dispatcher assumes there is somewhere to fall back to.
       verdict: ready.length === 0
-        ? 'هیچ راهی برای اطلاع‌رسانی اضطراری به شما وجود ندارد. اگر سایتتان هک شود، از ما خبری نمی‌شنوید.'
+        ? req.t('account.readiness.none')
         : ready.length === 1
-          ? `فقط یک راه فعال است (${ready[0].label}). اگر همان یکی کار نکند، هشداری به شما نمی‌رسد.`
-          : `${ready.length} راه فعال است؛ اگر یکی کار نکند، بعدی امتحان می‌شود.`,
+          ? req.t('account.readiness.one', { channel: ready[0].label })
+          : req.t('account.readiness.many', { count: ready.length }),
     })
   } catch (e) { next(e) }
 })
@@ -140,13 +151,13 @@ router.get('/alerts/readiness', async (req, res, next) => {
 router.get('/account/activity', async (req, res, next) => {
   try {
     const rows = await events.listByUser(req.user.sub, 20)
-    res.json({ events: rows })
+    res.json({ events: rows.map((e) => localizeEvent(req.locale, e)) })
   } catch (e) { next(e) }
 })
 
 router.get('/profile', async (req, res, next) => {
   try {
-    const me = await users.byId(req.user.sub)
+    const me = users.withLabels(req.locale, await users.byId(req.user.sub))
     // The enrolled emergency contact rides along so the alerts screen can
     // prefill what this user already gave us — their own data, behind auth.
     res.json({ ...me, contact: await users.contact(req.user.sub) })
@@ -160,9 +171,14 @@ router.patch('/profile', async (req, res, next) => {
     const { name, lang, timezone } = req.body || {}
     const fields = {}
     if (name != null) fields.name = name
-    if (lang != null) fields.lang = lang
+    if (lang != null) {
+      // Only a supported language code is stored: background mail and
+      // alerts are rendered in it.
+      fields.lang = normalizeLocale(lang)
+      if (!fields.lang) throw httpError(400, 'account.invalidLang')
+    }
     if (timezone != null) fields.timezone = timezone
-    res.json(await users.update(req.user.sub, fields))
+    res.json(users.withLabels(req.locale, await users.update(req.user.sub, fields)))
   } catch (e) { next(e) }
 })
 
@@ -176,7 +192,7 @@ router.patch('/profile', async (req, res, next) => {
 const deleteIpLimit = limiter('account-delete', {
   limit: 10, windowMs: 60 * 60 * 1000,
   keyFn: (req) => clientIp(req, { trustProxy: config.trustProxy }),
-  message: 'تعداد درخواست‌های حذف حساب از این آدرس بیش از حد است. یک ساعت دیگر تلاش کنید.',
+  message: 'account.limit.deleteIp',
 })
 
 router.post('/account/delete', deleteIpLimit, async (req, res, next) => {
@@ -190,18 +206,18 @@ router.post('/account/delete', deleteIpLimit, async (req, res, next) => {
     if (!acct.allowed) {
       res.setHeader('Retry-After', String(acct.retryAfter))
       return res.status(429).json({
-        message: 'تلاش‌های حذف این حساب بیش از حد مجاز است. کمی بعد دوباره تلاش کنید.',
+        message: req.t('account.limit.deleteAccount'),
         retryAfter: acct.retryAfter,
       })
     }
 
     const { password } = req.body || {}
     const row = await one('SELECT * FROM users WHERE id = $1', [req.user.sub])
-    if (!row) return res.status(404).json({ message: 'کاربر پیدا نشد.' })
+    if (!row) return res.status(404).json({ message: req.t('common.userNotFound') })
     // Deliberately vague and identical for a missing password and a wrong one:
     // this answer never says which of the two failed.
     if (!password || !(await verifyPassword(String(password), row.pass_hash))) {
-      return res.status(400).json({ message: 'رمز عبور نادرست است.' })
+      return res.status(400).json({ message: req.t('auth.wrongPassword') })
     }
 
     // 1 · Credentials die first, so a failure anywhere later in this flow
@@ -230,8 +246,7 @@ router.post('/account/delete', deleteIpLimit, async (req, res, next) => {
     for (const id of siteIds) {
       await events.record({
         siteId: id, kind: 'account', severity: 'info',
-        title: 'حساب مالک حذف شد؛ اعتبارنامهٔ جفت‌سازی این سایت باطل شد',
-        detail: { kind: 'account_deleted' },
+        ...i18nTitle('account.events.ownerDeleted', null, { kind: 'account_deleted' }),
       })
     }
 
@@ -273,7 +288,7 @@ router.post('/account/delete', deleteIpLimit, async (req, res, next) => {
       ok: true,
       sitesAffected: siteIds.length,
       revokedSessions,
-      message: 'حساب شما حذف شد. همهٔ نشست‌ها باطل، سایت‌ها از پایش خارج و اعتبارنامه‌های جفت‌سازی باطل شدند؛ این تغییر بازگشت‌پذیر نیست.',
+      message: req.t('account.deleted'),
     })
   } catch (e) { next(e) }
 })

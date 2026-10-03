@@ -1,5 +1,12 @@
 import { Fragment, useState } from 'react'
 import Icon from '../../lib/icons.jsx'
+import Trans from '../../components/Trans.jsx'
+import { t, digits } from '../../lib/i18n.js'
+
+/** A translated auth heading; `<hl>…</hl>` in the string gets the gradient. */
+export function AuthTitle({ k }) {
+  return <Trans k={k} components={{ hl: (c) => <span className="gd-gradient-text">{c}</span> }} />
+}
 
 // Shared skin atoms for the auth pages (hub/src/pages/auth/). These compose
 // the SAME .gd-field / .gd-input classes the shared Input component renders
@@ -44,7 +51,7 @@ export function PasswordField({
           type="button"
           className="dwp-auth-pass__toggle"
           onClick={() => setShow((s) => !s)}
-          aria-label={show ? 'پنهان‌کردن رمز عبور' : 'نمایش رمز عبور'}
+          aria-label={show ? t('auth.shared.hidePassword') : t('auth.shared.showPassword')}
           aria-pressed={show}
         >
           <Icon name={show ? 'eye-off' : 'eye'} size={16} />
@@ -58,11 +65,11 @@ export function PasswordField({
 /** Two-step progress rail for the reset flow (request link → new password). */
 export function AuthSteps({ current }) {
   const steps = [
-    { n: '۱', label: 'درخواست لینک' },
-    { n: '۲', label: 'رمز جدید' },
+    { n: 1, label: t('auth.shared.steps.request') },
+    { n: 2, label: t('auth.shared.steps.newPassword') },
   ]
   return (
-    <ol className="dwp-auth-steps" aria-label="مراحل بازیابی رمز عبور">
+    <ol className="dwp-auth-steps" aria-label={t('auth.shared.steps.aria')}>
       {steps.map((s, i) => {
         const done = i + 1 < current
         const active = i + 1 === current
@@ -73,7 +80,7 @@ export function AuthSteps({ current }) {
               aria-current={active ? 'step' : undefined}
             >
               <span className="dwp-auth-steps__dot" aria-hidden="true">
-                {done ? <Icon name="check" size={13} strokeWidth={3} /> : s.n}
+                {done ? <Icon name="check" size={13} strokeWidth={3} /> : digits(s.n)}
               </span>
               <span className="dwp-auth-steps__label">{s.label}</span>
             </li>

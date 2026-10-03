@@ -120,6 +120,9 @@ test('an accepted send carries the config VAPID pair and the sw.js payload shape
   assert.deepEqual(seen.calls[0].sub.keys, { p256dh: 'p256dh-key-material', auth: 'auth-key-material' })
   assert.equal(seen.calls[0].payload.title, 'سایت پاسخ نمی‌دهد')
   assert.equal(seen.calls[0].payload.url, '/site/s1')
+  // The service worker renders by these (hub/public/sw.js reads data.lang/dir).
+  assert.equal(seen.calls[0].payload.lang, 'en')
+  assert.equal(seen.calls[0].payload.dir, 'ltr')
 
   assert.equal(r.ok, true)
   assert.equal(r.reason, 'accepted')
@@ -127,8 +130,16 @@ test('an accepted send carries the config VAPID pair and the sw.js payload shape
   assert.equal(r.failed, 0)
   assert.deepEqual(r.removed, [])
   // "Provider accepted" is the ceiling: the note says so in plain words.
-  assert.match(r.note, /پذیرفته شد/)
-  assert.match(r.note, /تأیید نشده/)
+  assert.match(r.note, /accepted by the push service/)
+  assert.match(r.note, /not confirmed/)
+
+  // In the recipient's language when their users.lang is known.
+  const rFa = await sendToSubscriptions([SUB_ROW(endpoint)], { body: 'شرح', lang: 'fa' })
+  assert.match(rFa.note, /پذیرفته شد/)
+  assert.match(rFa.note, /تأیید نشده/)
+  assert.equal(seen.calls[1].payload.title, 'هشدار امنیتی', 'default title in the recipient language')
+  assert.equal(seen.calls[1].payload.lang, 'fa')
+  assert.equal(seen.calls[1].payload.dir, 'rtl')
 })
 
 test('a dead endpoint (410) is removed from the store, a server error (500) is kept', async () => {
@@ -178,7 +189,8 @@ test('the dispatcher channel skips honestly and sends honestly', async () => {
   // No subscription enrolled: a skip, not a failure — same rule as every channel.
   const r0 = await webPush({ title: 't', body: 'b' }, {})
   assert.equal(r0.skipped, true)
-  assert.match(r0.error, /اشتراک مرورگری ثبت نشده/)
+  assert.match(r0.error, /No browser subscription/)
+  assert.equal(r0.errorKey, 'alerts.skip.noBrowser')
 
   const seen = fakeWebPush()
   const r = await webPush(
@@ -188,7 +200,7 @@ test('the dispatcher channel skips honestly and sends honestly', async () => {
   assert.equal(r.channel, 'web-push')
   assert.equal(r.ok, true)
   assert.equal(r.accepted, 1)
-  assert.match(r.note, /تأیید نشده/)
+  assert.match(r.note, /not confirmed/)
   assert.equal(seen.calls[0].payload.title, 'هشدار: فروشگاه')
 
   // Unconfigured deployment: the channel does not exist there, and says why.

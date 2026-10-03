@@ -26,7 +26,7 @@ const realWarn = console.warn
 const realAlerts = { ...config.alerts }
 
 store.users.byEmailRaw = async (email) =>
-  String(email).toLowerCase() === EXISTS ? { id: 'u_1', email: EXISTS } : null
+  String(email).toLowerCase() === EXISTS ? { id: 'u_1', email: EXISTS, lang: 'fa' } : null
 store.passwordResets.create = async () => ({ raw: RAW_TOKEN })
 
 let httpCalls = []
@@ -88,14 +88,14 @@ function solved() {
   return { captchaId: c.id, captchaAnswer: answer }
 }
 
-async function forgot(email) {
+async function forgot(email, lang) {
   _reset()
   // Our own request must ride the real fetch: the stub below exists to catch
   // the server's outbound mail delivery, and would otherwise answer (or throw
   // for) this very call.
   const res = await realFetch(base + '/auth/forgot-password', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(lang ? { 'Accept-Language': lang } : {}) },
     body: JSON.stringify({ email, ...solved() }),
   })
   return { status: res.status, body: await res.json() }
@@ -107,8 +107,10 @@ test('with no mailer configured: mailConfigured:false, an honest message, and no
   assert.equal(status, 200)
   assert.equal(body.ok, true)
   assert.equal(body.mailConfigured, false)
-  assert.ok(!body.message.includes('ارسال شده است'), 'must not claim a link was sent when no transport exists')
-  assert.ok(body.message.includes('پیکربندی نشده'), 'must say plainly that email is not configured here')
+  assert.ok(!body.message.includes('has been sent'), 'must not claim a link was sent when no transport exists')
+  assert.ok(body.message.includes('not configured'), 'must say plainly that email is not configured here')
+  const fa = await forgot(EXISTS, 'fa')
+  assert.ok(fa.body.message.includes('پیکربندی نشده'), 'the same honesty in Persian with Accept-Language: fa')
   assert.equal(httpCalls.length, 0)
 })
 
@@ -126,9 +128,12 @@ test('with EMAIL_URL configured: mailConfigured:true, vague message, link delive
   const { status, body } = await forgot(EXISTS)
   assert.equal(status, 200)
   assert.equal(body.mailConfigured, true)
-  assert.equal(body.message, 'اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی ارسال شده است.')
+  assert.equal(body.message, 'If this email has an account, a reset link has been sent.')
   assert.equal(httpCalls.length, 1)
   assert.equal(httpCalls[0].body.to, EXISTS)
+  // The mail speaks the account's stored language (users.lang = 'fa' here),
+  // not the requester's.
+  assert.equal(httpCalls[0].body.subject, 'بازنشانی رمز عبور DigiWP')
   assert.ok(httpCalls[0].body.text.includes(`/reset?token=${RAW_TOKEN}`), 'the single-use token reaches the mail')
 })
 
@@ -139,6 +144,15 @@ test('with EMAIL_URL configured: the response is byte-identical for a missing ad
   assert.equal(a.status, b.status)
   assert.deepEqual(a.body, b.body)
   assert.equal(b.body.mailConfigured, true, 'configured state is global, not per-address')
+})
+
+test('enumeration safety holds within each language (fa)', async () => {
+  useHttpMailer()
+  const a = await forgot(EXISTS, 'fa')
+  const b = await forgot('nobody@example.com', 'fa')
+  assert.equal(a.status, b.status)
+  assert.deepEqual(a.body, b.body)
+  assert.equal(a.body.message, 'اگر این ایمیل در سیستم وجود داشته باشد، لینک بازنشانی ارسال شده است.')
 })
 
 test('with EMAIL_SERVER configured: the reset link goes out over SMTP', async () => {

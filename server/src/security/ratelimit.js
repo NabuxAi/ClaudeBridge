@@ -20,6 +20,7 @@
 // several processes, the fix is a shared store, and until then the honest
 // statement is in `note` below rather than in nobody's head.
 // ============================================================
+import { t, hasKey } from '../i18n.js'
 
 const buckets = new Map()
 
@@ -97,13 +98,16 @@ export function clientIp(req, { trustProxy }) {
  */
 export function limiter(name, { limit, windowMs, keyFn, message }) {
   return (req, res, next) => {
-    const key = `${name}:${keyFn(req)}`
-    const r = hit(key, { limit, windowMs })
+    const bucket = `${name}:${keyFn(req)}`
+    const r = hit(bucket, { limit, windowMs })
     res.setHeader('X-RateLimit-Remaining', String(r.remaining))
     if (r.allowed) return next()
     res.setHeader('Retry-After', String(r.retryAfter))
+    // `message` is a translation key (rendered in the caller's language);
+    // any other string is sent verbatim.
+    const key = message || 'common.rateLimited'
     res.status(429).json({
-      message: message || 'درخواست‌های شما بیش از حد مجاز است. کمی صبر کنید.',
+      message: hasKey(key) ? t(req.locale, key) : key,
       retryAfter: r.retryAfter,
     })
   }

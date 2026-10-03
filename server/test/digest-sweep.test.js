@@ -31,17 +31,17 @@ test('a quiet successful sweep still says it happened', () => {
   // "never ran" are the same empty space in the message.
   const out = renderSweep(run(), NOW, true)
 
-  assert.match(out, /بررسی خودکار/)
-  assert.match(out, /4 سایت/)
-  assert.match(out, /چیزی برای انجام نبود/)
+  assert.match(out, /Automatic check/)
+  assert.match(out, /4 sites/)
+  assert.match(out, /nothing to do/)
 })
 
 test('a sweep that found work does not claim there was none', () => {
   const out = renderSweep(run({ proposed: 2, performed: 1 }), NOW, true)
 
-  assert.match(out, /2 پیشنهاد/)
-  assert.match(out, /1 اقدام/)
-  assert.doesNotMatch(out, /چیزی برای انجام نبود/)
+  assert.match(out, /2 proposals/)
+  assert.match(out, /1 action/)
+  assert.doesNotMatch(out, /nothing to do/)
 })
 
 test('a run with no model is not reported as a clean bill of health', () => {
@@ -49,22 +49,22 @@ test('a run with no model is not reported as a clean bill of health', () => {
   // fine. Collapsing the two is how a broken gateway reads as a healthy fleet.
   const out = renderSweep(run({ degraded: 4 }), NOW, true)
 
-  assert.match(out, /بدون مدل/)
-  assert.doesNotMatch(out, /چیزی برای انجام نبود/)
+  assert.match(out, /without a model/)
+  assert.doesNotMatch(out, /nothing to do/)
 })
 
 test('failures are named rather than folded into the site count', () => {
   const out = renderSweep(run({ sites: 4, failed: 3 }), NOW, true)
 
-  assert.match(out, /3 ناموفق/)
-  assert.doesNotMatch(out, /چیزی برای انجام نبود/)
+  assert.match(out, /3 failed/)
+  assert.doesNotMatch(out, /nothing to do/)
 })
 
 test('what the cap left out is stated, not silently dropped', () => {
   // A sweep that stops at the cap reads as one that covered the whole fleet.
   const out = renderSweep(run({ sites: 25, skipped: 7 }), NOW, true)
 
-  assert.match(out, /7 خارج از سقف/)
+  assert.match(out, /7 over the cap/)
 })
 
 test('a missed run is reported as missed', () => {
@@ -72,8 +72,8 @@ test('a missed run is reported as missed', () => {
   // a run that did not happen — not a rounding artefact.
   const out = renderSweep(run({ finished_at: NOW - 40 * HOUR }), NOW, true)
 
-  assert.match(out, /40 ساعت پیش/)
-  assert.match(out, /اجرا نشده/)
+  assert.match(out, /40 hours ago/)
+  assert.match(out, /missed|has not run/)
 })
 
 test('a sweep from yesterday morning is not called stale', () => {
@@ -82,8 +82,8 @@ test('a sweep from yesterday morning is not called stale', () => {
   // warning stops being read.
   const out = renderSweep(run({ finished_at: NOW - 26 * HOUR }), NOW, true)
 
-  assert.doesNotMatch(out, /اجرا نشده/)
-  assert.match(out, /4 سایت/)
+  assert.doesNotMatch(out, /missed|has not run/)
+  assert.match(out, /4 sites/)
 })
 
 test('switched on and never run is said out loud', () => {
@@ -91,8 +91,8 @@ test('switched on and never run is said out loud', () => {
   // would reveal it.
   const out = renderSweep(null, NOW, true)
 
-  assert.match(out, /روشن است/)
-  assert.match(out, /اجرا نشده/)
+  assert.match(out, /on, but/)
+  assert.match(out, /missed|has not run/)
 })
 
 test('the section is absent entirely when the sweep is off', () => {
@@ -100,4 +100,10 @@ test('the section is absent entirely when the sweep is off', () => {
   // about a feature it does not use.
   assert.equal(renderSweep(null, NOW, false), '')
   assert.equal(renderSweep(run(), NOW, false), '')
+})
+
+test('the operator reads the sweep line in the operator locale', () => {
+  const out = renderSweep(run({ proposed: 2 }), NOW, true, 'fa')
+  assert.match(out, /بررسی خودکار/)
+  assert.match(out, /۲ پیشنهاد/)
 })

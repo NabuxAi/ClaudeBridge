@@ -1,0 +1,43 @@
+{
+  "invalidLang": "Unsupported language.",
+  "emailPasswordRequired": "Email and password are required.",
+  "emailTaken": "This email is already registered.",
+  "invalidRole": "Invalid role.",
+  "deletedName": "Deleted account",
+  "role": {
+    "admin": "Admin",
+    "accountManager": "Account manager"
+  },
+  "allSites": "All",
+  "pairing": {
+    "step1": "On the target site: Plugins → install and activate WP Claude Bridge.",
+    "step2": "Open Tools → Claude Bridge → Hub Connector Mode.",
+    "step3": "Turn connector mode on and enter the “Hub server URL” and “Shared secret” shown above.",
+    "step4": "Save, then click “Check connection” here."
+  },
+  "notBuilt": {
+    "billing": "Billing and payments are not built yet — no payment gateway is connected and no card is stored.",
+    "invoice": "There is no invoice — the payment system has not been built yet.",
+    "team": "Teammate invitations and multi-user access are not built yet. Only your own account exists."
+  },
+  "readiness": {
+    "firebase": "Browser notification (Firebase)",
+    "najva": "Najva notification",
+    "sms": "SMS",
+    "email": "Email",
+    "noServer": "This service is not configured on our server",
+    "noContact": "Your contact details for this channel are not on file",
+    "none": "There is no way to reach you in an emergency. If your site is hacked, you will not hear from us.",
+    "one": "Only one channel is active ({channel}). If that one fails, no alert reaches you.",
+    "many_one": "{count} channel is active; if one fails, the next is tried.",
+    "many_other": "{count} channels are active; if one fails, the next is tried."
+  },
+  "limit": {
+    "deleteIp": "Too many account-deletion requests from this address. Try again in an hour.",
+    "deleteAccount": "Too many attempts to delete this account. Try again a little later."
+  },
+  "events": {
+    "ownerDeleted": "Owner account deleted; this site's pairing credentials were revoked"
+  },
+  "deleted": "Your account has been deleted. All sessions were revoked, sites were taken out of monitoring, and pairing credentials were revoked; this cannot be undone."
+}

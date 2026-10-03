@@ -93,6 +93,11 @@ const SCHEMA = `
   -- Backup storage and retention policy per site.
   ALTER TABLE sites ADD COLUMN IF NOT EXISTS backup_policy JSONB
     NOT NULL DEFAULT '{"destination":"local","maxDaily":5,"retentionDays":30,"maxStorageMb":2048,"autoPruneOnFull":true}'::jsonb;
+
+  -- English is the default language (2026-10-03). Existing rows keep the
+  -- 'fa' they were created with; new accounts store the language they
+  -- registered in (routes/auth.js), which background mail/alerts use.
+  ALTER TABLE users ALTER COLUMN lang SET DEFAULT 'en';
 ` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA + CONVERSATIONS_SCHEMA + SESSIONS_SCHEMA + TWOFACTOR_SCHEMA + MONITORS_SCHEMA + PUSH_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */
@@ -122,9 +127,10 @@ async function seedDemo() {
   if (rows[0].n > 0) return
   const uid = 'u_demo'
   await pool.query(
-    `INSERT INTO users (id, email, name, pass_hash, role, plan, two_factor, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
-    [uid, 'maryam@example.com', 'مریم رضایی', await hashPassword('demo1234'), 'مدیر حساب', 'حرفه‌ای', Date.now()]
+    // role/plan take the schema defaults (the legacy stored values).
+    `INSERT INTO users (id, email, name, pass_hash, two_factor, created_at)
+     VALUES ($1, $2, $3, $4, true, $5)`,
+    [uid, 'maryam@example.com', 'Maryam Rezaei', await hashPassword('demo1234'), Date.now()]
   )
   for (const s of demoSites) {
     await pool.query(
