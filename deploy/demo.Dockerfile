@@ -11,9 +11,10 @@
 #
 # Copying the plugin in at build time removes the dependency on where compose is
 # run from, so the demo behaves the same locally and on any host.
-FROM wordpress:6.6-php8.2-apache
+FROM wordpress:7.1-php8.2-apache
 
 COPY wp-claude-bridge.php /usr/src/plugin/wp-claude-bridge.php
+COPY skills /usr/src/plugin/skills
 
 # /var/www/html is a named volume, so anything written into it at build time is
 # hidden the moment the volume mounts. The plugin is therefore staged outside
