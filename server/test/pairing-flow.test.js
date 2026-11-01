@@ -43,6 +43,10 @@ if (!dsn) {
   // factory mounts the same routers in the same order and starts nothing.
   const { createApp } = await import('../src/index.js')
   const app = createApp()
+  const { _reset: resetRateLimits } = await import('../src/security/ratelimit.js')
+  // Each case owns its accounts. More than five cases must not consume one
+  // shared hourly signup budget and make the last case fail before pairing.
+  test.beforeEach(() => resetRateLimits())
 
   // A stub WordPress. It answers the connector's signed calls the way the
   // plugin does, so the relay's own signing and response handling run.
