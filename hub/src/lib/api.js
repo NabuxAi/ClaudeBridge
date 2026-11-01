@@ -134,6 +134,8 @@ export const auth = {
 
 // ---- Account (sites, billing, team, notifications, profile) ----
 export const account = {
+  // Discovery always uses the server, including during a mock UI preview.
+  discoverSite: (url, signal) => http('/sites/discover', { method: 'POST', body: { url }, signal }),
   sites: call(mock.listSites, () => http('/sites')),
   addSite: call(mock.addSite, (b) => http('/sites', { method: 'POST', body: b })),
   pingSite: call(mock.pingSite, (id) => http(`/sites/${id}/ping`, { method: 'POST' })),

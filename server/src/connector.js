@@ -13,6 +13,7 @@
 //   replay window: 300s
 // ============================================================
 import crypto from 'node:crypto'
+import { normalizeSiteAddress } from './site-address.js'
 
 const REPLAY_WINDOW = 300 // seconds
 
@@ -33,7 +34,7 @@ export function verifySignature(secret, { timestamp, signature, rawBody = '' }) 
   return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
-const base = (url) => String(url).replace(/\/$/, '')
+const base = normalizeSiteAddress
 
 /** GET {site}/wp-json/claude-bridge/v1/connector/ping — verify pairing is live. */
 export async function ping(site) {

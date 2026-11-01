@@ -1,5 +1,9 @@
 {
   "domainRequired": "The site's domain is required.",
+  "invalidAddress": "Enter a valid HTTP or HTTPS WordPress address, including its installation folder. Do not include a username or password.",
+  "publicAddressRequired": "Enter a public WordPress address. Local or private network addresses cannot be checked here.",
+  "wordpressNotFound": "WordPress could not be verified at this address. Include the installation folder (for example /baneh). Check that the site's REST API is available and try again.",
+  "discoveryTimeout": "The WordPress check timed out. Check the address and try again.",
   "alreadyAdded": "This site has already been added.",
   "metric": {
     "wordpress": "WordPress",

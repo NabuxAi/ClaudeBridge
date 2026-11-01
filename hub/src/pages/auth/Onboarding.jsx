@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input } from '../../components/index.js'
@@ -63,7 +63,7 @@ const Shell = ({ activeStep, children }) => (
         )
       })}
     </div>
-    <div style={{ width: '100%', maxWidth: 640, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-md), inset 0 1px 0 var(--gd-highlight)', padding: '30px 32px' }}>
+    <div className="ob-card" style={{ width: '100%', maxWidth: 640, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-xl)', boxShadow: 'var(--gd-shadow-md), inset 0 1px 0 var(--gd-highlight)' }}>
       {children}
     </div>
   </div>
@@ -118,12 +118,44 @@ export default function Onboarding() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [site, setSite] = useState(restored) // { id, pairing }
+  const [detection, setDetection] = useState(null)
+  const [confirmed, setConfirmed] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const discoveryRequest = useRef(null)
+  useEffect(() => () => discoveryRequest.current?.abort(), [])
+
+  const inspectAddress = async () => {
+    if (discoveryRequest.current || !url.trim()) return
+    const controller = new AbortController()
+    discoveryRequest.current = controller
+    setChecking(true); setErr(''); setConfirmed(false)
+    try {
+      const result = await account.discoverSite(url, controller.signal)
+      if (!controller.signal.aborted) setDetection(result)
+    } catch (error) {
+      if (!controller.signal.aborted) setErr(error?.message || t('onboarding.input.discoveryFailed'))
+    } finally {
+      if (discoveryRequest.current === controller) {
+        discoveryRequest.current = null
+        setChecking(false)
+      }
+    }
+  }
+
+  const editAddress = (value) => {
+    discoveryRequest.current?.abort()
+    discoveryRequest.current = null
+    setChecking(false); setDetection(null); setConfirmed(false); setErr(''); setUrl(value)
+  }
 
   const createSite = async (e) => {
     e?.preventDefault()
+    if (busy || checking) return
+    if (!detection) { await inspectAddress(); return }
+    if (!confirmed) return
     setBusy(true); setErr('')
     try {
-      const res = await account.addSite({ name: url })
+      const res = await account.addSite({ name: detection.siteUrl })
       keepPairing(res)
       setSite(res)
       setPhase('pair')
@@ -151,7 +183,25 @@ export default function Onboarding() {
           {t('onboarding.input.sub')}
         </p>
         <form onSubmit={createSite}>
-          <Input label={t('onboarding.input.urlLabel')} value={url} leftIcon="globe" onChange={(e) => setUrl(e.target.value)} placeholder={t('onboarding.input.urlPlaceholder')} required dir="ltr" />
+          <Input id="wordpress-address" label={t('onboarding.input.urlLabel')} value={url} leftIcon="globe" onChange={(e) => editAddress(e.target.value)} onBlur={() => { if (!detection) inspectAddress() }} placeholder={t('onboarding.input.urlPlaceholder')} hint={t('onboarding.input.urlHint')} aria-describedby="wordpress-discovery" autoComplete="url" autoCapitalize="none" spellCheck={false} disabled={busy} required dir="ltr" />
+          <div id="wordpress-discovery" aria-live="polite" aria-busy={checking}>
+            {checking && <p className="ob-checking" role="status"><Icon name="loader-2" size={17} />{t('onboarding.input.checking')}</p>}
+            {detection && <section className="ob-location" aria-labelledby="wordpress-location-title">
+              <div className="ob-location__heading"><Icon name="globe" size={20} /><strong id="wordpress-location-title">{t(`onboarding.input.location.${detection.kind}`)}</strong></div>
+              <p>{t('onboarding.input.detectedNote')}</p>
+              <dl className="ob-location__details">
+                <div><dt>{t('onboarding.input.host')}</dt><dd dir="ltr">{detection.hostname}</dd></div>
+                <div><dt>{t('onboarding.input.path')}</dt><dd dir="ltr">{detection.path}</dd></div>
+              </dl>
+              <div className="ob-location__address" dir="ltr">{detection.siteUrl}</div>
+              {!detection.connectorDetected && <p className="ob-location__note">{t('onboarding.input.connectorMissing')}</p>}
+              <label className="ob-location__confirm">
+                <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} disabled={busy} required />
+                <span>{t(`onboarding.input.confirm.${detection.kind}`)}</span>
+              </label>
+              <p className="ob-location__edit">{t('onboarding.input.editHint')}</p>
+            </section>}
+          </div>
           <div style={{ display: 'flex', gap: 11, background: 'var(--gd-info-bg)', border: '1px solid var(--gd-info-border)', borderRadius: 'var(--gd-radius-lg)', padding: '14px 16px', margin: '20px 0' }}>
             <Icon name="shield-check" size={18} style={{ color: 'var(--gd-info)', flex: '0 0 auto', marginTop: 1 }} />
             <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--gd-info-text)' }}>
@@ -163,9 +213,9 @@ export default function Onboarding() {
               </div>
             </div>
           </div>
-          {err && <div className="gd-field__msg gd-field__msg--error" style={{ marginBottom: 12 }}>{err}</div>}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Button variant="primary" size="lg" leftIcon="plug" loading={busy} type="submit">{t('onboarding.input.submit')}</Button>
+          {err && <div role="alert" className="gd-field__msg gd-field__msg--error" style={{ marginBottom: 12 }}>{err}</div>}
+          <div className="ob-actions">
+            <Button variant="primary" size="lg" leftIcon="plug" loading={busy || checking} disabled={!!detection && !confirmed} type="submit">{t(detection ? 'onboarding.input.submit' : 'onboarding.input.inspect')}</Button>
             <Button variant="ghost" size="lg" type="button" onClick={() => navigate('/app')}>{t('onboarding.input.later')}</Button>
           </div>
         </form>
@@ -189,7 +239,7 @@ export default function Onboarding() {
         </ol>
       </div>
       {err && <div className="gd-field__msg gd-field__msg--error" style={{ marginBottom: 12 }}>{err}</div>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="ob-actions">
         <Button variant="primary" size="lg" leftIcon="plug-zap" loading={busy} onClick={verify}>{t('onboarding.pair.verify')}</Button>
         {/* Leaving the pairing step on purpose ends the one-time display: the
             stored copy is dropped, matching the "shown only once" promise. */}

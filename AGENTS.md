@@ -843,8 +843,9 @@ loading, and bundle/performance budgets.
 **Status: resolved (lint and lazy loading).** ESLint + React plugin are now
 installed with a config in `hub/eslint.config.js`, the existing lint errors are
 fixed, and `npm run lint` is part of CI. Route-level lazy loading is added in
-`hub/src/App.jsx`. React component tests and Playwright end-to-end flows remain
-in the roadmap.
+`hub/src/App.jsx`. React component tests and broader Playwright end-to-end flows
+remain in the roadmap. Scoped onboarding browser checks shipped on 2026-11-01;
+see the onboarding verification note below.
 
 ### P1.6 — docs and marketing counts/claims drift
 
@@ -1281,6 +1282,42 @@ unreachable, so a throwaway stack was used):
   `empty_blocks` and warns honestly instead of returning silent markup.
 - This was API-driven E2E over the real relay, not browser Playwright
   flows; the P1.5 Playwright gap stands.
+
+### WordPress onboarding verification (2026-11-01)
+
+- `POST /sites/discover` is session-authenticated, rate-limited, read-only
+  WordPress REST discovery. It checks the entered installation path, follows
+  up to three redirects, and returns the final site URL, hostname, subdomain,
+  path, and whether the connector namespace is visible. Subdomain parsing uses
+  `tldts` and the public suffix list, including multi-part suffixes.
+- `server/src/site-address.js` normalizes addresses shared by site creation and
+  signed relay calls: whitespace/trailing slashes and pasted wp-admin/login/REST
+  suffixes are removed, while subfolders (including nested paths) are retained.
+  Discovery fetches only public HTTP(S) destinations on ports 80/443, validates
+  each redirect, pins DNS answers for the socket, and bounds time/body size.
+- Onboarding checks on blur or submit, shows the detected location under the
+  URL field, and requires explicit confirmation before creating the site/key.
+  Editing the field cancels discovery and clears the location and confirmation.
+  API failure is shown honestly and creates no site. A missing connector is
+  distinguished from an unrecognized WordPress installation.
+- Scope: the owner must enter the full WordPress address. Discovery does not
+  enumerate unknown subfolders from a bare domain, and currently requires the
+  public `/wp-json/` index. Discovery proves REST reachability, not HMAC pairing;
+  the existing signed connection check remains the next step.
+- Local scoped verification: 18/18 address/connector tests; hub lint and build;
+  9/9 Playwright onboarding cases, including English/Persian, keyboard
+  confirmation, stale-response cancellation, and widths 320/375/768/1280.
+  Browser checks use intercepted API fixtures; signed relay tests use a real
+  local HTTP server. Full database/release checks belong to CI, not these counts.
+- Read-only live verification: `https://alowp.ir/baneh` resolves to the same
+  subfolder and advertises the connector namespace. Local proxy DNS returns
+  synthetic private answers, so this check used public DNS answers with the
+  production request implementation. No production site or secret was changed.
+- `hub/playwright.config.js` and `hub/test/onboarding.spec.js` run through
+  `npm run test:e2e`; CI installs Chromium and runs them after hub lint/build.
+  `server/test/pairing-flow.test.js` also covers persisted subfolder addresses,
+  signed ping/tool relay, discovery authentication, and invalid-address writes
+  against the real PostgreSQL CI service.
 
 ### Canonical release verification
 

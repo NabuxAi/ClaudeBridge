@@ -99,3 +99,11 @@ jobs:
       - name: Build
         working-directory: hub
         run: npm run build
+
+      - name: Install Chromium for onboarding checks
+        working-directory: hub
+        run: npx playwright install --with-deps chromium
+
+      - name: Test onboarding in the browser
+        working-directory: hub
+        run: npm run test:e2e

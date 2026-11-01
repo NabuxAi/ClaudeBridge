@@ -12,6 +12,7 @@ import { sessions } from '../sessions.store.js'
 import { twoFactor } from '../twofactor.store.js'
 import { billing } from '../billing.store.js'
 import { limiter, hit, clientIp } from '../security/ratelimit.js'
+import { discoverWordPress } from '../site-address.js'
 
 const router = Router()
 // Idempotent with the app-level middleware; keeps req.t/req.locale present
@@ -26,6 +27,13 @@ router.get('/sites', async (req, res, next) => {
     const list = await sites.listByUser(req.user.sub)
     res.json(list.map((s) => ({ ...s, hosting: describeHosting(s.hosting, req.locale) })))
   } catch (e) { next(e) }
+})
+
+// Read-only discovery before creating a site or disclosing a pairing secret.
+router.post('/sites/discover', limiter('site-discovery', {
+  limit: 20, windowMs: 60_000, keyFn: (req) => req.user.sub,
+}), async (req, res, next) => {
+  try { res.json(await discoverWordPress(req.body?.url)) } catch (e) { next(e) }
 })
 
 // Create a site → returns the one-time shared secret + server URL for the plugin.

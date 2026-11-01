@@ -51,6 +51,10 @@ if (!dsn) {
     req.on('data', (c) => (body += c))
     req.on('end', () => {
       res.setHeader('content-type', 'application/json')
+      if (!/^\/(?:baneh\/)?wp-json\/claude-bridge\/v1\/(?:connector\/ping|mcp)$/.test(req.url)) {
+        res.statusCode = 404
+        return res.end(JSON.stringify({ code: 'rest_no_route' }))
+      }
       if (req.url.includes('/ping')) return res.end(JSON.stringify({ ok: true, pong: true }))
       res.end(JSON.stringify({
         result: { content: [{ type: 'text', text: JSON.stringify({ ok: true, wp_version: '6.7.1' }) }] },
@@ -163,6 +167,35 @@ if (!dsn) {
     // record at a server they control.
     const after = await send(`/sites/${created.body.id}/pairing`, { headers: auth })
     assert.equal(after.body.paired, false)
+  })
+
+  test('a pasted subfolder dashboard address is stored and paired at the same WordPress installation', async () => {
+    const auth = await owner()
+    const created = await addSite(auth, ` ${wpUrl}/baneh/wp-admin/plugins.php?plugin=bridge `)
+    assert.equal(created.status, 201, JSON.stringify(created.body))
+    const pairing = await send(`/sites/${created.body.id}/pairing`, { headers: auth })
+    assert.equal(pairing.body.url, `${wpUrl}/baneh`)
+    const checked = await send(`/sites/${created.body.id}/ping`, { method: 'POST', headers: auth })
+    assert.equal(checked.status, 200, JSON.stringify(checked.body))
+    const acted = await send(`/sites/${created.body.id}/actions`, {
+      method: 'POST', headers: auth, body: JSON.stringify({ tool: 'site_info', args: {} }),
+    })
+    assert.equal(acted.status, 200, JSON.stringify(acted.body))
+    assert.equal(acted.body.relayed, true)
+  })
+
+  test('discovery requires a session and invalid addresses create no sites', async () => {
+    const anonymous = await send('/sites/discover', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'https://example.com/shop' }),
+    })
+    assert.equal(anonymous.status, 401)
+    const auth = await owner()
+    const invalid = await send('/sites/discover', {
+      method: 'POST', headers: auth, body: JSON.stringify({ url: 'ftp://example.com' }),
+    })
+    assert.equal(invalid.status, 400)
+    assert.equal((await addSite(auth, 'javascript:alert(1)')).status, 400)
+    assert.deepEqual((await send('/sites', { headers: auth })).body, [])
   })
 
   test('a stale timestamp is refused even with a correct signature', async () => {

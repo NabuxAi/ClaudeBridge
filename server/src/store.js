@@ -7,6 +7,7 @@ import { config } from './config.js'
 import { describe as describeHosting, normalise as normaliseHosting } from './hosting.js'
 import { applyPolicyChange, readPolicy } from './policy.js'
 import { sendMail } from './mailer.js'
+import { normalizeSiteAddress } from './site-address.js'
 
 const publicUser = (u) => u && ({
   id: u.id, email: u.email, name: u.name, role: u.role, plan: u.plan,
@@ -295,12 +296,13 @@ export const sites = {
 
   async add(userId, { name, title }) {
     if (!name) throw httpError(400, 'sites.domainRequired')
-    const clean = String(name).replace(/^https?:\/\//, '').replace(/\/$/, '')
+    const address = normalizeSiteAddress(name)
+    const clean = address.replace(/^https?:\/\//, '')
     const id = slug(clean) || newId('s_')
     if (await one('SELECT 1 FROM sites WHERE id = $1', [id])) throw httpError(409, 'sites.alreadyAdded')
     const site = {
       id, user_id: userId, name: clean, title: title || clean, status: 'checking', authority: 'report',
-      url: name.startsWith('http') ? name : `https://${clean}`,
+      url: address,
       secret: crypto.randomBytes(32).toString('hex'), site_key: crypto.randomBytes(10).toString('hex'),
       created_at: Date.now(),
     }

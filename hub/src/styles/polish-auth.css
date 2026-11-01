@@ -294,6 +294,23 @@
    رویش برنده شود؛ گاتر ثابت ۴۰px دو طرف، در موبایل بخشی از
    سرریز افقی ریل مراحل بود (فاکتور مستقل از خود ریل). */
 .ob-shell { padding: 40px 40px 48px; }
+.ob-card { padding: 30px 32px; min-width: 0; }
+.ob-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ob-checking { display: flex; gap: 8px; align-items: center; color: var(--gd-text-secondary); font-size: 13px; }
+.ob-location { margin-top: 16px; padding: 18px; border: 1px solid var(--gd-info-border); border-radius: var(--gd-radius-lg); background: var(--gd-info-bg); }
+.ob-location__heading { display: flex; align-items: center; gap: 9px; color: var(--gd-info-text); font-size: 14px; }
+.ob-location p { font-size: 12.5px; line-height: 1.8; margin: 8px 0; color: var(--gd-text-secondary); }
+.ob-location__details { margin: 16px 0 10px; font-size: 12.5px; }
+.ob-location__details > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.ob-location__details dt { flex-shrink: 0; color: var(--gd-text-secondary); }
+.ob-location__details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-family: var(--gd-font-mono); }
+.ob-location__address { padding: 10px 12px; background: var(--gd-bg-surface); border: 1px solid var(--gd-border); border-radius: var(--gd-radius-md); overflow-wrap: anywhere; font: 12.5px/1.8 var(--gd-font-mono); }
+.ob-location__confirm { display: flex; gap: 10px; align-items: flex-start; padding-block: 14px 4px; font-size: 13px; line-height: 1.8; cursor: pointer; }
+.ob-location__confirm input { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 3px; accent-color: var(--gd-primary); }
+.ob-location__confirm input:focus-visible { outline: 2px solid var(--gd-focus-ring); outline-offset: 3px; }
+.ob-location .ob-location__edit { margin: 4px 28px 0; font-size: 12px; }
 @media (max-width: 600px) {
   .ob-shell { padding: 24px 16px 40px; }
+  .ob-card { padding: 24px 18px; }
+  .ob-location { padding: 14px; }
 }
