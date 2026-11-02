@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link, Outlet, useParams } from 'react-router-dom'
-import Brand from './Brand.jsx'
+import PanelFrame from './PanelFrame.jsx'
 import Icon from '../lib/icons.jsx'
-import { Button, IconButton, SidebarItem, StatusPill, AuthorityBadge } from '../components/index.js'
+import { Button, StatusPill, AuthorityBadge } from '../components/index.js'
 import TaskNotificationBar from '../components/TaskNotificationBar.jsx'
 import Trans from '../components/Trans.jsx'
 import { TaskProvider } from '../lib/tasks.jsx'
 import { account } from '../lib/api.js'
 import { digits, t } from '../lib/i18n.js'
-import LanguageSwitcher from '../components/LanguageSwitcher.jsx'
-import { useAuth } from '../lib/auth.jsx'
 
 // Full-content states the shell itself can be in while it does not know the
 // site. None of them may borrow a status or an authority level: a missing
@@ -36,8 +34,6 @@ function ShellState({ icon, tone = 'muted', title, text, children }) {
 
 export default function SiteShell() {
   const { siteId } = useParams()
-  const { user } = useAuth()
-  const [open, setOpen] = useState(false)
   const [site, setSite] = useState(null)
   const [siteState, setSiteState] = useState('loading')
   const [attempt, setAttempt] = useState(0)
@@ -101,17 +97,10 @@ export default function SiteShell() {
 
   return (
     <TaskProvider siteId={siteId}>
-      <div className={['dwp-shell', open && 'is-open'].filter(Boolean).join(' ')}>
-        <div className="dwp-scrim" onClick={() => setOpen(false)} />
-        <aside className="dwp-aside">
-          <div className="dwp-aside__brand"><Brand sub={t('common.tagline')} /></div>
-          <Link to="/app/sites" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 600, color: 'var(--gd-text-secondary)', textDecoration: 'none', padding: '7px 9px', marginBottom: 10, borderRadius: 'var(--gd-radius-md)', background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border-subtle)' }}>
-            <Icon name="arrow-right" size={15} /> {t('shell.site.backToSites')}
-          </Link>
-          <nav className="dwp-aside__nav" onClick={() => setOpen(false)}>
-            {NAV.map((n) => <SidebarItem key={n.to} {...n} />)}
-          </nav>
-          <div style={{ marginTop: 14, background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-lg)', padding: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <PanelFrame nav={NAV} title={site?.name || siteId} subtitle={t('shell.panel.siteWorkspace')} brandSub={t('common.tagline')}
+        onRefresh={() => setAttempt((a) => a + 1)}
+        sidebarHeader={<Link to="/app/sites" className="panel-back"><Icon name="arrow-right" size={16} /><span>{t('shell.site.backToSites')}</span></Link>}
+        sidebarFooter={<div className="panel-authority">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gd-text-secondary)' }}>{t('shell.site.authorityMode')}</span>
               <AuthorityBadge level={site?.authority} size="sm" />
@@ -119,31 +108,17 @@ export default function SiteShell() {
             <p style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--gd-text-muted)', margin: 0 }}>
               {t('shell.site.authorityHint')}
             </p>
-          </div>
-        </aside>
-
-        <div className="dwp-main">
-          <header className="dwp-topbar">
-            <IconButton className="dwp-burger" icon="menu" label={t('common.menu')} onClick={() => setOpen(true)} />
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--gd-bg-inset)', border: '1px solid var(--gd-border)', borderRadius: 'var(--gd-radius-md)', padding: '6px 12px', fontSize: 13, fontWeight: 600 }}>
-              <Icon name="globe" size={16} /><span className="dwp-mono">{site?.name || siteId}</span>
-              <Icon name="chevron-down" size={15} style={{ color: 'var(--gd-text-muted)' }} />
-            </span>
-            <StatusPill status={status} />
-            <span className="dwp-spacer" />
-            <LanguageSwitcher />
-            <Button as={Link} to={`${base}/assistant`} variant="subtle" size="sm" leftIcon="sparkles" className="dwp-desktop-only">{t('shell.site.askAssistant')}</Button>
-            <span className="dwp-avatar">{user?.initials || '?'}</span>
-          </header>
-          <TaskNotificationBar />
+          </div>}
+        headerActions={<><StatusPill status={status} /><Button as={Link} to={`${base}/assistant`} variant="subtle" size="sm" leftIcon="sparkles" className="dwp-desktop-only">{t('shell.site.askAssistant')}</Button></>}
+        notice={<TaskNotificationBar />}>
           {siteState === 'ready' || siteState === 'loading' ? (
-            <main className="dwp-content">
+            <>
               {/* Keyed by siteId: switching sites remounts the page instead of
                   letting it keep the previous site's fetched state. */}
               <Outlet key={siteId} context={{ siteId, site }} />
-            </main>
+            </>
           ) : (
-            <main className="dwp-content">
+            <>
               {siteState === 'error' && (
                 <ShellState icon="alert-circle" tone="warning" title={t('shell.site.loadError.title')}
                   text={t('shell.site.loadError.text')}>
@@ -168,10 +143,9 @@ export default function SiteShell() {
                   </Button>
                 </ShellState>
               )}
-            </main>
+            </>
           )}
-        </div>
-      </div>
+      </PanelFrame>
     </TaskProvider>
   )
 }

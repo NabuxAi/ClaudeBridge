@@ -7,6 +7,7 @@ import {
 } from '../../components/index.js'
 import { account } from '../../lib/api.js'
 import { t, digits, num, time } from '../../lib/i18n.js'
+import { useAuth } from '../../lib/auth.jsx'
 
 const NS = 'dashboard'
 
@@ -47,6 +48,8 @@ function eventTone(severity, resolved) {
 }
 
 export default function Dashboard() {
+  const { user } = useAuth()
+  const heading = <span className="panel-dashboard-title"><span><Icon name="layout-grid" size={26} /></span>{t('shell.panel.hello', { name: user?.name || '…' })}</span>
   const [sites, setSites] = useState(null)
   const [activity, setActivity] = useState(null)
   const [error, setError] = useState(null)
@@ -73,7 +76,7 @@ export default function Dashboard() {
   if (error) {
     return (
       <>
-        <PageHead title={t('dashboard.title')} subtitle={t('dashboard.subtitle')} action={addAction} />
+        <PageHead title={heading} subtitle={t('dashboard.subtitle')} action={addAction} />
         <AlertCard
           severity="critical"
           title={t('dashboard.loadFailedTitle')}
@@ -92,7 +95,7 @@ export default function Dashboard() {
   if (!sites) {
     return (
       <>
-        <PageHead title={t('dashboard.title')} subtitle={t('dashboard.subtitle')} action={addAction} />
+        <PageHead title={heading} subtitle={t('dashboard.subtitle')} action={addAction} />
         <SkeletonStats count={4} />
       </>
     )
@@ -111,7 +114,7 @@ export default function Dashboard() {
   return (
     <>
       <PageHead
-        title={t('dashboard.title')}
+        title={heading}
         subtitle={t('dashboard.subtitle')}
         action={addAction}
       />
@@ -128,6 +131,19 @@ export default function Dashboard() {
           value={pendingTotal == null ? '—' : digits(pendingTotal)}
           hint={pendingTotal == null ? t('common.notMeasured') : t('dashboard.metrics.pendingHint', { count: sitesWithUpdates })}
         />
+      </div>
+
+      <div className="panel-quick-grid">
+        {[
+          { to: '/app/sites', key: 'sites', icon: 'globe' },
+          { to: '/app/team', key: 'team', icon: 'users' },
+          { to: '/app/security', key: 'security', icon: 'shield-check' },
+          { to: '/app/notifications', key: 'notifications', icon: 'bell' },
+        ].map((item) => <Link key={item.key} to={item.to} className="panel-quick-link">
+          <span><Icon name={item.icon} size={21} /></span>
+          <span><strong>{t(`shell.account.nav.${item.key}`)}</strong><small>{t(`shell.panel.quick.${item.key}`)}</small></span>
+          <Icon name="chevron-left" size={16} />
+        </Link>)}
       </div>
 
       {/* Site cards */}

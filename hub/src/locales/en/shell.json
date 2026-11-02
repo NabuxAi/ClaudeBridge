@@ -1,6 +1,30 @@
 {
   "addSite": "Add site",
   "signOut": "Sign out",
+  "panel": {
+    "hello": "Hello, {name}",
+    "workspace": "Your workspace",
+    "siteWorkspace": "WordPress site management",
+    "navigation": "Panel navigation",
+    "mainMenu": "Main menu",
+    "accountMenu": "Account management",
+    "search": "Search the menu",
+    "searchPlaceholder": "Search the menu…",
+    "noResults": "No menu items match your search.",
+    "collapse": "Collapse menu",
+    "expand": "Expand menu",
+    "darkMode": "Switch to dark theme",
+    "lightMode": "Switch to light theme",
+    "refresh": "Refresh page data",
+    "loading": "Loading page and data",
+    "skip": "Skip to page content",
+    "quick": {
+      "sites": "Manage your WordPress sites",
+      "team": "Members and site access",
+      "security": "Sessions and secure sign-in",
+      "notifications": "Set up notification channels"
+    }
+  },
   "account": {
     "brandSub": "Account",
     "seePlans": "See plans and pricing",

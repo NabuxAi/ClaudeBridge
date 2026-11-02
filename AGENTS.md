@@ -201,8 +201,8 @@ for UI convenience.
   `backup_download` capability) keep their stateless short-lived semantics —
   they are not login sessions. `POST /auth/logout` (2026-10-02 review-fix
   wave) now revokes the session the request rides in on — pinned in
-  `server/test/sessions.test.js` — and the account-shell header «خروج» button
-  (`hub/src/layouts/AccountShell.jsx`) calls it before clearing the browser's
+  `server/test/sessions.test.js` — and the shared panel's «خروج» button
+  (`hub/src/layouts/PanelFrame.jsx`, since the 2026-11-02 redesign) calls it before clearing the browser's
   localStorage, so a token copied off a shared device dies server-side instead
   of living out its 7 days. Still unbuilt: auto-revoking sessions on password
   reset.
@@ -1318,6 +1318,42 @@ unreachable, so a throwaway stack was used):
   `server/test/pairing-flow.test.js` also covers persisted subfolder addresses,
   signed ping/tool relay, discovery authentication, and invalid-address writes
   against the real PostgreSQL CI service.
+
+### Green panel UI (2026-11-02)
+
+- Account and site shells share `hub/src/layouts/PanelFrame.jsx`. The floating
+  vertical sidebar follows the supplied reference, with menu search (Ctrl/Cmd+K),
+  persisted collapse state, animated route indicator, and a scrollable menu.
+  Existing account/site routes, real alert badges, authority semantics, and
+  server-side logout are preserved. No sample wallet, transactions, or metrics
+  from the reference were imported into the product.
+- `hub/src/styles/panel.css` loads last. It supplies the green brand overrides
+  and scoped light/dark panel tokens; other polish files remain the base layer.
+  Light uses `#15803d` for readable interactive text; dark/reference accent is
+  `#30d56b`. Theme is stored at `digiwp.panel.theme`, collapse at
+  `digiwp.panel.collapsed`; a missing preference follows the system theme.
+  Status colours retain their original meaning. See the dated note at the top
+  of `hub/docs/nabuxui-design-mapping.md` before using its historical palette.
+- The existing React Router SPA keeps navigation client-side. The panel has a
+  local Suspense boundary; slow route modules keep the shell visible. A green
+  indeterminate top line tracks navigation commits, lazy fallbacks, and actual
+  API request lifetimes via `page-progress.js`/`PageProgress.jsx`; it is not a
+  measured completion percentage. Error and abort paths release the counter.
+- Refresh remounts only the current page and refetches its data, without a
+  document reload. Site-shell refresh also reloads the site's metadata; the
+  task provider remains mounted. Mobile drawer supports focus trapping, Escape,
+  restoring focus, and inert background content. Motion respects reduced-motion.
+- `hub/test/panel.spec.js` covers theme/collapse persistence, search/shortcut,
+  navigation and refresh without a new document, slow modules and API errors,
+  site-specific routes/authority, keyboard drawer operation, unmeasured metrics,
+  and Persian/English light/dark layouts at 320/768/1440px. The existing onboarding
+  browser checks remain part of the same suite. Preview screenshots use API
+  fixtures only; they are not evidence about a production account.
+- Local verification: hub lint and production build passed; 28/28 browser
+  checks passed against a production build served by Vite preview (19 panel
+  cases plus the 9 existing onboarding cases). Screenshots were inspected in
+  both themes on desktop and with the mobile drawer. No backend behavior or
+  managed WordPress setting was changed by this UI work.
 
 ### Canonical release verification
 

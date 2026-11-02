@@ -16,6 +16,7 @@
 
 import * as mock from '../data/mock.js'
 import { getLang, t, num } from './i18n.js'
+import { beginPending } from './page-progress.js'
 
 const BASE = (import.meta.env.VITE_API_BASE_URL || 'https://api.digiwp.com/v1').replace(/\/$/, '')
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === '1'
@@ -26,32 +27,35 @@ export const getToken = () => localStorage.getItem(TOKEN_KEY) || ''
 export const setToken = (t) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY))
 
 async function http(path, { method = 'GET', body, signal } = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      // The server answers messages (errors, labels, scope notes) in this language.
-      'Accept-Language': getLang(),
-      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-    },
-    body: body != null ? JSON.stringify(body) : undefined,
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    // A 401 from an /auth/* call is an application answer — "wrong password",
-    // an unknown reset token — and must reach the form as a thrown error so
-    // its message and captcha flag are shown. Everywhere else a 401 means the
-    // session itself is gone, and the honest move is the hard reset to /login.
-    if (res.status === 401 && !path.startsWith('/auth/')) {
-      setToken('')
-      sessionStorage.setItem('loginReturnTo', window.location.pathname + window.location.search)
-      window.location.replace('/login')
-      return data
+  const finish = beginPending()
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      method,
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        // The server answers messages (errors, labels, scope notes) in this language.
+        'Accept-Language': getLang(),
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      },
+      body: body != null ? JSON.stringify(body) : undefined,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      // A 401 from an /auth/* call is an application answer — "wrong password",
+      // an unknown reset token — and must reach the form as a thrown error so
+      // its message and captcha flag are shown. Everywhere else a 401 means the
+      // session itself is gone, and the honest move is the hard reset to /login.
+      if (res.status === 401 && !path.startsWith('/auth/')) {
+        setToken('')
+        sessionStorage.setItem('loginReturnTo', window.location.pathname + window.location.search)
+        window.location.replace('/login')
+        return data
+      }
+      throw new ApiError(data?.message || res.statusText, res.status, data)
     }
-    throw new ApiError(data?.message || res.statusText, res.status, data)
-  }
-  return data
+    return data
+  } finally { finish() }
 }
 
 export class ApiError extends Error {

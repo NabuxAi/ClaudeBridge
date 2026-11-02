@@ -95,8 +95,20 @@ import Wallet from 'lucide-react/dist/esm/icons/wallet.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import Zap from 'lucide-react/dist/esm/icons/zap.js'
 import Languages from 'lucide-react/dist/esm/icons/languages.js'
+import Sun from 'lucide-react/dist/esm/icons/sun.js'
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js'
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
+import Store from 'lucide-react/dist/esm/icons/store.js'
+import Newspaper from 'lucide-react/dist/esm/icons/newspaper.js'
+import Megaphone from 'lucide-react/dist/esm/icons/megaphone.js'
 
 export const ICONS = {
+  'sun': Sun,
+  'chevron-left': ChevronLeft,
+  'chevron-right': ChevronRight,
+  'store': Store,
+  'newspaper': Newspaper,
+  'megaphone': Megaphone,
   'activity': Activity,
   'alert-circle': AlertCircle,
   'alert-octagon': AlertOctagon,
