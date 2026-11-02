@@ -1,6 +1,26 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-10-02. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-02. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.2.0 — 2026-11-02
+
+- Hub and relay server version: **0.2.0** (previously 0.1.0). WordPress plugin
+  remains **3.9.1**, since this release changes platform behavior and UI only.
+- Redesigned account/site panels with a green brand, light/dark themes,
+  searchable/collapsible vertical menus, mobile drawer and keyboard support.
+- Client-side navigation and AJAX page refresh retain the shell, with a green
+  top indicator tied to real loading/request lifetimes.
+- WordPress onboarding retains installation subfolders, verifies the supplied
+  REST address, shows the detected location and asks for confirmation.
+- Panel footer shows the package version and links to the change report.
+- Release tag: `platform-v0.2.0`. See [`CHANGELOG.md`](CHANGELOG.md) for the full
+  report, verification links, boundaries and the last verified deployment state.
+- The source changes were pushed to GitHub main (`745a9ab`, `27b0d6b`,
+  `9129976`). Full CI passed; the last verified production deploy was refused
+  by Coolify with HTTP 401. Production publication requires valid Coolify API
+  authentication and a successful Deploy run.
+
+The sections below retain the historical implementation reports.
 
 ## Done in this pass — the server can now actually drive a site
 

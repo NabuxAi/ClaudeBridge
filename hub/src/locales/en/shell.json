@@ -2,6 +2,8 @@
   "addSite": "Add site",
   "signOut": "Sign out",
   "panel": {
+    "version": "Panel version",
+    "releaseNotes": "Release notes — version {version}",
     "hello": "Hello, {name}",
     "workspace": "Your workspace",
     "siteWorkspace": "WordPress site management",

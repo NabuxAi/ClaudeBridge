@@ -2,6 +2,8 @@
   "addSite": "افزودن سایت",
   "signOut": "خروج",
   "panel": {
+    "version": "نسخهٔ پنل",
+    "releaseNotes": "گزارش تغییرات — نسخهٔ {version}",
     "hello": "سلام، {name}",
     "workspace": "فضای مدیریت شما",
     "siteWorkspace": "مدیریت سایت وردپرسی",

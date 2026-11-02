@@ -1355,6 +1355,23 @@ unreachable, so a throwaway stack was used):
   both themes on desktop and with the mobile drawer. No backend behavior or
   managed WordPress setting was changed by this UI work.
 
+### Platform release versions (2026-11-02)
+
+- Current platform release: **0.2.0**, shared by `hub/package.json` and
+  `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
+  the hub package version for the visible sidebar footer; do not hardcode a
+  second UI version. The footer links to the root `CHANGELOG.md`.
+- For future user-visible changes, assign a new semantic platform version:
+  patch for fixes, minor for compatible features, major for breaking changes.
+  Update both platform package/lock versions, `CHANGELOG.md` and
+  `PROJECT_PROGRESS.md` in the same release. Publish the corresponding GitHub
+  report/tag as `platform-vX.Y.Z` so the change is identifiable.
+- WordPress plugin versioning stays independent. Change `CB_VERSION`, plugin
+  manifest/badges and rebuilt plugin artifacts only for a plugin release.
+  A platform UI release does not imply a plugin update on customer sites.
+- Record GitHub publication and production deployment as separate observed
+  states. A version/tag is not evidence that Coolify deployed it successfully.
+
 ### Canonical release verification
 
 On Linux/CI or an environment with bash, PHP, zip, Node, and PostgreSQL:

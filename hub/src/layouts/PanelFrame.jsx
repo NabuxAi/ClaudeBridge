@@ -7,6 +7,7 @@ import PanelPageLoader from '../components/PanelPageLoader.jsx'
 import { useAuth } from '../lib/auth.jsx'
 import { t } from '../lib/i18n.js'
 import { beginNavigation } from '../lib/page-progress.js'
+import { version } from '../../package.json'
 
 const read = (key, fallback) => { try { return localStorage.getItem(key) ?? fallback } catch { return fallback } }
 const save = (key, value) => { try { localStorage.setItem(key, value) } catch { /* This session still works without storage. */ } }
@@ -162,6 +163,9 @@ export default function PanelFrame({ nav, title, subtitle, brandSub, sidebarHead
         {sidebarFooter && <div className="panel-sidebar__extra">{sidebarFooter}</div>}
         <div className="panel-sidebar__footer">
           <Button variant="ghost" leftIcon="log-out" loading={signingOut} onClick={signOut} title={collapsed ? t('shell.signOut') : undefined} aria-label={t('shell.signOut')}>{t('shell.signOut')}</Button>
+          <a className="panel-version" href="https://github.com/NabuxAi/ClaudeBridge/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer" aria-label={t('shell.panel.releaseNotes', { version })} title={t('shell.panel.releaseNotes', { version })}>
+            <span className="panel-version__label">{t('shell.panel.version')}</span><span dir="ltr">v{version}</span>
+          </a>
         </div>
       </aside>
       <div className="dwp-main" inert={mobile && open ? '' : undefined}>
