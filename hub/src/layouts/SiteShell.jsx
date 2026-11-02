@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link, Outlet, useParams } from 'react-router-dom'
 import PanelFrame from './PanelFrame.jsx'
+import PanelAuthority from '../components/PanelAuthority.jsx'
 import Icon from '../lib/icons.jsx'
-import { Button, StatusPill, AuthorityBadge } from '../components/index.js'
+import { Button, StatusPill } from '../components/index.js'
 import TaskNotificationBar from '../components/TaskNotificationBar.jsx'
 import Trans from '../components/Trans.jsx'
 import { TaskProvider } from '../lib/tasks.jsx'
@@ -98,17 +99,10 @@ export default function SiteShell() {
   return (
     <TaskProvider siteId={siteId}>
       <PanelFrame nav={NAV} title={site?.name || siteId} subtitle={t('shell.panel.siteWorkspace')} brandSub={t('common.tagline')}
+        menuTitle={t('shell.site.menuTitle', { name: site?.name || siteId })}
         onRefresh={() => setAttempt((a) => a + 1)}
         sidebarHeader={<Link to="/app/sites" className="panel-back"><Icon name="arrow-right" size={16} /><span>{t('shell.site.backToSites')}</span></Link>}
-        sidebarFooter={<div className="panel-authority">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gd-text-secondary)' }}>{t('shell.site.authorityMode')}</span>
-              <AuthorityBadge level={site?.authority} size="sm" />
-            </div>
-            <p style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--gd-text-muted)', margin: 0 }}>
-              {t('shell.site.authorityHint')}
-            </p>
-          </div>}
+        sidebarFooter={<PanelAuthority key={siteId} level={site?.authority} />}
         headerActions={<><StatusPill status={status} /><Button as={Link} to={`${base}/assistant`} variant="subtle" size="sm" leftIcon="sparkles" className="dwp-desktop-only">{t('shell.site.askAssistant')}</Button></>}
         notice={<TaskNotificationBar />}>
           {siteState === 'ready' || siteState === 'loading' ? (

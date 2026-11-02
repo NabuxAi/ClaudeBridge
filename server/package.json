@@ -1,6 +1,6 @@
 {
   "name": "digiwp-server",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "DigiWP Ai Support — the واسط server. Sits between the hub UI and the WP Claude Bridge connectors, relaying HMAC-signed commands to managed sites.",

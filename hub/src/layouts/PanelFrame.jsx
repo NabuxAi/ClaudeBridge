@@ -11,9 +11,8 @@ import { version } from '../../package.json'
 
 const read = (key, fallback) => { try { return localStorage.getItem(key) ?? fallback } catch { return fallback } }
 const save = (key, value) => { try { localStorage.setItem(key, value) } catch { /* This session still works without storage. */ } }
-const normalize = (value) => value.toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک').trim()
 
-export default function PanelFrame({ nav, title, subtitle, brandSub, sidebarHeader, sidebarFooter, headerActions, notice, onRefresh, children }) {
+export default function PanelFrame({ nav, title, subtitle, brandSub, sidebarHeader, sidebarFooter, menuTitle, headerActions, notice, onRefresh, children }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -24,17 +23,14 @@ export default function PanelFrame({ nav, title, subtitle, brandSub, sidebarHead
   const [collapsed, setCollapsed] = useState(() => read('digiwp.panel.collapsed', 'false') === 'true')
   const [mobile, setMobile] = useState(() => matchMedia('(max-width: 860px)').matches)
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [signingOut, setSigningOut] = useState(false)
   const [track, setTrack] = useState(null)
   const navRef = useRef(null)
-  const searchRef = useRef(null)
   const asideRef = useRef(null)
   const burgerRef = useRef(null)
   const contentRef = useRef(null)
   const previousPath = useRef(location.pathname)
-  const menu = nav.filter((item) => normalize(item.label).includes(normalize(query)))
   const active = nav.find((item) => item.end ? item.to === location.pathname : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`))
 
   useEffect(() => {
@@ -43,18 +39,6 @@ export default function PanelFrame({ nav, title, subtitle, brandSub, sidebarHead
     media.addEventListener('change', change)
     return () => media.removeEventListener('change', change)
   }, [])
-
-  useEffect(() => {
-    const shortcut = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault(); setCollapsed(false); save('digiwp.panel.collapsed', 'false')
-        if (mobile) setOpen(true)
-        requestAnimationFrame(() => searchRef.current?.focus())
-      }
-    }
-    window.addEventListener('keydown', shortcut)
-    return () => window.removeEventListener('keydown', shortcut)
-  }, [mobile])
 
   useEffect(() => {
     if (!mobile || !open) return
@@ -75,7 +59,7 @@ export default function PanelFrame({ nav, title, subtitle, brandSub, sidebarHead
     const observer = new ResizeObserver(update)
     if (navRef.current) observer.observe(navRef.current)
     return () => observer.disconnect()
-  }, [location.pathname, query, collapsed, nav.length])
+  }, [location.pathname, menuTitle, collapsed, nav.length])
 
   useEffect(() => {
     const selected = navRef.current?.querySelector('[aria-current="page"]')
@@ -103,7 +87,7 @@ export default function PanelFrame({ nav, title, subtitle, brandSub, sidebarHead
   const toggleMenu = () => {
     if (mobile) { setOpen(false); return }
     const next = !collapsed
-    setCollapsed(next); save('digiwp.panel.collapsed', String(next)); setQuery('')
+    setCollapsed(next); save('digiwp.panel.collapsed', String(next))
   }
   const signOut = async () => {
     if (signingOut) return
@@ -141,30 +125,24 @@ export default function PanelFrame({ nav, title, subtitle, brandSub, sidebarHead
           <span className="panel-brand__text"><strong>DigiWP <b>Ai Support</b></strong><small>{brandSub || t('shell.account.brandSub')}</small></span>
         </Link>
         {sidebarHeader && <div className="panel-sidebar__context">{sidebarHeader}</div>}
-        <div className="panel-search">
-          <Icon name="search" size={21} />
-          <input ref={searchRef} type="search" aria-label={t('shell.panel.search')} placeholder={t('shell.panel.searchPlaceholder')} value={query} onChange={(event) => setQuery(event.target.value)} tabIndex={collapsed && !mobile ? -1 : undefined} onFocus={() => { if (collapsed && !mobile) { setCollapsed(false); save('digiwp.panel.collapsed', 'false') } }} />
-          <kbd>⌘ K</kbd>
-          {collapsed && !mobile && <button className="panel-search__expand" aria-label={t('shell.panel.search')} onClick={() => { setCollapsed(false); save('digiwp.panel.collapsed', 'false'); requestAnimationFrame(() => searchRef.current?.focus()) }} />}
-        </div>
+        {menuTitle && <div className="panel-nav__caption" title={menuTitle}>{menuTitle}</div>}
         <div className="panel-sidebar__scroll">
           <nav id="panel-menu" ref={navRef} className="panel-nav" aria-label={t('shell.panel.navigation')}>
             <span className="panel-nav__track" aria-hidden="true" style={{ opacity: track ? 1 : 0, height: track?.height || 0, transform: `translateY(${track?.top || 0}px)` }} />
-            {menu.map((item, index) => <div key={item.to} className="panel-nav__entry">
-              {(index === 0 || item.group !== menu[index - 1].group) && <div className="panel-nav__caption">{t(item.group || 'shell.panel.mainMenu')}</div>}
-              <NavLink to={item.to} end={item.end} className="panel-nav__link" aria-label={item.label} title={collapsed && !mobile ? item.label : undefined} onClick={() => { setOpen(false); setQuery('') }}>
+            {nav.map((item, index) => <div key={item.to} className="panel-nav__entry">
+              {!menuTitle && (index === 0 || item.group !== nav[index - 1].group) && <div className="panel-nav__caption">{item.group ? t(item.group) : menuTitle || t('shell.panel.mainMenu')}</div>}
+              <NavLink to={item.to} end={item.end} className="panel-nav__link" aria-label={item.label} title={collapsed && !mobile ? item.label : undefined} onClick={() => { setOpen(false) }}>
                 <Icon name={item.icon} size={23} /><span className="panel-nav__label">{item.label}</span>
                 {item.badge != null && <span className="panel-nav__badge">{item.badge}</span>}
               </NavLink>
             </div>)}
-            {!menu.length && <p className="panel-nav__empty" role="status">{t('shell.panel.noResults')}</p>}
           </nav>
         </div>
         {sidebarFooter && <div className="panel-sidebar__extra">{sidebarFooter}</div>}
         <div className="panel-sidebar__footer">
           <Button variant="ghost" leftIcon="log-out" loading={signingOut} onClick={signOut} title={collapsed ? t('shell.signOut') : undefined} aria-label={t('shell.signOut')}>{t('shell.signOut')}</Button>
           <a className="panel-version" href="https://github.com/NabuxAi/ClaudeBridge/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer" aria-label={t('shell.panel.releaseNotes', { version })} title={t('shell.panel.releaseNotes', { version })}>
-            <span className="panel-version__label">{t('shell.panel.version')}</span><span dir="ltr">v{version}</span>
+            <span dir="ltr">v{version}</span>
           </a>
         </div>
       </aside>

@@ -2,6 +2,16 @@
 
 Last updated 2026-11-02. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
 
+## Platform 0.2.1 — compact sidebar and variable typography (2026-11-02)
+
+- Removed sidebar search/shortcut and panel hover underlines; keyboard focus remains visible.
+- Site menu caption identifies the currently managed site's name/address.
+- Authority is a compact label/help control. Its hover/focus/touch tooltip shows the actual level and matching explanation, including an honest unknown state; no permission changes.
+- Logout and release version share a compact footer row.
+- Self-hosted the smallest supplied variable WOFF2 (NoEn, 98,448 bytes), using weight range 100–950, width range 62.5–150%, swap and preload. Vite hashes the asset for immutable caching. Latin/code use system fallbacks; removed remote Google Fonts. Original font source directory removed after verifying the copied asset's hash.
+- Platform packages/lockfiles: 0.2.1; plugin remains 3.9.1. Report/tag: `platform-v0.2.1`.
+- Verification: hub lint/build and 30 browser cases; production deployment is tracked separately from GitHub publication.
+
 ## Platform 0.2.0 — 2026-11-02
 
 - Hub and relay server version: **0.2.0** (previously 0.1.0). WordPress plugin

@@ -10,9 +10,6 @@
     "navigation": "Panel navigation",
     "mainMenu": "Main menu",
     "accountMenu": "Account management",
-    "search": "Search the menu",
-    "searchPlaceholder": "Search the menu…",
-    "noResults": "No menu items match your search.",
     "collapse": "Collapse menu",
     "expand": "Expand menu",
     "darkMode": "Switch to dark theme",
@@ -81,6 +78,14 @@
     "empty": {
       "title": "You haven't added a site yet",
       "text": "Add your site first to see its status, backups, and security."
+    },
+    "menuTitle": "Manage site {name}",
+    "authorityHelp": "About authority mode",
+    "authorityDescriptions": {
+      "report": "Readings and reports only; no changes are performed.",
+      "confirm": "Changes wait for your approval.",
+      "auto": "Recoverable changes may run automatically; sensitive actions always require your approval.",
+      "unknown": "This site’s authority level is not known yet."
     }
   }
 }

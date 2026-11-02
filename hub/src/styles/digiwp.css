@@ -9,23 +9,18 @@
    loaded by the hub; `var(--nx-*)` here would resolve to nothing).
    ============================================================ */
 
-/* ============================================================
-   Web fonts
-   ------------------------------------------------------------
-   Persian/UI text           : Vazirmatn (variable 300–800)
-   Latin display + numerals  : Bricolage Grotesque (NabuxUi
-                               display face — Latin glyphs only;
-                               Persian falls back to Vazirmatn
-                               per-glyph, so the joining script is
-                               never set in Bricolage)
-   Technical / code / metrics: JetBrains Mono (400–700)
-
-   Weight 900 is no longer imported: no token consumes it.
-   To self-host: replace the @import below with local @font-face
-   rules that point at woff2 files under /assets/fonts/.
-   ============================================================ */
-
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Vazirmatn:wght@300..800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+/* Self-hosted Persian variable font: one 98,448-byte WOFF2 for all weights.
+   The supplied NoEn variant avoids unused Latin outlines; Latin and code use
+   system fonts. Verified axes: wght 100–950, wdth 62.5–150, DOTS 0–1.
+   CSS font-weight and font-stretch select their axes; dots keep the default. */
+@font-face {
+  font-family: 'Yekan Bakh';
+  src: url('../assets/fonts/YekanBakhNoEnVF.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 950;
+  font-stretch: 62.5% 150%;
+  font-display: swap;
+}
 /* ============================================================
    Color system (NabuxUi values)
    ------------------------------------------------------------
@@ -295,8 +290,8 @@
 /* ============================================================
    WP Guardian — Typography tokens
    ------------------------------------------------------------
-   Vazirmatn carries the whole UI (Persian + Latin) so RTL and
-   LTR stay visually identical. JetBrains Mono is reserved for
+   Yekan Bakh carries Persian UI text with system Latin fallbacks;
+   system monospace is reserved for
    technical atoms: version numbers, error codes (404/500),
    timestamps, log lines, metric read-outs.
 
@@ -307,15 +302,10 @@
    ============================================================ */
 
 :root {
-  /* Families
-     Persian-first order (nx base.css): Vazirmatn carries Persian
-     AND the Latin micro-text; Bricolage Grotesque is the NabuxUi
-     display face for Latin headings/numerals and falls back to
-     Vazirmatn per-glyph for Persian (its Persian glyphs don't
-     exist, so the joined script is never set in Bricolage). */
-  --gd-font-sans: 'Vazirmatn', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --gd-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
-  --gd-font-display-family: 'Bricolage Grotesque', 'Vazirmatn', ui-sans-serif, sans-serif;
+  /* Local Persian variable face; system Latin and monospace fallbacks. */
+  --gd-font-sans: 'Yekan Bakh', system-ui, Tahoma, sans-serif;
+  --gd-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --gd-font-display-family: var(--gd-font-sans);
 
   /* Type scale (rem @ 16px root) — the dashboard steps are
      deliberately denser than nx and stay untouched; the three
@@ -332,7 +322,7 @@
   --gd-text-5xl:  clamp(2.25rem, 1.5rem + 3vw, 3.5rem);      /* nx text-5xl */
   --gd-text-6xl:  clamp(2.6rem, 1.4rem + 5vw, 5rem);         /* nx text-display */
 
-  /* Weights (Vazirmatn is variable) */
+  /* Weights selected on the variable wght axis (100–950). */
   --gd-weight-light:     300;
   --gd-weight-regular:   400;
   --gd-weight-medium:    500;
@@ -354,9 +344,7 @@
   --gd-tracking-caps:   0.06em;  /* small-caps eyebrows */
 
   /* ---- Composite semantic roles ------------------------- */
-  /* Display: Bricolage for Latin/numerals, Vazirmatn for Persian;
-     line-height 1.3 — Persian display type needs ascender+dot room
-     (nx hero.css:82). */
+  /* Display uses the same local variable face as body text. */
   --gd-font-display: var(--gd-weight-extrabold) var(--gd-text-5xl)/1.3 var(--gd-font-display-family);
   --gd-font-h1:      var(--gd-weight-bold) var(--gd-text-4xl)/var(--gd-leading-tight) var(--gd-font-sans);
   --gd-font-h2:      var(--gd-weight-bold) var(--gd-text-3xl)/var(--gd-leading-snug) var(--gd-font-sans);

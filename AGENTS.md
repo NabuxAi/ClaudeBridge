@@ -1322,8 +1322,7 @@ unreachable, so a throwaway stack was used):
 ### Green panel UI (2026-11-02)
 
 - Account and site shells share `hub/src/layouts/PanelFrame.jsx`. The floating
-  vertical sidebar follows the supplied reference, with menu search (Ctrl/Cmd+K),
-  persisted collapse state, animated route indicator, and a scrollable menu.
+  vertical sidebar follows the supplied reference, with persisted collapse state, animated route indicator, and a scrollable menu.
   Existing account/site routes, real alert badges, authority semantics, and
   server-side logout are preserved. No sample wallet, transactions, or metrics
   from the reference were imported into the product.
@@ -1343,7 +1342,7 @@ unreachable, so a throwaway stack was used):
   document reload. Site-shell refresh also reloads the site's metadata; the
   task provider remains mounted. Mobile drawer supports focus trapping, Escape,
   restoring focus, and inert background content. Motion respects reduced-motion.
-- `hub/test/panel.spec.js` covers theme/collapse persistence, search/shortcut,
+- `hub/test/panel.spec.js` covers theme/collapse persistence, compact menu and hover styles,
   navigation and refresh without a new document, slow modules and API errors,
   site-specific routes/authority, keyboard drawer operation, unmeasured metrics,
   and Persian/English light/dark layouts at 320/768/1440px. The existing onboarding
@@ -1355,9 +1354,28 @@ unreachable, so a throwaway stack was used):
   both themes on desktop and with the mobile drawer. No backend behavior or
   managed WordPress setting was changed by this UI work.
 
+### Compact sidebar and local variable font (platform 0.2.1, 2026-11-02)
+
+- Sidebar search/shortcut was removed at the owner's request. Site menu captions
+  identify the current site; footer logout/version share one compact row.
+- `PanelAuthority.jsx` renders only a compact label/help button until hovered,
+  keyboard-focused or tapped. The tooltip reports the actual level and its
+  matching explanation; unknown never borrows an authority. Outside pointer,
+  repeat tap and Escape dismiss it. Server permissions are unchanged.
+- `hub/src/assets/fonts/YekanBakhNoEnVF.woff2` is the smallest supplied variable
+  webfont (98,448 bytes). Its source fvar axes were inspected: wght 100–950,
+  wdth 62.5–150, DOTS 0–1. `digiwp.css` maps weight/stretch ranges; index preloads
+  it and Vite hashes both references. Persian uses Yekan Bakh, Latin/code system
+  fallbacks; Google Fonts is no longer requested. Do not duplicate per-weight
+  files or force a global `font-variation-settings` that overrides CSS weights.
+- The supplied `Yekan Bakh Variable` source folder was removed after copying and
+  hash-verifying the chosen asset. Only the needed font is shipped.
+- Focused local gate: hub lint/build and 30 browser cases (21 panel + 9 onboarding).
+  This supersedes the prior 28-case UI baseline, not production observations.
+
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.2.0**, shared by `hub/package.json` and
+- Current platform release: **0.2.1**, shared by `hub/package.json` and
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a
   second UI version. The footer links to the root `CHANGELOG.md`.

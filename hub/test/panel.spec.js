@@ -38,23 +38,22 @@ test('theme and collapsed menu persist across page switches and reloads', async 
   await expect(page).toHaveURL(/\/app\/sites$/)
   await expect(page.locator('.panel-frame')).toHaveClass(/is-collapsed/)
   await page.reload()
-  await expect(page.getByRole('link', { name: 'Release notes — version 0.2.0' })).toContainText('v0.2.0')
+  await expect(page.getByRole('link', { name: 'Release notes — version 0.2.1' })).toContainText('v0.2.1')
   await expect(page.locator('.panel-frame')).toHaveAttribute('data-panel-theme', 'light')
   await expect(page.locator('.panel-frame')).toHaveClass(/is-collapsed/)
 })
 
-test('menu search and Ctrl+K work when the menu is collapsed', async ({ page }) => {
+test('menu stays compact without search and panel links never underline on hover', async ({ page }) => {
   await setup(page)
-  await page.getByRole('button', { name: 'Collapse menu' }).click()
-  await page.keyboard.press('Control+k')
-  const search = page.getByRole('searchbox', { name: 'Search the menu' })
-  await expect(search).toBeFocused()
-  await expect(page.locator('.panel-frame')).not.toHaveClass(/is-collapsed/)
-  await search.fill('security')
-  await expect(page.getByRole('navigation').getByRole('link')).toHaveCount(1)
-  await expect(page.getByRole('navigation').getByRole('link', { name: 'Account security' })).toBeVisible()
-  await search.fill('missing-item')
-  await expect(page.getByText('No menu items match your search.')).toBeVisible()
+  await expect(page.getByRole('searchbox')).toHaveCount(0)
+  const link = page.getByRole('navigation').getByRole('link', { name: 'My sites', exact: true })
+  await link.hover()
+  await expect(link).toHaveCSS('text-decoration-line', 'none')
+  const quick = page.locator('.panel-quick-link').first()
+  await quick.hover()
+  await expect(quick).toHaveCSS('text-decoration-line', 'none')
+  const footer = page.locator('.panel-sidebar__footer')
+  expect((await footer.boundingBox()).height).toBeLessThan(65)
 })
 
 test('page changes and refresh fetch data without a new document; progress follows pending data', async ({ page }) => {
@@ -109,7 +108,15 @@ test('the site menu retains its own routes and real authority, including unknown
   await setup(page, { path: '/site/shop/settings' })
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Settings', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Backups', exact: true })).toHaveAttribute('href', '/site/shop/backups')
-  await expect(page.locator('.panel-authority')).toContainText('With approval')
+  await expect(page.locator('.panel-nav__caption')).toHaveText('Manage site shop.example.com')
+  const help = page.getByRole('button', { name: 'About authority mode' })
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+  await help.hover()
+  await expect(page.getByRole('tooltip')).toContainText('With approval')
+  await expect(page.getByRole('tooltip')).toContainText('Changes wait for your approval.')
+  await page.keyboard.press('Escape')
+  await page.mouse.move(800, 400)
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
   await expect(page.getByRole('navigation').locator('.panel-nav__badge')).toHaveCount(0)
 })
 
@@ -121,7 +128,7 @@ test('mobile menu traps focus, closes on Escape, and can navigate without reload
   const dialog = page.getByRole('dialog', { name: 'Panel navigation' })
   await expect(dialog).toBeVisible()
   await expect(dialog).toHaveAttribute('aria-modal', 'true')
-  await dialog.getByRole('link', { name: 'Release notes — version 0.2.0' }).focus()
+  await dialog.getByRole('link', { name: 'Release notes — version 0.2.1' }).focus()
   await page.keyboard.press('Tab')
   await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused()
   await page.keyboard.press('Escape')
@@ -149,3 +156,37 @@ for (const lang of ['fa', 'en']) {
     }
   }
 }
+
+test.describe('touch authority help', () => {
+  test.use({ hasTouch: true })
+  test('authority help opens on touch and dismisses outside on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 850 })
+    await setup(page, { path: '/site/shop/settings', lang: 'fa' })
+    await page.getByRole('button', { name: 'منو', exact: true }).click()
+    const help = page.getByRole('button', { name: 'راهنمای حالت اختیار' })
+    await help.tap()
+    await expect(help).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByRole('tooltip')).toContainText('تغییرات پس از تأیید شما اجرا می‌شوند.')
+    await help.tap()
+    await expect(page.getByRole('tooltip')).toHaveCount(0)
+    await help.tap()
+    await page.locator('.panel-nav__caption').click()
+    await expect(page.getByRole('tooltip')).toHaveCount(0)
+    await help.focus()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('tooltip')).toHaveCount(0)
+  })
+
+})
+
+test('Persian typography loads one local variable WOFF2 with its full weight range', async ({ page }) => {
+  const fontRequests = []
+  page.on('request', (request) => { if (request.resourceType() === 'font') fontRequests.push(request.url()) })
+  await setup(page, { lang: 'fa' })
+  await page.evaluate(() => document.fonts.ready)
+  expect(fontRequests).toHaveLength(1)
+  expect(fontRequests[0]).toMatch(/\/assets\/YekanBakhNoEnVF-[^/]+\.woff2$/)
+  const face = await page.evaluate(() => [...document.fonts].find((font) => font.family.includes('Yekan Bakh'))?.weight)
+  expect(face).toBe('100 950')
+  await expect(page.locator('.panel-frame')).toHaveCSS('font-family', /Yekan Bakh/)
+})
