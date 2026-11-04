@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: WP Claude Bridge
- * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.9.1
+ * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a scoped static Bearer token sent in the Authorization header. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
+ * Version: 3.9.2
  * Author: Account City
  * License: GPLv2 or later
  * Text Domain: wp-claude-bridge
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.9.1' );
+define( 'CB_VERSION', '3.9.2' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' ); // Legacy plaintext option.
 define( 'CB_TOKEN_HASH_OPTION', 'cb_mcp_token_sha256' );
 define( 'CB_SCOPE_OPTION', 'cb_mcp_token_scope' );
@@ -5663,6 +5663,7 @@ function cb_mcp_authenticate( $authorization ) {
   if ( cb_connector_enabled() ) {
     $valid = cb_connector_request_signed();
     if ( $valid ) $GLOBALS['cb_mcp_request_scope'] = cb_mcp_scope_setting( 'connector' );
+      if ( 'admin' === $GLOBALS['cb_mcp_request_scope'] ) cb_become_admin();
   } elseif ( current_user_can( 'edit_themes' ) ) {
     $valid = true;
     $GLOBALS['cb_mcp_request_scope'] = 'admin';
