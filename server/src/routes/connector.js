@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import * as events from '../events.js'
 import { i18nTitle } from '../event-text.js'
 import { sites } from '../store.js'
-import { verifySignature } from '../connector.js'
+import { verifySignature, consumeSignedNonce } from '../connector.js'
 
 const router = Router()
 // Idempotent with the app-level middleware; keeps req.t/req.locale present
@@ -45,12 +45,14 @@ router.post('/connector/register', async (req, res, next) => {
   try {
     const timestamp = req.get('X-DigiWP-Timestamp')
     const signature = req.get('X-DigiWP-Signature')
+    const nonce = req.get('X-DigiWP-Nonce')
     const pluginSiteId = req.get('X-DigiWP-Site')
     const rawBody = req.rawBody || ''
 
     const candidates = await sites.candidates()
-    const match = candidates.find((c) => verifySignature(c.secret, { timestamp, signature, rawBody }))
+    const match = candidates.find((c) => verifySignature(c.secret, { timestamp, nonce, signature, rawBody }))
     if (!match) return res.status(401).json({ ok: false, message: 'signature did not match any known site' })
+    if (!consumeSignedNonce(match.id, nonce)) return res.status(409).json({ ok: false, message: 'replayed signed request' })
 
     let body = {}
     try { body = JSON.parse(rawBody || '{}') } catch { /* ignore */ }
@@ -75,11 +77,13 @@ router.post('/connector/report', async (req, res, next) => {
   try {
     const timestamp = req.get('X-DigiWP-Timestamp')
     const signature = req.get('X-DigiWP-Signature')
+    const nonce = req.get('X-DigiWP-Nonce')
     const rawBody = req.rawBody || ''
 
     const candidates = await sites.candidates()
-    const match = candidates.find((c) => verifySignature(c.secret, { timestamp, signature, rawBody }))
+    const match = candidates.find((c) => verifySignature(c.secret, { timestamp, nonce, signature, rawBody }))
     if (!match) return res.status(401).json({ ok: false, message: 'signature did not match any known site' })
+    if (!consumeSignedNonce(match.id, nonce)) return res.status(409).json({ ok: false, message: 'replayed signed request' })
 
     let body = {}
     try { body = JSON.parse(rawBody || '{}') } catch { /* ignore */ }
