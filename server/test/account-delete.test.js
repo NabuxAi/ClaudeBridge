@@ -94,17 +94,19 @@ if (!dsn) {
 
   /**
    * What the plugin does after pairing: announce itself with an HMAC over
-   * ts + "\n" + body, keyed with the shared secret it was shown ONCE.
+   * ts + "\n" + nonce + "\n" + body, keyed with the shared secret it was shown ONCE.
    */
   function signedRegister(secret, siteKey) {
     const body = JSON.stringify({ site_url: `https://${siteKey}.example`, name: 'connector-test' })
     const ts = Math.floor(Date.now() / 1000).toString()
-    const sig = crypto.createHmac('sha256', secret).update(`${ts}\n${body}`).digest('hex')
+    const nonce = crypto.randomBytes(16).toString('hex')
+    const sig = crypto.createHmac('sha256', secret).update(`${ts}\n${nonce}\n${body}`).digest('hex')
     return fetch(`${API}/connector/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-DigiWP-Timestamp': ts,
+        'X-DigiWP-Nonce': nonce,
         'X-DigiWP-Signature': sig,
         'X-DigiWP-Site': siteKey,
       },
