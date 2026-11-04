@@ -138,6 +138,17 @@ export const auth = {
 
 // ---- Account (sites, billing, team, notifications, profile) ----
 export const account = {
+  // Personal tokens for the hub MCP endpoint. The mock lists none and cannot
+  // mint one: a token only means something to the real server.
+  mcpTokens: call(() => Promise.resolve({ tokens: [], mcpUrl: '' }), () => http('/account/mcp-tokens')),
+  createMcpToken: call(
+    () => Promise.reject(new ApiError('', 503)),
+    (name) => http('/account/mcp-tokens', { method: 'POST', body: { name } })
+  ),
+  revokeMcpToken: call(
+    () => Promise.resolve({ ok: true }),
+    (id) => http(`/account/mcp-tokens/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  ),
   // Discovery always uses the server, including during a mock UI preview.
   discoverSite: (url, signal) => http('/sites/discover', { method: 'POST', body: { url }, signal }),
   sites: call(mock.listSites, () => http('/sites')),

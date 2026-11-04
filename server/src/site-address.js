@@ -34,7 +34,7 @@ const blocked = new BlockList()
 for (const [network, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.168.0.0', 16], ['192.0.0.0', 24], ['198.18.0.0', 15], ['224.0.0.0', 3]]) blocked.addSubnet(network, prefix, 'ipv4')
 for (const [network, prefix] of [['2001::', 23], ['2001:db8::', 32], ['2002::', 16], ['3fff::', 20]]) blocked.addSubnet(network, prefix, 'ipv6')
 
-async function publicAddress(url, resolve, signal) {
+export async function publicAddress(url, resolve, signal) {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || (url.port && !['80', '443'].includes(url.port))) throw httpError(400, 'sites.invalidAddress')
   const host = url.hostname.replace(/^\[|\]$/g, '')
   let abort
@@ -50,13 +50,13 @@ async function publicAddress(url, resolve, signal) {
   return addresses
 }
 
-function publicFetch(address, { signal, headers }, addresses) {
+export function publicFetch(address, { signal, headers, method = 'GET', body = null }, addresses) {
   // Pin the socket to the DNS answers we just validated. A second DNS lookup
   // by fetch would permit a public-to-private DNS rebinding between checks.
   return new Promise((resolve, reject) => {
     const url = new URL(address)
     const req = (url.protocol === 'https:' ? https : http).request(url, {
-      signal, headers, agent: false,
+      method, signal, headers, agent: false,
       lookup: (_hostname, options, callback) => options.all
         ? callback(null, addresses)
         : callback(null, addresses[0].address, addresses[0].family),
@@ -65,7 +65,7 @@ function publicFetch(address, { signal, headers }, addresses) {
       resolve(new Response([204, 205, 304].includes(res.statusCode) ? null : Readable.toWeb(res), { status: res.statusCode, headers }))
     })
     req.on('error', reject)
-    req.end()
+    req.end(body ?? undefined)
   })
 }
 

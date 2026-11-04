@@ -25,6 +25,8 @@ import billingRouter from './routes/billing.js'
 import { billing } from './billing.store.js'
 import notificationsRouter from './routes/notifications.js'
 import teamRouter from './routes/team.js'
+import relayRouter from './routes/relay.js'
+import { mcpRouter, mcpTokensRouter } from './routes/hub-mcp.js'
 import { plans } from './seed.js'
 import { runDailyDigest, scheduleDailyDigest } from './digest.js'
 import { initIntel, scheduleIntel, refresh as refreshIntel } from './intel/index.js'
@@ -100,6 +102,11 @@ export function createApp() {
   // pairing still needs its playbooks — that is precisely when someone is
   // trying to fix it.
   app.use('/v1', cookbookRouter)
+  // Public by mount, closed by their own credentials: the peer server signs
+  // every relayed request with PEER_RELAY_SECRET, and an AI client presents a
+  // personal hub MCP token (not a panel session).
+  app.use('/v1', relayRouter)
+  app.use('/v1', mcpRouter)
   // Public: the price list is shown to anonymous visitors on /pricing.
   app.get('/v1/billing/plans', (req, res) => res.json(billing.localizePlans(req.locale, plans)))
   // Protected: everything the hub reads after login.
@@ -107,6 +114,7 @@ export function createApp() {
   // account.js keeps an honest NOT_BUILT stub for GET /billing, and Express
   // matches in registration order — the real subscription row has to win.
   app.use('/v1', requireAuth, billingRouter)
+  app.use('/v1', requireAuth, mcpTokensRouter)
   app.use('/v1', requireAuth, accountRouter)
   app.use('/v1', requireAuth, sitesRouter)
   app.use('/v1', requireAuth, offsiteBackupsRouter)

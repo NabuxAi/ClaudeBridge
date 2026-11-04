@@ -1,0 +1,5 @@
+{
+  "tokenLimit": "You already have {max} active MCP tokens. Revoke one before creating another.",
+  "tokenNotFound": "No such token.",
+  "defaultName": "AI client"
+}

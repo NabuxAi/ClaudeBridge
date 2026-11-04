@@ -100,6 +100,7 @@
     "alertDismissed": "An alert was dismissed manually",
     "hostingChanged": "Site hosting settings changed",
     "sensitiveRan": "Sensitive action ran: {op}",
-    "approvedFailed": "Approved action failed: {op}"
+    "approvedFailed": "Approved action failed: {op}",
+    "mcpRan": "Ran {op} from an AI client (hub MCP)"
   }
 }
