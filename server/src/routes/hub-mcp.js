@@ -91,10 +91,17 @@ const mcpLimit = limiter('hub-mcp', {
   keyFn: (req) => req.mcpUser?.tokenId || 'anonymous',
 })
 
+// String operations, not a regex: header and query are attacker-controlled.
 function presentedToken(req) {
-  const m = (req.get('authorization') || '').match(/^Bearer\s+(.+)$/i)
-  if (m) return m[1].trim()
+  const header = String(req.get('authorization') || '')
+  if (header.slice(0, 7).toLowerCase() === 'bearer ') return header.slice(7).trim()
   return typeof req.query?.token === 'string' ? req.query.token.trim() : ''
+}
+
+function trimTrailingSlashes(value) {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '/') end--
+  return value.slice(0, end)
 }
 
 async function authenticate(req, res, next) {
@@ -126,10 +133,10 @@ export function pickSite(rows, ref) {
   if (!wanted) return null
   const byId = rows.find((r) => r.id === wanted)
   if (byId) return byId
-  const lower = wanted.toLowerCase().replace(/\/+$/, '')
+  const lower = trimTrailingSlashes(wanted.toLowerCase())
   const wantedHost = hostOf(/^https?:\/\//i.test(lower) ? lower : `https://${lower}`).replace(/^www\./, '')
   return rows.find((r) => {
-    const url = String(r.url || '').toLowerCase().replace(/\/+$/, '')
+    const url = trimTrailingSlashes(String(r.url || '').toLowerCase())
     if (url && url === lower) return true
     const h = hostOf(url || `https://${r.name}`).replace(/^www\./, '')
     return h && h === wantedHost
