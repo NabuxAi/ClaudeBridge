@@ -5323,11 +5323,12 @@ function cb_mcp_altroute() {
 	if ( $m === 'POST' || $m === 'OPTIONS' ) {
 		cb_mcp_run_raw(); // handles auth + dispatch, then exits
 	}
-	// GET probe: return the same info document the REST GET serves.
-	status_header( 200 );
+	// GET probe: return the same status as the REST GET transport.
+	$cb_info = cb_mcp_get_info();
+	status_header( $cb_info->get_status() );
 	header( 'Content-Type: application/json; charset=utf-8' );
 	header( 'Access-Control-Allow-Origin: *' );
-	echo wp_json_encode( cb_mcp_get_info()->get_data() );
+	echo wp_json_encode( $cb_info->get_data() );
 	exit;
 }
 
@@ -5658,6 +5659,10 @@ function cb_mcp_auth_failed() {
 }
 function cb_mcp_auth_status() { return cb_mcp_auth_limited() ? 429 : 401; }
 function cb_mcp_authenticate( $authorization ) {
+  if ( isset( $_GET['token'] ) || isset( $_POST['token'] ) ) {
+    cb_mcp_auth_failed();
+    return false;
+  }
   // Always verify valid credentials first: failed attempts behind a shared proxy
   // must never lock out a legitimate administrator or paired hub connection.
   $valid = false;
@@ -5738,6 +5743,9 @@ function cb_mcp_handler( $request ) {
 
 /** GET on an MCP endpoint: describe the server and its connection modes (never 405). */
 function cb_mcp_get_info() {
+	if ( isset( $_GET['token'] ) || isset( $_POST['token'] ) ) {
+		return new WP_REST_Response( array( 'error' => 'Do not transmit authentication tokens in URL or form parameters.' ), 400 );
+	}
 	return new WP_REST_Response( array(
 		'server'    => 'wp-claude-bridge',
 		'version'   => CB_VERSION,
