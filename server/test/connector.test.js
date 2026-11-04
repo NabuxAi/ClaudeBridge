@@ -1,38 +1,45 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { signHeaders, verifySignature } from '../src/connector.js'
+import { signHeaders, verifySignature, consumeSignedNonce } from '../src/connector.js'
 
-// Independently reproduce the PLUGIN's scheme (wp-claude-bridge.php):
-//   hash_hmac('sha256', ts . "\n" . body, secret)   // hex
-function pluginExpected(secret, ts, body) {
-  return crypto.createHmac('sha256', secret).update(`${ts}\n${body}`).digest('hex')
+// Independently reproduce the plugin's PHP scheme: ts + newline + nonce + newline + raw body.
+function pluginExpected(secret, timestamp, nonce, body) {
+  return crypto.createHmac('sha256', secret).update(`${timestamp}\n${nonce}\n${body}`).digest('hex')
 }
 
-test('signHeaders matches the plugin HMAC scheme byte-for-byte', () => {
-  const secret = 'shared-secret-abc'
-  const body = JSON.stringify({ jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'site_info' } })
-  const h = signHeaders(secret, 'site-key', body)
-  assert.equal(h['X-DigiWP-Signature'], pluginExpected(secret, h['X-DigiWP-Timestamp'], body))
-  assert.match(h['X-DigiWP-Timestamp'], /^\d+$/)
-  assert.equal(h['X-DigiWP-Site'], 'site-key')
+test('signHeaders uses unpredictable nonce and matches PHP HMAC byte-for-byte', () => {
+  const body = JSON.stringify({ method: 'tools/call', params: { name: 'site_info' } })
+  const a = signHeaders('secret', 'site-key', body)
+  const b = signHeaders('secret', 'site-key', body)
+  assert.match(a['X-DigiWP-Timestamp'], /^\d{10,12}$/)
+  assert.match(a['X-DigiWP-Nonce'], /^[a-f0-9]{32}$/)
+  assert.notEqual(a['X-DigiWP-Nonce'], b['X-DigiWP-Nonce'])
+  assert.equal(a['X-DigiWP-Signature'], pluginExpected('secret', a['X-DigiWP-Timestamp'], a['X-DigiWP-Nonce'], body))
+  assert.equal(a['X-DigiWP-Site'], 'site-key')
 })
 
-test('verifySignature accepts a freshly signed request', () => {
-  const secret = 's3cr3t'
-  const body = '{"hello":"world"}'
-  const h = signHeaders(secret, 'k', body)
-  assert.equal(verifySignature(secret, {
-    timestamp: h['X-DigiWP-Timestamp'], signature: h['X-DigiWP-Signature'], rawBody: body,
-  }), true)
-})
-
-test('verifySignature rejects a wrong secret, tampered body, and stale timestamp', () => {
+test('signature verifier rejects bad secret, nonce, body, timestamp and legacy v1 signatures', () => {
   const body = '{"a":1}'
-  const h = signHeaders('right', 'k', body)
-  assert.equal(verifySignature('wrong', { timestamp: h['X-DigiWP-Timestamp'], signature: h['X-DigiWP-Signature'], rawBody: body }), false)
-  assert.equal(verifySignature('right', { timestamp: h['X-DigiWP-Timestamp'], signature: h['X-DigiWP-Signature'], rawBody: '{"a":2}' }), false)
+  const h = signHeaders('right', 'site', body)
+  const signed = { timestamp: h['X-DigiWP-Timestamp'], nonce: h['X-DigiWP-Nonce'], signature: h['X-DigiWP-Signature'], rawBody: body }
+  assert.equal(verifySignature('right', signed), true)
+  assert.equal(verifySignature('wrong', signed), false)
+  assert.equal(verifySignature('right', { ...signed, rawBody: '{"a":2}' }), false)
+  assert.equal(verifySignature('right', { ...signed, nonce: '0'.repeat(32) }), false)
+  assert.equal(verifySignature('right', { ...signed, nonce: undefined }), false)
+  const old = crypto.createHmac('sha256', 'right').update(`${signed.timestamp}\n${body}`).digest('hex')
+  assert.equal(verifySignature('right', { ...signed, signature: old }), false)
   const stale = String(Math.floor(Date.now() / 1000) - 999)
-  const sig = crypto.createHmac('sha256', 'right').update(`${stale}\n${body}`).digest('hex')
-  assert.equal(verifySignature('right', { timestamp: stale, signature: sig, rawBody: body }), false)
+  const staleSig = pluginExpected('right', stale, signed.nonce, body)
+  assert.equal(verifySignature('right', { ...signed, timestamp: stale, signature: staleSig }), false)
+})
+
+test('replay guard refuses a second use of the same signed nonce per site', () => {
+  const nonce = crypto.randomBytes(16).toString('hex')
+  assert.equal(consumeSignedNonce('siteA', nonce), true)
+  assert.equal(consumeSignedNonce('siteA', nonce), false)
+  assert.equal(consumeSignedNonce('siteB', nonce), true)
+  assert.equal(consumeSignedNonce('siteB', nonce), false)
+  assert.equal(consumeSignedNonce('siteA', 'invalid'), false)
 })
