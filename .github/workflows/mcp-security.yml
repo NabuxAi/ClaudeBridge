@@ -1,0 +1,32 @@
+name: MCP security checks
+on:
+  pull_request:
+    paths:
+      - 'wp-claude-bridge.php'
+      - 'server/**'
+      - '.github/workflows/mcp-security.yml'
+  workflow_dispatch:
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - run: php -l wp-claude-bridge.php
+  connector-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: node --test test/connector.test.js test/site-address.test.js
+        working-directory: server
