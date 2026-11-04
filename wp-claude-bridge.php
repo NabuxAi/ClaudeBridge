@@ -5309,13 +5309,11 @@ add_action( 'rest_api_init', function () {
 	}
 } );
 
-/* Fallback transport 1: admin-ajax — reachable when custom REST routes are blocked.
- * POST /wp-admin/admin-ajax.php?action=cb_mcp  (auth via Bearer header or ?token=). */
+/* Fallback transport 1: admin-ajax (Bearer header/OAuth only; URL tokens disabled). */
 add_action( 'wp_ajax_cb_mcp', 'cb_mcp_run_raw' );
 add_action( 'wp_ajax_nopriv_cb_mcp', 'cb_mcp_run_raw' );
 
-/* Fallback transport 2: query-var endpoint — reachable when the REST API is fully off.
- * POST /?cb_mcp=1  (auth via Bearer header or ?token=). */
+/* Fallback transport 2: query-var endpoint (Bearer header/OAuth only). */
 add_action( 'init', 'cb_mcp_altroute', 1 );
 function cb_mcp_altroute() {
 	if ( ! isset( $_GET['cb_mcp'] ) ) {
@@ -5777,10 +5775,10 @@ function cb_mcp_emit_sse( $payload ) {
 		ob_end_clean();
 	}
 	header( 'Content-Type: text/event-stream; charset=utf-8' );
-	header( 'Cache-Control: no-cache, no-transform' );
+	header( 'Cache-Control: private, no-store, no-transform' );
 	header( 'Connection: keep-alive' );
 	header( 'X-Accel-Buffering: no' );
-	header( 'Access-Control-Allow-Origin: *' );
+	header( 'Referrer-Policy: no-referrer' );
 	echo 'event: message' . "\n";
 	echo 'data: ' . wp_json_encode( $payload ) . "\n\n";
 	@ob_flush();
@@ -6171,7 +6169,7 @@ function cb_update_status() {
 }
 
 function cb_connector() {
-	$d = array( 'enabled' => false, 'server_url' => '', 'secret' => '', 'site_id' => '', 'paired_at' => 0 );
+	$d = array( 'enabled' => false, 'server_url' => '', 'secret' => '', 'site_id' => '', 'paired_at' => 0, 'scope' => 'audit' );
 	$c = get_option( CB_CONNECTOR_OPTION );
 	return is_array( $c ) ? array_merge( $d, $c ) : $d;
 }
@@ -6198,35 +6196,52 @@ function cb_connector_header( $name ) {
 	return '';
 }
 
-/** Verify the current request was signed by the paired hub server. */
+/** Verify a request using a nonce-bound HMAC and reject each nonce after first use. */
 function cb_connector_request_signed() {
-	$c = cb_connector();
-	if ( empty( $c['secret'] ) ) {
-		return false;
-	}
-	$ts  = cb_connector_header( 'X-DigiWP-Timestamp' );
-	$sig = cb_connector_header( 'X-DigiWP-Signature' );
-	if ( ! $ts || ! $sig ) {
-		return false;
-	}
-	if ( abs( time() - (int) $ts ) > 300 ) { // 5-minute replay window
-		return false;
-	}
-	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- php://input is a stream, not a file; WP_Filesystem cannot read it.
-	$body     = file_get_contents( 'php://input' );
-	$expected = hash_hmac( 'sha256', $ts . "\n" . $body, $c['secret'] );
-	return hash_equals( $expected, (string) $sig );
-}
+  $c = cb_connector();
+  if ( empty( $c['secret'] ) ) return false;
+  $ts = cb_connector_header( 'X-DigiWP-Timestamp' );
+  $nonce = cb_connector_header( 'X-DigiWP-Nonce' );
+  $sig = cb_connector_header( 'X-DigiWP-Signature' );
+  if ( ! preg_match( '/^[0-9]{10,12}$/', $ts ) ||
+       ! preg_match( '/^[a-f0-9]{32}$/', $nonce ) ||
+       ! preg_match( '/^[a-f0-9]{64}$/', $sig ) ||
+       abs( time() - (int) $ts ) > 300 ) return false;
 
-/** Sign an outbound payload to YOUR server the same way (register / heartbeat). */
+  // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+  $body = file_get_contents( 'php://input' );
+  $expected = hash_hmac( 'sha256', $ts . "\n" . $nonce . "\n" . $body, $c['secret'] );
+  if ( ! hash_equals( $expected, $sig ) ) return false;
+  $key = 'cb_mcp_nonce_' . hash( 'sha256', (string) $c['site_id'] . ':' . $nonce );
+  // add_option is atomic on the unique option_name key; a transient read + set is not.
+  return add_option( $key, (string) time(), '', false );
+}
+add_action( 'init', function () {
+  if ( ! wp_next_scheduled( 'cb_mcp_nonce_cleanup' ) ) {
+    wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', 'cb_mcp_nonce_cleanup' );
+  }
+} );
+add_action( 'cb_mcp_nonce_cleanup', function () {
+  global $wpdb;
+  $like = $wpdb->esc_like( 'cb_mcp_nonce_' ) . '%';
+  // Only nonce records created by this plugin and older than the replay window.
+  $wpdb->query( $wpdb->prepare(
+    "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s AND option_value REGEXP '^[0-9]+$' AND CAST(option_value AS UNSIGNED) < %d",
+    $like, time() - 900
+  ) );
+} );
+
+/** Sign outbound hub updates with a unique, unpredictable nonce (HMAC v2). */
 function cb_connector_sign( $body ) {
-	$c  = cb_connector();
-	$ts = (string) time();
-	return array(
-		'X-DigiWP-Timestamp' => $ts,
-		'X-DigiWP-Signature' => hash_hmac( 'sha256', $ts . "\n" . $body, $c['secret'] ),
-		'X-DigiWP-Site'      => $c['site_id'],
-	);
+  $c = cb_connector();
+  $ts = (string) time();
+  $nonce = bin2hex( random_bytes( 16 ) );
+  return array(
+    'X-DigiWP-Timestamp' => $ts,
+    'X-DigiWP-Nonce' => $nonce,
+    'X-DigiWP-Signature' => hash_hmac( 'sha256', $ts . "\n" . $nonce . "\n" . $body, $c['secret'] ),
+    'X-DigiWP-Site' => $c['site_id'],
+  );
 }
 
 /** Announce this site to the hub server (opt-in, best-effort). */
@@ -6364,7 +6379,7 @@ function cb_mcp_run_raw() {
 	}
 	status_header( 200 );
 	header( 'Content-Type: application/json; charset=utf-8' );
-	header( 'Access-Control-Allow-Origin: *' );
+	header( 'Cache-Control: private, no-store, max-age=0' );
 	echo wp_json_encode( $out );
 	exit;
 }
@@ -6889,6 +6904,12 @@ function cb_settings_page() {
 				<tr><th scope="row"><?php esc_html_e( 'Enable connector mode', 'wp-claude-bridge' ); ?></th><td>
 					<label><input type="checkbox" name="cb_conn_enabled" value="1" <?php checked( ! empty( $conn['enabled'] ) ); ?>> <?php esc_html_e( 'Only accept commands signed by my hub server', 'wp-claude-bridge' ); ?></label>
 				</td></tr>
+        <tr><th scope="row"><?php esc_html_e( 'Hub permissions', 'wp-claude-bridge' ); ?></th><td>
+          <select name="cb_conn_scope">
+            <option value="audit" <?php selected( cb_mcp_scope_setting( 'connector' ), 'audit' ); ?>>Audit-only (default)</option>
+            <option value="admin" <?php selected( cb_mcp_scope_setting( 'connector' ), 'admin' ); ?>>Full administrator (high risk)</option>
+          </select>
+        </td></tr>
 				<tr><th scope="row"><?php esc_html_e( 'Hub server URL', 'wp-claude-bridge' ); ?></th><td>
 					<input type="url" name="cb_conn_server" class="regular-text" placeholder="https://api.digiwp.com/v1" value="<?php echo esc_attr( $conn['server_url'] ); ?>">
 					<p class="description"><?php esc_html_e( 'Your server’s API base — the only origin allowed to drive this site.', 'wp-claude-bridge' ); ?></p>
