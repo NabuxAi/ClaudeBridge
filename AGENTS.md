@@ -161,6 +161,12 @@ for UI convenience.
 
 - WordPress MCP transport and direct tool execution.
 - HMAC Hub Connector Mode, pairing, ping, and live relay.
+- Hub MCP endpoint (`POST /v1/mcp`, platform `0.3.0`): one personal token per
+  client reaches every site its owner can reach; members read-only, sensitive tools
+  filed as proposals, never relayed. Tokens: `mcp_tokens`, `/app/security`.
+- Iran ↔ international peer relay (`peer-relay.js`, `POST /v1/relay/forward`):
+  connector calls a server cannot deliver are re-sent through the partner server.
+  Off unless both `PEER_RELAY_URL` and `PEER_RELAY_SECRET` are set.
 - Core/plugin/theme inventory and update policy.
 - Transactional manual update pipeline (`3.8.0`): preflight, per-wave file
   snapshots, health gates, automatic plugin/theme rollback, durable journal —
@@ -945,6 +951,13 @@ These rules override visual mockups and optimistic marketing copy:
 - Direct MCP query-string tokens can leak through logs/history/referrers. Prefer
   Application Passwords, OAuth, or HMAC Connector Mode and deprecate URL tokens
   carefully for compatibility.
+- Hub MCP tokens (`dwmcp_…`) are stored only as SHA-256 and shown once. They are
+  accepted in `?token=` for clients that only take a URL — the same leak risk —
+  so the UI warns and offers the header form first; revocation is per token.
+- The peer relay must stay a pipe: never re-sign, never forward outside
+  `claude-bridge/v1`, never to private addresses in production, never relay a
+  relayed request. Retrying through the peer after a timeout is allowed only for
+  read-only calls, because the site may already have run the tool.
 - Do not add dangerous operations to the recoverable/auto list simply to make a
   UI flow easier.
 - Database restore, file deletion/editing, theme activation, unknown tools, and
@@ -961,6 +974,10 @@ These rules override visual mockups and optimistic marketing copy:
 - The hub is the only intended browser client of the server API.
 - `DATABASE_URL` is required for real server operation.
 - `LIVE=1` enables real connector relay.
+- `PEER_RELAY_URL` (the partner server's API base, same form as
+  `PUBLIC_BASE_URL`) and `PEER_RELAY_SECRET` (identical on both servers) enable the
+  Iran ↔ international relay. `PEER_RELAY_ALLOW_PRIVATE=1` is for hermetic tests
+  only — it lets the receiver reach private addresses.
 - `PUBLIC_BASE_URL` is handed to connectors. A wrong value at pairing can strand
   future plugin updates.
 - `EMAIL_SERVER` (an `smtp://`/`smtps://` connection URL; wins over `EMAIL_URL`)
@@ -1375,7 +1392,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.2.1**, shared by `hub/package.json` and
+- Current platform release: **0.3.0**, shared by `hub/package.json` and
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a
   second UI version. The footer links to the root `CHANGELOG.md`.

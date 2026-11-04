@@ -15,6 +15,8 @@
 // ============================================================
 import crypto from 'node:crypto'
 import { normalizeSiteAddress } from './site-address.js'
+import { connectorFetch } from './peer-relay.js'
+import { classify } from './authority.js'
 
 const REPLAY_WINDOW = 300 // seconds
 
@@ -62,7 +64,7 @@ const base = normalizeSiteAddress
 export async function ping(site) {
   const url = `${base(site.url)}/wp-json/claude-bridge/v1/connector/ping`
   const headers = signHeaders(site.secret, site.siteKey, '')
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
+  const res = await connectorFetch(url, { headers, signal: AbortSignal.timeout(15000) }, { idempotent: true })
   if (!res.ok) throw new ConnectorError(`ping failed (${res.status})`, res.status)
   return res.json()
 }
@@ -77,12 +79,14 @@ export async function callTool(site, name, args = {}) {
     params: { name, arguments: args },
   })
   const url = `${base(site.url)}/wp-json/claude-bridge/v1/mcp`
-  const res = await fetch(url, {
+  // A read-only tool may be sent twice without harm, so only those are
+  // retried through the peer server after a timeout (see peer-relay.js).
+  const res = await connectorFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...signHeaders(site.secret, site.siteKey, rawBody) },
     body: rawBody,
     signal: AbortSignal.timeout(30000),
-  })
+  }, { idempotent: classify(name, args) === 'read' })
   // Read as text first. A site that answers with a PHP fatal, an HTML error
   // page or an empty body is exactly the case worth diagnosing, and parsing
   // straight to JSON with a swallowed catch turned all of those into nothing:
@@ -103,6 +107,29 @@ export async function callTool(site, name, args = {}) {
   }
   // MCP wraps tool output in result.content[]; return the useful part.
   return data.result ?? data
+}
+
+/**
+ * The site's own tool catalogue (MCP "tools/list"), signed like a call.
+ * Read-only, so it may take the peer road after a timeout too.
+ */
+export async function listTools(site) {
+  const rawBody = JSON.stringify({ jsonrpc: '2.0', id: cryptoRandomId(), method: 'tools/list', params: {} })
+  const url = `${base(site.url)}/wp-json/claude-bridge/v1/mcp`
+  const res = await connectorFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...signHeaders(site.secret, site.siteKey, rawBody) },
+    body: rawBody,
+    signal: AbortSignal.timeout(30000),
+  }, { idempotent: true })
+  const raw = await res.text().catch(() => '')
+  let data = null
+  try { data = raw ? JSON.parse(raw) : null } catch { data = null }
+  if (res.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
+  if (!res.ok || !data || data.error || !Array.isArray(data.result?.tools)) {
+    throw new ConnectorError(describeToolFailure('tools/list', res.status, data || {}, raw), res.status)
+  }
+  return data.result.tools
 }
 
 function cryptoRandomId() {

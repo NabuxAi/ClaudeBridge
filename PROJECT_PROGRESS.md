@@ -1,6 +1,25 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-02. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-05. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.3.0 — hub MCP and Iran ↔ international peer relay (2026-11-05)
+
+- `POST /v1/mcp` (`server/src/routes/hub-mcp.js`): one MCP URL per account, personal
+  `dwmcp_` tokens (SHA-256 stored, shown once, revocable; Bearer header or `?token=`).
+  Tools `list_sites`, `site_tools`, `call_site_tool`. Policy mirrors `/sites/:id/actions`:
+  members read-only, owner reads/changes, sensitive tools become a pending proposal
+  (never relayed), mutating runs are recorded as `action` events with `via: hub-mcp`.
+- Token management `GET/POST/DELETE /v1/account/mcp-tokens`; UI section on
+  `/app/security`. Table `mcp_tokens`.
+- Peer relay (`server/src/peer-relay.js`, `routes/relay.js`): connector ping, tool
+  calls and `tools/list` go through `connectorFetch`; on connection-level failure or a
+  non-JSON 403/451/502/503/504 they are re-sent via `PEER_RELAY_URL/relay/forward`
+  (HMAC with `PEER_RELAY_SECRET`, 300 s window). The receiver forwards only
+  `claude-bridge/v1` paths on public addresses (pinned DNS via `site-address.js`) with
+  an allow-listed header set. Timeouts fall back only for read-only calls. A host that
+  needed the peer is tried through it first for 30 minutes (in-process memory).
+- Verification: 15 new tests; full server suite 462 tests on PostgreSQL 16 with the
+  same 3 failures as `main` (they need built `dist/` artifacts); hub lint + build.
 
 ## Platform 0.2.1 — compact sidebar and variable typography (2026-11-02)
 
