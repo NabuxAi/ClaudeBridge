@@ -6,8 +6,9 @@
 // plugin verifies it, so the plugin accepts ONLY traffic from this
 // server. Signature scheme (must match wp-claude-bridge.php):
 //
-//   sig  = HMAC_SHA256( `${ts}\n${rawBody}` , secret )   // hex
+//   sig  = HMAC_SHA256( `${ts}\n${nonce}\n${rawBody}` , secret )   // hex
 //   headers: X-DigiWP-Timestamp: ts (unix seconds)
+//            X-DigiWP-Nonce:     random 16-byte hex nonce
 //            X-DigiWP-Signature: sig
 //            X-DigiWP-Site:      siteKey
 //   replay window: 300s
@@ -20,18 +21,39 @@ const REPLAY_WINDOW = 300 // seconds
 /** Sign a raw body string for the paired site. Returns headers to send. */
 export function signHeaders(secret, siteKey, rawBody = '') {
   const ts = Math.floor(Date.now() / 1000).toString()
-  const sig = crypto.createHmac('sha256', secret).update(`${ts}\n${rawBody}`).digest('hex')
-  return { 'X-DigiWP-Timestamp': ts, 'X-DigiWP-Signature': sig, 'X-DigiWP-Site': siteKey }
+  const nonce = crypto.randomBytes(16).toString('hex')
+  const sig = crypto.createHmac('sha256', secret).update(`${ts}\n${nonce}\n${rawBody}`).digest('hex')
+  return { 'X-DigiWP-Timestamp': ts, 'X-DigiWP-Nonce': nonce, 'X-DigiWP-Signature': sig, 'X-DigiWP-Site': siteKey }
 }
 
 /** Verify an INBOUND signed request (e.g. the plugin's /connector/register). */
-export function verifySignature(secret, { timestamp, signature, rawBody = '' }) {
-  if (!secret || !timestamp || !signature) return false
+export function verifySignature(secret, { timestamp, nonce, signature, rawBody = '' }) {
+  if (!secret || !/^\d{10,12}$/.test(String(timestamp)) || !/^[a-f0-9]{32}$/.test(String(nonce)) || !/^[a-f0-9]{64}$/.test(String(signature))) return false
   if (Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp)) > REPLAY_WINDOW) return false
-  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}\n${rawBody}`).digest('hex')
+  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}\n${nonce}\n${rawBody}`).digest('hex')
   const a = Buffer.from(expected)
   const b = Buffer.from(String(signature))
   return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+
+
+/**
+ * One-time nonce cache for this process. Multi-replica deployments must replace
+ * this with a shared atomic store (Redis SET NX EX or a UNIQUE DB key).
+ */
+const seenNonces = new Map()
+export function consumeSignedNonce(siteId, nonce) {
+  if (!siteId || !/^[a-f0-9]{32}$/.test(String(nonce))) return false
+  const now = Date.now()
+  if (seenNonces.size > 5000) {
+    for (const [key, until] of seenNonces) {
+      if (until <= now) seenNonces.delete(key)
+    }
+  }
+  const key = crypto.createHash('sha256').update(String(siteId) + ':' + nonce).digest('hex')
+  if ((seenNonces.get(key) || 0) > now) return false
+  seenNonces.set(key, now + REPLAY_WINDOW * 1000)
+  return true
 }
 
 const base = normalizeSiteAddress
