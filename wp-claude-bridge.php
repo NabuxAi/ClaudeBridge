@@ -5658,7 +5658,8 @@ function cb_mcp_auth_failed() {
 }
 function cb_mcp_auth_status() { return cb_mcp_auth_limited() ? 429 : 401; }
 function cb_mcp_authenticate( $authorization ) {
-  if ( cb_mcp_auth_limited() ) return false;
+  // Always verify valid credentials first: failed attempts behind a shared proxy
+  // must never lock out a legitimate administrator or paired hub connection.
   $valid = false;
   if ( cb_connector_enabled() ) {
     $valid = cb_connector_request_signed();
