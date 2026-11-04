@@ -14,7 +14,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'CB_VERSION', '3.9.1' );
-define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
+define( 'CB_TOKEN_OPTION', 'cb_mcp_token' ); // Legacy plaintext option.
+define( 'CB_TOKEN_HASH_OPTION', 'cb_mcp_token_sha256' );
+define( 'CB_SCOPE_OPTION', 'cb_mcp_token_scope' );
+define( 'CB_AUTH_ALERT_OPTION', 'cb_mcp_auth_alert' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
 define( 'CB_CONNECTOR_OPTION', 'cb_connector' ); // Hub-connector pairing: server URL + shared secret.
@@ -4267,7 +4270,7 @@ function cb_op_conflict_scan( $args ) {
 /** Run a tool and record the call, so the dashboard can show what happened. */
 function cb_run_tool( $name, $args ) {
 	$started = microtime( true );
-	$res     = cb_run_tool_dispatch( $name, $args );
+	$res     = cb_mcp_tool_allowed( $name ) ? cb_run_tool_dispatch( $name, $args ) : new WP_Error( 'cb_scope_denied', 'Tool unavailable with audit-only credentials.' );
 	cb_activity_record( $name, ! is_wp_error( $res ), (int) round( ( microtime( true ) - $started ) * 1000 ) );
 	return $res;
 }
@@ -5603,51 +5606,105 @@ function cb_skill_resource_read( $uri ) {
  * 6. MCP LAYER  (JSON-RPC 2.0 over HTTP)
  * ========================================================================== */
 
-function cb_check_bearer( $bearer ) {
-	$bearer = trim( (string) $bearer );
-	if ( $bearer === '' ) {
-		return false;
-	}
-	$token = get_option( CB_TOKEN_OPTION );
-	if ( $token && hash_equals( $token, $bearer ) ) {
-		cb_become_admin();
-		return true;
-	}
-	$at = get_transient( 'cb_oauth_at_' . $bearer );
-	if ( $at && ! empty( $at['user_id'] ) ) {
-		// Tokens minted via the native Application Password flow honour revocation:
-		// removing the Application Password in wp-admin instantly cuts Claude's access.
-		if ( ! empty( $at['app_password'] ) && ! cb_app_password_valid( (int) $at['user_id'], $at['app_password'] ) ) {
-			return false;
-		}
-		wp_set_current_user( (int) $at['user_id'] );
-		return true;
-	}
-	return false;
-}
 
+/** Header-only bearer tokens are stored as SHA-256 digests, not recoverable secrets. */
+function cb_mcp_migrate_token() {
+  $old = get_option( CB_TOKEN_OPTION, '' );
+  if ( is_string( $old ) && '' !== $old ) {
+    if ( ! get_option( CB_TOKEN_HASH_OPTION ) ) {
+      update_option( CB_TOKEN_HASH_OPTION, hash( 'sha256', $old ), false );
+    }
+    delete_option( CB_TOKEN_OPTION );
+  }
+}
+function cb_mcp_issue_token() {
+  $token = bin2hex( random_bytes( 32 ) );
+  update_option( CB_TOKEN_HASH_OPTION, hash( 'sha256', $token ), false );
+  delete_option( CB_TOKEN_OPTION );
+  update_option( 'cb_mcp_rotated_at', time(), false );
+  $GLOBALS['cb_mcp_new_token_once'] = $token;
+  return $token;
+}
+/** A bearer may run only explicit diagnostics until its admin scope is enabled. */
+function cb_mcp_scope_setting( $kind = 'token' ) {
+  $settings = 'connector' === $kind ? cb_connector() : array();
+  $scope = 'connector' === $kind ? ( isset( $settings['scope'] ) ? $settings['scope'] : 'audit' ) : get_option( CB_SCOPE_OPTION, 'audit' );
+  return 'admin' === $scope ? 'admin' : 'audit';
+}
+function cb_mcp_tool_allowed( $name ) {
+  if ( 'admin' === ( isset( $GLOBALS['cb_mcp_request_scope'] ) ? $GLOBALS['cb_mcp_request_scope'] : 'admin' ) ) return true;
+  return is_string( $name ) && in_array( $name, array(
+    'site_info', 'list_themes', 'list_plugins', 'list_post_types', 'list_taxonomies',
+    'list_statuses', 'count_posts', 'count_terms', 'security_scan',
+    'update_health_check', 'update_status', 'core_integrity',
+    'list_wp_skills', 'get_wp_skill', 'list_recipes', 'get_recipe'
+  ), true );
+}
+function cb_mcp_auth_key() {
+  $ip = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : 'unknown';
+  return 'cb_auth_' . substr( hash_hmac( 'sha256', $ip, wp_salt( 'auth' ) ), 0, 32 );
+}
+function cb_mcp_auth_limited() {
+  return (int) get_transient( cb_mcp_auth_key() ) >= 12;
+}
+function cb_mcp_auth_failed() {
+  $key = cb_mcp_auth_key();
+  $count = (int) get_transient( $key ) + 1;
+  set_transient( $key, $count, 15 * MINUTE_IN_SECONDS );
+  if ( 12 === $count ) {
+    $alert = array( 'time' => time(), 'source' => substr( $key, 8, 12 ), 'attempts' => $count );
+    update_option( CB_AUTH_ALERT_OPTION, $alert, false );
+    do_action( 'cb_mcp_auth_rate_limited', $alert );
+    error_log( '[ClaudeBridge] blocked authentication attempts; source=' . $alert['source'] );
+  }
+}
+function cb_mcp_auth_status() { return cb_mcp_auth_limited() ? 429 : 401; }
+function cb_mcp_authenticate( $authorization ) {
+  if ( cb_mcp_auth_limited() ) return false;
+  $valid = false;
+  if ( cb_connector_enabled() ) {
+    $valid = cb_connector_request_signed();
+    if ( $valid ) $GLOBALS['cb_mcp_request_scope'] = cb_mcp_scope_setting( 'connector' );
+  } elseif ( current_user_can( 'edit_themes' ) ) {
+    $valid = true;
+    $GLOBALS['cb_mcp_request_scope'] = 'admin';
+  } elseif ( is_string( $authorization ) && preg_match( '/^Bearer\s+(\S+)$/i', trim( $authorization ), $m ) ) {
+    $valid = cb_check_bearer( $m[1] );
+  }
+  if ( ! $valid ) cb_mcp_auth_failed();
+  return $valid;
+}
+add_filter( 'rest_post_dispatch', function ( $response, $server, $request ) {
+  if ( strpos( $request->get_route(), '/claude-bridge/v1/' ) === 0 && $response instanceof WP_HTTP_Response ) {
+    $response->header( 'Cache-Control', 'private, no-store, max-age=0' );
+    $response->header( 'Referrer-Policy', 'no-referrer' );
+  }
+  return $response;
+}, 10, 3 );
+
+function cb_check_bearer( $bearer ) {
+  $bearer = trim( (string) $bearer );
+  if ( '' === $bearer || strlen( $bearer ) > 1024 ) return false;
+  cb_mcp_migrate_token();
+  $digest = get_option( CB_TOKEN_HASH_OPTION, '' );
+  if ( is_string( $digest ) && 64 === strlen( $digest ) && hash_equals( $digest, hash( 'sha256', $bearer ) ) ) {
+    $GLOBALS['cb_mcp_request_scope'] = cb_mcp_scope_setting();
+    if ( 'admin' === $GLOBALS['cb_mcp_request_scope'] ) cb_become_admin();
+    return true;
+  }
+  $at = get_transient( 'cb_oauth_at_' . $bearer );
+  if ( $at && ! empty( $at['user_id'] ) ) {
+    $user_id = (int) $at['user_id'];
+    if ( ! user_can( $user_id, 'edit_themes' ) ) return false;
+    if ( ! empty( $at['app_password'] ) && ! cb_app_password_valid( $user_id, $at['app_password'] ) ) return false;
+    wp_set_current_user( $user_id );
+    $GLOBALS['cb_mcp_request_scope'] = 'admin';
+    return true;
+  }
+  return false;
+}
 function cb_mcp_authorized( $request ) {
-	// Connector mode: ONLY hub-signed requests pass — nothing direct.
-	if ( cb_connector_enabled() ) {
-		return cb_connector_request_signed();
-	}
-	if ( current_user_can( 'edit_themes' ) ) {
-		return true;
-	}
-	// (a) Header: Authorization: Bearer <token>
-	$auth = $request->get_header( 'authorization' );
-	if ( $auth && preg_match( '/Bearer\s+(.+)/i', $auth, $m ) && cb_check_bearer( $m[1] ) ) {
-		return true;
-	}
-	// (b) Query param ?token=<token> — for clients that cannot send custom headers.
-	$qt = $request->get_param( 'token' );
-	if ( ! $qt && isset( $_GET['token'] ) ) {
-		$qt = sanitize_text_field( wp_unslash( $_GET['token'] ) );
-	}
-	if ( $qt && cb_check_bearer( $qt ) ) {
-		return true;
-	}
-	return false;
+  return cb_mcp_authenticate( (string) $request->get_header( 'authorization' ) );
 }
 
 function cb_rpc( $id, $result ) {
@@ -5664,7 +5721,8 @@ function cb_rpc_error( $id, $code, $message ) {
  */
 function cb_mcp_handler( $request ) {
 	if ( ! cb_mcp_authorized( $request ) ) {
-		$resp = new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => null, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ), 401 );
+		$resp = new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => null, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ), cb_mcp_auth_status() );
+		if ( 429 === cb_mcp_auth_status() ) { $resp->header( 'Retry-After', '900' ); }
 		$resp->header( 'WWW-Authenticate', 'Bearer resource_metadata="' . esc_url_raw( home_url( '/.well-known/oauth-protected-resource' ) ) . '"' );
 		return $resp;
 	}
@@ -5690,7 +5748,7 @@ function cb_mcp_get_info() {
 			'admin_ajax' => admin_url( 'admin-ajax.php?action=cb_mcp' ),
 			'query_var'  => home_url( '/?cb_mcp=1' ),
 		),
-		'auth'      => array( 'Authorization: Bearer <token>', '?token=<token>', 'OAuth (Application Passwords)', 'logged-in admin cookie' ),
+		'auth'      => array( 'Authorization: Bearer <token>', 'OAuth (Application Passwords)', 'logged-in admin cookie', 'Hub HMAC signature' ),
 	), 200 );
 }
 
@@ -5767,6 +5825,7 @@ function cb_mcp_dispatch( $body ) {
 		case 'tools/list':
 			$tools = array();
 			foreach ( cb_tools() as $t ) {
+				if ( ! cb_mcp_tool_allowed( $t['name'] ) ) { continue; }
 				$tools[] = array( 'name' => $t['name'], 'description' => $t['description'], 'inputSchema' => $t['inputSchema'] );
 			}
 			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array( 'tools' => $tools ) );
@@ -5837,24 +5896,7 @@ function cb_raw_auth_header() {
 
 /** Authorize a request that did NOT arrive through the REST controller. */
 function cb_mcp_authorized_any() {
-	// Connector mode: ONLY hub-signed requests pass — nothing direct.
-	if ( cb_connector_enabled() ) {
-		return cb_connector_request_signed();
-	}
-	if ( current_user_can( 'edit_themes' ) ) {
-		return true;
-	}
-	$auth = cb_raw_auth_header();
-	if ( $auth && preg_match( '/Bearer\s+(.+)/i', $auth, $m ) && cb_check_bearer( trim( $m[1] ) ) ) {
-		return true;
-	}
-	if ( ! empty( $_GET['token'] ) && cb_check_bearer( sanitize_text_field( wp_unslash( $_GET['token'] ) ) ) ) {
-		return true;
-	}
-	if ( ! empty( $_POST['token'] ) && cb_check_bearer( sanitize_text_field( wp_unslash( $_POST['token'] ) ) ) ) {
-		return true;
-	}
-	return false;
+  return cb_mcp_authenticate( cb_raw_auth_header() );
 }
 
 /* ============================================================================
@@ -6281,6 +6323,8 @@ add_action( 'automatic_updates_complete', 'cb_report_update_run' );
  * and prints the response as JSON (or SSE on request), then exits.
  */
 function cb_mcp_run_raw() {
+	nocache_headers();
+	header( 'Referrer-Policy: no-referrer' );
 	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : 'GET' ) === 'OPTIONS' ) {
 		header( 'Access-Control-Allow-Origin: *' );
 		header( 'Access-Control-Allow-Methods: GET, POST, OPTIONS' );
@@ -6295,7 +6339,8 @@ function cb_mcp_run_raw() {
 	$id   = ( is_array( $body ) && isset( $body['id'] ) ) ? $body['id'] : null;
 
 	if ( ! cb_mcp_authorized_any() ) {
-		status_header( 401 );
+		status_header( cb_mcp_auth_status() );
+		if ( 429 === cb_mcp_auth_status() ) { header( 'Retry-After: 900' ); }
 		header( 'Content-Type: application/json; charset=utf-8' );
 		header( 'WWW-Authenticate: Bearer resource_metadata="' . esc_url_raw( home_url( '/.well-known/oauth-protected-resource' ) ) . '"' );
 		echo wp_json_encode( array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ) );
