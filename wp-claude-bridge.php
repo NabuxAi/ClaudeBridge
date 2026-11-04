@@ -6737,11 +6737,16 @@ add_action( 'admin_menu', function () {
 
 add_action( 'admin_init', function () {
 	if ( isset( $_POST['cb_regen'] ) && check_admin_referer( 'cb_regen' ) && current_user_can( 'manage_options' ) ) {
-		update_option( CB_TOKEN_OPTION, wp_generate_password( 48, false ) );
+		cb_mcp_issue_token();
+	}
+	if ( isset( $_POST['cb_mcp_scope_save'] ) && check_admin_referer( 'cb_mcp_scope' ) && current_user_can( 'manage_options' ) ) {
+		$scope = isset( $_POST['cb_mcp_scope'] ) ? sanitize_key( wp_unslash( $_POST['cb_mcp_scope'] ) ) : 'audit';
+		update_option( CB_SCOPE_OPTION, 'admin' === $scope ? 'admin' : 'audit', false );
 	}
 	if ( isset( $_POST['cb_connector_save'] ) && check_admin_referer( 'cb_connector' ) && current_user_can( 'manage_options' ) ) {
 		$c            = cb_connector();
 		$c['enabled'] = ! empty( $_POST['cb_conn_enabled'] );
+		$c['scope'] = ( isset( $_POST['cb_conn_scope'] ) && 'admin' === sanitize_key( wp_unslash( $_POST['cb_conn_scope'] ) ) ) ? 'admin' : 'audit';
 		$c['server_url'] = isset( $_POST['cb_conn_server'] ) ? esc_url_raw( wp_unslash( $_POST['cb_conn_server'] ) ) : '';
 		$secret = isset( $_POST['cb_conn_secret'] ) ? sanitize_text_field( wp_unslash( $_POST['cb_conn_secret'] ) ) : '';
 		if ( $secret !== '' ) {
@@ -6769,22 +6774,37 @@ add_action( 'admin_init', function () {
 } );
 
 function cb_settings_page() {
-	$token = get_option( CB_TOKEN_OPTION );
-	if ( ! $token ) {
-		$token = wp_generate_password( 48, false );
-		update_option( CB_TOKEN_OPTION, $token );
-	}
-	$mcp     = rest_url( 'claude-bridge/v1/mcp' );
-	$mcp_tok = add_query_arg( 'token', $token, $mcp );
+	cb_mcp_migrate_token();
+	if ( ! get_option( CB_TOKEN_HASH_OPTION ) ) cb_mcp_issue_token();
+	$token_once = isset( $GLOBALS['cb_mcp_new_token_once'] ) ? $GLOBALS['cb_mcp_new_token_once'] : '';
+	$mcp = rest_url( 'claude-bridge/v1/mcp' );
 	?>
 	<div class="wrap">
 		<h1>WP Claude Bridge <span style="font-size:13px;color:#888">v<?php echo esc_html( CB_VERSION ); ?></span></h1>
 		<p><?php esc_html_e( 'This site is now a self-hosted MCP server: theme & plugin file editing, plugin creation, theme/plugin activation, preview, cache, and full WordPress + WooCommerce control (90+ tools).', 'wp-claude-bridge' ); ?></p>
 
-		<h2 style="margin-top:24px">✅ <?php esc_html_e( 'Easiest: connect with the token in the URL (no header)', 'wp-claude-bridge' ); ?></h2>
-		<p><?php echo wp_kses_post( __( 'In Claude, add a <b>Custom Connector</b> and paste this single URL. Nothing else to configure — the token is built in.', 'wp-claude-bridge' ) ); ?></p>
-		<p><input type="text" readonly onclick="this.select()" style="width:100%;max-width:760px;padding:10px;font-family:monospace;font-size:13px" value="<?php echo esc_attr( $mcp_tok ); ?>"></p>
-		<p class="description"><?php esc_html_e( 'Keep this URL secret — anyone with it has admin access. Regenerate the token below to revoke it.', 'wp-claude-bridge' ); ?></p>
+    <h2 style="margin-top:24px"><?php esc_html_e( 'Secure MCP connection: Bearer header or OAuth', 'wp-claude-bridge' ); ?></h2>
+    <p><code><?php echo esc_html( $mcp ); ?></code></p>
+    <p class="description"><?php esc_html_e( 'Never put authentication tokens in URLs. Use Authorization: Bearer or OAuth.', 'wp-claude-bridge' ); ?></p>
+    <?php if ( '' !== $token_once ) : ?>
+      <div class="notice notice-warning inline"><p><strong><?php esc_html_e( 'Copy your newly issued secret now; it cannot be shown again.', 'wp-claude-bridge' ); ?></strong></p>
+      <input type="text" readonly autocomplete="off" onclick="this.select()" style="width:100%;max-width:760px;font-family:monospace" value="<?php echo esc_attr( $token_once ); ?>"></div>
+    <?php else : ?>
+      <p class="description"><?php esc_html_e( 'Only the SHA-256 digest is stored. Rotate your token if you no longer have the secret.', 'wp-claude-bridge' ); ?></p>
+    <?php endif; ?>
+    <?php $alert = get_option( CB_AUTH_ALERT_OPTION, array() ); if ( ! empty( $alert['time'] ) ) : ?>
+      <div class="notice notice-warning inline"><p><?php echo esc_html( sprintf( 'Recent authentication rate-limit: %s UTC; source %s; attempts %d.', gmdate( 'Y-m-d H:i', (int) $alert['time'] ), $alert['source'], (int) $alert['attempts'] ) ); ?></p></div>
+    <?php endif; ?>
+    <form method="post">
+      <?php wp_nonce_field( 'cb_mcp_scope' ); ?>
+      <input type="hidden" name="cb_mcp_scope_save" value="1">
+      <h3><?php esc_html_e( 'Static token permissions', 'wp-claude-bridge' ); ?></h3>
+      <select name="cb_mcp_scope">
+        <option value="audit" <?php selected( cb_mcp_scope_setting(), 'audit' ); ?>>Audit-only (default)</option>
+        <option value="admin" <?php selected( cb_mcp_scope_setting(), 'admin' ); ?>>Full administrator (high risk)</option>
+      </select>
+      <?php submit_button( __( 'Save token permissions', 'wp-claude-bridge' ), 'secondary' ); ?>
+    </form>
 
 		<h2 style="margin-top:24px"><?php esc_html_e( 'Alternative: OAuth via native Application Passwords', 'wp-claude-bridge' ); ?></h2>
 		<p><?php echo wp_kses_post( __( 'Add a Custom Connector with the plain URL below. Claude sends you to WordPress’s own <b>Authorize Application</b> screen (one click, no header). Access is a standard Application Password you can revoke any time under <b>Users &rarr; Profile &rarr; Application Passwords</b>.', 'wp-claude-bridge' ) ); ?></p>
@@ -6793,7 +6813,7 @@ function cb_settings_page() {
 		<h2 style="margin-top:24px"><?php esc_html_e( 'Alternative: Bearer header', 'wp-claude-bridge' ); ?></h2>
 		<table class="form-table">
 			<tr><th><?php esc_html_e( 'URL', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
-			<tr><th><?php esc_html_e( 'Header', 'wp-claude-bridge' ); ?></th><td><code>Authorization: Bearer <?php echo esc_html( $token ); ?></code></td></tr>
+			<tr><th><?php esc_html_e( 'Header', 'wp-claude-bridge' ); ?></th><td><code>Authorization: Bearer &lt;secret-token&gt;</code></td></tr>
 		</table>
 		<?php $available_skills = cb_skill_list(); ?>
 		<?php if ( $available_skills ) : ?>
@@ -6834,7 +6854,7 @@ function cb_settings_page() {
 		<p><a href="<?php echo esc_url( cb_cookbook_url() ); ?>" class="button"><?php esc_html_e( 'Browse the cookbook', 'wp-claude-bridge' ); ?></a></p>
 
 		<h2 style="margin-top:24px"><?php esc_html_e( 'Connection modes (built-in fallback)', 'wp-claude-bridge' ); ?></h2>
-		<p><?php esc_html_e( 'All endpoints below speak the same MCP protocol and accept the same token. If a host, security plugin, or proxy blocks one, point Claude at another:', 'wp-claude-bridge' ); ?></p>
+		<p><?php esc_html_e( 'All fallback endpoints require secure Authorization or OAuth. URL and form tokens are rejected.', 'wp-claude-bridge' ); ?></p>
 		<table class="form-table">
 			<tr><th><?php esc_html_e( 'Primary (REST)', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
 			<tr><th><?php esc_html_e( 'REST aliases', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( rest_url( 'claude-bridge/v1/sse' ) ); ?></code> · <code><?php echo esc_html( rest_url( 'claude-bridge/v1/rpc' ) ); ?></code></td></tr>
@@ -6842,7 +6862,7 @@ function cb_settings_page() {
 			<tr><th><?php esc_html_e( 'Query-var', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( home_url( '/?cb_mcp=1' ) ); ?></code> <span class="description"><?php esc_html_e( '— when the REST API is fully off', 'wp-claude-bridge' ); ?></span></td></tr>
 			<tr><th><?php esc_html_e( 'Response format', 'wp-claude-bridge' ); ?></th><td><?php echo wp_kses_post( __( 'JSON by default · append <code>&amp;transport=sse</code> for Server-Sent Events', 'wp-claude-bridge' ) ); ?></td></tr>
 		</table>
-		<p class="description"><?php echo wp_kses_post( __( 'If your host strips the <code>Authorization</code> header, append <code>?token=…</code> (or <code>&amp;token=…</code>) to any endpoint above.', 'wp-claude-bridge' ) ); ?></p>
+		<p class="description"><?php esc_html_e( 'If your server drops Authorization headers, fix proxy forwarding or use OAuth. Query-string authentication is disabled.', 'wp-claude-bridge' ); ?></p>
 
 		<form method="post"><?php wp_nonce_field( 'cb_regen' ); ?>
 			<input type="hidden" name="cb_regen" value="1"><?php submit_button( __( 'Regenerate token', 'wp-claude-bridge' ), 'secondary' ); ?>
