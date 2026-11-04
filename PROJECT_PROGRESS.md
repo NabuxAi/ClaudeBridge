@@ -2,6 +2,17 @@
 
 Last updated 2026-11-05. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
 
+## Platform 0.4.0 — Material Design 3 (2026-11-05)
+
+- `hub/src/styles/material.css` (loaded last): M3 colour roles from the DigiWP green mapped onto
+  the frozen `--gd-*` names (light + `data-panel-theme="dark"`/`data-theme="ink"`), M3 shapes,
+  elevation, type scale, pill buttons and nav indicator, outlined fields, snackbar toasts.
+- Motion: page change is an M3 fade-through; `PageProgress` is the M3 linear indeterminate bar
+  (no glow); skeletons breathe instead of shimmering; `lib/ripple.js` adds press ripples.
+  Reduced motion turns all of it off.
+- `--gd-primary` is now `#146c3a` (light) / `#8ad79b` (dark); the browser test asserts these.
+- Verification: hub lint, build, 30 browser tests.
+
 ## Platform 0.3.0 — hub MCP and Iran ↔ international peer relay (2026-11-05)
 
 - `POST /v1/mcp` (`server/src/routes/hub-mcp.js`): one MCP URL per account, personal
