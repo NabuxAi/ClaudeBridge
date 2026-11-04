@@ -109,6 +109,9 @@ Support**. Keep these roles explicit instead of mixing the names casually.
 - `hub/src/data/mock.js` — development-only data. Never let production silently
   fall back to it.
 - `hub/src/styles/app.css` — layout and responsive rules.
+- `hub/src/styles/material.css` — Material Design 3 layer (0.4.0), loaded last: colour roles,
+  shapes, motion (fade-through pages, M3 linear progress). Change the look here, not in
+  the older polish-* files.
 - `hub/nginx.conf` — same-origin API proxy and static caching policy.
 - `scripts/build-digiwp-ai-bridge.sh` — branded self-hosted runtime artifact;
   deliberately excludes repository development playbooks.
@@ -1392,7 +1395,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.3.0**, shared by `hub/package.json` and
+- Current platform release: **0.4.0**, shared by `hub/package.json` and
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a
   second UI version. The footer links to the root `CHANGELOG.md`.

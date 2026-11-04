@@ -38,7 +38,7 @@ test('theme and collapsed menu persist across page switches and reloads', async 
   await expect(page).toHaveURL(/\/app\/sites$/)
   await expect(page.locator('.panel-frame')).toHaveClass(/is-collapsed/)
   await page.reload()
-  await expect(page.getByRole('link', { name: 'Release notes — version 0.3.0' })).toContainText('v0.3.0')
+  await expect(page.getByRole('link', { name: 'Release notes — version 0.4.0' })).toContainText('v0.4.0')
   await expect(page.locator('.panel-frame')).toHaveAttribute('data-panel-theme', 'light')
   await expect(page.locator('.panel-frame')).toHaveClass(/is-collapsed/)
 })
@@ -128,7 +128,7 @@ test('mobile menu traps focus, closes on Escape, and can navigate without reload
   const dialog = page.getByRole('dialog', { name: 'Panel navigation' })
   await expect(dialog).toBeVisible()
   await expect(dialog).toHaveAttribute('aria-modal', 'true')
-  await dialog.getByRole('link', { name: 'Release notes — version 0.3.0' }).focus()
+  await dialog.getByRole('link', { name: 'Release notes — version 0.4.0' }).focus()
   await page.keyboard.press('Tab')
   await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused()
   await page.keyboard.press('Escape')
@@ -151,7 +151,7 @@ for (const lang of ['fa', 'en']) {
         await expect(page.locator('html')).toHaveAttribute('dir', lang === 'fa' ? 'rtl' : 'ltr')
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
         const color = await page.locator('.panel-frame').evaluate((element) => getComputedStyle(element).getPropertyValue('--gd-primary').trim())
-        expect(color).toBe(theme === 'dark' ? '#30d56b' : '#15803d')
+        expect(color).toBe(theme === 'dark' ? '#8ad79b' : '#146c3a')
       })
     }
   }
