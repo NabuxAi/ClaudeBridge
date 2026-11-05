@@ -1301,8 +1301,8 @@ unreachable, so a throwaway stack was used):
   API failure is shown honestly and creates no site. A missing connector is
   distinguished from an unrecognized WordPress installation.
 - Scope: the owner must enter the full WordPress address. Discovery does not
-  enumerate unknown subfolders from a bare domain, and currently requires the
-  public `/wp-json/` index. Discovery proves REST reachability, not HMAC pairing;
+  enumerate unknown subfolders from a bare domain, and requires a public REST index. As of platform 0.2.2 it negotiates
+  pretty, query (`rest_route`) and index.php paths. Discovery proves REST reachability, not HMAC pairing;
   the existing signed connection check remains the next step.
 - Local scoped verification: 18/18 address/connector tests; hub lint and build;
   9/9 Playwright onboarding cases, including English/Persian, keyboard
@@ -1373,9 +1373,26 @@ unreachable, so a throwaway stack was used):
 - Focused local gate: hub lint/build and 30 browser cases (21 panel + 9 onboarding).
   This supersedes the prior 28-case UI baseline, not production observations.
 
+### REST compatibility (platform 0.2.2, 2026-11-05)
+
+- `restAddresses()` in site-address.js builds pretty/query/index.php routes for
+  both discovery and the signed connector. Discovery preserves folders and all
+  previous SSRF/time/body protections. A forbidden REST index is distinct from
+  a missing installation. No login URL guessing or admin password is needed.
+- Connector ping negotiates using signed read-only GETs and checks ok/version.
+  Route choices expire after five minutes and are bounded to 256 hashed
+  credential identities. Cold tool calls negotiate too; legacy sites without
+  ping may still receive one normal MCP request. Tool POSTs are NEVER retried.
+- Signed requests use manual redirects, so HMAC headers/body cannot travel to
+  a different origin automatically. Pairing rejects HTML/invalid 2xx responses.
+- 26 focused connector/address/error checks cover fallback, folder retention,
+  private redirects, signature preservation and one POST after uncertain errors.
+  No affected live customer URL was supplied during this change; full REST
+  blocking still needs host/security configuration, not an admin login URL.
+
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.2.1**, shared by `hub/package.json` and
+- Current platform release: **0.2.2**, shared by `hub/package.json` and
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a
   second UI version. The footer links to the root `CHANGELOG.md`.

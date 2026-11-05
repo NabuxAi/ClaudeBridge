@@ -1,6 +1,14 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-02. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-05. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.2.2 — REST connection compatibility (2026-11-05)
+
+- Discovery now negotiates pretty/query/index.php REST paths; keeps the installation folder and existing public-address/DNS pinning safeguards.
+- Signed ping selects a transport cached for 5 minutes (bounded to 256 hashed credential identities). A cold MCP call first tries read-only negotiation; legacy endpoints without ping still receive one normal MCP request. POST is never automatically retried. Signed redirects are not followed.
+- Invalid/HTML ping responses cannot mark a site paired. Diagnostics distinguish 401/403/404/redirect/invalid response; onboarding asks for the public site URL, not a custom admin/login path.
+- Scoped gate: 26 connector/address/error tests passed, including real local HTTP. Browser and full PostgreSQL integration gates run in CI.
+- No affected customer URL supplied at implementation time; no production pairing or admin login verified. All-REST WAF restrictions require owner/host configuration. Plugin stays 3.9.1.
 
 ## Platform 0.2.1 — compact sidebar and variable typography (2026-11-02)
 

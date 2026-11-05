@@ -16,7 +16,7 @@ export function normalizeSiteAddress(input) {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || !url.hostname || /\s/.test(raw)) {
     throw httpError(400, 'sites.invalidAddress')
   }
-  url.pathname = url.pathname.replace(/\/(?:wp-admin(?:\/.*)?|wp-login\.php|wp-json(?:\/.*)?|index\.php)\/?$/i, '').replace(/\/+$/, '') || '/'
+  url.pathname = url.pathname.replace(/\/(?:wp-admin(?:\/.*)?|wp-login\.php|(?:index\.php\/)?wp-json(?:\/.*)?|index\.php)\/?$/i, '').replace(/\/+$/, '') || '/'
   url.search = ''
   url.hash = ''
   return url.href.replace(/\/$/, '')
@@ -69,12 +69,13 @@ function publicFetch(address, { signal, headers }, addresses) {
   })
 }
 
-async function getJson(address, { fetchImpl, resolve, signal }) {
+async function getJson(address, { fetchImpl, resolve, signal, onStatus }) {
   let url = new URL(address)
   for (let redirects = 0; redirects <= 3; redirects++) {
     const addresses = await publicAddress(url, resolve, signal)
     signal.throwIfAborted()
     const res = await fetchImpl(url.href, { redirect: 'manual', signal, headers: { Accept: 'application/json' } }, addresses)
+    onStatus?.(res.status)
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const location = res.headers.get('location')
       await res.body?.cancel()
@@ -101,20 +102,33 @@ async function getJson(address, { fetchImpl, resolve, signal }) {
   return null
 }
 
+export function restAddresses(siteUrl, route = '/') {
+  const root = normalizeSiteAddress(siteUrl)
+  const path = route.replace(/^\//, '')
+  return [
+    `${root}/wp-json/${path}`,
+    `${root}/?rest_route=${encodeURIComponent('/' + path)}`,
+    `${root}/index.php/wp-json/${path}`,
+    `${root}/index.php?rest_route=${encodeURIComponent('/' + path)}`,
+  ]
+}
+
 export async function discoverWordPress(input, { fetchImpl = publicFetch, resolve = lookup } = {}) {
   const siteUrl = normalizeSiteAddress(input)
   const signal = AbortSignal.timeout(12000)
-  let failure
-  try {
-    const result = await getJson(`${siteUrl}/wp-json/?_fields=namespaces`, { fetchImpl, resolve, signal })
-    if (!result || !Array.isArray(result.data?.namespaces) || !result.data.namespaces.includes('wp/v2')) throw httpError(422, 'sites.wordpressNotFound')
-    // Use the final REST location, never an arbitrary URL supplied in JSON.
-    // This preserves /baneh, including when a host adds www or HTTPS.
-    const resolved = normalizeSiteAddress(result.url.href)
-    return { siteUrl: resolved, ...siteLocation(resolved), connectorDetected: result.data.namespaces.includes('claude-bridge/v1') }
-  } catch (e) {
-    if (['sites.publicAddressRequired', 'sites.invalidAddress'].includes(e.i18n?.key)) throw e
-    failure = e
+  let forbidden = false
+  for (const address of restAddresses(siteUrl)) {
+    try {
+      const url = new URL(address)
+      url.searchParams.set('_fields', 'namespaces')
+      const result = await getJson(url.href, { fetchImpl, resolve, signal, onStatus: (status) => { if (status === 403) forbidden = true } })
+      if (!result || !Array.isArray(result.data?.namespaces) || !result.data.namespaces.includes('wp/v2')) continue
+      const resolved = normalizeSiteAddress(result.url.href)
+      return { siteUrl: resolved, ...siteLocation(resolved), connectorDetected: result.data.namespaces.includes('claude-bridge/v1') }
+    } catch (e) {
+      if (['sites.publicAddressRequired', 'sites.invalidAddress'].includes(e.i18n?.key)) throw e
+      if (signal.aborted) break
+    }
   }
-  throw httpError(422, signal.aborted || failure?.name === 'TimeoutError' ? 'sites.discoveryTimeout' : 'sites.wordpressNotFound')
+  throw httpError(422, signal.aborted ? 'sites.discoveryTimeout' : forbidden ? 'sites.wordpressForbidden' : 'sites.wordpressNotFound')
 }

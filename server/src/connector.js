@@ -13,7 +13,7 @@
 //   replay window: 300s
 // ============================================================
 import crypto from 'node:crypto'
-import { normalizeSiteAddress } from './site-address.js'
+import { normalizeSiteAddress, restAddresses } from './site-address.js'
 
 const REPLAY_WINDOW = 300 // seconds
 
@@ -36,13 +36,42 @@ export function verifySignature(secret, { timestamp, signature, rawBody = '' }) 
 
 const base = normalizeSiteAddress
 
-/** GET {site}/wp-json/claude-bridge/v1/connector/ping — verify pairing is live. */
+// Cache only a verified transport choice, never a tool response or secret.
+const transports = new Map()
+const transportKey = (site) => crypto.createHash('sha256').update(`${base(site.url)}\n${site.siteKey}\n${site.secret}`).digest('hex')
+function remember(site, index) {
+  if (transports.size >= 256) transports.delete(transports.keys().next().value)
+  transports.set(transportKey(site), { index, expires: Date.now() + 300000 })
+}
+function selected(site) {
+  const entry = transports.get(transportKey(site))
+  return entry?.expires > Date.now() ? entry.index : null
+}
+
+/** Negotiate with read-only signed GETs, independently of the admin/login URL. */
 export async function ping(site) {
-  const url = `${base(site.url)}/wp-json/claude-bridge/v1/connector/ping`
-  const headers = signHeaders(site.secret, site.siteKey, '')
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
-  if (!res.ok) throw new ConnectorError(`ping failed (${res.status})`, res.status)
-  return res.json()
+  const signal = AbortSignal.timeout(15000)
+  const addresses = restAddresses(site.url, '/claude-bridge/v1/connector/ping')
+  let lastStatus = 502
+  for (const [index, url] of addresses.entries()) {
+    const res = await fetch(url, { redirect: 'manual', headers: { ...signHeaders(site.secret, site.siteKey, ''), 'Cache-Control': 'no-cache' }, signal })
+    lastStatus = res.status
+    const data = await res.json().catch(() => null)
+    if (res.ok && data?.ok === true && typeof data.version === 'string') {
+      remember(site, index)
+      return data
+    }
+    if (res.status === 401) throw connectionFailure(401, 'sites.connectorAuth')
+    if (res.status >= 300 && res.status < 400) throw connectionFailure(res.status, 'sites.connectorRedirect')
+    if (![403, 404].includes(res.status) && !res.ok) break
+  }
+  throw connectionFailure(lastStatus, lastStatus === 403 ? 'sites.connectorForbidden' : lastStatus === 404 ? 'sites.connectorMissing' : 'sites.connectorInvalid')
+}
+
+function connectionFailure(status, key) {
+  const error = new ConnectorError(`WordPress connector check failed (HTTP ${status}); ${key}`, status >= 400 ? status : 502)
+  error.i18n = { key, vars: { status } }
+  return error
 }
 
 /**
@@ -54,9 +83,17 @@ export async function callTool(site, name, args = {}) {
     jsonrpc: '2.0', id: cryptoRandomId(), method: 'tools/call',
     params: { name, arguments: args },
   })
-  const url = `${base(site.url)}/wp-json/claude-bridge/v1/mcp`
+  let index = selected(site)
+  if (index == null) {
+    // The POST below is sent exactly once, even if its outcome is uncertain.
+    try { await ping(site); index = selected(site) } catch (error) {
+      if (error.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
+      // Preserve the MCP endpoint's own diagnostic if the ping route is absent.
+    }
+  }
+  const url = restAddresses(site.url, '/claude-bridge/v1/mcp')[index ?? 0]
   const res = await fetch(url, {
-    method: 'POST',
+    method: 'POST', redirect: 'manual',
     headers: { 'Content-Type': 'application/json', ...signHeaders(site.secret, site.siteKey, rawBody) },
     body: rawBody,
     signal: AbortSignal.timeout(30000),
@@ -76,9 +113,14 @@ export async function callTool(site, name, args = {}) {
 
   if (res.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
 
+  if (res.status === 403) throw connectionFailure(403, 'sites.connectorForbidden')
+  if (res.status === 404) throw connectionFailure(404, 'sites.connectorMissing')
+  if (res.status >= 300 && res.status < 400) throw connectionFailure(res.status, 'sites.connectorRedirect')
+
   if (!res.ok || data.error) {
     throw new ConnectorError(describeToolFailure(name, res.status, data, raw), res.status)
   }
+  if (!raw || (!data.result && !data.content)) throw connectionFailure(res.status, 'sites.connectorInvalid')
   // MCP wraps tool output in result.content[]; return the useful part.
   return data.result ?? data
 }

@@ -2,7 +2,7 @@
   "domainRequired": "The site's domain is required.",
   "invalidAddress": "Enter a valid HTTP or HTTPS WordPress address, including its installation folder. Do not include a username or password.",
   "publicAddressRequired": "Enter a public WordPress address. Local or private network addresses cannot be checked here.",
-  "wordpressNotFound": "WordPress could not be verified at this address. Include the installation folder (for example /baneh). Check that the site's REST API is available and try again.",
+  "wordpressNotFound": "WordPress could not be verified at this address. Include the installation folder (for example /baneh). Check that the site's REST API is available and try again. Enter the public site address, not a custom admin login path.",
   "discoveryTimeout": "The WordPress check timed out. Check the address and try again.",
   "alreadyAdded": "This site has already been added.",
   "metric": {
@@ -101,5 +101,11 @@
     "hostingChanged": "Site hosting settings changed",
     "sensitiveRan": "Sensitive action ran: {op}",
     "approvedFailed": "Approved action failed: {op}"
-  }
+  },
+  "wordpressForbidden": "WordPress REST access is forbidden (403). Check REST restrictions in the security plugin, WAF or host IP rules. The admin login URL is not required.",
+  "connectorAuth": "The connector rejected the signature (401). Check the shared key and Hub Connector Mode in the plugin. Changing the admin login URL does not require a new key.",
+  "connectorForbidden": "Connector access was refused (403). Check REST restrictions in the security plugin, firewall or hosting and allow signed requests from your relay server.",
+  "connectorMissing": "Connector route not found (404). Check the public WordPress address and installation folder, and activate DigiWp Ai Bridge. Do not enter a custom login URL as the site address.",
+  "connectorRedirect": "The connector redirects. Enter the final HTTPS address and canonical site domain; signed requests were not forwarded to another address.",
+  "connectorInvalid": "No valid connector response (HTTP {status}). Check plugin activation, Connector Mode and login or security challenges blocking REST."
 }

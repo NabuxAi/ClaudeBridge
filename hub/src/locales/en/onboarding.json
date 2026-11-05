@@ -12,7 +12,7 @@
     "sub": "Enter your WordPress site's address. We'll create a unique “connection key” for you to enter in the connector plugin — from then on, everything runs only through your server.",
     "urlLabel": "Site address",
     "urlPlaceholder": "https://example.com/shop",
-    "urlHint": "Enter the full WordPress address, including any subdomain or folder, e.g. https://example.com/shop",
+    "urlHint": "Enter the full WordPress address, including any subdomain or folder, e.g. https://example.com/shop Use the public site URL, not your admin login URL. A renamed login path does not prevent connection; no admin password is needed.",
     "inspect": "Check WordPress address",
     "checking": "Checking WordPress at this address…",
     "discoveryFailed": "Could not check this address. Verify the full WordPress address and try again.",
