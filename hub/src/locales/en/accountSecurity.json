@@ -66,5 +66,27 @@
   "guarantee": {
     "title": "What does this page guarantee?",
     "body": "Signing out a device revokes its session on the server; even if that device's token was copied earlier, it's no longer accepted. Each device's \"last activity\" is recorded from that session's real traffic. If you don't recognize a device, sign it out and, for extra security, use \"Forgot password\" on the sign-in page to set a new password for your account."
+  },
+  "mcp": {
+    "title": "AI clients (MCP)",
+    "intro": "One address for Claude, ChatGPT or any MCP client to manage every site you can reach here. Read-only tools run right away; changes run only for the site owner; sensitive actions (file edits, deletes, database, restores) wait for your approval on the site's page. Sites this server cannot reach are reached through our partner server inside or outside Iran.",
+    "urlLabel": "MCP address",
+    "namePlaceholder": "Name, e.g. Claude on my laptop",
+    "create": "Create token",
+    "newTokenTitle": "Copy it now — it is shown only once",
+    "tokenLabel": "Token (send as Authorization: Bearer …)",
+    "urlWithTokenLabel": "Address with the token inside (for clients that take only a URL)",
+    "urlWithTokenWarning": "An address with the token inside works like a password: anyone who sees it can use it. Revoke it here if it leaks.",
+    "none": "No tokens yet.",
+    "created": "Created {when}",
+    "lastUsed": "last used {when}",
+    "neverUsed": "never used",
+    "revoke": "Revoke",
+    "revoked": "Token revoked.",
+    "confirmRevoke": "Revoke this token? Any AI client using it stops working immediately.",
+    "loadError": "Couldn't load your MCP tokens.",
+    "loadNotFound": "The MCP endpoint isn't enabled on this server yet.",
+    "createError": "Couldn't create a token.",
+    "revokeError": "Couldn't revoke the token."
   }
 }

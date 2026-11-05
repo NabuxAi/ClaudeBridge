@@ -100,10 +100,11 @@
     "alertDismissed": "An alert was dismissed manually",
     "hostingChanged": "Site hosting settings changed",
     "sensitiveRan": "Sensitive action ran: {op}",
-    "approvedFailed": "Approved action failed: {op}"
+    "approvedFailed": "Approved action failed: {op}",
+    "mcpRan": "Ran {op} from an AI client (hub MCP)"
   },
   "wordpressForbidden": "WordPress REST access is forbidden (403). Check REST restrictions in the security plugin, WAF or host IP rules. The admin login URL is not required.",
-  "connectorAuth": "The connector rejected the signature (401). Check the shared key and Hub Connector Mode in the plugin. Changing the admin login URL does not require a new key.",
+  "connectorAuth": "The connector rejected the signature (401). Check the shared key and Hub Connector Mode in the plugin. Changing the admin login URL does not require a new key. Update the plugin to 3.9.2 or later; the connector signature changed in that version.",
   "connectorForbidden": "Connector access was refused (403). Check REST restrictions in the security plugin, firewall or hosting and allow signed requests from your relay server.",
   "connectorMissing": "Connector route not found (404). Check the public WordPress address and installation folder, and activate DigiWp Ai Bridge. Do not enter a custom login URL as the site address.",
   "connectorRedirect": "The connector redirects. Enter the final HTTPS address and canonical site domain; signed requests were not forwarded to another address.",

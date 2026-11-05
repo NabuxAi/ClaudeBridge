@@ -2,13 +2,43 @@
 
 Last updated 2026-11-05. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
 
-## Platform 0.2.2 — REST connection compatibility (2026-11-05)
+## Platform 0.4.1 — REST connection compatibility (2026-11-05)
 
 - Discovery now negotiates pretty/query/index.php REST paths; keeps the installation folder and existing public-address/DNS pinning safeguards.
 - Signed ping selects a transport cached for 5 minutes (bounded to 256 hashed credential identities). A cold MCP call first tries read-only negotiation; legacy endpoints without ping still receive one normal MCP request. POST is never automatically retried. Signed redirects are not followed.
 - Invalid/HTML ping responses cannot mark a site paired. Diagnostics distinguish 401/403/404/redirect/invalid response; onboarding asks for the public site URL, not a custom admin/login path.
 - Scoped gate: 26 connector/address/error tests passed, including real local HTTP. Browser and full PostgreSQL integration gates run in CI.
-- No affected customer URL supplied at implementation time; no production pairing or admin login verified. All-REST WAF restrictions require owner/host configuration. Plugin stays 3.9.1.
+- No affected customer URL supplied at implementation time; no production pairing or admin login verified. All-REST WAF restrictions require owner/host configuration. Plugin stays 3.9.2.
+## Platform 0.4.0 — Material Design 3 (2026-11-05)
+
+- `hub/src/styles/material.css` (loaded last): M3 colour roles from the DigiWP green mapped onto
+  the frozen `--gd-*` names (light + `data-panel-theme="dark"`/`data-theme="ink"`), M3 shapes,
+  elevation, type scale, pill buttons and nav indicator, outlined fields, snackbar toasts.
+- Motion: page change is an M3 fade-through; `PageProgress` is the M3 linear indeterminate bar
+  (no glow); skeletons breathe instead of shimmering; `lib/ripple.js` adds press ripples.
+  Reduced motion turns all of it off.
+- `--gd-primary` is now `#146c3a` (light) / `#8ad79b` (dark); the browser test asserts these.
+- Verification: hub lint, build, 30 browser tests.
+
+## Platform 0.3.0 — hub MCP and Iran ↔ international peer relay (2026-11-05)
+
+- `POST /v1/mcp` (`server/src/routes/hub-mcp.js`): one MCP URL per account, personal
+  `dwmcp_` tokens (SHA-256 stored, shown once, revocable; Bearer header or `?token=`).
+  Tools `list_sites`, `site_tools`, `call_site_tool`. Policy mirrors `/sites/:id/actions`:
+  members read-only, owner reads/changes, sensitive tools become a pending proposal
+  (never relayed), mutating runs are recorded as `action` events with `via: hub-mcp`.
+- Token management `GET/POST/DELETE /v1/account/mcp-tokens`; UI section on
+  `/app/security`. Table `mcp_tokens`.
+- Peer relay (`server/src/peer-relay.js`, `routes/relay.js`): connector ping, tool
+  calls and `tools/list` go through `connectorFetch`; on connection-level failure or a
+  non-JSON 403/451/502/503/504 they are re-sent via `PEER_RELAY_URL/relay/forward`
+  (HMAC with `PEER_RELAY_SECRET`, 300 s window). The receiver forwards only
+  `claude-bridge/v1` paths on public addresses (pinned DNS via `site-address.js`) with
+  an allow-listed header set. Timeouts fall back only for read-only calls. A host that
+  needed the peer is tried through it first for 30 minutes (in-process memory).
+- Verification: 15 new tests; full server suite 462 tests on PostgreSQL 16 with the
+  same 3 failures as `main` (they need built `dist/` artifacts); hub lint + build.
+
 
 ## Platform 0.2.1 — compact sidebar and variable typography (2026-11-02)
 

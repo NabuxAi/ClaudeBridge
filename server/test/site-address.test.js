@@ -86,7 +86,7 @@ test('the real HTTP relay signs ping and tool calls under the nested installatio
     req.on('data', (chunk) => { body += chunk })
     req.on('end', () => {
       paths.push(req.url)
-      assert.equal(verifySignature('secret', { timestamp: req.headers['x-digiwp-timestamp'], signature: req.headers['x-digiwp-signature'], rawBody: body }), true)
+      assert.equal(verifySignature('secret', { timestamp: req.headers['x-digiwp-timestamp'], nonce: req.headers['x-digiwp-nonce'], signature: req.headers['x-digiwp-signature'], rawBody: body }), true)
       res.setHeader('Content-Type', 'application/json')
       if (req.url === '/shop/nested/wp-json/claude-bridge/v1/connector/ping') return res.end(JSON.stringify({ ok: true, version: '3.9.1' }))
       if (req.url === '/shop/nested/wp-json/claude-bridge/v1/mcp') {
@@ -145,7 +145,7 @@ for (const prettyStatus of [403, 404]) {
       let body = ''
       req.on('data', (chunk) => { body += chunk })
       req.on('end', () => {
-        assert.equal(verifySignature('secret', { timestamp: req.headers['x-digiwp-timestamp'], signature: req.headers['x-digiwp-signature'], rawBody: body }), true)
+        assert.equal(verifySignature('secret', { timestamp: req.headers['x-digiwp-timestamp'], nonce: req.headers['x-digiwp-nonce'], signature: req.headers['x-digiwp-signature'], rawBody: body }), true)
         if (route?.endsWith('/connector/ping')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ ok: true, version: '3.9.1' })); return }
         if (route?.endsWith('/mcp')) { writes++; res.writeHead(503).end('Uncertain outcome'); return }
         res.writeHead(404).end()

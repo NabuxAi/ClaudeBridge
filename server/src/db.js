@@ -22,6 +22,7 @@ import { SCHEMA as SESSIONS_SCHEMA } from './sessions.schema.js'
 import { SCHEMA as TWOFACTOR_SCHEMA } from './twofactor.schema.js'
 import { SCHEMA as MONITORS_SCHEMA } from './monitors.schema.js'
 import { SCHEMA as PUSH_SCHEMA } from './push.schema.js'
+import { SCHEMA as MCP_TOKENS_SCHEMA } from './mcp-tokens.schema.js'
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 })
 
@@ -98,7 +99,7 @@ const SCHEMA = `
   -- 'fa' they were created with; new accounts store the language they
   -- registered in (routes/auth.js), which background mail/alerts use.
   ALTER TABLE users ALTER COLUMN lang SET DEFAULT 'en';
-` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA + CONVERSATIONS_SCHEMA + SESSIONS_SCHEMA + TWOFACTOR_SCHEMA + MONITORS_SCHEMA + PUSH_SCHEMA
+` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA + CONVERSATIONS_SCHEMA + SESSIONS_SCHEMA + TWOFACTOR_SCHEMA + MONITORS_SCHEMA + PUSH_SCHEMA + MCP_TOKENS_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */
 async function waitForDb(retries = 30) {

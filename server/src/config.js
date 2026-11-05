@@ -29,6 +29,19 @@ export const config = {
     ir: (process.env.PUBLIC_BASE_URL_IR || '').replace(/\/$/, ''),
     intl: (process.env.PUBLIC_BASE_URL_INTL || '').replace(/\/$/, ''),
   },
+  // The other DigiWP server (Iran ↔ international), used as a relay when a
+  // managed site cannot be reached from here — an Iranian host that refuses
+  // foreign addresses, or a foreign host filtered inside Iran. `url` is the
+  // peer's API base in the same form as PUBLIC_BASE_URL (…/v1 or …/api);
+  // `secret` is shared by both servers and signs every hop between them.
+  // Absent is a supported state: sites are then reached directly only.
+  // `allowPrivate` lets the forwarder reach private addresses and other
+  // ports — for a hermetic test stack only, never on a public server.
+  peerRelay: {
+    url: (process.env.PEER_RELAY_URL || '').replace(/\/+$/, ''),
+    secret: process.env.PEER_RELAY_SECRET || '',
+    allowPrivate: process.env.PEER_RELAY_ALLOW_PRIVATE === '1',
+  },
   // Telegram daily security digest (optional). No-ops when unset.
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN || '',

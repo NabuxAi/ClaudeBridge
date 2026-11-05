@@ -294,6 +294,23 @@ export const sites = {
     [id, userId]
   ),
 
+  /**
+   * Every site this user may reach, raw (incl. secret, for the relay), with
+   * their role on each: 'owner' for their own rows, otherwise the active
+   * team_members role. The hub MCP endpoint lists and resolves sites from
+   * this — the same owner-or-active-member rule as rawWithRole, for all at once.
+   */
+  listAccessibleRaw: (userId) => all(
+    `SELECT s.*,
+            CASE WHEN s.user_id = $1 THEN 'owner' ELSE tm.role END AS member_role
+       FROM sites s
+       LEFT JOIN team_members tm
+         ON tm.site_id = s.id AND tm.user_id = $1 AND tm.status = 'active'
+      WHERE s.user_id = $1 OR tm.user_id IS NOT NULL
+      ORDER BY s.created_at`,
+    [userId]
+  ),
+
   async add(userId, { name, title }) {
     if (!name) throw httpError(400, 'sites.domainRequired')
     const address = normalizeSiteAddress(name)

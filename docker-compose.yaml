@@ -85,6 +85,11 @@ services:
       - EMAIL_FROM=${EMAIL_FROM:-alerts@digiwp.com}
       # Public URL a connector uses to reach us = the server's own domain + /v1.
       - PUBLIC_BASE_URL=${SERVICE_URL_SERVER:-http://localhost:8787}/v1
+      # The partner server (Iran ↔ international) that relays connector calls
+      # to sites this one cannot reach. Both servers set the same secret.
+      # Unset = sites are reached directly only.
+      - PEER_RELAY_URL=${PEER_RELAY_URL:-}
+      - PEER_RELAY_SECRET=${PEER_RELAY_SECRET:-}
     depends_on:
       db:
         condition: service_healthy

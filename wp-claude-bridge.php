@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: WP Claude Bridge
- * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a static Bearer token / token-in-URL. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.9.1
+ * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a scoped static Bearer token sent in the Authorization header. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
+ * Version: 3.9.2
  * Author: Account City
  * License: GPLv2 or later
  * Text Domain: wp-claude-bridge
@@ -13,8 +13,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.9.1' );
-define( 'CB_TOKEN_OPTION', 'cb_mcp_token' );
+define( 'CB_VERSION', '3.9.2' );
+define( 'CB_TOKEN_OPTION', 'cb_mcp_token' ); // Legacy plaintext option.
+define( 'CB_TOKEN_HASH_OPTION', 'cb_mcp_token_sha256' );
+define( 'CB_SCOPE_OPTION', 'cb_mcp_token_scope' );
+define( 'CB_AUTH_ALERT_OPTION', 'cb_mcp_auth_alert' );
 define( 'CB_PREVIEW_TRANSIENT', 'cb_preview_theme' );
 define( 'CB_CLIENTS_OPTION', 'cb_oauth_clients' );
 define( 'CB_CONNECTOR_OPTION', 'cb_connector' ); // Hub-connector pairing: server URL + shared secret.
@@ -4267,7 +4270,7 @@ function cb_op_conflict_scan( $args ) {
 /** Run a tool and record the call, so the dashboard can show what happened. */
 function cb_run_tool( $name, $args ) {
 	$started = microtime( true );
-	$res     = cb_run_tool_dispatch( $name, $args );
+	$res     = cb_mcp_tool_allowed( $name ) ? cb_run_tool_dispatch( $name, $args ) : new WP_Error( 'cb_scope_denied', 'Tool unavailable with audit-only credentials.' );
 	cb_activity_record( $name, ! is_wp_error( $res ), (int) round( ( microtime( true ) - $started ) * 1000 ) );
 	return $res;
 }
@@ -5306,13 +5309,11 @@ add_action( 'rest_api_init', function () {
 	}
 } );
 
-/* Fallback transport 1: admin-ajax — reachable when custom REST routes are blocked.
- * POST /wp-admin/admin-ajax.php?action=cb_mcp  (auth via Bearer header or ?token=). */
+/* Fallback transport 1: admin-ajax (Bearer header/OAuth only; URL tokens disabled). */
 add_action( 'wp_ajax_cb_mcp', 'cb_mcp_run_raw' );
 add_action( 'wp_ajax_nopriv_cb_mcp', 'cb_mcp_run_raw' );
 
-/* Fallback transport 2: query-var endpoint — reachable when the REST API is fully off.
- * POST /?cb_mcp=1  (auth via Bearer header or ?token=). */
+/* Fallback transport 2: query-var endpoint (Bearer header/OAuth only). */
 add_action( 'init', 'cb_mcp_altroute', 1 );
 function cb_mcp_altroute() {
 	if ( ! isset( $_GET['cb_mcp'] ) ) {
@@ -5322,11 +5323,12 @@ function cb_mcp_altroute() {
 	if ( $m === 'POST' || $m === 'OPTIONS' ) {
 		cb_mcp_run_raw(); // handles auth + dispatch, then exits
 	}
-	// GET probe: return the same info document the REST GET serves.
-	status_header( 200 );
+	// GET probe: return the same status as the REST GET transport.
+	$cb_info = cb_mcp_get_info();
+	status_header( $cb_info->get_status() );
 	header( 'Content-Type: application/json; charset=utf-8' );
 	header( 'Access-Control-Allow-Origin: *' );
-	echo wp_json_encode( cb_mcp_get_info()->get_data() );
+	echo wp_json_encode( $cb_info->get_data() );
 	exit;
 }
 
@@ -5603,51 +5605,111 @@ function cb_skill_resource_read( $uri ) {
  * 6. MCP LAYER  (JSON-RPC 2.0 over HTTP)
  * ========================================================================== */
 
-function cb_check_bearer( $bearer ) {
-	$bearer = trim( (string) $bearer );
-	if ( $bearer === '' ) {
-		return false;
-	}
-	$token = get_option( CB_TOKEN_OPTION );
-	if ( $token && hash_equals( $token, $bearer ) ) {
-		cb_become_admin();
-		return true;
-	}
-	$at = get_transient( 'cb_oauth_at_' . $bearer );
-	if ( $at && ! empty( $at['user_id'] ) ) {
-		// Tokens minted via the native Application Password flow honour revocation:
-		// removing the Application Password in wp-admin instantly cuts Claude's access.
-		if ( ! empty( $at['app_password'] ) && ! cb_app_password_valid( (int) $at['user_id'], $at['app_password'] ) ) {
-			return false;
-		}
-		wp_set_current_user( (int) $at['user_id'] );
-		return true;
-	}
-	return false;
-}
 
+/** Header-only bearer tokens are stored as SHA-256 digests, not recoverable secrets. */
+function cb_mcp_migrate_token() {
+  $old = get_option( CB_TOKEN_OPTION, '' );
+  if ( is_string( $old ) && '' !== $old ) {
+    if ( ! get_option( CB_TOKEN_HASH_OPTION ) ) {
+      update_option( CB_TOKEN_HASH_OPTION, hash( 'sha256', $old ), false );
+    }
+    delete_option( CB_TOKEN_OPTION );
+  }
+}
+function cb_mcp_issue_token() {
+  $token = bin2hex( random_bytes( 32 ) );
+  update_option( CB_TOKEN_HASH_OPTION, hash( 'sha256', $token ), false );
+  delete_option( CB_TOKEN_OPTION );
+  update_option( 'cb_mcp_rotated_at', time(), false );
+  $GLOBALS['cb_mcp_new_token_once'] = $token;
+  return $token;
+}
+/** A bearer may run only explicit diagnostics until its admin scope is enabled. */
+function cb_mcp_scope_setting( $kind = 'token' ) {
+  $settings = 'connector' === $kind ? cb_connector() : array();
+  $scope = 'connector' === $kind ? ( isset( $settings['scope'] ) ? $settings['scope'] : 'audit' ) : get_option( CB_SCOPE_OPTION, 'audit' );
+  return 'admin' === $scope ? 'admin' : 'audit';
+}
+function cb_mcp_tool_allowed( $name ) {
+  if ( 'admin' === ( isset( $GLOBALS['cb_mcp_request_scope'] ) ? $GLOBALS['cb_mcp_request_scope'] : 'admin' ) ) return true;
+  return is_string( $name ) && in_array( $name, array(
+    'site_info', 'list_themes', 'list_plugins', 'list_post_types', 'list_taxonomies',
+    'list_statuses', 'count_posts', 'count_terms', 'security_scan',
+    'update_health_check', 'update_status', 'core_integrity',
+    'list_wp_skills', 'get_wp_skill', 'list_recipes', 'get_recipe'
+  ), true );
+}
+function cb_mcp_auth_key() {
+  $ip = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : 'unknown';
+  return 'cb_auth_' . substr( hash_hmac( 'sha256', $ip, wp_salt( 'auth' ) ), 0, 32 );
+}
+function cb_mcp_auth_limited() {
+  return (int) get_transient( cb_mcp_auth_key() ) >= 12;
+}
+function cb_mcp_auth_failed() {
+  $key = cb_mcp_auth_key();
+  $count = (int) get_transient( $key ) + 1;
+  set_transient( $key, $count, 15 * MINUTE_IN_SECONDS );
+  if ( 12 === $count ) {
+    $alert = array( 'time' => time(), 'source' => substr( $key, 8, 12 ), 'attempts' => $count );
+    update_option( CB_AUTH_ALERT_OPTION, $alert, false );
+    do_action( 'cb_mcp_auth_rate_limited', $alert );
+    error_log( '[ClaudeBridge] blocked authentication attempts; source=' . $alert['source'] );
+  }
+}
+function cb_mcp_auth_status() { return cb_mcp_auth_limited() ? 429 : 401; }
+function cb_mcp_authenticate( $authorization ) {
+  if ( isset( $_GET['token'] ) || isset( $_POST['token'] ) ) {
+    cb_mcp_auth_failed();
+    return false;
+  }
+  // Always verify valid credentials first: failed attempts behind a shared proxy
+  // must never lock out a legitimate administrator or paired hub connection.
+  $valid = false;
+  if ( cb_connector_enabled() ) {
+    $valid = cb_connector_request_signed();
+    if ( $valid ) $GLOBALS['cb_mcp_request_scope'] = cb_mcp_scope_setting( 'connector' );
+      if ( 'admin' === $GLOBALS['cb_mcp_request_scope'] ) cb_become_admin();
+  } elseif ( current_user_can( 'edit_themes' ) ) {
+    $valid = true;
+    $GLOBALS['cb_mcp_request_scope'] = 'admin';
+  } elseif ( is_string( $authorization ) && preg_match( '/^Bearer\s+(\S+)$/i', trim( $authorization ), $m ) ) {
+    $valid = cb_check_bearer( $m[1] );
+  }
+  if ( ! $valid ) cb_mcp_auth_failed();
+  return $valid;
+}
+add_filter( 'rest_post_dispatch', function ( $response, $server, $request ) {
+  if ( strpos( $request->get_route(), '/claude-bridge/v1/' ) === 0 && $response instanceof WP_HTTP_Response ) {
+    $response->header( 'Cache-Control', 'private, no-store, max-age=0' );
+    $response->header( 'Referrer-Policy', 'no-referrer' );
+  }
+  return $response;
+}, 10, 3 );
+
+function cb_check_bearer( $bearer ) {
+  $bearer = trim( (string) $bearer );
+  if ( '' === $bearer || strlen( $bearer ) > 1024 ) return false;
+  cb_mcp_migrate_token();
+  $digest = get_option( CB_TOKEN_HASH_OPTION, '' );
+  if ( is_string( $digest ) && 64 === strlen( $digest ) && hash_equals( $digest, hash( 'sha256', $bearer ) ) ) {
+    $GLOBALS['cb_mcp_request_scope'] = cb_mcp_scope_setting();
+    if ( 'admin' === $GLOBALS['cb_mcp_request_scope'] ) cb_become_admin();
+    return true;
+  }
+  $at = get_transient( 'cb_oauth_at_' . $bearer );
+  if ( $at && ! empty( $at['user_id'] ) ) {
+    $user_id = (int) $at['user_id'];
+    if ( ! user_can( $user_id, 'edit_themes' ) ) return false;
+    if ( ! empty( $at['app_password'] ) && ! cb_app_password_valid( $user_id, $at['app_password'] ) ) return false;
+    wp_set_current_user( $user_id );
+    $GLOBALS['cb_mcp_request_scope'] = 'admin';
+    return true;
+  }
+  return false;
+}
 function cb_mcp_authorized( $request ) {
-	// Connector mode: ONLY hub-signed requests pass — nothing direct.
-	if ( cb_connector_enabled() ) {
-		return cb_connector_request_signed();
-	}
-	if ( current_user_can( 'edit_themes' ) ) {
-		return true;
-	}
-	// (a) Header: Authorization: Bearer <token>
-	$auth = $request->get_header( 'authorization' );
-	if ( $auth && preg_match( '/Bearer\s+(.+)/i', $auth, $m ) && cb_check_bearer( $m[1] ) ) {
-		return true;
-	}
-	// (b) Query param ?token=<token> — for clients that cannot send custom headers.
-	$qt = $request->get_param( 'token' );
-	if ( ! $qt && isset( $_GET['token'] ) ) {
-		$qt = sanitize_text_field( wp_unslash( $_GET['token'] ) );
-	}
-	if ( $qt && cb_check_bearer( $qt ) ) {
-		return true;
-	}
-	return false;
+  return cb_mcp_authenticate( (string) $request->get_header( 'authorization' ) );
 }
 
 function cb_rpc( $id, $result ) {
@@ -5664,7 +5726,8 @@ function cb_rpc_error( $id, $code, $message ) {
  */
 function cb_mcp_handler( $request ) {
 	if ( ! cb_mcp_authorized( $request ) ) {
-		$resp = new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => null, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ), 401 );
+		$resp = new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => null, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ), cb_mcp_auth_status() );
+		if ( 429 === cb_mcp_auth_status() ) { $resp->header( 'Retry-After', '900' ); }
 		$resp->header( 'WWW-Authenticate', 'Bearer resource_metadata="' . esc_url_raw( home_url( '/.well-known/oauth-protected-resource' ) ) . '"' );
 		return $resp;
 	}
@@ -5680,6 +5743,9 @@ function cb_mcp_handler( $request ) {
 
 /** GET on an MCP endpoint: describe the server and its connection modes (never 405). */
 function cb_mcp_get_info() {
+	if ( isset( $_GET['token'] ) || isset( $_POST['token'] ) ) {
+		return new WP_REST_Response( array( 'error' => 'Do not transmit authentication tokens in URL or form parameters.' ), 400 );
+	}
 	return new WP_REST_Response( array(
 		'server'    => 'wp-claude-bridge',
 		'version'   => CB_VERSION,
@@ -5690,7 +5756,7 @@ function cb_mcp_get_info() {
 			'admin_ajax' => admin_url( 'admin-ajax.php?action=cb_mcp' ),
 			'query_var'  => home_url( '/?cb_mcp=1' ),
 		),
-		'auth'      => array( 'Authorization: Bearer <token>', '?token=<token>', 'OAuth (Application Passwords)', 'logged-in admin cookie' ),
+		'auth'      => array( 'Authorization: Bearer <token>', 'OAuth (Application Passwords)', 'logged-in admin cookie', 'Hub HMAC signature' ),
 	), 200 );
 }
 
@@ -5719,10 +5785,10 @@ function cb_mcp_emit_sse( $payload ) {
 		ob_end_clean();
 	}
 	header( 'Content-Type: text/event-stream; charset=utf-8' );
-	header( 'Cache-Control: no-cache, no-transform' );
+	header( 'Cache-Control: private, no-store, no-transform' );
 	header( 'Connection: keep-alive' );
 	header( 'X-Accel-Buffering: no' );
-	header( 'Access-Control-Allow-Origin: *' );
+	header( 'Referrer-Policy: no-referrer' );
 	echo 'event: message' . "\n";
 	echo 'data: ' . wp_json_encode( $payload ) . "\n\n";
 	@ob_flush();
@@ -5767,6 +5833,7 @@ function cb_mcp_dispatch( $body ) {
 		case 'tools/list':
 			$tools = array();
 			foreach ( cb_tools() as $t ) {
+				if ( ! cb_mcp_tool_allowed( $t['name'] ) ) { continue; }
 				$tools[] = array( 'name' => $t['name'], 'description' => $t['description'], 'inputSchema' => $t['inputSchema'] );
 			}
 			return array( 'jsonrpc' => '2.0', 'id' => $id, 'result' => array( 'tools' => $tools ) );
@@ -5837,24 +5904,7 @@ function cb_raw_auth_header() {
 
 /** Authorize a request that did NOT arrive through the REST controller. */
 function cb_mcp_authorized_any() {
-	// Connector mode: ONLY hub-signed requests pass — nothing direct.
-	if ( cb_connector_enabled() ) {
-		return cb_connector_request_signed();
-	}
-	if ( current_user_can( 'edit_themes' ) ) {
-		return true;
-	}
-	$auth = cb_raw_auth_header();
-	if ( $auth && preg_match( '/Bearer\s+(.+)/i', $auth, $m ) && cb_check_bearer( trim( $m[1] ) ) ) {
-		return true;
-	}
-	if ( ! empty( $_GET['token'] ) && cb_check_bearer( sanitize_text_field( wp_unslash( $_GET['token'] ) ) ) ) {
-		return true;
-	}
-	if ( ! empty( $_POST['token'] ) && cb_check_bearer( sanitize_text_field( wp_unslash( $_POST['token'] ) ) ) ) {
-		return true;
-	}
-	return false;
+  return cb_mcp_authenticate( cb_raw_auth_header() );
 }
 
 /* ============================================================================
@@ -6129,7 +6179,7 @@ function cb_update_status() {
 }
 
 function cb_connector() {
-	$d = array( 'enabled' => false, 'server_url' => '', 'secret' => '', 'site_id' => '', 'paired_at' => 0 );
+	$d = array( 'enabled' => false, 'server_url' => '', 'secret' => '', 'site_id' => '', 'paired_at' => 0, 'scope' => 'audit' );
 	$c = get_option( CB_CONNECTOR_OPTION );
 	return is_array( $c ) ? array_merge( $d, $c ) : $d;
 }
@@ -6156,35 +6206,52 @@ function cb_connector_header( $name ) {
 	return '';
 }
 
-/** Verify the current request was signed by the paired hub server. */
+/** Verify a request using a nonce-bound HMAC and reject each nonce after first use. */
 function cb_connector_request_signed() {
-	$c = cb_connector();
-	if ( empty( $c['secret'] ) ) {
-		return false;
-	}
-	$ts  = cb_connector_header( 'X-DigiWP-Timestamp' );
-	$sig = cb_connector_header( 'X-DigiWP-Signature' );
-	if ( ! $ts || ! $sig ) {
-		return false;
-	}
-	if ( abs( time() - (int) $ts ) > 300 ) { // 5-minute replay window
-		return false;
-	}
-	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- php://input is a stream, not a file; WP_Filesystem cannot read it.
-	$body     = file_get_contents( 'php://input' );
-	$expected = hash_hmac( 'sha256', $ts . "\n" . $body, $c['secret'] );
-	return hash_equals( $expected, (string) $sig );
-}
+  $c = cb_connector();
+  if ( empty( $c['secret'] ) ) return false;
+  $ts = cb_connector_header( 'X-DigiWP-Timestamp' );
+  $nonce = cb_connector_header( 'X-DigiWP-Nonce' );
+  $sig = cb_connector_header( 'X-DigiWP-Signature' );
+  if ( ! preg_match( '/^[0-9]{10,12}$/', $ts ) ||
+       ! preg_match( '/^[a-f0-9]{32}$/', $nonce ) ||
+       ! preg_match( '/^[a-f0-9]{64}$/', $sig ) ||
+       abs( time() - (int) $ts ) > 300 ) return false;
 
-/** Sign an outbound payload to YOUR server the same way (register / heartbeat). */
+  // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+  $body = file_get_contents( 'php://input' );
+  $expected = hash_hmac( 'sha256', $ts . "\n" . $nonce . "\n" . $body, $c['secret'] );
+  if ( ! hash_equals( $expected, $sig ) ) return false;
+  $key = 'cb_mcp_nonce_' . hash( 'sha256', (string) $c['site_id'] . ':' . $nonce );
+  // add_option is atomic on the unique option_name key; a transient read + set is not.
+  return add_option( $key, (string) time(), '', false );
+}
+add_action( 'init', function () {
+  if ( ! wp_next_scheduled( 'cb_mcp_nonce_cleanup' ) ) {
+    wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', 'cb_mcp_nonce_cleanup' );
+  }
+} );
+add_action( 'cb_mcp_nonce_cleanup', function () {
+  global $wpdb;
+  $like = $wpdb->esc_like( 'cb_mcp_nonce_' ) . '%';
+  // Only nonce records created by this plugin and older than the replay window.
+  $wpdb->query( $wpdb->prepare(
+    "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s AND option_value REGEXP '^[0-9]+$' AND CAST(option_value AS UNSIGNED) < %d",
+    $like, time() - 900
+  ) );
+} );
+
+/** Sign outbound hub updates with a unique, unpredictable nonce (HMAC v2). */
 function cb_connector_sign( $body ) {
-	$c  = cb_connector();
-	$ts = (string) time();
-	return array(
-		'X-DigiWP-Timestamp' => $ts,
-		'X-DigiWP-Signature' => hash_hmac( 'sha256', $ts . "\n" . $body, $c['secret'] ),
-		'X-DigiWP-Site'      => $c['site_id'],
-	);
+  $c = cb_connector();
+  $ts = (string) time();
+  $nonce = bin2hex( random_bytes( 16 ) );
+  return array(
+    'X-DigiWP-Timestamp' => $ts,
+    'X-DigiWP-Nonce' => $nonce,
+    'X-DigiWP-Signature' => hash_hmac( 'sha256', $ts . "\n" . $nonce . "\n" . $body, $c['secret'] ),
+    'X-DigiWP-Site' => $c['site_id'],
+  );
 }
 
 /** Announce this site to the hub server (opt-in, best-effort). */
@@ -6281,6 +6348,8 @@ add_action( 'automatic_updates_complete', 'cb_report_update_run' );
  * and prints the response as JSON (or SSE on request), then exits.
  */
 function cb_mcp_run_raw() {
+	nocache_headers();
+	header( 'Referrer-Policy: no-referrer' );
 	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : 'GET' ) === 'OPTIONS' ) {
 		header( 'Access-Control-Allow-Origin: *' );
 		header( 'Access-Control-Allow-Methods: GET, POST, OPTIONS' );
@@ -6295,7 +6364,8 @@ function cb_mcp_run_raw() {
 	$id   = ( is_array( $body ) && isset( $body['id'] ) ) ? $body['id'] : null;
 
 	if ( ! cb_mcp_authorized_any() ) {
-		status_header( 401 );
+		status_header( cb_mcp_auth_status() );
+		if ( 429 === cb_mcp_auth_status() ) { header( 'Retry-After: 900' ); }
 		header( 'Content-Type: application/json; charset=utf-8' );
 		header( 'WWW-Authenticate: Bearer resource_metadata="' . esc_url_raw( home_url( '/.well-known/oauth-protected-resource' ) ) . '"' );
 		echo wp_json_encode( array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ) );
@@ -6319,7 +6389,7 @@ function cb_mcp_run_raw() {
 	}
 	status_header( 200 );
 	header( 'Content-Type: application/json; charset=utf-8' );
-	header( 'Access-Control-Allow-Origin: *' );
+	header( 'Cache-Control: private, no-store, max-age=0' );
 	echo wp_json_encode( $out );
 	exit;
 }
@@ -6692,11 +6762,16 @@ add_action( 'admin_menu', function () {
 
 add_action( 'admin_init', function () {
 	if ( isset( $_POST['cb_regen'] ) && check_admin_referer( 'cb_regen' ) && current_user_can( 'manage_options' ) ) {
-		update_option( CB_TOKEN_OPTION, wp_generate_password( 48, false ) );
+		cb_mcp_issue_token();
+	}
+	if ( isset( $_POST['cb_mcp_scope_save'] ) && check_admin_referer( 'cb_mcp_scope' ) && current_user_can( 'manage_options' ) ) {
+		$scope = isset( $_POST['cb_mcp_scope'] ) ? sanitize_key( wp_unslash( $_POST['cb_mcp_scope'] ) ) : 'audit';
+		update_option( CB_SCOPE_OPTION, 'admin' === $scope ? 'admin' : 'audit', false );
 	}
 	if ( isset( $_POST['cb_connector_save'] ) && check_admin_referer( 'cb_connector' ) && current_user_can( 'manage_options' ) ) {
 		$c            = cb_connector();
 		$c['enabled'] = ! empty( $_POST['cb_conn_enabled'] );
+		$c['scope'] = ( isset( $_POST['cb_conn_scope'] ) && 'admin' === sanitize_key( wp_unslash( $_POST['cb_conn_scope'] ) ) ) ? 'admin' : 'audit';
 		$c['server_url'] = isset( $_POST['cb_conn_server'] ) ? esc_url_raw( wp_unslash( $_POST['cb_conn_server'] ) ) : '';
 		$secret = isset( $_POST['cb_conn_secret'] ) ? sanitize_text_field( wp_unslash( $_POST['cb_conn_secret'] ) ) : '';
 		if ( $secret !== '' ) {
@@ -6724,22 +6799,37 @@ add_action( 'admin_init', function () {
 } );
 
 function cb_settings_page() {
-	$token = get_option( CB_TOKEN_OPTION );
-	if ( ! $token ) {
-		$token = wp_generate_password( 48, false );
-		update_option( CB_TOKEN_OPTION, $token );
-	}
-	$mcp     = rest_url( 'claude-bridge/v1/mcp' );
-	$mcp_tok = add_query_arg( 'token', $token, $mcp );
+	cb_mcp_migrate_token();
+	if ( ! get_option( CB_TOKEN_HASH_OPTION ) ) cb_mcp_issue_token();
+	$token_once = isset( $GLOBALS['cb_mcp_new_token_once'] ) ? $GLOBALS['cb_mcp_new_token_once'] : '';
+	$mcp = rest_url( 'claude-bridge/v1/mcp' );
 	?>
 	<div class="wrap">
 		<h1>WP Claude Bridge <span style="font-size:13px;color:#888">v<?php echo esc_html( CB_VERSION ); ?></span></h1>
 		<p><?php esc_html_e( 'This site is now a self-hosted MCP server: theme & plugin file editing, plugin creation, theme/plugin activation, preview, cache, and full WordPress + WooCommerce control (90+ tools).', 'wp-claude-bridge' ); ?></p>
 
-		<h2 style="margin-top:24px">✅ <?php esc_html_e( 'Easiest: connect with the token in the URL (no header)', 'wp-claude-bridge' ); ?></h2>
-		<p><?php echo wp_kses_post( __( 'In Claude, add a <b>Custom Connector</b> and paste this single URL. Nothing else to configure — the token is built in.', 'wp-claude-bridge' ) ); ?></p>
-		<p><input type="text" readonly onclick="this.select()" style="width:100%;max-width:760px;padding:10px;font-family:monospace;font-size:13px" value="<?php echo esc_attr( $mcp_tok ); ?>"></p>
-		<p class="description"><?php esc_html_e( 'Keep this URL secret — anyone with it has admin access. Regenerate the token below to revoke it.', 'wp-claude-bridge' ); ?></p>
+    <h2 style="margin-top:24px"><?php esc_html_e( 'Secure MCP connection: Bearer header or OAuth', 'wp-claude-bridge' ); ?></h2>
+    <p><code><?php echo esc_html( $mcp ); ?></code></p>
+    <p class="description"><?php esc_html_e( 'Never put authentication tokens in URLs. Use Authorization: Bearer or OAuth.', 'wp-claude-bridge' ); ?></p>
+    <?php if ( '' !== $token_once ) : ?>
+      <div class="notice notice-warning inline"><p><strong><?php esc_html_e( 'Copy your newly issued secret now; it cannot be shown again.', 'wp-claude-bridge' ); ?></strong></p>
+      <input type="text" readonly autocomplete="off" onclick="this.select()" style="width:100%;max-width:760px;font-family:monospace" value="<?php echo esc_attr( $token_once ); ?>"></div>
+    <?php else : ?>
+      <p class="description"><?php esc_html_e( 'Only the SHA-256 digest is stored. Rotate your token if you no longer have the secret.', 'wp-claude-bridge' ); ?></p>
+    <?php endif; ?>
+    <?php $alert = get_option( CB_AUTH_ALERT_OPTION, array() ); if ( ! empty( $alert['time'] ) ) : ?>
+      <div class="notice notice-warning inline"><p><?php echo esc_html( sprintf( 'Recent authentication rate-limit: %s UTC; source %s; attempts %d.', gmdate( 'Y-m-d H:i', (int) $alert['time'] ), $alert['source'], (int) $alert['attempts'] ) ); ?></p></div>
+    <?php endif; ?>
+    <form method="post">
+      <?php wp_nonce_field( 'cb_mcp_scope' ); ?>
+      <input type="hidden" name="cb_mcp_scope_save" value="1">
+      <h3><?php esc_html_e( 'Static token permissions', 'wp-claude-bridge' ); ?></h3>
+      <select name="cb_mcp_scope">
+        <option value="audit" <?php selected( cb_mcp_scope_setting(), 'audit' ); ?>>Audit-only (default)</option>
+        <option value="admin" <?php selected( cb_mcp_scope_setting(), 'admin' ); ?>>Full administrator (high risk)</option>
+      </select>
+      <?php submit_button( __( 'Save token permissions', 'wp-claude-bridge' ), 'secondary' ); ?>
+    </form>
 
 		<h2 style="margin-top:24px"><?php esc_html_e( 'Alternative: OAuth via native Application Passwords', 'wp-claude-bridge' ); ?></h2>
 		<p><?php echo wp_kses_post( __( 'Add a Custom Connector with the plain URL below. Claude sends you to WordPress’s own <b>Authorize Application</b> screen (one click, no header). Access is a standard Application Password you can revoke any time under <b>Users &rarr; Profile &rarr; Application Passwords</b>.', 'wp-claude-bridge' ) ); ?></p>
@@ -6748,7 +6838,7 @@ function cb_settings_page() {
 		<h2 style="margin-top:24px"><?php esc_html_e( 'Alternative: Bearer header', 'wp-claude-bridge' ); ?></h2>
 		<table class="form-table">
 			<tr><th><?php esc_html_e( 'URL', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
-			<tr><th><?php esc_html_e( 'Header', 'wp-claude-bridge' ); ?></th><td><code>Authorization: Bearer <?php echo esc_html( $token ); ?></code></td></tr>
+			<tr><th><?php esc_html_e( 'Header', 'wp-claude-bridge' ); ?></th><td><code>Authorization: Bearer &lt;secret-token&gt;</code></td></tr>
 		</table>
 		<?php $available_skills = cb_skill_list(); ?>
 		<?php if ( $available_skills ) : ?>
@@ -6789,7 +6879,7 @@ function cb_settings_page() {
 		<p><a href="<?php echo esc_url( cb_cookbook_url() ); ?>" class="button"><?php esc_html_e( 'Browse the cookbook', 'wp-claude-bridge' ); ?></a></p>
 
 		<h2 style="margin-top:24px"><?php esc_html_e( 'Connection modes (built-in fallback)', 'wp-claude-bridge' ); ?></h2>
-		<p><?php esc_html_e( 'All endpoints below speak the same MCP protocol and accept the same token. If a host, security plugin, or proxy blocks one, point Claude at another:', 'wp-claude-bridge' ); ?></p>
+		<p><?php esc_html_e( 'All fallback endpoints require secure Authorization or OAuth. URL and form tokens are rejected.', 'wp-claude-bridge' ); ?></p>
 		<table class="form-table">
 			<tr><th><?php esc_html_e( 'Primary (REST)', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( $mcp ); ?></code></td></tr>
 			<tr><th><?php esc_html_e( 'REST aliases', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( rest_url( 'claude-bridge/v1/sse' ) ); ?></code> · <code><?php echo esc_html( rest_url( 'claude-bridge/v1/rpc' ) ); ?></code></td></tr>
@@ -6797,7 +6887,7 @@ function cb_settings_page() {
 			<tr><th><?php esc_html_e( 'Query-var', 'wp-claude-bridge' ); ?></th><td><code><?php echo esc_html( home_url( '/?cb_mcp=1' ) ); ?></code> <span class="description"><?php esc_html_e( '— when the REST API is fully off', 'wp-claude-bridge' ); ?></span></td></tr>
 			<tr><th><?php esc_html_e( 'Response format', 'wp-claude-bridge' ); ?></th><td><?php echo wp_kses_post( __( 'JSON by default · append <code>&amp;transport=sse</code> for Server-Sent Events', 'wp-claude-bridge' ) ); ?></td></tr>
 		</table>
-		<p class="description"><?php echo wp_kses_post( __( 'If your host strips the <code>Authorization</code> header, append <code>?token=…</code> (or <code>&amp;token=…</code>) to any endpoint above.', 'wp-claude-bridge' ) ); ?></p>
+		<p class="description"><?php esc_html_e( 'If your server drops Authorization headers, fix proxy forwarding or use OAuth. Query-string authentication is disabled.', 'wp-claude-bridge' ); ?></p>
 
 		<form method="post"><?php wp_nonce_field( 'cb_regen' ); ?>
 			<input type="hidden" name="cb_regen" value="1"><?php submit_button( __( 'Regenerate token', 'wp-claude-bridge' ), 'secondary' ); ?>
@@ -6824,6 +6914,12 @@ function cb_settings_page() {
 				<tr><th scope="row"><?php esc_html_e( 'Enable connector mode', 'wp-claude-bridge' ); ?></th><td>
 					<label><input type="checkbox" name="cb_conn_enabled" value="1" <?php checked( ! empty( $conn['enabled'] ) ); ?>> <?php esc_html_e( 'Only accept commands signed by my hub server', 'wp-claude-bridge' ); ?></label>
 				</td></tr>
+        <tr><th scope="row"><?php esc_html_e( 'Hub permissions', 'wp-claude-bridge' ); ?></th><td>
+          <select name="cb_conn_scope">
+            <option value="audit" <?php selected( cb_mcp_scope_setting( 'connector' ), 'audit' ); ?>>Audit-only (default)</option>
+            <option value="admin" <?php selected( cb_mcp_scope_setting( 'connector' ), 'admin' ); ?>>Full administrator (high risk)</option>
+          </select>
+        </td></tr>
 				<tr><th scope="row"><?php esc_html_e( 'Hub server URL', 'wp-claude-bridge' ); ?></th><td>
 					<input type="url" name="cb_conn_server" class="regular-text" placeholder="https://api.digiwp.com/v1" value="<?php echo esc_attr( $conn['server_url'] ); ?>">
 					<p class="description"><?php esc_html_e( 'Your server’s API base — the only origin allowed to drive this site.', 'wp-claude-bridge' ); ?></p>

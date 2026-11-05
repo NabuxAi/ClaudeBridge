@@ -6,32 +6,57 @@
 // plugin verifies it, so the plugin accepts ONLY traffic from this
 // server. Signature scheme (must match wp-claude-bridge.php):
 //
-//   sig  = HMAC_SHA256( `${ts}\n${rawBody}` , secret )   // hex
+//   sig  = HMAC_SHA256( `${ts}\n${nonce}\n${rawBody}` , secret )   // hex
 //   headers: X-DigiWP-Timestamp: ts (unix seconds)
+//            X-DigiWP-Nonce:     random 16-byte hex nonce
 //            X-DigiWP-Signature: sig
 //            X-DigiWP-Site:      siteKey
 //   replay window: 300s
 // ============================================================
 import crypto from 'node:crypto'
 import { normalizeSiteAddress, restAddresses } from './site-address.js'
+import { connectorFetch } from './peer-relay.js'
+import { classify } from './authority.js'
+
 
 const REPLAY_WINDOW = 300 // seconds
 
 /** Sign a raw body string for the paired site. Returns headers to send. */
 export function signHeaders(secret, siteKey, rawBody = '') {
   const ts = Math.floor(Date.now() / 1000).toString()
-  const sig = crypto.createHmac('sha256', secret).update(`${ts}\n${rawBody}`).digest('hex')
-  return { 'X-DigiWP-Timestamp': ts, 'X-DigiWP-Signature': sig, 'X-DigiWP-Site': siteKey }
+  const nonce = crypto.randomBytes(16).toString('hex')
+  const sig = crypto.createHmac('sha256', secret).update(`${ts}\n${nonce}\n${rawBody}`).digest('hex')
+  return { 'X-DigiWP-Timestamp': ts, 'X-DigiWP-Nonce': nonce, 'X-DigiWP-Signature': sig, 'X-DigiWP-Site': siteKey }
 }
 
 /** Verify an INBOUND signed request (e.g. the plugin's /connector/register). */
-export function verifySignature(secret, { timestamp, signature, rawBody = '' }) {
-  if (!secret || !timestamp || !signature) return false
+export function verifySignature(secret, { timestamp, nonce, signature, rawBody = '' }) {
+  if (!secret || !/^\d{10,12}$/.test(String(timestamp)) || !/^[a-f0-9]{32}$/.test(String(nonce)) || !/^[a-f0-9]{64}$/.test(String(signature))) return false
   if (Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp)) > REPLAY_WINDOW) return false
-  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}\n${rawBody}`).digest('hex')
+  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}\n${nonce}\n${rawBody}`).digest('hex')
   const a = Buffer.from(expected)
   const b = Buffer.from(String(signature))
   return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+
+
+/**
+ * One-time nonce cache for this process. Multi-replica deployments must replace
+ * this with a shared atomic store (Redis SET NX EX or a UNIQUE DB key).
+ */
+const seenNonces = new Map()
+export function consumeSignedNonce(siteId, nonce) {
+  if (!siteId || !/^[a-f0-9]{32}$/.test(String(nonce))) return false
+  const now = Date.now()
+  if (seenNonces.size > 5000) {
+    for (const [key, until] of seenNonces) {
+      if (until <= now) seenNonces.delete(key)
+    }
+  }
+  const key = crypto.createHash('sha256').update(String(siteId) + ':' + nonce).digest('hex')
+  if ((seenNonces.get(key) || 0) > now) return false
+  seenNonces.set(key, now + REPLAY_WINDOW * 1000)
+  return true
 }
 
 const base = normalizeSiteAddress
@@ -54,7 +79,7 @@ export async function ping(site) {
   const addresses = restAddresses(site.url, '/claude-bridge/v1/connector/ping')
   let lastStatus = 502
   for (const [index, url] of addresses.entries()) {
-    const res = await fetch(url, { redirect: 'manual', headers: { ...signHeaders(site.secret, site.siteKey, ''), 'Cache-Control': 'no-cache' }, signal })
+    const res = await connectorFetch(url, { redirect: 'manual', headers: { ...signHeaders(site.secret, site.siteKey, ''), 'Cache-Control': 'no-cache' }, signal }, { idempotent: true })
     lastStatus = res.status
     const data = await res.json().catch(() => null)
     if (res.ok && data?.ok === true && typeof data.version === 'string') {
@@ -72,6 +97,19 @@ function connectionFailure(status, key) {
   const error = new ConnectorError(`WordPress connector check failed (HTTP ${status}); ${key}`, status >= 400 ? status : 502)
   error.i18n = { key, vars: { status } }
   return error
+
+}
+
+async function mcpAddress(site) {
+  let index = selected(site)
+  if (index == null) {
+    // The POST below is sent exactly once, even if its outcome is uncertain.
+    try { await ping(site); index = selected(site) } catch (error) {
+      if (error.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
+      // Preserve the MCP endpoint's own diagnostic if the ping route is absent.
+    }
+  }
+  return restAddresses(site.url, '/claude-bridge/v1/mcp')[index ?? 0]
 }
 
 /**
@@ -83,21 +121,14 @@ export async function callTool(site, name, args = {}) {
     jsonrpc: '2.0', id: cryptoRandomId(), method: 'tools/call',
     params: { name, arguments: args },
   })
-  let index = selected(site)
-  if (index == null) {
-    // The POST below is sent exactly once, even if its outcome is uncertain.
-    try { await ping(site); index = selected(site) } catch (error) {
-      if (error.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
-      // Preserve the MCP endpoint's own diagnostic if the ping route is absent.
-    }
-  }
-  const url = restAddresses(site.url, '/claude-bridge/v1/mcp')[index ?? 0]
-  const res = await fetch(url, {
+  const url = await mcpAddress(site)
+  const res = await connectorFetch(url, {
     method: 'POST', redirect: 'manual',
+
     headers: { 'Content-Type': 'application/json', ...signHeaders(site.secret, site.siteKey, rawBody) },
     body: rawBody,
     signal: AbortSignal.timeout(30000),
-  })
+  }, { idempotent: classify(name, args) === 'read', singleAttempt: classify(name, args) !== 'read' })
   // Read as text first. A site that answers with a PHP fatal, an HTML error
   // page or an empty body is exactly the case worth diagnosing, and parsing
   // straight to JSON with a swallowed catch turned all of those into nothing:
@@ -123,6 +154,29 @@ export async function callTool(site, name, args = {}) {
   if (!raw || (!data.result && !data.content)) throw connectionFailure(res.status, 'sites.connectorInvalid')
   // MCP wraps tool output in result.content[]; return the useful part.
   return data.result ?? data
+}
+
+/**
+ * The site's own tool catalogue (MCP "tools/list"), signed like a call.
+ * Read-only, so it may take the peer road after a timeout too.
+ */
+export async function listTools(site) {
+  const rawBody = JSON.stringify({ jsonrpc: '2.0', id: cryptoRandomId(), method: 'tools/list', params: {} })
+  const url = await mcpAddress(site)
+  const res = await connectorFetch(url, {
+    method: 'POST', redirect: 'manual',
+    headers: { 'Content-Type': 'application/json', ...signHeaders(site.secret, site.siteKey, rawBody) },
+    body: rawBody,
+    signal: AbortSignal.timeout(30000),
+  }, { idempotent: true })
+  const raw = await res.text().catch(() => '')
+  let data = null
+  try { data = raw ? JSON.parse(raw) : null } catch { data = null }
+  if (res.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
+  if (!res.ok || !data || data.error || !Array.isArray(data.result?.tools)) {
+    throw new ConnectorError(describeToolFailure('tools/list', res.status, data || {}, raw), res.status)
+  }
+  return data.result.tools
 }
 
 function cryptoRandomId() {

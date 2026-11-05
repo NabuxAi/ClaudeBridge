@@ -92,12 +92,14 @@ if (!dsn) {
   /** Sign a body exactly as wp-claude-bridge.php does. */
   const signAs = (secret, body) => {
     const timestamp = Math.floor(Date.now() / 1000).toString()
+    const nonce = crypto.randomBytes(16).toString('hex')
     return {
       'content-type': 'application/json',
       'X-DigiWP-Timestamp': timestamp,
+      'X-DigiWP-Nonce': nonce,
       'X-DigiWP-Signature': crypto
         .createHmac('sha256', secret)
-        .update(`${timestamp}\n${body}`)
+        .update(`${timestamp}\n${nonce}\n${body}`)
         .digest('hex'),
       'X-DigiWP-Site': 'wp-site-under-test',
     }
