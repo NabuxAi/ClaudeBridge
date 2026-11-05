@@ -2,6 +2,14 @@
 
 Last updated 2026-11-05. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
 
+## Platform 0.4.2 — restore approved panel appearance (2026-11-05)
+
+- Removed the Material CSS/ripple layer introduced by 0.4.0; restored main.jsx
+  to the approved b354d61 entry point. Existing panel.css and Yekan font stay.
+- Restored green light/dark tokens in browser checks. No new design introduced.
+- REST/nonce/peer/MCP changes remain intact. Future panel redesign requires an
+  explicit owner request; this preference is recorded in AGENTS.md.
+
 ## Platform 0.4.1 — REST connection compatibility (2026-11-05)
 
 - Discovery now negotiates pretty/query/index.php REST paths; keeps the installation folder and existing public-address/DNS pinning safeguards.

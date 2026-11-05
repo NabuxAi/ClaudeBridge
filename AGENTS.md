@@ -109,9 +109,9 @@ Support**. Keep these roles explicit instead of mixing the names casually.
 - `hub/src/data/mock.js` — development-only data. Never let production silently
   fall back to it.
 - `hub/src/styles/app.css` — layout and responsive rules.
-- `hub/src/styles/material.css` — Material Design 3 layer (0.4.0), loaded last: colour roles,
-  shapes, motion (fade-through pages, M3 linear progress). Change the look here, not in
-  the older polish-* files.
+- `hub/src/styles/panel.css` — approved green panel appearance; loads last.
+  The owner requested restoring the pre-Material UI and no further visual
+  redesign without an explicit request (2026-11-05, platform 0.4.2).
 - `hub/nginx.conf` — same-origin API proxy and static caching policy.
 - `scripts/build-digiwp-ai-bridge.sh` — branded self-hosted runtime artifact;
   deliberately excludes repository development playbooks.
@@ -1412,9 +1412,19 @@ unreachable, so a throwaway stack was used):
   on those production sites was not tested. Full REST blocking still needs
   host/security configuration, not an admin login URL.
 
+### Approved panel appearance restored (platform 0.4.2, 2026-11-05)
+
+- Removed the 0.4.0 Material overrides and delegated press ripple; main.jsx
+  again loads panel.css last, exactly as in the approved b354d61 UI.
+- Preserve the green vertical sidebar, compact authority/help/footer, local
+  Yekan variable font, light/dark switch and green AJAX progress indicator.
+- Do not introduce another panel redesign unless the owner explicitly asks.
+- This is a visual restoration only. REST connection fixes, nonce signatures,
+  hub MCP, peer relay and current security/account functionality are retained.
+
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.4.1**, shared by `hub/package.json` and
+- Current platform release: **0.4.2**, shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a
