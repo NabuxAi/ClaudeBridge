@@ -1407,8 +1407,10 @@ unreachable, so a throwaway stack was used):
   a different origin automatically. Pairing rejects HTML/invalid 2xx responses.
 - 26 focused connector/address/error checks cover fallback, folder retention,
   private redirects, signature preservation and one POST after uncertain errors.
-  No affected live customer URL was supplied during this change; full REST
-  blocking still needs host/security configuration, not an admin login URL.
+  Read-only live discovery verified alowp.ir/baneh (subfolder) and digiwp.com
+  (custom login, root), both advertising the connector namespace. Signed pairing
+  on those production sites was not tested. Full REST blocking still needs
+  host/security configuration, not an admin login URL.
 
 ### Platform release versions (2026-11-02)
 

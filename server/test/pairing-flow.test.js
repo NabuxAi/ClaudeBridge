@@ -59,7 +59,7 @@ if (!dsn) {
         res.statusCode = 404
         return res.end(JSON.stringify({ code: 'rest_no_route' }))
       }
-      if (req.url.includes('/ping')) return res.end(JSON.stringify({ ok: true, pong: true }))
+      if (req.url.includes('/ping')) return res.end(JSON.stringify({ ok: true, pong: true, version: '3.9.2' }))
       res.end(JSON.stringify({
         result: { content: [{ type: 'text', text: JSON.stringify({ ok: true, wp_version: '6.7.1' }) }] },
       }))
