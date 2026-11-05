@@ -78,9 +78,11 @@ export async function ping(site) {
   const signal = AbortSignal.timeout(15000)
   const addresses = restAddresses(site.url, '/claude-bridge/v1/connector/ping')
   let lastStatus = 502
+  let forbidden = false
   for (const [index, url] of addresses.entries()) {
     const res = await connectorFetch(url, { redirect: 'manual', headers: { ...signHeaders(site.secret, site.siteKey, ''), 'Cache-Control': 'no-cache' }, signal }, { idempotent: true })
     lastStatus = res.status
+    if (res.status === 403) forbidden = true
     const data = await res.json().catch(() => null)
     if (res.ok && data?.ok === true && typeof data.version === 'string') {
       remember(site, index)
@@ -90,7 +92,7 @@ export async function ping(site) {
     if (res.status >= 300 && res.status < 400) throw connectionFailure(res.status, 'sites.connectorRedirect')
     if (![403, 404].includes(res.status) && !res.ok) break
   }
-  throw connectionFailure(lastStatus, lastStatus === 403 ? 'sites.connectorForbidden' : lastStatus === 404 ? 'sites.connectorMissing' : 'sites.connectorInvalid')
+  throw connectionFailure(lastStatus, forbidden ? 'sites.connectorForbidden' : lastStatus === 404 ? 'sites.connectorMissing' : 'sites.connectorInvalid')
 }
 
 function connectionFailure(status, key) {
@@ -103,7 +105,7 @@ function connectionFailure(status, key) {
 async function mcpAddress(site) {
   let index = selected(site)
   if (index == null) {
-    // The POST below is sent exactly once, even if its outcome is uncertain.
+    // Negotiate before sending a command; route failures never replay a write.
     try { await ping(site); index = selected(site) } catch (error) {
       if (error.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
       // Preserve the MCP endpoint's own diagnostic if the ping route is absent.

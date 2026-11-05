@@ -1402,7 +1402,7 @@ unreachable, so a throwaway stack was used):
 - Connector ping negotiates using signed read-only GETs and checks ok/version.
   Route choices expire after five minutes and are bounded to 256 hashed
   credential identities. Cold tool calls negotiate too; legacy sites without
-  ping may still receive one normal MCP request. Tool POSTs are NEVER retried.
+  ping may still receive one normal MCP request. Mutating tool POSTs are NEVER retried. Read-only peer retries remain supported.
 - Signed requests use manual redirects, so HMAC headers/body cannot travel to
   a different origin automatically. Pairing rejects HTML/invalid 2xx responses.
 - 26 focused connector/address/error checks cover fallback, folder retention,

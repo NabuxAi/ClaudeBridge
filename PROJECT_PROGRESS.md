@@ -5,7 +5,7 @@ Last updated 2026-11-05. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
 ## Platform 0.4.1 — REST connection compatibility (2026-11-05)
 
 - Discovery now negotiates pretty/query/index.php REST paths; keeps the installation folder and existing public-address/DNS pinning safeguards.
-- Signed ping selects a transport cached for 5 minutes (bounded to 256 hashed credential identities). A cold MCP call first tries read-only negotiation; legacy endpoints without ping still receive one normal MCP request. POST is never automatically retried. Signed redirects are not followed.
+- Signed ping selects a transport cached for 5 minutes (bounded to 256 hashed credential identities). A cold MCP call first tries read-only negotiation; legacy endpoints without ping still receive one normal MCP request. Mutating POSTs are never automatically retried; read-only peer retries remain supported. Signed redirects are not followed.
 - Invalid/HTML ping responses cannot mark a site paired. Diagnostics distinguish 401/403/404/redirect/invalid response; onboarding asks for the public site URL, not a custom admin/login path.
 - Scoped gate: 26 connector/address/error tests passed, including real local HTTP. Browser and full PostgreSQL integration gates run in CI.
 - Read-only production discovery verified alowp.ir/baneh and digiwp.com with connector namespaces; signed production pairing was not verified. All-REST WAF restrictions require owner/host configuration. Plugin stays 3.9.2.
