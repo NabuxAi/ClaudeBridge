@@ -109,9 +109,15 @@ Support**. Keep these roles explicit instead of mixing the names casually.
 - `hub/src/data/mock.js` — development-only data. Never let production silently
   fall back to it.
 - `hub/src/styles/app.css` — layout and responsive rules.
-- `hub/src/styles/panel.css` — approved green panel appearance; loads last.
-  The owner requested restoring the pre-Material UI and no further visual
-  redesign without an explicit request (2026-11-05, platform 0.4.2).
+- `hub/src/styles/panel.css` — approved green panel layout, tokens and brand
+  colours. The owner restored it on 2026-11-05 (0.4.2) and asked for no
+  redesign without an explicit request.
+- `hub/src/styles/liquid-glass.css` — the Liquid Glass material layer the
+  owner explicitly requested on 2026-11-12 (platform 0.5.0). It loads after
+  `panel.css` and changes surface material only; brand/status colours and
+  layout stay in `panel.css`/`digiwp.css`. Spec:
+  `hub/docs/liquid-glass-design-system.md`. Keep its accessibility gates
+  (no-blur support, reduced transparency, more contrast, reduced motion).
 - `hub/nginx.conf` — same-origin API proxy and static caching policy.
 - `scripts/build-digiwp-ai-bridge.sh` — branded self-hosted runtime artifact;
   deliberately excludes repository development playbooks.
@@ -1422,9 +1428,20 @@ unreachable, so a throwaway stack was used):
 - This is a visual restoration only. REST connection fixes, nonce signatures,
   hub MCP, peer relay and current security/account functionality are retained.
 
+### Liquid Glass panel (platform 0.5.0, 2026-11-12)
+
+- Material-only redesign on owner request; see the repository map entry and
+  `hub/docs/liquid-glass-design-system.md`. Same pass: public `/pricing` no
+  longer bounces signed-out visitors to `/login`, the public header/footer fit
+  320/375px, the hub document sends security headers, `/api/health` is public.
+- Local gate: hub lint/build and 38 browser cases (30 existing + 8 in
+  `hub/test/liquid-glass.spec.js`). The panel version test now reads
+  `package.json` instead of pinning a literal.
+- Production state is recorded separately from this note.
+
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.4.2**, shared by `hub/package.json` and
+- Current platform release: **0.5.0** (Liquid Glass, 2026-11-12), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

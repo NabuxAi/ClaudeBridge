@@ -52,6 +52,13 @@
 .dwp-mkt-links { display: flex; align-items: center; gap: 26px; font-size: 14px; font-weight: 600; color: var(--gd-text-secondary); }
 .dwp-mkt-links a { color: inherit; }
 .dwp-footer { border-top: 1px solid var(--gd-border); background: var(--gd-bg-subtle); }
+/* Four columns need ~420px; on phones the brand spans the row and the
+   three link lists share two columns. */
+.dwp-footer__grid { padding: 40px; display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 24px; }
+@media (max-width: 640px) {
+  .dwp-footer__grid { padding: 28px 16px; grid-template-columns: 1fr 1fr; }
+  .dwp-footer__grid > :first-child { grid-column: 1 / -1; }
+}
 
 .dwp-hero { grid-template-columns: 1.05fr .95fr; }
 .dwp-report { grid-template-columns: .9fr 1.1fr; }
@@ -83,6 +90,22 @@
   .dwp-hero, .dwp-report { grid-template-columns: 1fr; }
   .dwp-desktop-only { display: none !important; }
   .dwp-mobile-only { display: revert; }
+}
+
+/* Phone header: brand, language, login and sign-up measured 425px
+   (English) in a 375px viewport. Keep every action, drop the wordmark
+   text (the mark still links home) and tighten the gaps. */
+@media (max-width: 520px) {
+  .dwp-mkt-nav__inner { gap: 8px; }
+  .dwp-mkt-nav__inner > a:first-child > span:last-child { display: none; }
+  .dwp-mkt-nav .dwp-lang > svg { display: none; }
+  .dwp-mkt-nav .dwp-lang select { padding-inline: 6px; }
+}
+@media (max-width: 360px) {
+  /* Narrowest phones: wrap rather than overflow, whatever the language. */
+  .dwp-mkt-nav__inner { gap: 6px; flex-wrap: wrap; height: auto; min-height: 70px; padding-block: 10px; }
+  .dwp-mkt-nav__inner .gd-btn--sm { padding-inline: 8px; font-size: 12px; }
+  .dwp-mkt-nav .dwp-lang select { padding-inline: 4px; font-size: 12px; }
 }
 
 /* ---- skeleton shimmer loading ---------------------------- */

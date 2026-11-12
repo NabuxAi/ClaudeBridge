@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
+
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
 const user = { id: 'panel-owner', name: 'Ali', initials: 'A', email: 'owner@example.com', role: 'owner', lang: 'en' }
 const sites = [
@@ -38,7 +41,7 @@ test('theme and collapsed menu persist across page switches and reloads', async 
   await expect(page).toHaveURL(/\/app\/sites$/)
   await expect(page.locator('.panel-frame')).toHaveClass(/is-collapsed/)
   await page.reload()
-  await expect(page.getByRole('link', { name: 'Release notes — version 0.4.2' })).toContainText('v0.4.2')
+  await expect(page.getByRole('link', { name: `Release notes — version ${version}` })).toContainText(`v${version}`)
   await expect(page.locator('.panel-frame')).toHaveAttribute('data-panel-theme', 'light')
   await expect(page.locator('.panel-frame')).toHaveClass(/is-collapsed/)
 })
@@ -128,7 +131,7 @@ test('mobile menu traps focus, closes on Escape, and can navigate without reload
   const dialog = page.getByRole('dialog', { name: 'Panel navigation' })
   await expect(dialog).toBeVisible()
   await expect(dialog).toHaveAttribute('aria-modal', 'true')
-  await dialog.getByRole('link', { name: 'Release notes — version 0.4.2' }).focus()
+  await dialog.getByRole('link', { name: `Release notes — version ${version}` }).focus()
   await page.keyboard.press('Tab')
   await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused()
   await page.keyboard.press('Escape')

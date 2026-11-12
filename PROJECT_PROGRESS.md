@@ -1,6 +1,27 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-05. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-12. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.5.0 — Liquid Glass panel (2026-11-12)
+
+- Owner explicitly requested a liquid-glass redesign on 2026-11-12. New
+  `hub/src/styles/liquid-glass.css` loads after `panel.css` and changes only
+  surface material (translucency, blur, rims, sheen, depth). Brand green,
+  status/authority colours, layout and type are unchanged and still pinned.
+- Spec: `hub/docs/liquid-glass-design-system.md` (tokens, three thicknesses,
+  component treatments, accessibility gates: no-blur support, reduced
+  transparency, more contrast, reduced motion).
+- Fixes found in the same pass:
+  - signed-out `/pricing` no longer calls `/billing/trial` (whose 401 bounced
+    visitors to `/login`);
+  - the marketing header and footer no longer overflow at 320/375px;
+  - the hub nginx document now sends CSP/HSTS/XFO/nosniff/Referrer-Policy;
+  - `/api/health` now proxies to the server's `/health` instead of 401.
+- Verification: hub lint and production build; Playwright 38/38 (8 new
+  cases in `hub/test/liquid-glass.spec.js`). The CSP was checked against a
+  local nginx serving the production build: zero violations on `/`, `/login`,
+  `/register`, `/pricing`, `/terms`, `/privacy`. Server code unchanged apart
+  from the version number.
 
 ## Platform 0.4.2 — restore approved panel appearance (2026-11-05)
 
