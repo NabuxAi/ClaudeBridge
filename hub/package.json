@@ -1,7 +1,7 @@
 {
   "name": "digiwp-hub",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.5.0",
   "type": "module",
   "description": "DigiWP Ai Support — the hub UI (React) that manages many WordPress sites through your server and the WP Claude Bridge connector.",
   "scripts": {

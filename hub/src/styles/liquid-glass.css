@@ -1,0 +1,381 @@
+/* ============================================================
+   DigiWP Liquid Glass — platform 0.5.0
+   ------------------------------------------------------------
+   The material layer of the panel. It loads after panel.css and
+   changes only the MATERIAL of surfaces: translucency, blur,
+   rims, specular sheen and depth. Brand colour, status colours,
+   spacing, type and layout stay where they were (panel.css and
+   digiwp.css), so meaning never moves with the look.
+
+   Spec and rules: hub/docs/liquid-glass-design-system.md
+
+   Three thicknesses, one recipe each:
+     --lg-1  content glass  cards, metrics, quick links, tables
+     --lg-2  chrome glass   sidebar, topbar, marketing nav
+     --lg-3  overlay glass  dialogs, tooltips, toasts, menus
+   Glass needs something behind it, so the panel paints its own
+   backdrop (soft green/teal light fields) under everything.
+
+   Accessibility gates, all at the end of this file:
+     no backdrop-filter support      -> solid surfaces
+     prefers-reduced-transparency    -> solid surfaces
+     prefers-contrast: more          -> solid + stronger borders
+     prefers-reduced-motion          -> no sheen/lift motion
+   ============================================================ */
+
+/* ---------- Tokens ---------------------------------------
+   Declared on :root and re-declared for the dark panel/ink so
+   dialogs rendered inside the panel inherit the right theme. */
+:root {
+  /* Backdrop light fields */
+  --lg-backdrop-base: #edf4f1;
+  --lg-field-1: rgb(48 213 107 / 26%);   /* brand green */
+  --lg-field-2: rgb(45 212 191 / 20%);   /* teal */
+  --lg-field-3: rgb(125 196 255 / 22%);  /* sky */
+  --lg-field-4: rgb(190 242 100 / 16%);  /* lime */
+
+  /* Fills (the tint of the glass itself) */
+  --lg-fill-1: rgb(255 255 255 / 56%);
+  --lg-fill-2: rgb(255 255 255 / 62%);
+  --lg-fill-3: rgb(255 255 255 / 82%);
+  --lg-fill-hover: rgb(255 255 255 / 74%);
+  --lg-fill-inset: rgb(255 255 255 / 46%);
+
+  /* Edges */
+  --lg-rim: rgb(255 255 255 / 85%);          /* top specular line */
+  --lg-rim-soft: rgb(255 255 255 / 55%);     /* 1px body border */
+  --lg-edge: rgb(18 46 30 / 9%);             /* outer hairline */
+  --lg-sheen: linear-gradient(160deg, rgb(255 255 255 / 55%), rgb(255 255 255 / 0) 38%);
+
+  /* Depth */
+  --lg-shadow-1: 0 1px 1px rgb(18 46 30 / 4%), 0 10px 30px -12px rgb(18 46 30 / 16%);
+  --lg-shadow-2: 0 1px 2px rgb(18 46 30 / 5%), 0 18px 50px -18px rgb(18 46 30 / 22%);
+  --lg-shadow-3: 0 2px 6px rgb(18 46 30 / 8%), 0 30px 80px -24px rgb(18 46 30 / 32%);
+
+  /* Blur strength per thickness */
+  --lg-blur-1: blur(18px) saturate(170%);
+  --lg-blur-2: blur(28px) saturate(185%);
+  --lg-blur-3: blur(36px) saturate(190%);
+
+  /* Brand gel (primary buttons, active pills) */
+  --lg-gel-top: color-mix(in oklab, var(--gd-primary) 72%, #fff);
+  --lg-gel-bottom: var(--gd-primary);
+  --lg-gel-glow: color-mix(in oklab, var(--gd-primary) 45%, transparent);
+
+  /* Motion */
+  --lg-ease: cubic-bezier(.2, .8, .2, 1);
+  --lg-fast: 160ms;
+  --lg-med: 260ms;
+}
+
+.panel-frame[data-panel-theme="dark"],
+[data-theme="ink"] {
+  --lg-backdrop-base: #0b100e;
+  --lg-field-1: rgb(48 213 107 / 22%);
+  --lg-field-2: rgb(20 184 166 / 18%);
+  --lg-field-3: rgb(56 120 255 / 16%);
+  --lg-field-4: rgb(163 230 53 / 10%);
+
+  --lg-fill-1: rgb(30 34 40 / 52%);
+  --lg-fill-2: rgb(26 30 36 / 60%);
+  --lg-fill-3: rgb(28 32 38 / 86%);
+  --lg-fill-hover: rgb(44 50 58 / 62%);
+  --lg-fill-inset: rgb(10 13 16 / 44%);
+
+  --lg-rim: rgb(255 255 255 / 16%);
+  --lg-rim-soft: rgb(255 255 255 / 9%);
+  --lg-edge: rgb(0 0 0 / 40%);
+  --lg-sheen: linear-gradient(160deg, rgb(255 255 255 / 9%), rgb(255 255 255 / 0) 40%);
+
+  --lg-shadow-1: 0 1px 1px rgb(0 0 0 / 20%), 0 12px 32px -12px rgb(0 0 0 / 45%);
+  --lg-shadow-2: 0 1px 2px rgb(0 0 0 / 25%), 0 20px 56px -18px rgb(0 0 0 / 55%);
+  --lg-shadow-3: 0 2px 8px rgb(0 0 0 / 30%), 0 32px 90px -24px rgb(0 0 0 / 65%);
+
+  /* Re-resolved here: custom properties inherit their computed value,
+     so a gel built from :root's primary would stay light-theme green. */
+  --lg-gel-top: color-mix(in oklab, var(--gd-primary) 80%, #fff);
+  --lg-gel-bottom: var(--gd-primary);
+  --lg-gel-glow: color-mix(in oklab, var(--gd-primary) 45%, transparent);
+}
+
+/* ---------- Backdrop ------------------------------------- */
+/* The viewport (scrollbar, overscroll) follows the panel theme;
+   color-scheme on .panel-frame alone leaves a light scrollbar on
+   the dark glass. */
+:root:has(.panel-frame) { background: var(--lg-backdrop-base); }
+:root:has(.panel-frame[data-panel-theme="dark"]) { color-scheme: dark; background: #0b100e; }
+.panel-frame {
+  position: relative;
+  isolation: isolate;
+  background: var(--lg-backdrop-base);
+}
+.panel-frame::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42vmax 34vmax at 88% 6%, var(--lg-field-1), transparent 70%),
+    radial-gradient(36vmax 30vmax at 8% 22%, var(--lg-field-3), transparent 70%),
+    radial-gradient(40vmax 34vmax at 70% 96%, var(--lg-field-2), transparent 70%),
+    radial-gradient(30vmax 24vmax at 18% 88%, var(--lg-field-4), transparent 70%),
+    var(--lg-backdrop-base);
+}
+
+/* ---------- The material, as one recipe per thickness ---- */
+.panel-frame .panel-sidebar.dwp-aside,
+.panel-frame .panel-topbar.dwp-topbar,
+.panel-frame .dwp-card,
+.panel-frame .gd-card,
+.panel-frame .gd-metric,
+.panel-frame .panel-quick-link,
+.panel-frame .gd-table,
+.gd-dialog__overlay .gd-dialog,
+.gd-toast,
+.panel-authority__tooltip,
+.dwp-mkt-nav {
+  border: 1px solid var(--lg-rim-soft);
+  background-image: var(--lg-sheen);
+  background-repeat: no-repeat;
+}
+
+/* content glass */
+.panel-frame .dwp-card,
+.panel-frame .gd-card,
+.panel-frame .gd-metric,
+.panel-frame .panel-quick-link,
+.panel-frame .gd-table {
+  background-color: var(--lg-fill-1);
+  -webkit-backdrop-filter: var(--lg-blur-1);
+  backdrop-filter: var(--lg-blur-1);
+  box-shadow: inset 0 1px 0 var(--lg-rim), 0 0 0 .5px var(--lg-edge), var(--lg-shadow-1);
+}
+
+/* chrome glass */
+.panel-frame .panel-sidebar.dwp-aside,
+.panel-frame .panel-topbar.dwp-topbar,
+.dwp-mkt-nav {
+  background-color: var(--lg-fill-2);
+  -webkit-backdrop-filter: var(--lg-blur-2);
+  backdrop-filter: var(--lg-blur-2);
+  box-shadow: inset 0 1px 0 var(--lg-rim), 0 0 0 .5px var(--lg-edge), var(--lg-shadow-2);
+}
+.panel-frame[data-panel-theme="dark"] .panel-sidebar { border-color: var(--lg-rim-soft); box-shadow: inset 0 1px 0 var(--lg-rim), 0 0 0 .5px var(--lg-edge), var(--lg-shadow-2); }
+
+/* overlay glass */
+.gd-dialog__overlay .gd-dialog,
+.gd-toast,
+.panel-authority__tooltip {
+  background-color: var(--lg-fill-3);
+  -webkit-backdrop-filter: var(--lg-blur-3);
+  backdrop-filter: var(--lg-blur-3);
+  box-shadow: inset 0 1px 0 var(--lg-rim), 0 0 0 .5px var(--lg-edge), var(--lg-shadow-3);
+}
+
+/* ---------- Shell ---------------------------------------- */
+.panel-frame .panel-collapse {
+  background: var(--lg-fill-3);
+  border-color: var(--lg-rim-soft);
+  -webkit-backdrop-filter: var(--lg-blur-2);
+  backdrop-filter: var(--lg-blur-2);
+  box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow-1);
+}
+
+/* Active nav item: a lensed pill instead of a flat gradient. */
+.panel-frame .panel-nav__track,
+[dir="ltr"] .panel-frame .panel-nav__track {
+  background: var(--lg-fill-hover);
+  border: 1px solid var(--lg-rim-soft);
+  box-shadow: inset 0 1px 0 var(--lg-rim), 0 0 0 .5px var(--lg-edge), 0 8px 22px -12px var(--lg-gel-glow);
+}
+.panel-frame .panel-nav__track::after {
+  inset-inline-start: 10px;
+  top: 50%;
+  bottom: auto;
+  width: 6px;
+  height: 22px;
+  translate: 0 -50%;
+  border-radius: 6px;
+  box-shadow: 0 0 12px var(--lg-gel-glow);
+}
+.panel-frame .panel-nav__link[aria-current="page"] { padding-inline-start: 26px; }
+.panel-frame .panel-nav__link:hover { background: var(--lg-fill-inset); }
+
+/* Topbar controls and toolbar buttons become small glass chips. */
+.panel-frame .panel-topbar .gd-iconbtn,
+.panel-frame .panel-tool-link,
+.panel-frame .panel-user,
+.panel-frame .panel-mobile-menu,
+.panel-frame .panel-page-toolbar .gd-iconbtn,
+.panel-frame .panel-topbar .dwp-lang select,
+.panel-frame .panel-version,
+.panel-frame .panel-back {
+  background: var(--lg-fill-inset);
+  border-color: var(--lg-rim-soft);
+  box-shadow: inset 0 1px 0 var(--lg-rim);
+}
+.panel-frame .panel-topbar .gd-iconbtn:hover,
+.panel-frame .panel-tool-link:hover,
+.panel-frame .panel-user:hover,
+.panel-frame .panel-page-toolbar .gd-iconbtn:hover {
+  background: var(--lg-fill-hover);
+}
+.panel-frame .panel-sidebar__footer,
+.panel-frame .panel-topbar__divider { border-color: var(--lg-rim-soft); }
+.panel-frame .panel-topbar__divider { background: var(--lg-rim-soft); }
+
+/* Mobile drawer scrim frosts the page instead of darkening it flat. */
+.panel-frame .dwp-scrim {
+  background: rgb(8 18 12 / 34%);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.panel-frame .dwp-pagehead { border-bottom-color: var(--lg-rim-soft); }
+
+/* ---------- Content ------------------------------------- */
+/* The first metric keeps its brand emphasis, as tinted glass. */
+.panel-frame .gd-metric:first-child {
+  background-color: color-mix(in oklab, var(--gd-primary) 9%, var(--lg-fill-1));
+  border-color: var(--gd-primary-border);
+}
+.panel-frame .gd-metric__ic,
+.panel-frame .panel-quick-link > span:first-child,
+.panel-frame .panel-dashboard-title > span {
+  background: var(--lg-fill-hover);
+  border: 1px solid var(--lg-rim-soft);
+  box-shadow: inset 0 1px 0 var(--lg-rim);
+}
+.panel-frame .panel-quick-link { transition: transform var(--lg-fast) var(--lg-ease), background-color var(--lg-fast) var(--lg-ease), border-color var(--lg-fast); }
+.panel-frame .panel-quick-link:hover { background-color: var(--lg-fill-hover); }
+
+/* Tables: glass container, quiet rows. */
+.panel-frame .gd-table thead th { background: var(--lg-fill-inset); }
+.panel-frame .gd-table td { border-block-end-color: var(--lg-rim-soft); }
+.panel-frame .gd-table tbody tr:hover { background: var(--lg-fill-inset); }
+
+/* Alerts keep their status colour; the surface turns translucent. */
+.panel-frame .gd-alert {
+  -webkit-backdrop-filter: var(--lg-blur-1);
+  backdrop-filter: var(--lg-blur-1);
+  box-shadow: inset 0 1px 0 var(--lg-rim);
+}
+
+/* ---------- Controls ------------------------------------ */
+/* Primary: a green gel with a specular top. */
+.panel-frame .gd-btn--primary,
+.gd-dialog .gd-btn--primary {
+  background: linear-gradient(180deg, var(--lg-gel-top), var(--lg-gel-bottom) 62%);
+  border-color: color-mix(in oklab, var(--gd-primary) 70%, #000);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 45%),
+    inset 0 -2px 6px rgb(0 0 0 / 12%),
+    0 8px 20px -8px var(--lg-gel-glow);
+}
+.panel-frame .gd-btn--primary:not([disabled]):not([aria-disabled="true"]):hover,
+.gd-dialog .gd-btn--primary:not([disabled]):not([aria-disabled="true"]):hover {
+  background: linear-gradient(180deg, var(--lg-gel-top), var(--gd-primary-hover) 62%);
+}
+/* Secondary and ghost: clear glass. */
+.panel-frame .gd-btn--secondary,
+.gd-dialog .gd-btn--secondary {
+  background: var(--lg-fill-hover);
+  border-color: var(--lg-rim-soft);
+  color: var(--gd-text);
+  box-shadow: inset 0 1px 0 var(--lg-rim), 0 0 0 .5px var(--lg-edge), 0 4px 12px -6px var(--lg-edge);
+}
+.panel-frame .gd-btn--ghost:hover { background: var(--lg-fill-inset); }
+.panel-frame .gd-btn:not([disabled]):not([aria-disabled="true"]):active { transform: scale(.98); }
+
+/* Inputs: recessed glass wells. */
+.panel-frame .gd-input,
+.panel-frame .gd-select__el,
+.panel-frame .gd-textarea__el,
+.gd-dialog .gd-input,
+.gd-dialog .gd-select__el,
+.gd-dialog .gd-textarea__el {
+  background: var(--lg-fill-inset);
+  border-color: color-mix(in oklab, var(--gd-border-strong) 55%, transparent);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 6%);
+}
+.panel-frame .gd-input:focus-within,
+.gd-dialog .gd-input:focus-within {
+  background: var(--lg-fill-hover);
+  border-color: var(--gd-primary);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 4%), var(--gd-ring);
+}
+
+/* Badges: tinted glass chips, colour roles unchanged. */
+.panel-frame .gd-badge { box-shadow: inset 0 1px 0 var(--lg-rim); }
+
+/* Dialog footer sits on the same glass. */
+.gd-dialog__overlay .gd-dialog__footer { background: var(--lg-fill-inset); border-top-color: var(--lg-rim-soft); }
+
+/* Dialog overlay frosts what is behind it. */
+.gd-dialog__overlay {
+  background: rgb(8 18 12 / 30%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(140%);
+}
+
+/* ---------- Marketing nav ------------------------------- */
+.dwp-mkt-nav {
+  border-width: 0 0 1px;
+  border-radius: 0;
+  box-shadow: inset 0 -1px 0 var(--lg-rim-soft), var(--lg-shadow-1);
+}
+
+/* ---------- Motion -------------------------------------- */
+.panel-frame .panel-page { animation: lg-enter var(--lg-med) var(--lg-ease); }
+@keyframes lg-enter {
+  from { opacity: .5; transform: translateY(6px) scale(.995); filter: blur(2px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* ---------- Accessibility gates ------------------------- */
+/* 1. No backdrop-filter: translucency without blur reads as dirt. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root, .panel-frame[data-panel-theme], [data-theme="ink"] {
+    --lg-fill-1: var(--gd-bg-surface);
+    --lg-fill-2: var(--gd-bg-surface);
+    --lg-fill-3: var(--gd-bg-surface);
+    --lg-fill-hover: var(--gd-bg-hover);
+    --lg-fill-inset: var(--gd-bg-subtle);
+  }
+}
+
+/* 2. The viewer asked for less transparency. */
+@media (prefers-reduced-transparency: reduce) {
+  :root, .panel-frame[data-panel-theme], [data-theme="ink"] {
+    --lg-fill-1: var(--gd-bg-surface);
+    --lg-fill-2: var(--gd-bg-surface);
+    --lg-fill-3: var(--gd-bg-surface);
+    --lg-fill-hover: var(--gd-bg-hover);
+    --lg-fill-inset: var(--gd-bg-subtle);
+    --lg-blur-1: none;
+    --lg-blur-2: none;
+    --lg-blur-3: none;
+  }
+  .panel-frame::before { background: var(--lg-backdrop-base); }
+}
+
+/* 3. The viewer asked for more contrast. */
+@media (prefers-contrast: more) {
+  :root, .panel-frame[data-panel-theme], [data-theme="ink"] {
+    --lg-fill-1: var(--gd-bg-surface);
+    --lg-fill-2: var(--gd-bg-surface);
+    --lg-fill-3: var(--gd-bg-surface);
+    --lg-fill-hover: var(--gd-bg-hover);
+    --lg-fill-inset: var(--gd-bg-subtle);
+    --lg-rim-soft: var(--gd-border-strong);
+    --lg-sheen: none;
+  }
+  .panel-frame::before { background: var(--lg-backdrop-base); }
+}
+
+/* 4. Less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .panel-frame .panel-page { animation: none; }
+  .panel-frame .gd-btn:not([disabled]):active { transform: none; }
+}

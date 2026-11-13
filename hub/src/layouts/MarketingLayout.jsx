@@ -30,7 +30,7 @@ export default function MarketingLayout() {
       <Outlet />
 
       <footer className="dwp-footer">
-        <div className="dwp-container" style={{ padding: '40px', display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 1fr', gap: 24 }}>
+        <div className="dwp-container dwp-footer__grid">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <span className="dwp-brandmark" style={{ width: 32, height: 32, borderRadius: 9 }}><Icon name="shield-check" size={18} /></span>

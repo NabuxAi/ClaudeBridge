@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import Icon from '../../lib/icons.jsx'
 import { Button } from '../../components/index.js'
 import { t, num } from '../../lib/i18n.js'
-import { account } from '../../lib/api.js'
+import { account, getToken } from '../../lib/api.js'
 
 // Marketing copy per plan id. Feature lists are kept honest: only capabilities
 // that exist in the product are listed. Prices come from the API so the page
@@ -105,7 +105,10 @@ export default function Pricing() {
 
   useEffect(() => {
     let alive = true
-    Promise.all([account.plans(), account.trial()])
+    // The price list is public. The trial is per account: asking for it
+    // signed out earns a 401, and the global 401 handler would send a
+    // visitor who only wanted prices to /login.
+    Promise.all([account.plans(), getToken() ? account.trial() : null])
       .then(([p, tr]) => {
         if (!alive) return
         setPlans(p)
