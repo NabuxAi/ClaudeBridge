@@ -29,6 +29,26 @@ export function signHeaders(secret, siteKey, rawBody = '') {
   return { 'X-DigiWP-Timestamp': ts, 'X-DigiWP-Nonce': nonce, 'X-DigiWP-Signature': sig, 'X-DigiWP-Site': siteKey }
 }
 
+/**
+ * Signature for plugin builds released before nonce support (they verify
+ * `${ts}\n${rawBody}` only). Used solely after such a site has answered a
+ * signed ping this way; a current plugin rejects it, so it cannot downgrade one.
+ * These sites keep the 300s timestamp window but get no nonce replay guard
+ * until their plugin updates.
+ */
+export function legacySignHeaders(secret, siteKey, rawBody = '') {
+  const ts = Math.floor(Date.now() / 1000).toString()
+  const sig = crypto.createHmac('sha256', secret).update(`${ts}\n${rawBody}`).digest('hex')
+  return { 'X-DigiWP-Timestamp': ts, 'X-DigiWP-Signature': sig, 'X-DigiWP-Site': siteKey }
+}
+
+/** Headers for the signing scheme this site was last verified to accept. */
+function siteHeaders(site, rawBody) {
+  return transports.get(transportKey(site))?.legacy
+    ? legacySignHeaders(site.secret, site.siteKey, rawBody)
+    : signHeaders(site.secret, site.siteKey, rawBody)
+}
+
 /** Verify an INBOUND signed request (e.g. the plugin's /connector/register). */
 export function verifySignature(secret, { timestamp, nonce, signature, rawBody = '' }) {
   if (!secret || !/^\d{10,12}$/.test(String(timestamp)) || !/^[a-f0-9]{32}$/.test(String(nonce)) || !/^[a-f0-9]{64}$/.test(String(signature))) return false
@@ -64,9 +84,9 @@ const base = normalizeSiteAddress
 // Cache only a verified transport choice, never a tool response or secret.
 const transports = new Map()
 const transportKey = (site) => crypto.createHash('sha256').update(`${base(site.url)}\n${site.siteKey}\n${site.secret}`).digest('hex')
-function remember(site, index) {
+function remember(site, index, legacy = false) {
   if (transports.size >= 256) transports.delete(transports.keys().next().value)
-  transports.set(transportKey(site), { index, expires: Date.now() + 300000 })
+  transports.set(transportKey(site), { index, legacy, expires: Date.now() + 300000 })
 }
 function selected(site) {
   const entry = transports.get(transportKey(site))
@@ -79,16 +99,27 @@ export async function ping(site) {
   const addresses = restAddresses(site.url, '/claude-bridge/v1/connector/ping')
   let lastStatus = 502
   let forbidden = false
+  const get = (url, headers) => connectorFetch(url, { redirect: 'manual', headers: { ...headers, 'Cache-Control': 'no-cache' }, signal }, { idempotent: true })
+  const valid = (res, data) => res.ok && data?.ok === true && typeof data.version === 'string'
   for (const [index, url] of addresses.entries()) {
-    const res = await connectorFetch(url, { redirect: 'manual', headers: { ...signHeaders(site.secret, site.siteKey, ''), 'Cache-Control': 'no-cache' }, signal }, { idempotent: true })
+    const res = await get(url, signHeaders(site.secret, site.siteKey, ''))
     lastStatus = res.status
     if (res.status === 403) forbidden = true
     const data = await res.json().catch(() => null)
-    if (res.ok && data?.ok === true && typeof data.version === 'string') {
+    if (valid(res, data)) {
       remember(site, index)
       return data
     }
-    if (res.status === 401) throw connectionFailure(401, 'sites.connectorAuth')
+    if (res.status === 401) {
+      // A plugin build from before nonce support rejects the current scheme.
+      const old = await get(url, legacySignHeaders(site.secret, site.siteKey, ''))
+      const oldData = await old.json().catch(() => null)
+      if (valid(old, oldData)) {
+        remember(site, index, true)
+        return { ...oldData, legacySignature: true }
+      }
+      throw connectionFailure(401, 'sites.connectorAuth')
+    }
     if (res.status >= 300 && res.status < 400) throw connectionFailure(res.status, 'sites.connectorRedirect')
     if (![403, 404].includes(res.status) && !res.ok) break
   }
@@ -127,7 +158,7 @@ export async function callTool(site, name, args = {}) {
   const res = await connectorFetch(url, {
     method: 'POST', redirect: 'manual',
 
-    headers: { 'Content-Type': 'application/json', ...signHeaders(site.secret, site.siteKey, rawBody) },
+    headers: { 'Content-Type': 'application/json', ...siteHeaders(site, rawBody) },
     body: rawBody,
     signal: AbortSignal.timeout(30000),
   }, { idempotent: classify(name, args) === 'read', singleAttempt: classify(name, args) !== 'read' })
@@ -167,7 +198,7 @@ export async function listTools(site) {
   const url = await mcpAddress(site)
   const res = await connectorFetch(url, {
     method: 'POST', redirect: 'manual',
-    headers: { 'Content-Type': 'application/json', ...signHeaders(site.secret, site.siteKey, rawBody) },
+    headers: { 'Content-Type': 'application/json', ...siteHeaders(site, rawBody) },
     body: rawBody,
     signal: AbortSignal.timeout(30000),
   }, { idempotent: true })

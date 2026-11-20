@@ -947,6 +947,12 @@ These rules override visual mockups and optimistic marketing copy:
 - Keep raw-body capture bounded; connector signatures depend on exact bytes.
 - Never expose site shared secrets after pairing or place them in normal logs.
 - Preserve replay protection and constant-time signature comparison.
+- Outbound connector calls sign `ts\nnonce\nbody`. Only when a site refuses that
+  with 401 and then accepts a signed ping in the pre-nonce `ts\nbody` form does
+  `server/src/connector.js` keep using the legacy form for that site (cached 5
+  minutes, re-negotiated after). Those sites have the 300 s timestamp window but
+  no nonce replay guard until their plugin updates. Inbound verification stays
+  nonce-only. Pinned in `server/test/connector-legacy.test.js` (2026-11-21).
 - Preserve generic login errors and dummy password verification to avoid account
   enumeration.
 - Rate limits are currently in process memory. Before horizontal scaling, move
