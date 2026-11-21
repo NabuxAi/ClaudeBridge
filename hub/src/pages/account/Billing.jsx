@@ -216,6 +216,7 @@ export default function Billing() {
       <div className="dwp-billing-plans" style={{ marginBottom: 24 }}>
         {plans.map((plan) => {
           const isCurrent = plan.id === currentPlan?.id
+          const canRenewTrial = isCurrent && trialExpired
           const isDowngrade = plan.price < (currentPlan?.price || 0)
           const requested = requestOk?.planId === plan.id
           const busy = requesting === plan.id
@@ -249,20 +250,21 @@ export default function Billing() {
                   </span>
                 ))}
               </div>
-              {isCurrent ? (
+              {isCurrent && !canRenewTrial ? (
                 <Button variant="secondary" size="sm" fullWidth disabled>{t('billing.yourCurrentPlan')}</Button>
               ) : (
                 <Button
                   variant={isDowngrade ? 'ghost' : 'primary'}
                   size="sm"
                   fullWidth
-                  disabled={busy}
+                  disabled={requesting !== null}
                   leftIcon={busy ? 'loader' : undefined}
                   onClick={() => requestPilot(plan.id)}
                 >
                   {busy ? t('billing.submitting')
-                    : !currentPlan ? t('billing.requestTrial')
-                      : isDowngrade ? t('billing.downgradeTo', { name: plan.name }) : t('billing.upgradeTo', { name: plan.name })}
+                    : canRenewTrial ? t('billing.renewTrial')
+                      : !currentPlan ? t('billing.requestTrial')
+                        : isDowngrade ? t('billing.downgradeTo', { name: plan.name }) : t('billing.upgradeTo', { name: plan.name })}
                 </Button>
               )}
               {requested && (

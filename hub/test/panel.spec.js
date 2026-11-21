@@ -107,6 +107,35 @@ test('failed AJAX data requests finish the progress indicator and keep navigatio
   await expect(page.getByRole('button', { name: 'Try again' })).toBeEnabled()
 })
 
+test('an expired trial can be renewed from billing on the same plan', async ({ page }) => {
+  const plan = { id: 'pro', name: 'Pro', price: 490000, siteLimit: 5 }
+  const expired = {
+    plan, status: 'trialing', trialState: 'expired', isTrialing: false,
+    trialEndsAt: Date.UTC(2020, 0, 1), sitesUsed: 0,
+  }
+  await setup(page)
+  await page.route('**/api/billing', (route) => route.fulfill({ json: { subscription: expired } }))
+  await page.route('**/api/billing/plans', (route) => route.fulfill({ json: [plan] }))
+  await page.route('**/api/billing/request-pilot', (route) => route.fulfill({
+    json: {
+      ok: true,
+      subscription: { ...expired, trialState: 'trialing', isTrialing: true, daysLeftInTrial: 14 },
+    },
+  }))
+
+  await page.getByRole('navigation').getByRole('link', { name: 'Subscription & billing' }).click()
+  await expect(page.getByText('Your trial access has ended.')).toBeVisible()
+  const request = page.waitForRequest('**/api/billing/request-pilot')
+  await page.getByRole('button', { name: 'Renew trial access' }).click()
+  const renewal = await request
+  expect(renewal.method()).toBe('POST')
+  expect(renewal.postDataJSON()).toEqual({ plan: 'pro' })
+
+  await expect(page.getByText('Your trial access has ended.')).toHaveCount(0)
+  await expect(page.getByText('14 days left in your trial access')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Your current plan' })).toBeDisabled()
+})
+
 test('the site menu retains its own routes and real authority, including unknown data', async ({ page }) => {
   await setup(page, { path: '/site/shop/settings' })
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Settings', exact: true })).toHaveAttribute('aria-current', 'page')

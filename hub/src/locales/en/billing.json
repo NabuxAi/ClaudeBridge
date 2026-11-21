@@ -44,6 +44,7 @@
   "yourCurrentPlan": "Your current plan",
   "submitting": "Submitting…",
   "requestTrial": "Request trial access",
+  "renewTrial": "Renew trial access",
   "downgradeTo": "Downgrade to {name}",
   "upgradeTo": "Upgrade to {name}",
   "invoices": {
