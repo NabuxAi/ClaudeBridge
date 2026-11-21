@@ -352,7 +352,7 @@ export const sites = {
     const duplicateMessage = host ? 'sites.ownerInviteRequired' : 'sites.alreadyAdded'
     // Recognize www records created before both spellings shared one id.
     if (await one('SELECT 1 FROM sites WHERE id = ANY($1)', [host ? rootSiteIds(host) : [id]])) {
-      throw httpError(409, duplicateMessage)
+      throw httpError(409, duplicateMessage, null, host ? 'wordpress_access_available' : undefined)
     }
     const site = {
       id, user_id: userId, name: clean, title: title || clean, status: 'checking', authority: 'report',
@@ -366,7 +366,7 @@ export const sites = {
        ON CONFLICT (id) DO NOTHING RETURNING *`,
       [site.id, site.user_id, site.name, site.title, site.status, site.authority, site.url, site.secret, site.site_key, site.created_at]
     )
-    if (!row) throw httpError(409, duplicateMessage)
+    if (!row) throw httpError(409, duplicateMessage, null, host ? 'wordpress_access_available' : undefined)
     // Record the owner in team_members so permission checks can be written
     // against one table. A missing row here is tolerated on list() for sites
     // created before this feature existed.
@@ -574,6 +574,15 @@ async function checkTestSiteCapacity(runQuery, host, joiningUserId = null) {
   if (usage.accounts >= 2) throw httpError(409, 'team.testSiteAccountLimit')
 }
 
+function wordpressAccessHash(code) {
+  if (typeof code !== 'string' || !/^dwp_join_[a-f0-9]{48}$/.test(code)) return null
+  return crypto.createHash('sha256').update(code).digest('hex')
+}
+
+function lockTestSite(client, host) {
+  return client.query("SELECT pg_advisory_xact_lock(hashtext('team_test_site:' || $1))", [host])
+}
+
 async function acceptTeamInvitation(rawToken, user, { siteId = null, locale } = {}) {
   if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'team.invalidInviteLink')
   const tokenHash = crypto.createHash('sha256').update(String(rawToken)).digest('hex')
@@ -599,7 +608,7 @@ async function acceptTeamInvitation(rawToken, user, { siteId = null, locale } = 
     if (host) {
       // Serialize both acceptance routes and any legacy www registration by
       // the same root hostname, even if they use different invitations.
-      await client.query("SELECT pg_advisory_xact_lock(hashtext('team_test_site:' || $1))", [host])
+      await lockTestSite(client, host)
     }
     const { rowCount: alreadyMember } = await client.query(
       "SELECT 1 FROM team_members WHERE site_id = $1 AND user_id = $2 AND status = 'active'",
@@ -632,6 +641,82 @@ async function acceptTeamInvitation(rawToken, user, { siteId = null, locale } = 
 export const team = {
   ROLE_LABEL,
   VALID_ROLES,
+
+  async requestWordPressAccess(address, userId) {
+    const host = twoAccountHost(normalizeSiteAddress(address))
+    if (!host) throw httpError(404, 'team.wordpressAccessUnavailable')
+    const site = await one(
+      `SELECT id FROM sites
+        WHERE id = ANY($1) AND rtrim(rtrim(lower(name), '/'), '.') = ANY($2::text[])
+          AND status <> 'deleted' AND paired = true AND secret <> ''
+        ORDER BY id = $3 DESC LIMIT 1`,
+      [rootSiteIds(host), [host, 'www.' + host], slug(host)]
+    )
+    if (!site) throw httpError(404, 'team.wordpressAccessUnavailable')
+
+    const member = await sites.rawWithRole(site.id, userId)
+    if (member?.member_role) return { siteId: site.id, alreadyConnected: true }
+    await checkTestSiteCapacity(query, host, userId)
+    const code = 'dwp_join_' + crypto.randomBytes(24).toString('hex')
+    const now = Date.now()
+    const expiresAt = now + 10 * 60_000
+    await query('DELETE FROM wordpress_access_requests WHERE expires_at <= $1', [now])
+    await query(
+      `INSERT INTO wordpress_access_requests (site_id, user_id, code_hash, expires_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (site_id, user_id) DO UPDATE
+          SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at`,
+      [site.id, userId, wordpressAccessHash(code), expiresAt]
+    )
+    return { siteId: site.id, code, expiresAt }
+  },
+
+  async wordPressAccessTarget(code) {
+    const hash = wordpressAccessHash(code)
+    if (!hash) return null
+    return one(
+      `SELECT s.id, s.secret FROM wordpress_access_requests r JOIN sites s ON s.id = r.site_id
+        WHERE r.code_hash = $1 AND r.expires_at > $2
+          AND s.status <> 'deleted' AND s.paired = true AND s.secret <> ''`,
+      [hash, Date.now()]
+    )
+  },
+
+  async confirmWordPressAccess(target, code, email) {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const { rows: [request] } = await client.query(
+        `SELECT r.site_id, r.user_id, r.expires_at, s.name, u.email
+           FROM wordpress_access_requests r
+           JOIN sites s ON s.id = r.site_id JOIN users u ON u.id = r.user_id
+          WHERE r.code_hash = $1 AND s.id = $2 AND s.secret = $3 AND r.expires_at > $4
+            AND s.status <> 'deleted' AND s.paired = true
+          FOR UPDATE OF r FOR SHARE OF s, u`,
+        [wordpressAccessHash(code), target.id, target.secret, Date.now()]
+      )
+      const host = request && twoAccountHost(request.name)
+      if (!host || request.email !== email) throw httpError(403, 'team.wordpressAccessInvalid')
+      await lockTestSite(client, host)
+      await checkTestSiteCapacity(client.query.bind(client), host, request.user_id)
+      const now = Date.now()
+      if (Number(request.expires_at) <= now) throw httpError(403, 'team.wordpressAccessInvalid')
+      await client.query(
+        `INSERT INTO team_members (id, site_id, user_id, role, status, created_at)
+         VALUES ($1, $2, $3, 'viewer', 'active', $4)
+         ON CONFLICT (site_id, user_id) WHERE status = 'active' AND user_id IS NOT NULL
+         DO NOTHING`,
+        [newId('tm_'), request.site_id, request.user_id, now]
+      )
+      await client.query('DELETE FROM wordpress_access_requests WHERE code_hash = $1', [wordpressAccessHash(code)])
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  },
 
   /** Everything the team UI needs for one site. */
   async list(siteId, userId, locale) {

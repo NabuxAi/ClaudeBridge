@@ -104,7 +104,7 @@ if (!dsn) {
     return { auth, id: me.body.user?.id ?? me.body.id, email }
   }
 
-  const pairedSite = async (auth, name = `mcp-${Date.now()}-${crypto.randomInt(1e9)}`) => {
+  const pairConnector = async (auth, name) => {
     const created = await send('/sites', {
       method: 'POST', headers: auth, body: JSON.stringify({ name, title: 'MCP Site' }),
     })
@@ -112,8 +112,11 @@ if (!dsn) {
     const body = JSON.stringify({ site_url: wpUrl, name: 'MCP Site', version: '3.9.1' })
     const reg = await send('/connector/register', { method: 'POST', headers: signAs(created.body.pairing.secret, body), body })
     assert.equal(reg.status, 200, JSON.stringify(reg.body))
-    return created.body.id
+    return created.body
   }
+
+  const pairedSite = async (auth, name = `mcp-${Date.now()}-${crypto.randomInt(1e9)}`) =>
+    (await pairConnector(auth, name)).id
 
   const newToken = async (auth) => {
     const made = await send('/account/mcp-tokens', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Claude' }) })
@@ -218,6 +221,40 @@ if (!dsn) {
     const refused = await rpc(token, 'tools/call', { name: 'call_site_tool', arguments: { site: siteId, tool: 'flush_cache', arguments: { id: 1 } } })
     assert.equal(refused.body.result.isError, true)
     assert.deepEqual(reached, ['site_info'])
+  })
+
+  test('a paired WordPress site can verify only one other DigiWP account', async () => {
+    const owner = await account()
+    const first = await account()
+    const second = await account()
+    const site = await pairConnector(owner.auth, 'https://clashroyale.ir')
+    const requestCode = (auth) => send('/sites/wordpress-access', {
+      method: 'POST', headers: auth, body: JSON.stringify({ url: 'https://clashroyale.ir/' }),
+    })
+    const verify = (code, email, secret = site.pairing.secret) => {
+      const body = JSON.stringify({ code, email })
+      return send('/connector/wordpress-access', { method: 'POST', headers: signAs(secret, body), body })
+    }
+    const firstCode = (await requestCode(first.auth)).body.code
+    const secondCode = (await requestCode(second.auth)).body.code
+    assert.match(firstCode, /^dwp_join_/)
+    assert.match(secondCode, /^dwp_join_/)
+    assert.equal((await send('/sites', { headers: first.auth })).body.length, 0)
+    assert.equal((await verify(firstCode, first.email, 'wrong-secret')).status, 403)
+    assert.equal((await verify(firstCode, second.email)).status, 403)
+
+    const results = await Promise.all([verify(firstCode, first.email), verify(secondCode, second.email)])
+    assert.deepEqual(results.map(({ status }) => status).sort(), [200, 409])
+    const [winner, code, loser] = results[0].status === 200 ? [first, firstCode, second] : [second, secondCode, first]
+    assert.equal((await verify(code, winner.email)).status, 403)
+    assert.equal((await send('/sites', { headers: loser.auth })).body.length, 0)
+
+    const { token } = await newToken(winner.auth)
+    const listed = callText(await rpc(token, 'tools/call', { name: 'list_sites', arguments: {} }))
+    assert.equal(listed.sites[0].role, 'viewer')
+    assert.equal(listed.sites[0].id, site.id)
+    const read = await rpc(token, 'tools/call', { name: 'call_site_tool', arguments: { site: site.id, tool: 'site_info' } })
+    assert.equal(callText(read).ran, 'site_info')
   })
 
   test('a stranger\'s site is not reachable with your token', async () => {

@@ -49,4 +49,15 @@ export const SCHEMA = `
   -- One pending invite per email per site.
   CREATE UNIQUE INDEX IF NOT EXISTS idx_invitations_pending
     ON invitations(site_id, email) WHERE used_at IS NULL AND revoked_at IS NULL;
+
+  -- Issuing a WordPress proof request grants no membership.
+  CREATE TABLE IF NOT EXISTS wordpress_access_requests (
+    site_id    TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash  TEXT UNIQUE NOT NULL,
+    expires_at BIGINT NOT NULL,
+    PRIMARY KEY (site_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_wordpress_access_requests_expiry
+    ON wordpress_access_requests(expires_at);
 `

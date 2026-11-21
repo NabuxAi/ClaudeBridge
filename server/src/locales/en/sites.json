@@ -5,7 +5,7 @@
   "wordpressNotFound": "WordPress could not be verified at this address. Include the installation folder (for example /baneh). Check that the site's REST API is available and try again. Enter the public site address, not a custom admin login path.",
   "discoveryTimeout": "The WordPress check timed out. Check the address and try again.",
   "alreadyAdded": "This site has already been added.",
-  "ownerInviteRequired": "This site is already registered. The site owner can invite a second account from Team members.",
+  "ownerInviteRequired": "This site is already registered. Verify access from WordPress or accept an invitation from the site owner.",
   "metric": {
     "wordpress": "WordPress",
     "responseNow": "Response right now",

@@ -5,8 +5,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import * as events from '../events.js'
 import { i18nTitle } from '../event-text.js'
-import { sites } from '../store.js'
+import { sites, team } from '../store.js'
 import { verifySignature, consumeSignedNonce } from '../connector.js'
+import { config } from '../config.js'
+import { limiter, clientIp } from '../security/ratelimit.js'
 
 const router = Router()
 // Idempotent with the app-level middleware; keeps req.t/req.locale present
@@ -36,6 +38,25 @@ router.get('/security/signatures', (_req, res) => {
   } catch {
     res.status(404).json({ message: 'signatures not available' })
   }
+})
+
+router.post('/connector/wordpress-access', limiter('wordpress-access-confirm', {
+  limit: 30, windowMs: 60_000, keyFn: (req) => clientIp(req, { trustProxy: config.trustProxy }),
+}), async (req, res, next) => {
+  try {
+    const { code, email } = req.body || {}
+    const site = await team.wordPressAccessTarget(code)
+    const nonce = req.get('X-DigiWP-Nonce')
+    if (!site || !verifySignature(site.secret, {
+      timestamp: req.get('X-DigiWP-Timestamp'),
+      nonce,
+      signature: req.get('X-DigiWP-Signature'),
+      rawBody: req.rawBody || '',
+    })) return res.sendStatus(403)
+    if (!consumeSignedNonce(site.id, nonce)) return res.sendStatus(403)
+    await team.confirmWordPressAccess(site, code, typeof email === 'string' ? email.trim().toLowerCase() : '')
+    res.json({ ok: true })
+  } catch (error) { next(error) }
 })
 
 // Receiver for the plugin's opt-in "announce this site to the hub" (signed).

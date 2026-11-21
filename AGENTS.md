@@ -463,6 +463,11 @@ for UI convenience.
   the same per-host PostgreSQL lock and checks the cap before it consumes the
   invitation. Root domain aliases with or without `www` use the same connector
   registration. Separate WordPress installation paths keep their team rules.
+  A signed-in DigiWP account can also request a 10-minute WordPress code for
+  those paired roots. Plugin 3.9.3 lets a user with `manage_options` submit
+  the code and the intended account's email over the existing HMAC connector.
+  Server-side approval consumes the code within the same capacity lock as
+  email invitations and grants the existing read-only member role.
 - Per-site member roles ARE enforced on the site routes (2026-10-01,
   membership layer): `sites.rawWithRole` resolves owner/admin/viewer in one
   query, `routes/sites.js` and `routes/offsite-backups.js` admit an active

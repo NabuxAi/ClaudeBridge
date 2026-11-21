@@ -2,7 +2,8 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input } from '../../components/index.js'
-import { account } from '../../lib/api.js'
+import { account, ApiError } from '../../lib/api.js'
+import { useAuth } from '../../lib/auth.jsx'
 import Trans from '../../components/Trans.jsx'
 import { t, digits } from '../../lib/i18n.js'
 
@@ -110,6 +111,7 @@ const Row = ({ label, value, mono }) => {
 
 export default function Onboarding() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   // Restored from sessionStorage when a reload happened mid-pairing (see
   // PAIRING_KEY above) — otherwise a fresh flow starts at the URL step.
   const restored = readPairing()
@@ -121,6 +123,8 @@ export default function Onboarding() {
   const [detection, setDetection] = useState(null)
   const [confirmed, setConfirmed] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [canVerifyWordPress, setCanVerifyWordPress] = useState(false)
+  const [accessRequest, setAccessRequest] = useState(null)
   const discoveryRequest = useRef(null)
   useEffect(() => () => discoveryRequest.current?.abort(), [])
 
@@ -133,7 +137,11 @@ export default function Onboarding() {
       const result = await account.discoverSite(url, controller.signal)
       if (!controller.signal.aborted) setDetection(result)
     } catch (error) {
-      if (!controller.signal.aborted) setErr(error?.message || t('onboarding.input.discoveryFailed'))
+      if (!controller.signal.aborted) {
+        setErr(error instanceof ApiError && error.status < 500
+          ? error.message
+          : t('onboarding.input.discoveryFailed'))
+      }
     } finally {
       if (discoveryRequest.current === controller) {
         discoveryRequest.current = null
@@ -146,6 +154,7 @@ export default function Onboarding() {
     discoveryRequest.current?.abort()
     discoveryRequest.current = null
     setChecking(false); setDetection(null); setConfirmed(false); setErr(''); setUrl(value)
+    setCanVerifyWordPress(false)
   }
 
   const createSite = async (e) => {
@@ -161,6 +170,36 @@ export default function Onboarding() {
       setPhase('pair')
     } catch (e2) {
       setErr(e2?.message || t('onboarding.input.failed'))
+      setCanVerifyWordPress(e2?.data?.code === 'wordpress_access_available')
+    } finally { setBusy(false) }
+  }
+
+  const requestWordPressAccess = async () => {
+    setBusy(true); setErr('')
+    try {
+      const result = await account.requestWordPressAccess(detection.siteUrl)
+      if (result.alreadyConnected) {
+        navigate(`/site/${result.siteId}`)
+        return
+      }
+      setAccessRequest(result)
+      setPhase('wordpress')
+    } catch (error) {
+      setErr(error?.message || t('onboarding.wordpress.failed'))
+    } finally { setBusy(false) }
+  }
+
+  const checkWordPressAccess = async () => {
+    setBusy(true); setErr('')
+    try {
+      const sites = await account.sites()
+      if (sites.some(({ id }) => id === accessRequest.siteId)) {
+        navigate(`/site/${accessRequest.siteId}`)
+      } else {
+        setErr(t(Date.now() >= accessRequest.expiresAt ? 'onboarding.wordpress.expired' : 'onboarding.wordpress.pending'))
+      }
+    } catch (error) {
+      setErr(error?.message || t('onboarding.wordpress.failed'))
     } finally { setBusy(false) }
   }
 
@@ -215,10 +254,36 @@ export default function Onboarding() {
           </div>
           {err && <div role="alert" className="gd-field__msg gd-field__msg--error" style={{ marginBottom: 12 }}>{err}</div>}
           <div className="ob-actions">
-            <Button variant="primary" size="lg" leftIcon="plug" loading={busy || checking} disabled={!!detection && !confirmed} type="submit">{t(detection ? 'onboarding.input.submit' : 'onboarding.input.inspect')}</Button>
+            {canVerifyWordPress && confirmed ? (
+              <Button variant="primary" size="lg" loading={busy} type="button" onClick={requestWordPressAccess}>{t('onboarding.wordpress.begin')}</Button>
+            ) : (
+              <Button variant="primary" size="lg" leftIcon="plug" loading={busy || checking} disabled={!!detection && !confirmed} type="submit">{t(detection ? 'onboarding.input.submit' : 'onboarding.input.inspect')}</Button>
+            )}
             <Button variant="ghost" size="lg" type="button" onClick={() => navigate('/app')}>{t('onboarding.input.later')}</Button>
           </div>
         </form>
+      </Shell>
+    )
+  }
+
+  if (phase === 'wordpress') {
+    const adminUrl = new URL(detection.siteUrl)
+    adminUrl.protocol = 'https:'
+    adminUrl.pathname = '/wp-admin/tools.php'
+    adminUrl.search = 'page=claude-bridge'
+    adminUrl.hash = 'cb-wordpress-access'
+    return (
+      <Shell activeStep={1}>
+        <h2 style={{ fontSize: 23, fontWeight: 800, margin: 0 }}>{t('onboarding.wordpress.begin')}</h2>
+        <p>{t('onboarding.wordpress.instructions')}</p>
+        <Row label={t('onboarding.wordpress.email')} value={user.email} mono />
+        <Row label={t('onboarding.wordpress.code')} value={accessRequest.code} mono />
+        <p><a href={adminUrl.href} target="_blank" rel="noopener noreferrer">{t('onboarding.wordpress.openPlugin')}</a></p>
+        {err && <p role="alert" className="gd-field__msg gd-field__msg--error">{err}</p>}
+        <div className="ob-actions">
+          <Button variant="primary" size="lg" loading={busy} onClick={checkWordPressAccess}>{t('onboarding.wordpress.check')}</Button>
+          <Button variant="ghost" size="lg" disabled={busy} onClick={requestWordPressAccess}>{t('onboarding.wordpress.newCode')}</Button>
+        </div>
       </Shell>
     )
   }

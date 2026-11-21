@@ -3,7 +3,7 @@ import { describe as describeHosting } from '../hosting.js'
 import { httpError, normalizeLocale, i18nMiddleware } from '../i18n.js'
 import { localizeEvent, i18nTitle } from '../event-text.js'
 import { config, publicApiBase } from '../config.js'
-import { sites, users } from '../store.js'
+import { sites, team, users } from '../store.js'
 import * as events from '../events.js'
 import * as seed from '../seed.js'
 import { one, all, query } from '../db.js'
@@ -35,6 +35,15 @@ router.post('/sites/discover', limiter('site-discovery', {
   limit: 20, windowMs: 60_000, keyFn: (req) => req.user.sub,
 }), async (req, res, next) => {
   try { res.json(await discoverWordPress(req.body?.url)) } catch (e) { next(e) }
+})
+
+router.post('/sites/wordpress-access', limiter('wordpress-access-request', {
+  limit: 10, windowMs: 60_000, keyFn: (req) => req.user.sub,
+}), async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store')
+    res.json(await team.requestWordPressAccess(req.body?.url, req.user.sub))
+  } catch (error) { next(error) }
 })
 
 // Create a site → returns the one-time shared secret + server URL for the plugin.
@@ -248,6 +257,7 @@ router.post('/account/delete', deleteIpLimit, async (req, res, next) => {
       [req.user.sub]
     )
     const siteIds = siteRows.map((s) => s.id)
+    await query('DELETE FROM wordpress_access_requests WHERE user_id = $1 OR site_id = ANY($2)', [req.user.sub, siteIds])
 
     // 3 · One audit event per site — what happened and nothing personal:
     //     no name, no email, no contact detail, just the fact and its scope.

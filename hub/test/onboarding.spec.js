@@ -8,7 +8,7 @@ async function setup(page, lang = 'en') {
   const created = []
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname
-    if (path === '/api/auth/me') return route.fulfill({ json: { id: 'owner', name: 'Owner', lang } })
+    if (path === '/api/auth/me') return route.fulfill({ json: { id: 'owner', name: 'Owner', email: 'tester@example.com', lang } })
     if (path === '/api/sites') {
       created.push(route.request().postDataJSON())
       return route.fulfill({ json: { id: 'site-test', name: 'alowp.ir/baneh', pairing: { serverUrl: 'https://hub.example.com/api', secret: 'test-secret', steps: [] } } })
@@ -54,6 +54,40 @@ test('a failed check shows an actionable error without creating a site', async (
   await expect(page.getByRole('alert')).toContainText('installation folder')
   await expect(page.getByRole('checkbox')).toHaveCount(0)
   expect(created).toHaveLength(0)
+})
+
+test('an existing test site can be approved from WordPress', async ({ page }) => {
+  await setup(page)
+  let approved = false
+  await page.route('**/api/sites', (route) => {
+    if (route.request().method() === 'POST') {
+      return route.fulfill({ status: 409, json: { code: 'wordpress_access_available', message: 'This site is already registered.' } })
+    }
+    return route.fulfill({ json: approved ? [{ id: 'clashroyale-ir', role: 'viewer' }] : [] })
+  })
+  await page.route('**/api/sites/discover', (route) => route.fulfill({
+    json: { siteUrl: 'https://clashroyale.ir', hostname: 'clashroyale.ir', path: '/', kind: 'root', connectorDetected: true },
+  }))
+  await page.route('**/api/sites/wordpress-access', (route) => {
+    expect(route.request().postDataJSON()).toEqual({ url: 'https://clashroyale.ir' })
+    return route.fulfill({ json: { siteId: 'clashroyale-ir', code: 'dwp_join_test', expiresAt: Date.now() + 60_000 } })
+  })
+  await page.getByRole('textbox', { name: /^Site address/ }).fill('clashroyale.ir')
+  await page.getByRole('button', { name: 'Check WordPress address' }).click()
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button', { name: 'Create connection key' }).click()
+  await page.getByRole('button', { name: 'Verify access from WordPress' }).click()
+  await expect(page.getByText('dwp_join_test')).toBeVisible()
+  await expect(page.getByText('tester@example.com')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Open the WordPress plugin settings' })).toHaveAttribute(
+    'href', 'https://clashroyale.ir/wp-admin/tools.php?page=claude-bridge#cb-wordpress-access',
+  )
+  const check = page.getByRole('button', { name: 'Check WordPress approval' })
+  await check.click()
+  await expect(page.getByRole('alert')).toContainText('has not approved access yet')
+  approved = true
+  await check.click()
+  await expect(page).toHaveURL(/\/site\/clashroyale-ir/)
 })
 
 test('a subdomain is shown and requires its own explicit confirmation', async ({ page }) => {

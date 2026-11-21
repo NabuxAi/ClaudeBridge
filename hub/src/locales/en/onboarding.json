@@ -15,7 +15,7 @@
     "urlHint": "Enter the full WordPress address, including any subdomain or folder, e.g. https://example.com/shop Use the public site URL, not your admin login URL. A renamed login path does not prevent connection; no admin password is needed.",
     "inspect": "Check WordPress address",
     "checking": "Checking WordPress at this address…",
-    "discoveryFailed": "Could not check this address. Verify the full WordPress address and try again.",
+    "discoveryFailed": "The address check did not respond. Try checking again.",
     "detectedNote": "WordPress responded at the address below. Confirm its location before creating the connection key.",
     "host": "Domain / subdomain",
     "path": "WordPress path",
@@ -38,6 +38,18 @@
     "submit": "Create connection key",
     "later": "Later",
     "failed": "Could not add the site."
+  },
+  "wordpress": {
+    "begin": "Verify access from WordPress",
+    "instructions": "Open the DigiWp Ai Bridge plugin (version 3.9.3 or newer) and enter your account email and code under Verify a DigiWP account. The code expires in 10 minutes. Approval grants read-only access.",
+    "email": "DigiWP account email",
+    "code": "Verification code",
+    "openPlugin": "Open the WordPress plugin settings",
+    "check": "Check WordPress approval",
+    "newCode": "Get a new code",
+    "pending": "WordPress has not approved access yet. Submit the code in the plugin and check again.",
+    "expired": "This code has expired. Get a new code.",
+    "failed": "Could not check WordPress access. Try again."
   },
   "pair": {
     "title": "Pair the connector",

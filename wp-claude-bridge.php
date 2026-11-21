@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a scoped static Bearer token sent in the Authorization header. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.9.2
+ * Version: 3.9.3
  * Author: Account City
  * License: GPLv2 or later
  * Text Domain: wp-claude-bridge
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.9.2' );
+define( 'CB_VERSION', '3.9.3' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' ); // Legacy plaintext option.
 define( 'CB_TOKEN_HASH_OPTION', 'cb_mcp_token_sha256' );
 define( 'CB_SCOPE_OPTION', 'cb_mcp_token_scope' );
@@ -6275,6 +6275,50 @@ function cb_connector_register() {
 	return is_wp_error( $res ) ? $res : array( 'status' => wp_remote_retrieve_response_code( $res ) );
 }
 
+/** A WordPress administrator can approve a read-only Hub account on an eligible site. */
+function cb_connector_wordpress_access_supported() {
+	$url = wp_parse_url( home_url() );
+	$host = strtolower( rtrim( $url['host'] ?? '', '.' ) );
+	$host = preg_replace( '/^www\./', '', $host );
+	return empty( $url['port'] ) && '' === trim( $url['path'] ?? '', '/' )
+		&& in_array( $host, array( 'clashroyale.ir', 'bodogame.com' ), true );
+}
+
+function cb_connector_wordpress_access_notice() {
+	if ( ! isset( $_POST['cb_wordpress_access'] ) || ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+	check_admin_referer( 'cb_wordpress_access' );
+	$code = isset( $_POST['cb_access_code'] ) && is_string( $_POST['cb_access_code'] ) ? trim( wp_unslash( $_POST['cb_access_code'] ) ) : '';
+	$email = isset( $_POST['cb_access_email'] ) && is_string( $_POST['cb_access_email'] ) ? sanitize_email( wp_unslash( $_POST['cb_access_email'] ) ) : '';
+	$conn = cb_connector();
+	$status = 0;
+	if ( preg_match( '/\Adwp_join_[a-f0-9]{48}\z/', $code ) && is_email( $email )
+		&& cb_connector_enabled() && 'https' === wp_parse_url( $conn['server_url'], PHP_URL_SCHEME ) ) {
+		$payload = wp_json_encode( array( 'code' => $code, 'email' => $email ) );
+		$result = wp_safe_remote_post( untrailingslashit( $conn['server_url'] ) . '/connector/wordpress-access', array(
+			'timeout'     => 15,
+			'redirection' => 0,
+			'headers'     => array_merge( array( 'Content-Type' => 'application/json' ), cb_connector_sign( $payload ) ),
+			'body'        => $payload,
+		) );
+		if ( ! is_wp_error( $result ) ) {
+			$status = wp_remote_retrieve_response_code( $result );
+			$body = json_decode( wp_remote_retrieve_body( $result ), true );
+			if ( 200 === $status && empty( $body['ok'] ) ) {
+				$status = 0;
+			}
+		}
+	}
+	if ( 200 === $status ) {
+		echo '<div class="notice notice-success inline"><p>' . esc_html__( 'Account approved. Return to DigiWP to open this site.', 'wp-claude-bridge' ) . '</p></div>';
+	} elseif ( 409 === $status ) {
+		echo '<div class="notice notice-error inline"><p>' . esc_html__( 'This site already has two DigiWP accounts.', 'wp-claude-bridge' ) . '</p></div>';
+	} else {
+		echo '<div class="notice notice-error inline"><p>' . esc_html__( 'Could not verify access. Check the code, the DigiWP account email, and the HTTPS connector address.', 'wp-claude-bridge' ) . '</p></div>';
+	}
+}
+
 /**
  * Tell the hub what an automatic update run actually did.
  *
@@ -6938,6 +6982,21 @@ function cb_settings_page() {
 			</table>
 			<?php submit_button( __( 'Save connector settings', 'wp-claude-bridge' ) ); ?>
 		</form>
+
+		<?php if ( cb_connector_enabled() && cb_connector_wordpress_access_supported() && current_user_can( 'manage_options' ) ) : ?>
+			<h3 id="cb-wordpress-access"><?php esc_html_e( 'Verify a DigiWP account', 'wp-claude-bridge' ); ?></h3>
+			<p><?php esc_html_e( 'Approve read-only access on this site. Enter the email of the DigiWP account you intend to approve and its verification code.', 'wp-claude-bridge' ); ?></p>
+			<?php cb_connector_wordpress_access_notice(); ?>
+			<form method="post" action="#cb-wordpress-access">
+				<?php wp_nonce_field( 'cb_wordpress_access' ); ?>
+				<input type="hidden" name="cb_wordpress_access" value="1">
+				<p><label for="cb-access-email"><?php esc_html_e( 'DigiWP account email', 'wp-claude-bridge' ); ?></label><br>
+				<input id="cb-access-email" name="cb_access_email" type="email" class="regular-text" required></p>
+				<p><label for="cb-access-code"><?php esc_html_e( 'Verification code', 'wp-claude-bridge' ); ?></label><br>
+				<input id="cb-access-code" name="cb_access_code" type="text" dir="ltr" class="regular-text" maxlength="57" autocomplete="off" spellcheck="false" required></p>
+				<?php submit_button( __( 'Approve read-only access', 'wp-claude-bridge' ) ); ?>
+			</form>
+		<?php endif; ?>
 
 		<hr style="margin:28px 0">
 		<h2 id="cb-activity">📓 <?php esc_html_e( 'Activity log', 'wp-claude-bridge' ); ?> <span style="font-size:12px;color:#888"><?php
