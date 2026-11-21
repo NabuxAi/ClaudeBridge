@@ -8,6 +8,7 @@ import { describe as describeHosting, normalise as normaliseHosting } from './ho
 import { applyPolicyChange, readPolicy } from './policy.js'
 import { sendMail } from './mailer.js'
 import { normalizeSiteAddress } from './site-address.js'
+import { canonicalEmail } from './email-identity.js'
 
 const twoAccountHosts = new Set(['clashroyale.ir', 'bodogame.com'])
 
@@ -78,15 +79,29 @@ export const users = {
     email = String(email || '').trim().toLowerCase()
     if (!email || !password) throw httpError(400, 'account.emailPasswordRequired')
     if (String(password).length < 8) throw httpError(400, 'common.passwordTooShort', { min: 8 })
-    if (await one('SELECT 1 FROM users WHERE email = $1', [email])) throw httpError(409, 'account.emailTaken')
+    // shm.379@gmail.com and shm379+x@gmail.com are the inbox of shm379@gmail.com:
+    // one person, so one account (email-identity.js).
+    const canonical = canonicalEmail(email)
+    if (await one('SELECT 1 FROM users WHERE email = $1 OR email_canonical = $2', [email, canonical])) {
+      throw httpError(409, 'account.emailTaken')
+    }
     const id = newId('u_')
     const row = await one(
-      `INSERT INTO users (id, email, name, pass_hash, lang, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [id, email, name || email.split('@')[0], await hashPassword(password), normalizeLocale(lang) || DEFAULT_LOCALE, Date.now()]
+      `INSERT INTO users (id, email, name, pass_hash, lang, created_at, email_canonical) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [id, email, name || email.split('@')[0], await hashPassword(password), normalizeLocale(lang) || DEFAULT_LOCALE, Date.now(), canonical]
     )
     return publicUser(row)
   },
-  byEmailRaw: (email) => one('SELECT * FROM users WHERE email = $1', [String(email || '').trim().toLowerCase()]),
+  // Exact address first; otherwise another spelling of the same inbox
+  // (login and password reset with shm379@ find shm.379@) — but only when
+  // exactly one account owns that inbox, never a guess between two.
+  async byEmailRaw(email) {
+    const normalized = String(email || '').trim().toLowerCase()
+    const exact = await one('SELECT * FROM users WHERE email = $1', [normalized])
+    if (exact || !normalized) return exact
+    const same = await all('SELECT * FROM users WHERE email_canonical = $1 LIMIT 2', [canonicalEmail(normalized)])
+    return same.length === 1 ? same[0] : null
+  },
   // The unshaped row — pass_hash included. Routes that re-prove the password
   // behind a live session (2FA disable, account deletion) need the hash; the
   // public shape deliberately never carries it.
@@ -204,7 +219,7 @@ export const users = {
       'deleted-' + crypto.createHash('sha256').update(String(id)).digest('hex').slice(0, 12) + '@invalid'
     return one(
       `UPDATE users
-         SET email = $2, name = $3, pass_hash = $4,
+         SET email = $2, email_canonical = NULL, name = $3, pass_hash = $4,
              contact = '{"phone":null,"fcmToken":null,"najvaToken":null}'::jsonb, two_factor = false
         WHERE id = $1
        RETURNING *`,

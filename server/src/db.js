@@ -8,6 +8,7 @@ import pg from 'pg'
 import crypto from 'node:crypto'
 import { config } from './config.js'
 import { hashPassword } from './auth.js'
+import { canonicalEmail } from './email-identity.js'
 import { demoSites } from './seed.js'
 import { SCHEMA as EVENTS_SCHEMA } from './events.schema.js'
 import { SCHEMA as PROPOSALS_SCHEMA } from './proposals.schema.js'
@@ -99,6 +100,12 @@ const SCHEMA = `
   -- 'fa' they were created with; new accounts store the language they
   -- registered in (routes/auth.js), which background mail/alerts use.
   ALTER TABLE users ALTER COLUMN lang SET DEFAULT 'en';
+
+  -- One mailbox, one account (email-identity.js): spellings that reach the
+  -- same inbox (Gmail dots, +tags) share this key. Not UNIQUE: accounts
+  -- registered before the rule may already collide, and they stay usable.
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS email_canonical TEXT;
+  CREATE INDEX IF NOT EXISTS idx_users_email_canonical ON users(email_canonical);
 ` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA + CONVERSATIONS_SCHEMA + SESSIONS_SCHEMA + TWOFACTOR_SCHEMA + MONITORS_SCHEMA + PUSH_SCHEMA + MCP_TOKENS_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */
@@ -120,6 +127,15 @@ export async function init() {
   await pool.query(SCHEMA)
   if (config.seedDemo) {
     await seedDemo()
+  }
+  await backfillCanonicalEmails()
+}
+
+/** Fill email_canonical for rows written before the column existed. */
+async function backfillCanonicalEmails() {
+  const { rows } = await pool.query('SELECT id, email FROM users WHERE email_canonical IS NULL')
+  for (const r of rows) {
+    await pool.query('UPDATE users SET email_canonical = $2 WHERE id = $1', [r.id, canonicalEmail(r.email)])
   }
 }
 

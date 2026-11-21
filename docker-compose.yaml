@@ -80,6 +80,10 @@ services:
       - SMS_FROM_FIELD=${SMS_FROM_FIELD:-from}
       # EMAIL_URL is the one that matters most here: every account has an email
       # address, and none has a phone or a push token.
+      # EMAIL_SERVER (direct SMTP, e.g. smtps://user%40domain:pass@host:465)
+      # wins over EMAIL_URL. It must be listed here: compose has no env_file,
+      # so a value set only in Coolify never reaches the container.
+      - EMAIL_SERVER=${EMAIL_SERVER:-}
       - EMAIL_URL=${EMAIL_URL:-}
       - EMAIL_API_KEY=${EMAIL_API_KEY:-}
       - EMAIL_FROM=${EMAIL_FROM:-alerts@digiwp.com}
