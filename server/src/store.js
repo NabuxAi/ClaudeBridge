@@ -1,13 +1,25 @@
 // Persistent store backed by PostgreSQL (src/db.js). All methods are async.
 import { httpError, normalizeLocale, DEFAULT_LOCALE, t } from './i18n.js'
 import crypto from 'node:crypto'
-import { one, all, newId } from './db.js'
+import { one, all, newId, pool, query } from './db.js'
 import { hashPassword } from './auth.js'
 import { config } from './config.js'
 import { describe as describeHosting, normalise as normaliseHosting } from './hosting.js'
 import { applyPolicyChange, readPolicy } from './policy.js'
 import { sendMail } from './mailer.js'
 import { normalizeSiteAddress } from './site-address.js'
+
+const twoAccountHosts = new Set(['clashroyale.ir', 'bodogame.com'])
+
+function twoAccountHost(address) {
+  const host = address.toLowerCase()
+    .replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').replace(/\.$/, '')
+  return twoAccountHosts.has(host) ? host : null
+}
+
+function rootSiteIds(host) {
+  return [slug(host), slug('www.' + host)]
+}
 
 const publicUser = (u) => u && ({
   id: u.id, email: u.email, name: u.name, role: u.role, plan: u.plan,
@@ -335,8 +347,13 @@ export const sites = {
     if (!name) throw httpError(400, 'sites.domainRequired')
     const address = normalizeSiteAddress(name)
     const clean = address.replace(/^https?:\/\//, '')
-    const id = slug(clean) || newId('s_')
-    if (await one('SELECT 1 FROM sites WHERE id = $1', [id])) throw httpError(409, 'sites.alreadyAdded')
+    const host = twoAccountHost(address)
+    const id = slug(host || clean) || newId('s_')
+    const duplicateMessage = host ? 'sites.ownerInviteRequired' : 'sites.alreadyAdded'
+    // Recognize www records created before both spellings shared one id.
+    if (await one('SELECT 1 FROM sites WHERE id = ANY($1)', [host ? rootSiteIds(host) : [id]])) {
+      throw httpError(409, duplicateMessage)
+    }
     const site = {
       id, user_id: userId, name: clean, title: title || clean, status: 'checking', authority: 'report',
       url: address,
@@ -345,9 +362,11 @@ export const sites = {
     }
     const row = await one(
       `INSERT INTO sites (id, user_id, name, title, status, authority, url, secret, site_key, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (id) DO NOTHING RETURNING *`,
       [site.id, site.user_id, site.name, site.title, site.status, site.authority, site.url, site.secret, site.site_key, site.created_at]
     )
+    if (!row) throw httpError(409, duplicateMessage)
     // Record the owner in team_members so permission checks can be written
     // against one table. A missing row here is tolerated on list() for sites
     // created before this feature existed.
@@ -536,6 +555,80 @@ async function requireSiteOwner(siteId, userId) {
   return site
 }
 
+async function checkTestSiteCapacity(runQuery, host, joiningUserId = null) {
+  if (!host) return
+  const { rows: [usage] } = await runQuery(
+    `WITH roots AS (
+       SELECT id, user_id FROM sites
+        WHERE id = ANY($1) AND status <> 'deleted'
+          AND rtrim(rtrim(lower(name), '/'), '.') = ANY($2::text[])
+     )
+     SELECT COUNT(*)::int AS accounts FROM (
+       SELECT user_id FROM roots
+       UNION
+       SELECT tm.user_id FROM team_members tm JOIN roots ON roots.id = tm.site_id
+        WHERE tm.status = 'active' AND tm.user_id IS NOT NULL
+     ) AS members WHERE user_id IS DISTINCT FROM $3`,
+    [rootSiteIds(host), [host, 'www.' + host], joiningUserId]
+  )
+  if (usage.accounts >= 2) throw httpError(409, 'team.testSiteAccountLimit')
+}
+
+async function acceptTeamInvitation(rawToken, user, { siteId = null, locale } = {}) {
+  if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'team.invalidInviteLink')
+  const tokenHash = crypto.createHash('sha256').update(String(rawToken)).digest('hex')
+  const goneMessage = siteId ? 'team.inviteLinkGone' : 'team.inviteGone'
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows: [invitation] } = await client.query(
+      `SELECT i.*, s.name AS site_name, s.user_id AS site_owner
+         FROM invitations i JOIN sites s ON s.id = i.site_id
+        WHERE i.token_hash = $1 AND ($2::text IS NULL OR i.site_id = $2)
+          AND i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > $3
+          AND s.status <> 'deleted' AND i.inviter_id = s.user_id
+        FOR UPDATE OF i FOR SHARE OF s`,
+      [tokenHash, siteId, Date.now()]
+    )
+    if (!invitation) throw httpError(400, goneMessage)
+    if (user.email !== invitation.email) {
+      throw httpError(403, siteId ? 'team.inviteOtherEmail' : 'team.inviteOtherEmailRegister')
+    }
+
+    const host = twoAccountHost(invitation.site_name)
+    if (host) {
+      // Serialize both acceptance routes and any legacy www registration by
+      // the same root hostname, even if they use different invitations.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('team_test_site:' || $1))", [host])
+    }
+    const { rowCount: alreadyMember } = await client.query(
+      "SELECT 1 FROM team_members WHERE site_id = $1 AND user_id = $2 AND status = 'active'",
+      [invitation.site_id, user.id]
+    )
+    if (alreadyMember || user.id === invitation.site_owner) throw httpError(409, 'team.youAreMember')
+    await checkTestSiteCapacity(client.query.bind(client), host, user.id)
+
+    const now = Date.now()
+    if (Number(invitation.expires_at) <= now) throw httpError(400, goneMessage)
+    const { rows: [member] } = await client.query(
+      `INSERT INTO team_members (id, site_id, user_id, role, invited_email, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'active', $6)
+       ON CONFLICT (site_id, user_id) WHERE status = 'active' AND user_id IS NOT NULL
+       DO NOTHING RETURNING *`,
+      [newId('tm_'), invitation.site_id, user.id, invitation.role, invitation.email, now]
+    )
+    if (!member) throw httpError(409, 'team.youAreMember')
+    await client.query('UPDATE invitations SET used_at = $2 WHERE id = $1', [invitation.id, now])
+    await client.query('COMMIT')
+    return publicMember({ ...member, name: user.name, email: user.email }, locale)
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
 export const team = {
   ROLE_LABEL,
   VALID_ROLES,
@@ -611,6 +704,7 @@ export const team = {
       )
       if (already) throw httpError(409, 'team.alreadyMember')
     }
+    await checkTestSiteCapacity(query, twoAccountHost(site.name), existingUser?.id)
 
     const raw = crypto.randomBytes(32).toString('hex')
     const tokenHash = crypto.createHash('sha256').update(raw).digest('hex')
@@ -658,43 +752,9 @@ export const team = {
 
   /** Spend an invitation and add the user to the site. */
   async accept(siteId, rawToken, userId, locale) {
-    if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'team.invalidInviteLink')
-    const tokenHash = crypto.createHash('sha256').update(String(rawToken)).digest('hex')
-
-    const invitation = await one(
-      `SELECT * FROM invitations
-        WHERE token_hash = $1 AND site_id = $2 AND used_at IS NULL AND revoked_at IS NULL
-          AND expires_at > $3`,
-      [tokenHash, siteId, Date.now()]
-    )
-    if (!invitation) throw httpError(400, 'team.inviteLinkGone')
-
-    const user = await one('SELECT id, email FROM users WHERE id = $1', [userId])
+    const user = await one('SELECT id, email, name FROM users WHERE id = $1', [userId])
     if (!user) throw httpError(401, 'team.signInFirst')
-    if (user.email !== invitation.email) {
-      throw httpError(403, 'team.inviteOtherEmail')
-    }
-
-    const existing = await one(
-      `SELECT id FROM team_members
-        WHERE site_id = $1 AND user_id = $2 AND status = 'active'`,
-      [siteId, userId]
-    )
-    if (existing) throw httpError(409, 'team.youAreMember')
-
-    const memberId = newId('tm_')
-    const now = Date.now()
-    await one(
-      `INSERT INTO team_members (id, site_id, user_id, role, invited_email, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, 'active', $6)`,
-      [memberId, siteId, userId, invitation.role, invitation.email, now]
-    )
-    await one('UPDATE invitations SET used_at = $2 WHERE id = $1', [invitation.id, now])
-
-    return publicMember({
-      id: memberId, user_id: user.id, name: user.name, email: user.email,
-      role: invitation.role, invited_email: invitation.email, status: 'active', created_at: now,
-    }, locale)
+    return acceptTeamInvitation(rawToken, user, { siteId, locale })
   },
 
   /**
@@ -707,43 +767,12 @@ export const team = {
    * unrevoked and inside its 7-day window, and belongs to exactly the address
    * that registered.
    *
-   * Single-use is enforced by the UPDATE, not the earlier SELECT: two
-   * registrations racing on one link both pass the SELECT, but only the one
-   * whose UPDATE returns a row gets to insert the membership. A failure here
-   * must not fail the account itself — registration reports it and the owner
-   * can re-invite.
+   * The same transaction as signed-in acceptance consumes the invite only
+   * after a membership is granted. Registration reports invite failure
+   * separately from account creation.
    */
   async acceptOnRegister(rawToken, user, locale) {
-    if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'team.invalidInviteLink')
-    const tokenHash = crypto.createHash('sha256').update(String(rawToken)).digest('hex')
-    const invitation = await one(
-      `SELECT * FROM invitations
-        WHERE token_hash = $1 AND used_at IS NULL AND revoked_at IS NULL
-          AND expires_at > $2`,
-      [tokenHash, Date.now()]
-    )
-    if (!invitation) throw httpError(400, 'team.inviteGone')
-    if (user.email !== invitation.email) {
-      throw httpError(403, 'team.inviteOtherEmailRegister')
-    }
-
-    const now = Date.now()
-    const spent = await one(
-      'UPDATE invitations SET used_at = $2 WHERE id = $1 AND used_at IS NULL RETURNING id',
-      [invitation.id, now]
-    )
-    if (!spent) throw httpError(400, 'team.inviteSpent')
-
-    const memberId = newId('tm_')
-    await one(
-      `INSERT INTO team_members (id, site_id, user_id, role, invited_email, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, 'active', $6)`,
-      [memberId, invitation.site_id, user.id, invitation.role, invitation.email, now]
-    )
-    return publicMember({
-      id: memberId, user_id: user.id, name: user.name, email: user.email,
-      role: invitation.role, invited_email: invitation.email, status: 'active', created_at: now,
-    }, locale)
+    return acceptTeamInvitation(rawToken, user, { locale })
   },
 
   /** Owner cancels a pending invitation. */

@@ -7,6 +7,7 @@
   "invalidEmail": "The email address is not valid.",
   "invalidInviteRole": "An invitation's role must be admin or view-only.",
   "alreadyMember": "This user is already a member of the site.",
+  "testSiteAccountLimit": "This test site allows the owner and one team member. Remove the current member before adding another account.",
   "activeInviteExists": "There is already an active invitation for this email on this site.",
   "invalidInviteLink": "This invitation link is invalid.",
   "inviteLinkGone": "This invitation link has expired, been used, or been revoked.",

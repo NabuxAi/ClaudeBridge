@@ -101,12 +101,12 @@ if (!dsn) {
     assert.equal(status, 201, JSON.stringify(body))
     const auth = { authorization: `Bearer ${body.token}`, 'content-type': 'application/json' }
     const me = await send('/auth/me', { headers: auth })
-    return { auth, id: me.body.user?.id ?? me.body.id }
+    return { auth, id: me.body.user?.id ?? me.body.id, email }
   }
 
-  const pairedSite = async (auth) => {
+  const pairedSite = async (auth, name = `mcp-${Date.now()}-${crypto.randomInt(1e9)}`) => {
     const created = await send('/sites', {
-      method: 'POST', headers: auth, body: JSON.stringify({ name: `mcp-${Date.now()}-${crypto.randomInt(1e9)}`, title: 'MCP Site' }),
+      method: 'POST', headers: auth, body: JSON.stringify({ name, title: 'MCP Site' }),
     })
     assert.equal(created.status, 201)
     const body = JSON.stringify({ site_url: wpUrl, name: 'MCP Site', version: '3.9.1' })
@@ -195,14 +195,18 @@ if (!dsn) {
     assert.ok(pending.body.proposals.some((p) => p.id === out.proposalId && p.tool === 'db_query'))
   })
 
-  test('a team member may read through the hub but not change the site', async () => {
+  test('an invited test site member may read through a personal MCP token but not change the site', async () => {
     const owner = await account()
-    const siteId = await pairedSite(owner.auth)
+    const siteId = await pairedSite(owner.auth, 'https://bodogame.com')
     const member = await account()
-    await query(
-      "INSERT INTO team_members (id, site_id, user_id, role, status, created_at) VALUES ($1,$2,$3,'viewer','active',$4)",
-      [`tm_${crypto.randomUUID()}`, siteId, member.id, Date.now()]
-    )
+    const invited = await send(`/sites/${siteId}/team/invitations`, {
+      method: 'POST', headers: owner.auth, body: JSON.stringify({ email: member.email, role: 'viewer' }),
+    })
+    assert.equal(invited.status, 201, JSON.stringify(invited.body))
+    const accepted = await send('/team/invitations/accept', {
+      method: 'POST', headers: member.auth, body: JSON.stringify({ siteId, token: invited.body.raw }),
+    })
+    assert.equal(accepted.status, 201, JSON.stringify(accepted.body))
     const { token } = await newToken(member.auth)
 
     const listed = callText(await rpc(token, 'tools/call', { name: 'list_sites', arguments: {} }))

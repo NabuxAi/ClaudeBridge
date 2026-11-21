@@ -456,6 +456,13 @@ for UI convenience.
   in `invite:{applied:false,error}` and the token is not spent on a refusal.
   The invite email and the Team page now carry the register link
   (`/register?invite=<token>&email=…`) next to the signed-in accept link.
+  The root installations at `clashroyale.ir` and `bodogame.com` allow two
+  active DigiWP accounts each: the existing owner and one invitee. The second
+  account uses its own Hub MCP token with the existing read-only member role.
+  The owner sends an email-bound invitation. Either acceptance route acquires
+  the same per-host PostgreSQL lock and checks the cap before it consumes the
+  invitation. Root domain aliases with or without `www` use the same connector
+  registration. Separate WordPress installation paths keep their team rules.
 - Per-site member roles ARE enforced on the site routes (2026-10-01,
   membership layer): `sites.rawWithRole` resolves owner/admin/viewer in one
   query, `routes/sites.js` and `routes/offsite-backups.js` admit an active

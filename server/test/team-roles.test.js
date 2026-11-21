@@ -299,6 +299,73 @@ if (!dsn) {
     assert.equal(listAfterRight.body.members[0].email, invitedEmail)
   })
 
+  test('clashroyale.ir has one guest seat across simultaneous invitation accepts', async () => {
+    const owner = await registerUser(`cap-owner-${crypto.randomUUID()}@test.local`)
+    const first = await registerUser(`cap-first-${crypto.randomUUID()}@test.local`)
+    const second = await registerUser(`cap-second-${crypto.randomUUID()}@test.local`)
+    const site = await createSite(owner, 'https://clashroyale.ir/')
+    const duplicate = await post('/sites', { name: 'http://www.clashroyale.ir/' }, first)
+    assert.equal(duplicate.status, 409)
+    assert.match(duplicate.body.message, /دعوت/)
+    assert.equal(duplicate.body.pairing, undefined)
+    assert.equal((await get('/sites', first)).body.length, 0)
+
+    const firstInvite = await invite(owner, site.id, first.email, 'viewer')
+    const secondInvite = await invite(owner, site.id, second.email, 'viewer')
+    const newEmail = `cap-new-${crypto.randomUUID()}@test.local`
+    const newInvite = await invite(owner, site.id, newEmail, 'viewer')
+    const accept = (user, token) => post('/team/invitations/accept', { siteId: site.id, token }, user)
+    const [firstResult, secondResult] = await Promise.all([
+      accept(first, firstInvite),
+      accept(second, secondInvite),
+    ])
+    assert.deepEqual([firstResult.status, secondResult.status].sort(), [201, 409])
+    const [winner, loser, loserInvite, winningMember] = firstResult.status === 201
+      ? [first, second, secondInvite, firstResult.body]
+      : [second, first, firstInvite, secondResult.body]
+    assert.deepEqual((await get('/sites', winner)).body.map(({ id, role }) => ({ id, role })), [
+      { id: site.id, role: 'viewer' },
+    ])
+    assert.equal((await get('/sites', loser)).body.length, 0)
+
+    const signup = await registerUser(newEmail, newInvite)
+    assert.equal(signup.invite.applied, false)
+    assert.match(signup.invite.error, /مالک و یک عضو/)
+    const full = await post(
+      `/sites/${site.id}/team/invitations`,
+      { email: 'extra@test.local', role: 'viewer' },
+      owner
+    )
+    assert.equal(full.status, 409)
+    assert.match(full.body.message, /مالک و یک عضو/)
+
+    const removed = await request('DELETE', `/sites/${site.id}/team/members/${winningMember.id}`, null, owner)
+    assert.equal(removed.status, 200)
+    assert.equal((await get('/sites', winner)).body.length, 0)
+    assert.equal((await accept(loser, loserInvite)).status, 201)
+  })
+
+  test('a legacy www root shares the cap; separate WordPress paths keep their team behavior', async () => {
+    const owner = await registerUser(`alias-owner-${crypto.randomUUID()}@test.local`)
+    const first = await registerUser(`alias-first-${crypto.randomUUID()}@test.local`)
+    const second = await registerUser(`alias-second-${crypto.randomUUID()}@test.local`)
+    await query(
+      "INSERT INTO sites (id, user_id, name, url, created_at) VALUES ('www-bodogame-com', $1, 'www.bodogame.com', 'https://www.bodogame.com', $2)",
+      [owner.userId, Date.now()]
+    )
+    const duplicate = await post('/sites', { name: 'https://bodogame.com' }, first)
+    assert.equal(duplicate.status, 409)
+    assert.equal(duplicate.body.pairing, undefined)
+    await addMember(owner, 'www-bodogame-com', first)
+    const full = await post('/sites/www-bodogame-com/team/invitations', { email: second.email, role: 'viewer' }, owner)
+    assert.equal(full.status, 409)
+
+    const folder = await createSite(owner, 'https://bodogame.com/shop')
+    await addMember(owner, folder.id, first)
+    await addMember(owner, folder.id, second)
+    assert.equal((await get(`/sites/${folder.id}/team`, owner)).body.members.length, 2)
+  })
+
   test.after(async () => {
     server.close()
     await query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`)
