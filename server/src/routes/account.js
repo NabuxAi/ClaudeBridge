@@ -19,12 +19,13 @@ const router = Router()
 // when a router is mounted on its own (tests build bare apps).
 router.use(i18nMiddleware)
 
-// The signed-in user's sites (empty for a brand-new account).
+// The signed-in user's sites, owned and shared with them (empty for a
+// brand-new account). Each carries `role`: 'owner' or their team role.
 router.get('/sites', async (req, res, next) => {
   try {
     // Hosting labels are rendered in the reader's language here; the store
     // has no request and describes them in English.
-    const list = await sites.listByUser(req.user.sub)
+    const list = await sites.listAccessible(req.user.sub)
     res.json(list.map((s) => ({ ...s, hosting: describeHosting(s.hosting, req.locale) })))
   } catch (e) { next(e) }
 })

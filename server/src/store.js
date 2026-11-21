@@ -260,6 +260,26 @@ export const sites = {
       [userId]
     )).map(publicSite),
 
+  /**
+   * The panel's site list: sites this user owns plus sites shared with them
+   * through an active team membership, each tagged with their role. Without
+   * the shared ones an accepted invitation led nowhere: the member could open
+   * the site by URL but never saw it in their own panel.
+   */
+  listAccessible: async (userId) =>
+    (await all(
+      `SELECT s.*,
+              CASE WHEN s.user_id = $1 THEN 'owner' ELSE tm.role END AS member_role,
+              (SELECT COUNT(*) FROM events e
+                WHERE e.site_id = s.id AND e.resolved_at IS NULL) AS open_incidents
+         FROM sites s
+         LEFT JOIN team_members tm
+           ON tm.site_id = s.id AND tm.user_id = $1 AND tm.status = 'active' AND s.user_id <> $1
+        WHERE s.user_id = $1 OR tm.user_id IS NOT NULL
+        ORDER BY s.created_at`,
+      [userId]
+    )).map((s) => ({ ...publicSite(s), role: s.member_role })),
+
   getForUser: async (id, userId) =>
     publicSite(await one(
       `SELECT s.*, COUNT(e.id) FILTER (WHERE e.resolved_at IS NULL) AS open_incidents

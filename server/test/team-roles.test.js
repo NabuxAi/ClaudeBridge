@@ -133,6 +133,26 @@ if (!dsn) {
     assert.equal(strangerView.status, 404)
   })
 
+  test('a shared site shows in the member\'s site list with their role; strangers do not see it', async () => {
+    const owner = await registerUser(`tr-owner-list-${crypto.randomUUID()}@test.local`)
+    const member = await registerUser(`tr-member-list-${crypto.randomUUID()}@test.local`)
+    const stranger = await registerUser(`tr-stranger-list-${crypto.randomUUID()}@test.local`)
+    const site = await createSite(owner, `tr-list-${Date.now()}.ir`)
+    await addMember(owner, site.id, member, 'viewer')
+
+    const ownerList = await get('/sites', owner)
+    assert.equal(ownerList.status, 200)
+    assert.deepEqual(ownerList.body.map((s) => [s.id, s.role]), [[site.id, 'owner']])
+
+    const memberList = await get('/sites', member)
+    assert.equal(memberList.status, 200)
+    assert.deepEqual(memberList.body.map((s) => [s.id, s.role]), [[site.id, 'viewer']])
+    assert.equal(memberList.body[0].secret, undefined, 'the list must never carry the pairing secret')
+
+    const strangerList = await get('/sites', stranger)
+    assert.deepEqual(strangerList.body, [])
+  })
+
   test('writes of lower-role members are 403 before route-specific 400s; owner passes', async () => {
     const owner = await registerUser(`tr-owner-write-${crypto.randomUUID()}@test.local`)
     const admin = await registerUser(`tr-admin-write-${crypto.randomUUID()}@test.local`)
