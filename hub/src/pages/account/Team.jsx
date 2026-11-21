@@ -87,8 +87,11 @@ export default function Team() {
     account.sites()
       .then((d) => {
         if (!alive) return
-        setSites(d || [])
-        setSelectedSiteId((cur) => cur || d?.[0]?.id || '')
+        // Only the owner manages a site's team; shared sites also come back
+        // from this list, and picking one here would only answer 403.
+        const owned = (d || []).filter((s) => !s.role || s.role === 'owner')
+        setSites(owned)
+        setSelectedSiteId((cur) => cur || owned[0]?.id || '')
       })
       .catch((e) => {
         if (alive) setSitesError(e?.message || t('team.errors.loadSites'))
