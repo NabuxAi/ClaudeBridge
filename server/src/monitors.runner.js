@@ -20,6 +20,13 @@ import { all } from './db.js'
 import * as monitorsStore from './monitors.store.js'
 import { config } from './config.js'
 import { t } from './i18n.js'
+import * as flaresolverr from './flaresolverr.js'
+
+let recordResultImpl = null
+/** Test seam to inject a fake recordResult handler for runner unit tests. */
+export function _setRecordResultForTests(fn) {
+  recordResultImpl = fn
+}
 
 /** One answer within ten seconds, or the check has failed — a hung site is down. */
 const TIMEOUT_MS = 10_000
@@ -57,15 +64,48 @@ export async function checkMonitor(monitor) {
   let outcome
   const started = Date.now()
   try {
+    const clearance = flaresolverr.getClearanceHeaders(url)
     const res = await fetch(url, {
       redirect: 'follow',
-      headers: { 'User-Agent': 'DigiWP-Monitor/1.0' },
+      headers: { 'User-Agent': 'DigiWP-Monitor/1.0', ...clearance },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
     const ms = Date.now() - started
     let containsOk = true
     let containsError = null
-    if (expectContains) {
+
+    if (!res.ok && flaresolverr.isConfigured()) {
+      const sample = await res.text().catch(() => '')
+      if (flaresolverr.isCloudflareChallenge({ status: res.status, headers: res.headers, body: sample })) {
+        try {
+          const solved = await flaresolverr.solve({ url, maxTimeout: TIMEOUT_MS })
+          if (solved?.solution) {
+            const solStatus = Number(solved.solution.status || 200)
+            const solText = solved.solution.response || ''
+            let solContainsOk = true
+            let solContainsError = null
+            if (expectContains) {
+              solContainsOk = solText.includes(expectContains)
+              if (!solContainsOk) solContainsError = t('en', 'monitorRunner.errors.phraseMissing')
+            }
+            outcome = {
+              ok: solStatus === expectStatus && solContainsOk,
+              status: solStatus,
+              ms: Date.now() - started,
+              ...(solContainsError ? { error: solContainsError } : {}),
+            }
+            const recorder = recordResultImpl || monitorsStore.monitors.recordResult
+            return recorder(monitor, outcome)
+          }
+        } catch {
+          // If flaresolverr fails, retain original failure
+        }
+      }
+      if (expectContains) {
+        containsOk = sample.includes(expectContains)
+        if (!containsOk) containsError = t('en', 'monitorRunner.errors.phraseMissing')
+      }
+    } else if (expectContains) {
       // Bounded by the timeout above, and refused up front for a declared
       // body bigger than we are willing to download just to substring-match.
       const len = Number(res.headers.get('content-length') || 0)
@@ -74,10 +114,47 @@ export async function checkMonitor(monitor) {
         containsError = t('en', 'monitorRunner.errors.bodyTooLarge')
       } else {
         const text = await res.text()
+        if (flaresolverr.isConfigured() && flaresolverr.isCloudflareChallenge({ status: res.status, headers: res.headers, body: text })) {
+          try {
+            const solved = await flaresolverr.solve({ url, maxTimeout: TIMEOUT_MS })
+            if (solved?.solution) {
+              const solStatus = Number(solved.solution.status || 200)
+              const solText = solved.solution.response || ''
+              const solContainsOk = solText.includes(expectContains)
+              const solContainsError = solContainsOk ? null : t('en', 'monitorRunner.errors.phraseMissing')
+              outcome = {
+                ok: solStatus === expectStatus && solContainsOk,
+                status: solStatus,
+                ms: Date.now() - started,
+                ...(solContainsError ? { error: solContainsError } : {}),
+              }
+              const recorder = recordResultImpl || monitorsStore.monitors.recordResult
+              return recorder(monitor, outcome)
+            }
+          } catch {
+            // retain standard contains check
+          }
+        }
         containsOk = text.includes(expectContains)
         if (!containsOk) containsError = t('en', 'monitorRunner.errors.phraseMissing')
       }
     } else {
+      // Check for Cloudflare challenge header even on 200 when no body match requested
+      if (flaresolverr.isConfigured() && flaresolverr.isCloudflareChallenge({ status: res.status, headers: res.headers })) {
+        try {
+          const solved = await flaresolverr.solve({ url, maxTimeout: TIMEOUT_MS })
+          if (solved?.solution) {
+            const solStatus = Number(solved.solution.status || 200)
+            outcome = {
+              ok: solStatus === expectStatus,
+              status: solStatus,
+              ms: Date.now() - started,
+            }
+            const recorder = recordResultImpl || monitorsStore.monitors.recordResult
+            return recorder(monitor, outcome)
+          }
+        } catch { /* proceed */ }
+      }
       // Nobody reads the body: release it instead of holding the connection.
       try { await res.body?.cancel() } catch { /* already consumed or null */ }
     }
@@ -95,7 +172,8 @@ export async function checkMonitor(monitor) {
       error: e?.name === 'TimeoutError' ? t('en', 'monitorRunner.errors.timeout') : (e?.message || t('en', 'monitorRunner.errors.failed')),
     }
   }
-  return monitorsStore.monitors.recordResult(monitor, outcome)
+  const recorder = recordResultImpl || monitorsStore.monitors.recordResult
+  return recorder(monitor, outcome)
 }
 
 // The stored messages this runner writes — English now, Persian in rows

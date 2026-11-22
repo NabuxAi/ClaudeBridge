@@ -1,0 +1,47 @@
+# ==============================================================================
+# پیکربندی محیطی نسخه سرور ایران (DigiWP / WP Claude Bridge)
+# این فایل را به .env در مسیر پروژه کپی و متغیرها را بر اساس نیاز مقداردهی کنید:
+# cp deploy/iran-env.example .env
+# ==============================================================================
+
+# ۱. دامنه اصلی سرویس در ایران
+DOMAIN=wp.nabuxai.ir
+
+# ۲. کلید امنیتی احراز هویت نشست‌ها (حداقل ۳۲ کاراکتر تصادفی)
+AUTH_SECRET=changeme_nabux_iran_secure_token_key_2026_xyz123
+
+# ۳. کلمات عبور پایگاه‌های داده داخلی
+POSTGRES_PASSWORD=secure_postgres_iran_pass_2026
+DEMO_DB_PASSWORD=secure_mariadb_iran_pass_2026
+DEMO_DB_ROOT_PASSWORD=secure_mariadb_root_pass_2026
+
+# ۴. دروازه مدل هوش مصنوعی سازگار با OpenAI در داخل کشور
+# برای استفاده از نابوگیت، اولاما، vLLM یا پروکسی محلی:
+ASSISTANT_URL=https://gate.nabuxai.ir/v1
+ASSISTANT_API_KEY=your_domestic_ai_key_or_empty
+ASSISTANT_MODEL=nabu-smart
+
+# ۵. درگاه‌های بومی ارسال پیامک اضطراری مالک سایت (کاوه نگار، فراز اس‌ام‌اس و ...)
+SMS_URL=https://api.kavenegar.com/v1/YOUR_KEY/sms/send.json
+SMS_API_KEY=
+SMS_AUTH_HEADER=
+SMS_TO_FIELD=receptor
+SMS_TEXT_FIELD=message
+SMS_FROM_FIELD=sender
+
+# ۶. سرویس پوش وب بومی نجوا (Najva)
+NAJVA_API_KEY=
+
+# ۷. سرویس ایمیل تراکنشی (سرور SMTP داخلی)
+# فرمت: smtp://user:password@smtp.your-server.ir:587
+EMAIL_SERVER=
+EMAIL_FROM=alerts@nabuxai.ir
+
+# ۸. فعال‌سازی دیتای نمونه (برای محیط واقعی production حتماً ۰ باشد)
+SEED_DEMO=0
+
+# ۹. پروکسی رفع چالش‌های کلودفلر (FlareSolverr - اختیاری)
+# در صورتی که سایت‌های متصل پشت کلودفلر و چالش‌های ربات/Turnstile باشند:
+# فرمت: http://localhost:8191/v1 یا http://flaresolverr:8191/v1
+FLARESOLVERR_URL=
+FLARESOLVERR_TIMEOUT_MS=60000

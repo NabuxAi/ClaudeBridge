@@ -14,6 +14,7 @@
 // ============================================================
 import crypto from 'node:crypto'
 import { normalizeSiteAddress } from './site-address.js'
+import * as flaresolverr from './flaresolverr.js'
 
 const REPLAY_WINDOW = 300 // seconds
 
@@ -39,10 +40,36 @@ const base = normalizeSiteAddress
 /** GET {site}/wp-json/claude-bridge/v1/connector/ping — verify pairing is live. */
 export async function ping(site) {
   const url = `${base(site.url)}/wp-json/claude-bridge/v1/connector/ping`
-  const headers = signHeaders(site.secret, site.siteKey, '')
+  const clearance = flaresolverr.getClearanceHeaders(url)
+  const headers = { ...clearance, ...signHeaders(site.secret, site.siteKey, '') }
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
+  const raw = await res.text().catch(() => '')
+
+  if (flaresolverr.isConfigured() && flaresolverr.isCloudflareChallenge({ status: res.status, headers: res.headers, body: raw })) {
+    try {
+      const solved = await flaresolverr.solve({
+        url,
+        headers: signHeaders(site.secret, site.siteKey, ''),
+        maxTimeout: 15000,
+      })
+      const data = solved?.data || (solved?.body ? flaresolverr.extractJsonFromSolutionResponse(solved.body) : null)
+      if (solved?.ok && data && (data.ok || data.version)) {
+        return data
+      }
+    } catch (err) {
+      throw new ConnectorError(`ping blocked by Cloudflare (FlareSolverr: ${err.message})`, res.status)
+    }
+  }
+
   if (!res.ok) throw new ConnectorError(`ping failed (${res.status})`, res.status)
-  return res.json()
+
+  let data
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    throw new ConnectorError(`ping failed: non-JSON response (${res.status})`, res.status)
+  }
+  return data
 }
 
 /**
@@ -55,9 +82,11 @@ export async function callTool(site, name, args = {}) {
     params: { name, arguments: args },
   })
   const url = `${base(site.url)}/wp-json/claude-bridge/v1/mcp`
-  const res = await fetch(url, {
+  let clearance = flaresolverr.getClearanceHeaders(url)
+  let hmacHeaders = signHeaders(site.secret, site.siteKey, rawBody)
+  let res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...signHeaders(site.secret, site.siteKey, rawBody) },
+    headers: { 'Content-Type': 'application/json', ...clearance, ...hmacHeaders },
     body: rawBody,
     signal: AbortSignal.timeout(30000),
   })
@@ -66,18 +95,38 @@ export async function callTool(site, name, args = {}) {
   // straight to JSON with a swallowed catch turned all of those into nothing:
   // a nightly scan failed against a live site and the only record of it read
   // "tool security_scan failed", which names neither cause nor status.
-  const raw = await res.text().catch(() => '')
-  let data = {}
+  let raw = await res.text().catch(() => '')
+
+  if (flaresolverr.isConfigured() && flaresolverr.isCloudflareChallenge({ status: res.status, headers: res.headers, body: raw })) {
+    try {
+      await flaresolverr.solve({ url, maxTimeout: 25000 }).catch(() =>
+        flaresolverr.solve({ url: `${base(site.url)}/`, maxTimeout: 25000 })
+      )
+      clearance = flaresolverr.getClearanceHeaders(url)
+      hmacHeaders = signHeaders(site.secret, site.siteKey, rawBody)
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...clearance, ...hmacHeaders },
+        body: rawBody,
+        signal: AbortSignal.timeout(30000),
+      })
+      raw = await res.text().catch(() => '')
+    } catch {
+      // Solver attempt failed; proceed with reporting original error
+    }
+  }
+
+  let data = null
   try {
-    data = raw ? JSON.parse(raw) : {}
+    data = raw ? JSON.parse(raw) : null
   } catch {
-    data = {}
+    data = null
   }
 
   if (res.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
 
-  if (!res.ok || data.error) {
-    throw new ConnectorError(describeToolFailure(name, res.status, data, raw), res.status)
+  if (!res.ok || !data || data.error) {
+    throw new ConnectorError(describeToolFailure(name, res.status, data || {}, raw), res.status)
   }
   // MCP wraps tool output in result.content[]; return the useful part.
   return data.result ?? data

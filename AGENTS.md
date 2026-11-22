@@ -358,6 +358,24 @@ for UI convenience.
   backup targets) with file:line references. Honest boundary: no legal
   review has happened yet — the banners say exactly that — and no support
   address or channel is invented anywhere in the pages.
+- FlareSolverr integration for Cloudflare challenge bypass (2026-11-03):
+  Optional, configurable FlareSolverr integration (`FLARESOLVERR_URL` and
+  `FLARESOLVERR_TIMEOUT_MS` in `server/src/config.js`, implemented in
+  `server/src/flaresolverr.js`). When managed WordPress sites are behind
+  Cloudflare anti-bot or Turnstile challenges (returning 403, 503, or challenge
+  HTML), requests in `discoverWordPress` (`server/src/site-address.js`),
+  `ping` and `callTool` (`server/src/connector.js`), uptime monitor checks
+  (`server/src/monitors.runner.js`), and health probes (`server/src/probe.js`)
+  detect Cloudflare challenges (`isCloudflareChallenge`) and route fallback
+  through FlareSolverr (`solve`). Clearance cookies (`cf_clearance`, `__cf_bm`)
+  and the matching browser `User-Agent` are stored in an in-memory clearance
+  cache (`getClearanceHeaders`) so subsequent requests pass directly without
+  re-solving. SSRF protection is strictly enforced: private IP ranges and
+  loopback are refused before proxying. Persistent session management
+  (`sessions.create`, `sessions.destroy`, `sessions.list`) and status check
+  (`GET /v1/flaresolverr/status`) are supported. Absent/unset is a fully
+  supported state with direct fetches preserved. Pinned in
+  `server/test/flaresolverr.test.js` (19 tests).
 - Plugin manifest/update channel and two release variants.
 - Multi-language surface — hub, server, and plugin (2026-10-04 i18n wave):
   the hub speaks through `hub/src/lib/i18n.js` + `I18nProvider` + `Trans`

@@ -30,6 +30,7 @@ import { runDailyDigest, scheduleDailyDigest } from './digest.js'
 import { initIntel, scheduleIntel, refresh as refreshIntel } from './intel/index.js'
 import { runSweep, scheduleSweep } from './sweep.js'
 import { scheduleMonitors } from './monitors.runner.js'
+import * as flaresolverr from './flaresolverr.js'
 
 // Before anything binds a port: a server running on the development signing
 // secret will happily accept a session token anyone reading this repository
@@ -92,6 +93,7 @@ export function createApp() {
   app.use(i18nMiddleware)
 
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'digiwp-server', live: config.live }))
+  app.get('/v1/health', (_req, res) => res.json({ ok: true, service: 'digiwp-server', live: config.live }))
 
   // Public: hub auth + the plugin's signed register receiver.
   app.use('/v1', authRouter)
@@ -122,6 +124,11 @@ export function createApp() {
   app.use('/v1', requireAuth, notificationsRouter)
   app.use('/v1', requireAuth, teamRouter)
   app.use('/v1/admin', requireAuth, requireAdmin, adminRouter)
+
+  // FlareSolverr status endpoint (checks proxy reachability if configured)
+  app.get('/v1/flaresolverr/status', requireAuth, async (_req, res, next) => {
+    try { res.json(await flaresolverr.getStatus()) } catch (e) { next(e) }
+  })
 
   // Run the daily security digest on demand (scan all paired sites + send to Telegram).
   app.post('/v1/digest/run', requireAuth, async (_req, res, next) => {

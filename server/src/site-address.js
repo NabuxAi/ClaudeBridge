@@ -5,6 +5,7 @@ import https from 'node:https'
 import { Readable } from 'node:stream'
 import { parse } from 'tldts'
 import { httpError } from './i18n.js'
+import * as flaresolverr from './flaresolverr.js'
 
 // Keep the installation path. Pasting a dashboard or REST address should not
 // turn /shop/wp-admin into /shop/wp-admin/wp-json, or discard /shop entirely.
@@ -69,12 +70,14 @@ function publicFetch(address, { signal, headers }, addresses) {
   })
 }
 
-async function getJson(address, { fetchImpl, resolve, signal }) {
+async function getJson(address, { fetchImpl, resolve, signal, flaresolverrImpl = null }) {
   let url = new URL(address)
+  const solver = flaresolverrImpl || flaresolverr
   for (let redirects = 0; redirects <= 3; redirects++) {
     const addresses = await publicAddress(url, resolve, signal)
     signal.throwIfAborted()
-    const res = await fetchImpl(url.href, { redirect: 'manual', signal, headers: { Accept: 'application/json' } }, addresses)
+    const clearance = solver.getClearanceHeaders(url.href)
+    const res = await fetchImpl(url.href, { redirect: 'manual', signal, headers: { Accept: 'application/json', ...clearance } }, addresses)
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const location = res.headers.get('location')
       await res.body?.cancel()
@@ -82,7 +85,43 @@ async function getJson(address, { fetchImpl, resolve, signal }) {
       url = new URL(location, url)
       continue
     }
-    if (!res.ok || !res.headers.get('content-type')?.includes('json')) { await res.body?.cancel(); return null }
+    if (!res.ok || !res.headers.get('content-type')?.includes('json')) {
+      if (solver.isConfigured()) {
+        let sampleBody = ''
+        try {
+          const text = await res.text()
+          sampleBody = typeof text === 'string' ? text.slice(0, 16384) : ''
+        } catch {
+          await res.body?.cancel().catch(() => {})
+        }
+        if (solver.isCloudflareChallenge({ status: res.status, headers: res.headers, body: sampleBody })) {
+          let solved
+          try {
+            solved = await solver.solve({
+              url: url.href,
+              headers: { Accept: 'application/json' },
+              maxTimeout: 12000,
+            })
+          } catch {
+            // Solver failed, fall through to return null
+            return null
+          }
+          if (solved?.ok) {
+            const data = solved.data || solver.extractJsonFromSolutionResponse(solved.body)
+            if (data && Array.isArray(data.namespaces)) {
+              const finalUrl = solved.solution?.url ? new URL(solved.solution.url) : url
+              if (finalUrl.href !== url.href) {
+                await publicAddress(finalUrl, resolve, signal)
+              }
+              return { data, url: finalUrl }
+            }
+          }
+        }
+      } else {
+        await res.body?.cancel().catch(() => {})
+      }
+      return null
+    }
     // REST indexes can be large, but neither memory nor the request is unbounded.
     const reader = res.body.getReader()
     const chunks = []
@@ -101,12 +140,12 @@ async function getJson(address, { fetchImpl, resolve, signal }) {
   return null
 }
 
-export async function discoverWordPress(input, { fetchImpl = publicFetch, resolve = lookup } = {}) {
+export async function discoverWordPress(input, { fetchImpl = publicFetch, resolve = lookup, flaresolverrImpl = null } = {}) {
   const siteUrl = normalizeSiteAddress(input)
   const signal = AbortSignal.timeout(12000)
   let failure
   try {
-    const result = await getJson(`${siteUrl}/wp-json/?_fields=namespaces`, { fetchImpl, resolve, signal })
+    const result = await getJson(`${siteUrl}/wp-json/?_fields=namespaces`, { fetchImpl, resolve, signal, flaresolverrImpl })
     if (!result || !Array.isArray(result.data?.namespaces) || !result.data.namespaces.includes('wp/v2')) throw httpError(422, 'sites.wordpressNotFound')
     // Use the final REST location, never an arbitrary URL supplied in JSON.
     // This preserves /baneh, including when a host adds www or HTTPS.

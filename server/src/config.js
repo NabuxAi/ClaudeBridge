@@ -76,6 +76,14 @@ export const config = {
   monitors: {
     intervalMinutes: Number(process.env.MONITOR_INTERVAL_MINUTES ?? 5),
   },
+  // FlareSolverr proxy endpoint (optional). Solves Cloudflare bot challenges
+  // (403, 503, "Just a moment...") when managed sites are behind Cloudflare.
+  // Absent is a fully supported state; when unset, direct fetches are used.
+  flaresolverr: {
+    url: (process.env.FLARESOLVERR_URL || '').replace(/\/+$/, ''),
+    maxTimeout: Number(process.env.FLARESOLVERR_TIMEOUT_MS || 60000),
+  },
+  flaresolverrUrl: (process.env.FLARESOLVERR_URL || '').replace(/\/+$/, ''),
   // Web Push (VAPID) for browser notifications straight from this server.
   // Exactly the mailConfigured lesson: absent is a supported state reported as
   // { configured:false } — the server never mints its own keys at boot, because

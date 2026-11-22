@@ -13,6 +13,7 @@
 // ============================================================
 import tls from 'node:tls'
 import { t, DEFAULT_LOCALE } from './i18n.js'
+import * as flaresolverr from './flaresolverr.js'
 
 /**
  * Fetch a URL and time it.
@@ -24,11 +25,28 @@ import { t, DEFAULT_LOCALE } from './i18n.js'
 async function timedGet(url, timeoutMs = 12000) {
   const started = Date.now()
   try {
+    const clearance = flaresolverr.getClearanceHeaders(url)
     const res = await fetch(url, {
       redirect: 'follow',
-      headers: { 'User-Agent': 'DigiWP-Monitor/1.0' },
+      headers: { 'User-Agent': 'DigiWP-Monitor/1.0', ...clearance },
       signal: AbortSignal.timeout(timeoutMs),
     })
+    if (!res.ok && flaresolverr.isConfigured()) {
+      const sample = await res.text().catch(() => '')
+      if (flaresolverr.isCloudflareChallenge({ status: res.status, headers: res.headers, body: sample })) {
+        const solved = await flaresolverr.solve({ url, maxTimeout: timeoutMs }).catch(() => null)
+        if (solved?.solution) {
+          const sStatus = Number(solved.solution.status || 200)
+          return {
+            ok: sStatus >= 200 && sStatus < 400,
+            status: sStatus,
+            ms: Date.now() - started,
+            url: solved.solution.url || url,
+          }
+        }
+      }
+      return { ok: false, status: res.status, ms: Date.now() - started, url: res.url }
+    }
     return { ok: res.ok, status: res.status, ms: Date.now() - started, url: res.url }
   } catch (e) {
     return { ok: false, status: null, ms: Date.now() - started, error: e.message }
