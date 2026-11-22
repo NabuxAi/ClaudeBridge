@@ -108,6 +108,14 @@ export async function ping(site) {
     const data = await res.json().catch(() => null)
     const route = res.headers.get('x-digiwp-route') === 'peer' ? 'peer' : 'direct'
     if (valid(res, data)) {
+      // The key matched, but Hub Connector Mode is switched off in the plugin:
+      // the ping route checks only the key, while every MCP call is refused.
+      // Say that, instead of a green check followed by vague 401s.
+      if (data.connector === false) {
+        const off = connectionFailure(res.status, 'sites.connectorDisabled')
+        off.reason = 'connector_disabled'
+        throw off
+      }
       remember(site, index)
       return { ...data, route }
     }

@@ -1,6 +1,20 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-23 (0.9.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-23 (0.9.1). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.9.1 — assistant uptime, connector-mode-off check (2026-11-23)
+
+- `gatherFacts` reads `monitors.siteAvailability()` before the unpaired early
+  return; `facts.uptime` feeds the briefing line with the HTTP-only scope, and
+  `assistant.facts.noMonitors` replaces the stale "monitoring is not built".
+- `connector.ping` fails with `sites.connectorDisabled` when the plugin answers
+  `connector:false` (key correct, Hub Connector Mode off — seen on
+  alowp.ir/giftino); `mcpAddress` rethrows it, so no tool call is sent.
+- Operational, same day: the Iran server's `ASSISTANT_API_KEY` was rejected by
+  the gateway (401); it now uses the international server's key, which
+  `gate.nabuxai.ir` accepts. `/opt/digiwp/.env` was backed up under
+  `/root/backups/` first. game30t.com was re-paired with a reissued key.
+- Verification: 528/528 server tests on PostgreSQL 16, hub lint/build.
 
 ## Platform 0.9.0 / plugin 3.9.4 — named connector refusals, key reissue (2026-11-23)
 

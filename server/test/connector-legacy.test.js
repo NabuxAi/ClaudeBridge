@@ -100,3 +100,14 @@ test('a clock refusal carries the site\'s own time', async () => {
     await assert.rejects(ping({ url: site.url, secret: 's', siteKey: 'k3' }), (e) => e.i18n.key === 'sites.connectorClock' && e.i18n.vars.siteTime === new Date(1795400000 * 1000).toISOString())
   } finally { site.server.close() }
 })
+
+test('a matching key with Hub Connector Mode off fails the check by name, on ping and before a tool call', async () => {
+  const site = await refusingPlugin((path) => path.includes('/connector/ping')
+    ? { status: 200, body: { ok: true, version: '3.9.4', connector: false } }
+    : { status: 401, body: { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized.' } } })
+  try {
+    await assert.rejects(ping({ url: site.url, secret: 's', siteKey: 'off' }), (e) => e.i18n.key === 'sites.connectorDisabled' && e.status === 502)
+    await assert.rejects(callTool({ url: site.url, secret: 's', siteKey: 'off' }, 'site_info', {}), (e) => e.i18n.key === 'sites.connectorDisabled')
+    assert.equal(site.seen.filter((p) => p.includes('/mcp')).length, 0, 'no tool call is sent to a site whose connector is off')
+  } finally { site.server.close() }
+})

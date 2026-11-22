@@ -118,5 +118,6 @@
   "connectorReplay": "The site saw this signed request twice and refused the repeat. Try again; if it keeps happening, a proxy is replaying requests.",
   "connectorStorage": "The signature is correct, but WordPress could not write to its database (HTTP {status}). Check the host's disk space, quota and database; nothing was run on the site.",
   "keyReissued": "A new connection key was issued. The site stays disconnected until the new key is entered in the plugin.",
-  "keyReissueConfirm": "Confirm issuing a new key: the current key stops working immediately."
+  "keyReissueConfirm": "Confirm issuing a new key: the current key stops working immediately.",
+  "connectorDisabled": "The connection key on the site is correct, but Hub Connector Mode is switched off in the plugin. On the site, open Tools → Claude Bridge, tick Hub Connector Mode and save."
 }

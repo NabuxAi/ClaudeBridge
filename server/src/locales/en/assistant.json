@@ -6,7 +6,8 @@
     "infoUnread": "The site's basic information could not be read: {error}",
     "updatesUnread": "The update status could not be read: {error}",
     "backupsUnread": "The backup list could not be read: {error}",
-    "noUptime": "We do not measure the site's uptime or response speed here — continuous monitoring is not part of this briefing."
+    "noMonitors": "No uptime monitor has recorded a check for this site yet, so its availability is not measured. One can be added on the site’s Monitors page.",
+    "uptimeUnread": "Uptime history could not be read: {error}"
   },
   "briefing": {
     "wp": "WordPress {version}",
@@ -29,7 +30,8 @@
     "lastBackupVerified": "Last backup: {when} (checked for completeness).",
     "lastBackupUnverified": "Last backup: {when} — its completeness has not been verified.",
     "noBackups": "No backup is recorded on the site.",
-    "noData": "We have no live data from this site yet."
+    "noData": "We have no live data from this site yet.",
+    "uptime": "Measured availability over {days} days: {percent}% with {incidents} outage(s) ({scope})."
   },
   "refs": {
     "updates": "Update queue",

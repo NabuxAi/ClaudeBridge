@@ -305,7 +305,7 @@ for UI convenience.
   requests are injected through a global fetch fake — no test touches a real
   network). Honest boundaries: a check is reachability of one URL only —
   checkout, payment-gateway and login journeys are still not monitored;
-  monitor failures do not yet feed the alert/Telegram dispatch; monitor
+  monitor failures do not yet feed the alert/Telegram dispatch (the site assistant does read the recorded availability since 0.9.1); monitor
   config changes write no separate audit event; monitor URLs are
   owner-supplied and fetched unattended by the server, with no internal-network
   (SSRF) guard — the same trust level as the existing `site.url`/speedtest
@@ -1003,6 +1003,9 @@ These rules override visual mockups and optimistic marketing copy:
   explicit `confirm: true`, key returned once, site marked unpaired, audit
   event without the key (pinned in `team-roles.test.js`). The hub card is on
   the site's Hosting page.
+- A ping that matches the key but reports `connector:false` (Hub Connector
+  Mode off in the plugin) fails as `sites.connectorDisabled`; no tool call is
+  sent after it (pinned in `connector-legacy.test.js`).
 - Preserve generic login errors and dummy password verification to avoid account
   enumeration.
 - Rate limits are currently in process memory. Before horizontal scaling, move
@@ -1508,7 +1511,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.9.0** (named connector refusals and key reissue, 2026-11-23), shared by `hub/package.json` and
+- Current platform release: **0.9.1** (assistant reads monitor uptime; connector-mode-off check, 2026-11-23), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

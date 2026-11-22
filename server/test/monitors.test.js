@@ -317,6 +317,31 @@ if (!dsn) {
     )
   })
 
+  test('the assistant reads uptime from monitors, and says so plainly when nothing measured it', async () => {
+    const { gatherFacts, renderBriefing } = await import('../src/assistant.js')
+    const auth = await owner()
+    const site = await makeSite(auth)
+    const raw = (await query('SELECT * FROM sites WHERE id = $1', [site.id])).rows[0]
+
+    const before = await gatherFacts(raw, 'en')
+    assert.equal(before.uptime, undefined)
+    assert.ok(before.unknown.some((u) => u.includes('No uptime monitor has recorded a check')), JSON.stringify(before.unknown))
+    assert.ok(!before.unknown.some((u) => u.includes('not part of this briefing')), 'the stale "monitoring is not built" line is gone')
+
+    const created = await post(`/sites/${site.id}/monitors`, goodBody(), auth)
+    const impls = [200, 500, 200, 200]
+    fakeFetch(async () => OWNER_RESULT(impls.length > 1 ? impls.shift() : impls[0]))
+    for (let i = 0; i < 4; i++) await post(`/sites/${site.id}/monitors/${created.body.id}/check`, {}, auth)
+
+    const after = await gatherFacts(raw, 'en')
+    assert.equal(after.uptime.days7.percent, 75)
+    assert.equal(after.uptime.days7.incidents, 1)
+    assert.ok(!after.unknown.some((u) => u.includes('No uptime monitor')))
+    const briefing = renderBriefing(after, 'en')
+    assert.match(briefing, /availability over 7 days: 75% with 1 outage/)
+    assert.match(briefing, /HTTP reachability check/, 'the briefing names the HTTP-only scope')
+  })
+
   test('expect_contains catches a 200 that does not carry the expected content; expect_status is honoured', async () => {
     const auth = await owner()
     const site = await makeSite(auth)

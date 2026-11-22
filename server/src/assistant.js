@@ -19,6 +19,7 @@ import { updatesFromStatus } from './live.js'
 import { classify, offeredTools, permits, readAuthority } from './authority.js'
 import * as proposalStore from './proposals.js'
 import { t, normalizeLocale, DEFAULT_LOCALE } from './i18n.js'
+import { monitors } from './monitors.store.js'
 
 /**
  * The language a model is told to answer in, by locale code. Named in English
@@ -110,6 +111,18 @@ export async function gatherFacts(site, locale = DEFAULT_LOCALE) {
     facts.unknown.push(tr('assistant.facts.alertsUnread', { error: err(e) }))
   }
 
+  // Uptime comes from the site's own HTTP monitors: plain GETs that need no
+  // pairing, so it is read even for a site that is not connected yet. Named
+  // explicitly when there is none: an answer that skips the question reads as
+  // "everything is fine" instead of "nothing measured it".
+  try {
+    const uptime = await monitors.siteAvailability(site.id, locale)
+    if (uptime.days7.measured || uptime.days30.measured) facts.uptime = uptime
+    else facts.unknown.push(tr('assistant.facts.noMonitors'))
+  } catch (e) {
+    facts.unknown.push(tr('assistant.facts.uptimeUnread', { error: err(e) }))
+  }
+
   if (!site.paired || !site.url || !site.secret) {
     facts.unknown.push(tr('assistant.facts.notConnected'))
     return facts
@@ -168,10 +181,6 @@ export async function gatherFacts(site, locale = DEFAULT_LOCALE) {
     }
   }
 
-  // Named explicitly rather than left silent. These are the questions people
-  // ask an assistant first, and an answer that skips the question reads as
-  // "everything is fine" instead of "I cannot see that".
-  facts.unknown.push(tr('assistant.facts.noUptime'))
 
   return facts
 }
@@ -222,6 +231,11 @@ export function renderBriefing(facts, locale = DEFAULT_LOCALE) {
         ? tr(facts.backups.verified ? 'assistant.briefing.lastBackupVerified' : 'assistant.briefing.lastBackupUnverified', { when: facts.backups.last })
         : tr('assistant.briefing.noBackups')
     )
+  }
+
+  if (facts.uptime) {
+    const w = facts.uptime.days7.measured ? { days: 7, ...facts.uptime.days7 } : { days: 30, ...facts.uptime.days30 }
+    lines.push(tr('assistant.briefing.uptime', { days: w.days, percent: w.percent, incidents: w.incidents, scope: facts.uptime.scope }))
   }
 
   if (!lines.length) lines.push(tr('assistant.briefing.noData'))
