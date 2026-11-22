@@ -316,7 +316,7 @@
 }
 
 /* /invite — what the invitation is, before choosing sign in or sign up. */
-.dwp-invite-card { display: grid; gap: 8px; margin: 4px 0 16px; padding: 14px 16px; border: 1px solid var(--gd-border); border-radius: var(--gd-radius-lg); background: color-mix(in srgb, var(--gd-surface, #fff) 55%, transparent); font-size: 13px; }
+.dwp-invite-card { display: grid; gap: 8px; margin: 4px 0 16px; padding: 14px 16px; border: 1px solid var(--gd-border); border-radius: var(--gd-radius-lg); background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.14); font-size: 13px; }
 .dwp-invite-card > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; min-width: 0; }
 .dwp-invite-card span { color: var(--gd-text-secondary); flex: 0 0 auto; }
 .dwp-invite-card strong { color: var(--gd-text-primary); overflow-wrap: anywhere; text-align: end; }
