@@ -377,6 +377,47 @@ if (!dsn) {
     assert.equal((await get(`/sites/${folder.id}/team`, owner)).body.members.length, 2)
   })
 
+  test('only the owner can issue a new connection key, and only with an explicit confirm', async () => {
+    const owner = await registerUser(`tr-owner-key-${crypto.randomUUID()}@test.local`)
+    const admin = await registerUser(`tr-admin-key-${crypto.randomUUID()}@test.local`)
+    const site = await createSite(owner, `tr-key-${Date.now()}.ir`)
+    await addMember(owner, site.id, admin, 'admin')
+    const before = site.pairing.secret
+    await query("UPDATE sites SET paired = true, status = 'healthy' WHERE id = $1", [site.id])
+
+    const byAdmin = await post(`/sites/${site.id}/connection-key`, { confirm: true }, admin)
+    assert.equal(byAdmin.status, 403, 'a credential stays with the owner, admins included')
+
+    const unconfirmed = await post(`/sites/${site.id}/connection-key`, {}, owner)
+    assert.equal(unconfirmed.status, 400)
+    assert.equal((await query('SELECT secret FROM sites WHERE id = $1', [site.id])).rows[0].secret, before, 'nothing changes without confirm')
+
+    const issued = await post(`/sites/${site.id}/connection-key`, { confirm: true }, owner)
+    assert.equal(issued.status, 200, JSON.stringify(issued.body))
+    assert.match(issued.body.pairing.secret, /^[a-f0-9]{64}$/)
+    assert.notEqual(issued.body.pairing.secret, before)
+    assert.ok(issued.body.pairing.serverUrl)
+
+    const row = (await query('SELECT secret, paired, status FROM sites WHERE id = $1', [site.id])).rows[0]
+    assert.equal(row.secret, issued.body.pairing.secret)
+    assert.equal(row.paired, false, 'the site reads as unpaired until the plugin holds the new key')
+    assert.equal(row.status, 'checking')
+
+    // The key appears in that one response and nowhere else.
+    const list = await get('/sites', owner)
+    assert.equal(JSON.stringify(list.body).includes(issued.body.pairing.secret), false)
+    const pairing = await get(`/sites/${site.id}/pairing`, owner)
+    assert.equal(JSON.stringify(pairing.body).includes(issued.body.pairing.secret), false)
+
+    let audit = null
+    for (let i = 0; i < 20 && !audit; i++) {
+      audit = (await query("SELECT detail FROM events WHERE site_id = $1 AND title = 'New connection key issued'", [site.id])).rows[0]
+      if (!audit) await new Promise((r) => setTimeout(r, 50))
+    }
+    assert.ok(audit, 'the reissue is on the audit trail')
+    assert.equal(JSON.stringify(audit).includes(issued.body.pairing.secret), false, 'the audit row never holds the key')
+  })
+
   test.after(async () => {
     server.close()
     await query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`)

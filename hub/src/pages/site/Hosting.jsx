@@ -6,6 +6,7 @@ import { Button, Input, Select, Badge, SkeletonStats, SkeletonCard } from '../..
 import { site as siteApi, account } from '../../lib/api.js'
 import { t } from '../../lib/i18n.js'
 import SiteReach from '../../components/SiteReach.jsx'
+import ConnectionKey from '../../components/ConnectionKey.jsx'
 
 /**
  * Where this site is hosted.
@@ -29,6 +30,7 @@ export default function Hosting() {
   const [reach, setReach] = useState(null)
   const [rechecking, setRechecking] = useState(false)
   const [reachError, setReachError] = useState('')
+  const [role, setRole] = useState(null)
 
   useEffect(() => {
     let alive = true
@@ -40,6 +42,7 @@ export default function Hosting() {
         const h = me?.hosting || {}
         setDescribed(h)
         setReach(me?.reach || null); setReachError('')
+        setRole(me?.role || null)
         setForm({
           region: h.region || 'unknown',
           provider: h.provider || 'other',
@@ -165,6 +168,8 @@ export default function Hosting() {
           <Button variant="secondary" size="sm" leftIcon="refresh-cw" loading={rechecking} onClick={recheck}>{t('sites.reach.recheck')}</Button>
         </div>
       </div>
+
+      <ConnectionKey key={siteId} siteId={siteId} role={role} />
 
       <div className="gd-card gd-card--e-sm gd-card--p-md">
         <Field

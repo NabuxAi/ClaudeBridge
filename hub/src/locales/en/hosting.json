@@ -34,5 +34,24 @@
   },
   "traits": {
     "title": "Known limitations of this host"
+  },
+  "key": {
+    "title": "Connection key",
+    "hint": "If the plugin on the site no longer has this panel’s key (the settings were re-saved, the plugin was reinstalled, or the database was restored), signed requests are refused. Issue a new key here and enter it in the plugin. History, team and settings stay as they are.",
+    "action": "Issue a new key",
+    "confirmTitle": "Issue a new connection key?",
+    "confirmDesc": "The current key stops working immediately. The site stays disconnected until the new key is entered in the plugin on the site. Only the site owner can do this.",
+    "confirm": "Issue new key",
+    "failed": "The new key could not be issued.",
+    "once": "This key is shown only now. Copy it before leaving this page.",
+    "serverUrl": "Server URL",
+    "secret": "Connection key",
+    "next": "On the site, open Tools → Claude Bridge → Hub Connector Mode, paste both values, enable it and save. Then press “Check connection” above.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Copy failed",
+    "check": "Check connection",
+    "checkOk": "Connected: the site accepted a signed request (plugin {version}).",
+    "checkFailed": "The connection check failed."
   }
 }

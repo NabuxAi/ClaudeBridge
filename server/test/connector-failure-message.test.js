@@ -113,8 +113,9 @@ test('a rejected signature is still reported as such', async () => {
   await assert.rejects(
     () => connector.callTool(SITE, 'security_scan', {}),
     (e) => {
-      assert.match(e.message, /signature/)
-      assert.equal(e.status, 401)
+      assert.equal(e.i18n.key, 'sites.connectorAuth')
+      assert.equal(e.upstreamStatus, 401)
+      assert.equal(e.status, 502, 'our API must not answer 401 for a site refusing us: the hub would sign the user out')
       return true
     }
   )

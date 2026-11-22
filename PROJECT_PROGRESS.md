@@ -1,6 +1,34 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-22 (0.7.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-23 (0.9.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.9.0 / plugin 3.9.4 — named connector refusals, key reissue (2026-11-23)
+
+- Trigger: game30t.com (Iran server) refused every signed call with WordPress
+  `rest_forbidden` 401 — ping, `tools/list`, `tools/call`, both signature
+  schemes — while the server's key was unchanged since creation (checked
+  against the pre-0.6/0.7/0.8 DB dumps) and the site had sent a signed report
+  at 19:11 UTC. The remaining causes (key changed on the site, or the site's
+  database refusing the nonce write — that same run reported "could not
+  access filesystem") were indistinguishable from outside.
+- Plugin: `cb_connector_signature_check()` returns true or a `WP_Error`
+  (`cb_connector_unpaired`, `cb_signature_missing`, `cb_signature_expired` +
+  `site_time`, `cb_signature_invalid`, `cb_nonce_replayed`,
+  `cb_nonce_store_failed` → 503). The storage reason is reachable only after a
+  valid HMAC. Ping uses it as its permission callback; both MCP transports put
+  the reason in `error.data.reason`. Also braced the connector-scope branch in
+  `cb_mcp_authenticate`.
+- Server: `namedRefusal()` in `connector.js` maps reasons to `sites.connector*`
+  keys; a named refusal skips the legacy-signature retry. `ConnectorError`
+  keeps `upstreamStatus` and never answers 401 on our API (a site's 401 → 502):
+  the hub treats a 401 as a lost session and was signing owners out.
+- `POST /sites/:id/connection-key` (owner-only, `confirm: true`): new secret,
+  `paired=false`, `status='checking'`, audit event without the key; the key is
+  returned once. Hub: «کلید اتصال» card on the Hosting page (check connection
+  for owner/admin, reissue for owner, hidden from viewers).
+- Verification: 526/526 server tests on PostgreSQL 16 (new
+  `connector-refusal.test.js` runs the real PHP check from all three sources),
+  hub lint/build, 48/48 Playwright, `php -l` on all three plugin files.
 
 ## Platform 0.8.0 — admin role manages the site (2026-11-22)
 

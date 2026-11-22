@@ -1281,6 +1281,27 @@ router.get('/sites/:id/pairing', async (req, res, next) => {
   } catch (e) { next(e) }
 })
 
+// Issue a new connection key when the plugin's copy no longer matches (a
+// re-saved settings page, a reinstall, a restored database). Owner-only like
+// the other credentials, and it needs an explicit confirm: it disconnects a
+// site that may still be working. The key is returned in this one response.
+router.post('/sites/:id/connection-key', async (req, res, next) => {
+  try {
+    const site = await loadOwnerSite(req, res)
+    if (!site) return
+    if (req.body?.confirm !== true) return res.status(400).json({ message: req.t('sites.keyReissueConfirm') })
+    const { site: row, secret } = await sites.reissueSecret(site.id, req.user.sub)
+    events.record({
+      siteId: site.id, kind: 'policy', severity: 'warning',
+      ...i18nTitle('sites.events.keyReissued', null, { by: req.user?.sub || null }),
+    }).catch(() => {})
+    res.json({
+      message: req.t('sites.keyReissued'),
+      pairing: { serverUrl: publicApiBase(req, { hosting: row.hosting }), secret },
+    })
+  } catch (e) { next(e) }
+})
+
 // Speed test: the server fetches the site and measures TTFB/total/size.
 // POST, and owner-only like every other non-GET site route: each run makes
 // this server fire repeated requests at the customer's site, which is not

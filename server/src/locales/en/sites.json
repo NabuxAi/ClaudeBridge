@@ -102,12 +102,21 @@
     "hostingChanged": "Site hosting settings changed",
     "sensitiveRan": "Sensitive action ran: {op}",
     "approvedFailed": "Approved action failed: {op}",
-    "mcpRan": "Ran {op} from an AI client (hub MCP)"
+    "mcpRan": "Ran {op} from an AI client (hub MCP)",
+    "keyReissued": "New connection key issued"
   },
   "wordpressForbidden": "WordPress REST access is forbidden (403). Check REST restrictions in the security plugin, WAF or host IP rules. The admin login URL is not required.",
   "connectorAuth": "The connector rejected the signature (401). Check the shared key and Hub Connector Mode in the plugin. Changing the admin login URL does not require a new key. Update the plugin to 3.9.2 or later; the connector signature changed in that version.",
   "connectorForbidden": "Connector access was refused (403). Check REST restrictions in the security plugin, firewall or hosting and allow signed requests from your relay server.",
   "connectorMissing": "Connector route not found (404). Check the public WordPress address and installation folder, and activate DigiWp Ai Bridge. Do not enter a custom login URL as the site address.",
   "connectorRedirect": "The connector redirects. Enter the final HTTPS address and canonical site domain; signed requests were not forwarded to another address.",
-  "connectorInvalid": "No valid connector response (HTTP {status}). Check plugin activation, Connector Mode and login or security challenges blocking REST."
+  "connectorInvalid": "No valid connector response (HTTP {status}). Check plugin activation, Connector Mode and login or security challenges blocking REST.",
+  "connectorUnpaired": "The plugin on the site has no connection key, so Hub Connector Mode is off. Paste this site's connection key into Tools → Claude Bridge on the site, or issue a new key from the site's Hosting page.",
+  "connectorHeaders": "The request reached WordPress without its signature headers. A firewall, CDN or host proxy is stripping X-DigiWP-* headers; allow them for /wp-json/claude-bridge/.",
+  "connectorClock": "The site's clock is more than five minutes off (the site reports {siteTime}). Fix the server time on the host; nothing is wrong with the key.",
+  "connectorKeyMismatch": "The connection key on the site no longer matches this panel. Issue a new key from the site's Hosting page and paste it into Tools → Claude Bridge on the site.",
+  "connectorReplay": "The site saw this signed request twice and refused the repeat. Try again; if it keeps happening, a proxy is replaying requests.",
+  "connectorStorage": "The signature is correct, but WordPress could not write to its database (HTTP {status}). Check the host's disk space, quota and database; nothing was run on the site.",
+  "keyReissued": "A new connection key was issued. The site stays disconnected until the new key is entered in the plugin.",
+  "keyReissueConfirm": "Confirm issuing a new key: the current key stops working immediately."
 }

@@ -520,6 +520,23 @@ export const sites = {
     return publicSite(updated)
   },
 
+  /**
+   * A fresh connection key for a site whose plugin no longer holds the old one.
+   * The old key stops working at once, so the site reads as unpaired until the
+   * new key is entered in the plugin and a signed check succeeds again. The
+   * site's id, history, team and settings are untouched.
+   */
+  async reissueSecret(id, userId) {
+    const secret = crypto.randomBytes(32).toString('hex')
+    const row = await one(
+      `UPDATE sites SET secret = $3, paired = false, status = 'checking'
+        WHERE id = $1 AND user_id = $2 AND status <> 'deleted' RETURNING *`,
+      [id, userId, secret]
+    )
+    if (!row) throw httpError(404, 'common.siteMissing')
+    return { site: row, secret }
+  },
+
   /** What the connector reported after it last ran updates. */
   async recordUpdateRun(id, state) {
     const row = await one(

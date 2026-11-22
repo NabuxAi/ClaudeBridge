@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a scoped static Bearer token sent in the Authorization header. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.9.3
+ * Version: 3.9.4
  * Author: Account City
  * License: GPLv2 or later
  * Text Domain: wp-claude-bridge
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.9.3' );
+define( 'CB_VERSION', '3.9.4' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' ); // Legacy plaintext option.
 define( 'CB_TOKEN_HASH_OPTION', 'cb_mcp_token_sha256' );
 define( 'CB_SCOPE_OPTION', 'cb_mcp_token_scope' );
@@ -5280,7 +5280,7 @@ add_action( 'rest_api_init', function () {
 	// Connector handshake check — the hub server calls this (signed) to verify pairing.
 	register_rest_route( $ns, '/connector/ping', array(
 		'methods'             => 'GET',
-		'permission_callback' => 'cb_connector_request_signed',
+		'permission_callback' => 'cb_connector_signature_check',
 		'callback'            => function () {
 			return rest_ensure_response( array(
 				'ok'        => true,
@@ -5658,6 +5658,22 @@ function cb_mcp_auth_failed() {
   }
 }
 function cb_mcp_auth_status() { return cb_mcp_auth_limited() ? 429 : 401; }
+/** The hub's signature refusal, when that is why a call was rejected; rate limiting still wins. */
+function cb_mcp_connector_refusal() {
+  $r = isset( $GLOBALS['cb_connector_refusal'] ) ? $GLOBALS['cb_connector_refusal'] : null;
+  return ( is_wp_error( $r ) && 429 !== cb_mcp_auth_status() ) ? $r : null;
+}
+function cb_mcp_unauthorized_status() {
+  $r = cb_mcp_connector_refusal();
+  return $r ? (int) $r->get_error_data()['status'] : cb_mcp_auth_status();
+}
+function cb_mcp_unauthorized_error() {
+  $r = cb_mcp_connector_refusal();
+  if ( ! $r ) return array( 'code' => -32001, 'message' => 'Unauthorized.' );
+  $data = $r->get_error_data();
+  unset( $data['status'] );
+  return array( 'code' => -32001, 'message' => $r->get_error_message(), 'data' => array_merge( array( 'reason' => $r->get_error_code() ), $data ) );
+}
 function cb_mcp_authenticate( $authorization ) {
   if ( isset( $_GET['token'] ) || isset( $_POST['token'] ) ) {
     cb_mcp_auth_failed();
@@ -5668,8 +5684,10 @@ function cb_mcp_authenticate( $authorization ) {
   $valid = false;
   if ( cb_connector_enabled() ) {
     $valid = cb_connector_request_signed();
-    if ( $valid ) $GLOBALS['cb_mcp_request_scope'] = cb_mcp_scope_setting( 'connector' );
+    if ( $valid ) {
+      $GLOBALS['cb_mcp_request_scope'] = cb_mcp_scope_setting( 'connector' );
       if ( 'admin' === $GLOBALS['cb_mcp_request_scope'] ) cb_become_admin();
+    }
   } elseif ( current_user_can( 'edit_themes' ) ) {
     $valid = true;
     $GLOBALS['cb_mcp_request_scope'] = 'admin';
@@ -5726,7 +5744,7 @@ function cb_rpc_error( $id, $code, $message ) {
  */
 function cb_mcp_handler( $request ) {
 	if ( ! cb_mcp_authorized( $request ) ) {
-		$resp = new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => null, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ), cb_mcp_auth_status() );
+		$resp = new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => null, 'error' => cb_mcp_unauthorized_error() ), cb_mcp_unauthorized_status() );
 		if ( 429 === cb_mcp_auth_status() ) { $resp->header( 'Retry-After', '900' ); }
 		$resp->header( 'WWW-Authenticate', 'Bearer resource_metadata="' . esc_url_raw( home_url( '/.well-known/oauth-protected-resource' ) ) . '"' );
 		return $resp;
@@ -6206,25 +6224,57 @@ function cb_connector_header( $name ) {
 	return '';
 }
 
-/** Verify a request using a nonce-bound HMAC and reject each nonce after first use. */
-function cb_connector_request_signed() {
+/**
+ * Check a signed hub request: true, or a WP_Error that says which part failed.
+ *
+ * Every reason is safe to tell the caller. None reveals the secret, the clock
+ * reason only shows this site's own time, and the storage reason is reached
+ * only after the signature itself proved correct, so an unsigned caller cannot
+ * use it to probe the database. One identical 401 for all of them left a
+ * broken pairing indistinguishable from a full disk.
+ */
+function cb_connector_signature_check() {
   $c = cb_connector();
-  if ( empty( $c['secret'] ) ) return false;
+  if ( empty( $c['secret'] ) ) {
+    return cb_connector_refusal( 'cb_connector_unpaired', __( 'Hub Connector Mode has no connection key on this site.', 'wp-claude-bridge' ), 401 );
+  }
   $ts = cb_connector_header( 'X-DigiWP-Timestamp' );
   $nonce = cb_connector_header( 'X-DigiWP-Nonce' );
   $sig = cb_connector_header( 'X-DigiWP-Signature' );
   if ( ! preg_match( '/^[0-9]{10,12}$/', $ts ) ||
        ! preg_match( '/^[a-f0-9]{32}$/', $nonce ) ||
-       ! preg_match( '/^[a-f0-9]{64}$/', $sig ) ||
-       abs( time() - (int) $ts ) > 300 ) return false;
+       ! preg_match( '/^[a-f0-9]{64}$/', $sig ) ) {
+    return cb_connector_refusal( 'cb_signature_missing', __( 'The request reached WordPress without complete signature headers.', 'wp-claude-bridge' ), 401 );
+  }
+  if ( abs( time() - (int) $ts ) > 300 ) {
+    return cb_connector_refusal( 'cb_signature_expired', __( 'The request time differs from this site\'s clock by more than five minutes.', 'wp-claude-bridge' ), 401, array( 'site_time' => time() ) );
+  }
 
   // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
   $body = file_get_contents( 'php://input' );
   $expected = hash_hmac( 'sha256', $ts . "\n" . $nonce . "\n" . $body, $c['secret'] );
-  if ( ! hash_equals( $expected, $sig ) ) return false;
+  if ( ! hash_equals( $expected, $sig ) ) {
+    return cb_connector_refusal( 'cb_signature_invalid', __( 'The connection key on this site does not match the hub.', 'wp-claude-bridge' ), 401 );
+  }
   $key = 'cb_mcp_nonce_' . hash( 'sha256', (string) $c['site_id'] . ':' . $nonce );
   // add_option is atomic on the unique option_name key; a transient read + set is not.
-  return add_option( $key, (string) time(), '', false );
+  if ( add_option( $key, (string) time(), '', false ) ) {
+    return true;
+  }
+  if ( false !== get_option( $key ) ) {
+    return cb_connector_refusal( 'cb_nonce_replayed', __( 'This signed request was already used once.', 'wp-claude-bridge' ), 401 );
+  }
+  return cb_connector_refusal( 'cb_nonce_store_failed', __( 'The signature is valid, but WordPress could not write to its database. Check the host\'s disk space and database.', 'wp-claude-bridge' ), 503 );
+}
+
+function cb_connector_refusal( $code, $message, $status, $extra = array() ) {
+  $GLOBALS['cb_connector_refusal'] = new WP_Error( $code, $message, array_merge( array( 'status' => $status ), $extra ) );
+  return $GLOBALS['cb_connector_refusal'];
+}
+
+/** Verify a request using a nonce-bound HMAC and reject each nonce after first use. */
+function cb_connector_request_signed() {
+  return true === cb_connector_signature_check();
 }
 add_action( 'init', function () {
   if ( ! wp_next_scheduled( 'cb_mcp_nonce_cleanup' ) ) {
@@ -6408,11 +6458,11 @@ function cb_mcp_run_raw() {
 	$id   = ( is_array( $body ) && isset( $body['id'] ) ) ? $body['id'] : null;
 
 	if ( ! cb_mcp_authorized_any() ) {
-		status_header( cb_mcp_auth_status() );
+		status_header( cb_mcp_unauthorized_status() );
 		if ( 429 === cb_mcp_auth_status() ) { header( 'Retry-After: 900' ); }
 		header( 'Content-Type: application/json; charset=utf-8' );
 		header( 'WWW-Authenticate: Bearer resource_metadata="' . esc_url_raw( home_url( '/.well-known/oauth-protected-resource' ) ) . '"' );
-		echo wp_json_encode( array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => array( 'code' => -32001, 'message' => 'Unauthorized.' ) ) );
+		echo wp_json_encode( array( 'jsonrpc' => '2.0', 'id' => $id, 'error' => cb_mcp_unauthorized_error() ) );
 		exit;
 	}
 

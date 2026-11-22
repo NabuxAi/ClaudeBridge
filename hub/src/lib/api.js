@@ -276,6 +276,8 @@ export function site(siteId) {
     // Look at the site again from both DigiWP servers (international / Iran).
     // No mock: a fabricated "reachable" would be exactly the green zero we refuse.
     recheckReach: () => http(p('/reach'), { method: 'POST', body: {} }),
+    // Owner-only. Disconnects the site until the new key is entered in the plugin.
+    reissueConnectionKey: () => http(p('/connection-key'), { method: 'POST', body: { confirm: true } }),
     // A full malware scan. Queued: it walks every file under wp-content.
     startScan: call(
       () => mock.startScan(siteId),

@@ -43,7 +43,10 @@ AI/MCP client --------------------------------> WordPress plugin directly
      Connector Mode.
    - PHP 7.4+ / WordPress 5.6+ target.
    - Version at baseline: `3.7.4`.
-   - Current release: `3.9.1` (verified 2026-10-02) — the `render_blocks`
+   - Current release: `3.9.4` (2026-11-23): signed hub requests that fail
+     answer a named reason (`cb_signature_invalid`, `cb_signature_expired`,
+     `cb_nonce_store_failed` 503, …) instead of one bare 401; see the
+     connector invariant under Security. Earlier: `3.9.1` (verified 2026-10-02) — the `render_blocks`
      content-placement fix in the shared block compiler (`3.9.1`) on top of
      the 2026-09-29 smart-design wave (seven Gutenberg block / Elementor
      tools, `3.9.0`) and the 2026-09-28 transactional safe-update pipeline
@@ -988,6 +991,18 @@ These rules override visual mockups and optimistic marketing copy:
   minutes, re-negotiated after). Those sites have the 300 s timestamp window but
   no nonce replay guard until their plugin updates. Inbound verification stays
   nonce-only. Pinned in `server/test/connector-legacy.test.js` (2026-11-21).
+- Plugin 3.9.4+ names why it refused a signed request; the storage reason
+  (`cb_nonce_store_failed`, 503) is reported only behind a valid HMAC, so an
+  unsigned caller cannot probe the site's database. A named refusal is never
+  retried with the legacy signature. `ConnectorError.status` is what our API
+  answers and never 401 (a site's 401 → 502, kept in `upstreamStatus`): on
+  this API 401 means the panel session ended and the hub signs the user out.
+  Pinned in `server/test/connector-refusal.test.js` (real PHP, all three
+  plugin sources) and `connector-legacy.test.js`.
+- `POST /sites/:id/connection-key` re-issues a site's secret: owner-only,
+  explicit `confirm: true`, key returned once, site marked unpaired, audit
+  event without the key (pinned in `team-roles.test.js`). The hub card is on
+  the site's Hosting page.
 - Preserve generic login errors and dummy password verification to avoid account
   enumeration.
 - Rate limits are currently in process memory. Before horizontal scaling, move
@@ -1493,7 +1508,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.8.0** (admin role manages the site, 2026-11-22), shared by `hub/package.json` and
+- Current platform release: **0.9.0** (named connector refusals and key reissue, 2026-11-23), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

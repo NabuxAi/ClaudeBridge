@@ -111,6 +111,8 @@ export async function ping(site) {
       remember(site, index)
       return { ...data, route }
     }
+    const named = namedRefusal(res.status, data)
+    if (named) throw named
     if (res.status === 401) {
       // A plugin build from before nonce support rejects the current scheme.
       const old = await get(url, legacySignHeaders(site.secret, site.siteKey, ''))
@@ -127,11 +129,32 @@ export async function ping(site) {
   throw connectionFailure(lastStatus, forbidden ? 'sites.connectorForbidden' : lastStatus === 404 ? 'sites.connectorMissing' : 'sites.connectorInvalid')
 }
 
-function connectionFailure(status, key) {
+function connectionFailure(status, key, vars = {}) {
   const error = new ConnectorError(`WordPress connector check failed (HTTP ${status}); ${key}`, status >= 400 ? status : 502)
-  error.i18n = { key, vars: { status } }
+  error.i18n = { key, vars: { status, ...vars } }
   return error
+}
 
+// Plugin 3.9.4+ names why it refused a signed request. Older builds answer a
+// bare `rest_forbidden`, which keeps the generic message.
+const REFUSALS = {
+  cb_connector_unpaired: 'sites.connectorUnpaired',
+  cb_signature_missing: 'sites.connectorHeaders',
+  cb_signature_expired: 'sites.connectorClock',
+  cb_signature_invalid: 'sites.connectorKeyMismatch',
+  cb_nonce_replayed: 'sites.connectorReplay',
+  cb_nonce_store_failed: 'sites.connectorStorage',
+}
+
+/** The plugin's named refusal (REST error or MCP error shape), as a ConnectorError; else null. */
+export function namedRefusal(status, body) {
+  const reason = body?.code || body?.error?.data?.reason
+  const key = REFUSALS[reason]
+  if (!key) return null
+  const siteTime = body?.data?.site_time ?? body?.error?.data?.site_time
+  const error = connectionFailure(status, key, Number.isFinite(siteTime) ? { siteTime: new Date(siteTime * 1000).toISOString() } : {})
+  error.reason = reason
+  return error
 }
 
 async function mcpAddress(site) {
@@ -139,7 +162,7 @@ async function mcpAddress(site) {
   if (index == null) {
     // Negotiate before sending a command; route failures never replay a write.
     try { await ping(site); index = selected(site) } catch (error) {
-      if (error.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
+      if (error.reason || error.upstreamStatus === 401) throw error
       // Preserve the MCP endpoint's own diagnostic if the ping route is absent.
     }
   }
@@ -176,7 +199,9 @@ export async function callTool(site, name, args = {}) {
     data = {}
   }
 
-  if (res.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
+  const named = namedRefusal(res.status, data)
+  if (named) throw named
+  if (res.status === 401) throw connectionFailure(401, 'sites.connectorAuth')
 
   if (res.status === 403) throw connectionFailure(403, 'sites.connectorForbidden')
   if (res.status === 404) throw connectionFailure(404, 'sites.connectorMissing')
@@ -206,7 +231,9 @@ export async function listTools(site) {
   const raw = await res.text().catch(() => '')
   let data = null
   try { data = raw ? JSON.parse(raw) : null } catch { data = null }
-  if (res.status === 401) throw new ConnectorError('connector rejected signature (401)', 401)
+  const named = namedRefusal(res.status, data)
+  if (named) throw named
+  if (res.status === 401) throw connectionFailure(401, 'sites.connectorAuth')
   if (!res.ok || !data || data.error || !Array.isArray(data.result?.tools)) {
     throw new ConnectorError(describeToolFailure('tools/list', res.status, data || {}, raw), res.status)
   }
@@ -242,9 +269,16 @@ function describeToolFailure(name, status, data, raw) {
 }
 
 export class ConnectorError extends Error {
+  /**
+   * `status` is what OUR API answers; `upstreamStatus` is what the site said.
+   * A site's 401 becomes a 502 here: on this API a 401 means "your session
+   * ended", and the hub signs the user out on it. A WordPress site refusing
+   * our signature must never log the site's owner out of the panel.
+   */
   constructor(message, status) {
     super(message)
     this.name = 'ConnectorError'
-    this.status = status || 502
+    this.upstreamStatus = status || 502
+    this.status = status === 401 || !status ? 502 : status
   }
 }

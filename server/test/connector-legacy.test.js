@@ -50,6 +50,53 @@ test('a current plugin keeps the nonce scheme and a wrong secret still fails', a
   } finally { current.server.close() }
   const old = await oldPlugin('right')
   try {
-    await assert.rejects(ping({ url: old.url, secret: 'wrong', siteKey: 'x' }), (e) => e.status === 401)
+    await assert.rejects(ping({ url: old.url, secret: 'wrong', siteKey: 'x' }), (e) => e.upstreamStatus === 401 && e.status === 502)
   } finally { old.server.close() }
+})
+
+// Plugin 3.9.4+: a refusal names its reason, and the hub passes it on instead
+// of the generic "check the key" line (the 2026-11-22 game30t.com incident).
+function refusingPlugin(reply) {
+  const seen = []
+  const server = http.createServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      seen.push(req.url)
+      const { status, body } = reply(req.url)
+      res.statusCode = status
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify(body))
+    })
+  })
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, seen, url: `http://127.0.0.1:${server.address().port}` })))
+}
+
+test('a named key mismatch is reported as such and no legacy downgrade is tried', async () => {
+  const site = await refusingPlugin(() => ({ status: 401, body: { code: 'cb_signature_invalid', message: 'x', data: { status: 401 } } }))
+  try {
+    await assert.rejects(ping({ url: site.url, secret: 's', siteKey: 'k' }), (e) => {
+      assert.equal(e.i18n.key, 'sites.connectorKeyMismatch')
+      assert.equal(e.upstreamStatus, 401)
+      assert.equal(e.status, 502, 'a site refusing our signature must not read as an ended panel session')
+      return true
+    })
+    assert.equal(site.seen.length, 1, 'a 3.9.4 plugin is never retried with the legacy signature')
+  } finally { site.server.close() }
+})
+
+test('a database that cannot be written surfaces as a storage failure on ping and on tool calls', async () => {
+  const site = await refusingPlugin((path) => path.includes('/connector/ping')
+    ? { status: 503, body: { code: 'cb_nonce_store_failed', message: 'x', data: { status: 503 } } }
+    : { status: 503, body: { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'x', data: { reason: 'cb_nonce_store_failed' } } } })
+  try {
+    await assert.rejects(ping({ url: site.url, secret: 's', siteKey: 'k2' }), (e) => e.i18n.key === 'sites.connectorStorage' && e.status === 503)
+    await assert.rejects(callTool({ url: site.url, secret: 's', siteKey: 'k2' }, 'site_info', {}), (e) => e.i18n.key === 'sites.connectorStorage')
+  } finally { site.server.close() }
+})
+
+test('a clock refusal carries the site\'s own time', async () => {
+  const site = await refusingPlugin(() => ({ status: 401, body: { code: 'cb_signature_expired', message: 'x', data: { status: 401, site_time: 1795400000 } } }))
+  try {
+    await assert.rejects(ping({ url: site.url, secret: 's', siteKey: 'k3' }), (e) => e.i18n.key === 'sites.connectorClock' && e.i18n.vars.siteTime === new Date(1795400000 * 1000).toISOString())
+  } finally { site.server.close() }
 })
