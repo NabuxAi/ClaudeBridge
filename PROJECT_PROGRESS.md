@@ -2,6 +2,17 @@
 
 Last updated 2026-11-22 (0.7.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
 
+## Platform 0.8.0 — admin role manages the site (2026-11-22)
+
+- `loadManagerSite` (owner or admin) replaces `loadOwnerSite` on 24 routes in
+  `routes/sites.js`, all monitor writes and offsite jobs; owner-only remains
+  for authority, backup download token/stream, offsite targets, team.
+  `setPolicy`/`setBackupPolicy`/`setHosting` are called with the site's owner
+  id (they scope by `user_id`). Hub MCP lets admins run changes; sensitive
+  tools still become proposals. Effective access for admin: `manage`.
+- Verification: 517/517 server tests on PostgreSQL 16, hub lint/build,
+  45/45 Playwright.
+
 ## Platform 0.7.0 — invite landing, cross-server account links, Digi (2026-11-22)
 
 - Invitations: one link `/invite?token=` (`team.lookup` via public, token-gated,

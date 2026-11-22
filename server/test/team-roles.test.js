@@ -153,7 +153,7 @@ if (!dsn) {
     assert.deepEqual(strangerList.body, [])
   })
 
-  test('writes of lower-role members are 403 before route-specific 400s; owner passes', async () => {
+  test('admins manage the site, viewers only read; owner-only stays owner-only', async () => {
     const owner = await registerUser(`tr-owner-write-${crypto.randomUUID()}@test.local`)
     const admin = await registerUser(`tr-admin-write-${crypto.randomUUID()}@test.local`)
     const viewer = await registerUser(`tr-viewer-write-${crypto.randomUUID()}@test.local`)
@@ -162,6 +162,7 @@ if (!dsn) {
     await addMember(owner, site.id, viewer, 'viewer')
 
     for (const member of [admin, viewer]) {
+      // The authority level stays with the owner, for admins too.
       const res = await patch(`/sites/${site.id}/authority`, { authority: 'auto' }, member)
       assert.equal(res.status, 403, `${member.email} must not change authority`)
       assert.ok(
@@ -169,24 +170,34 @@ if (!dsn) {
         `the 403 must carry the clear Persian message, got: ${res.body.message}`
       )
 
-      // The site is not paired, so the route's own 400 would be «سایت متصل
-      // نیست» — the membership 403 must win, proving the guard runs first.
-      const scan = await post(`/sites/${site.id}/scan`, {}, member)
-      assert.equal(scan.status, 403, 'membership 403 must precede the unpaired-site 400')
-      assert.notEqual(scan.body.message, 'سایت متصل نیست.')
-
       // A capability token mints a download of the whole database dump —
-      // owner-only like every other write.
+      // owner-only, admins included.
       const token = await get(`/sites/${site.id}/backups/whatever/token`, member)
       assert.equal(token.status, 403, 'members must not mint backup download tokens')
 
       // And the download stream itself is owner-only too: the dump (user_pass
-      // hashes, options, content) is not one of the «گزارش‌ها و وضعیت» views a
-      // member may read. The 403 must again precede the unpaired-site 400.
+      // hashes, options, content) is not one of the views a member may read.
+      // The 403 must precede the unpaired-site 400.
       const download = await get(`/sites/${site.id}/backups/whatever/download`, member)
       assert.equal(download.status, 403, 'members must not stream the backup dump with their own session')
       assert.notEqual(download.body.message, 'سایت متصل نیست.')
     }
+
+    // Site operations (platform 0.7.0): a viewer is refused BEFORE the
+    // route's own 400 — the membership 403 must win, proving the guard runs
+    // first — while an admin passes the gate and gets the same honest
+    // refusal as the owner would (the site is not paired yet).
+    const viewerScan = await post(`/sites/${site.id}/scan`, {}, viewer)
+    assert.equal(viewerScan.status, 403, 'membership 403 must precede the unpaired-site 400')
+    assert.ok(String(viewerScan.body.message).includes('مدیر'), viewerScan.body.message)
+    const adminScan = await post(`/sites/${site.id}/scan`, {}, admin)
+    assert.equal(adminScan.status, 400, JSON.stringify(adminScan.body))
+    assert.equal(adminScan.body.message, 'سایت متصل نیست.')
+    // An admin changes settings for real.
+    const adminPolicy = await patch(`/sites/${site.id}/update-policy`, { autoThemes: false }, admin)
+    assert.equal(adminPolicy.status, 200, JSON.stringify(adminPolicy.body))
+    const viewerPolicy = await patch(`/sites/${site.id}/update-policy`, { autoThemes: true }, viewer)
+    assert.equal(viewerPolicy.status, 403)
 
     const ownerPass = await patch(`/sites/${site.id}/authority`, { authority: 'auto' }, owner)
     assert.equal(ownerPass.status, 200, JSON.stringify(ownerPass.body))
@@ -230,8 +241,8 @@ if (!dsn) {
     assert.equal(list.status, 200)
     assert.equal(list.body.members.length, 1)
     assert.equal(list.body.members[0].role, 'admin')
-    assert.equal(list.body.members[0].effective.level, 'report')
-    assert.equal(list.body.members[0].effective.label, 'فقط خواندن')
+    assert.equal(list.body.members[0].effective.level, 'manage')
+    assert.ok(list.body.members[0].effective.label.startsWith('مدیریت سایت'))
   })
 
   test('a spent invitation token does not work again', async () => {

@@ -178,12 +178,14 @@ if (!dsn) {
     assert.equal(ghost.status, 404)
   })
 
-  test('a member reads monitors but every write stays owner-only; a stranger learns nothing', async () => {
+  test('a viewer reads monitors but cannot change them; an admin can; a stranger learns nothing', async () => {
     const ownerAuth = await owner()
     const member = await owner()
+    const admin = await owner()
     const stranger = await owner()
     const site = await makeSite(ownerAuth)
-    await addMember(ownerAuth, site.id, member, 'admin')
+    await addMember(ownerAuth, site.id, member, 'viewer')
+    await addMember(ownerAuth, site.id, admin, 'admin')
 
     const created = await post(`/sites/${site.id}/monitors`, goodBody(), ownerAuth)
     assert.equal(created.status, 201)
@@ -205,6 +207,12 @@ if (!dsn) {
     // Manual check fires an outbound request at the URL — a write, not a read.
     const memberCheck = await post(`/sites/${site.id}/monitors/${created.body.id}/check`, {}, member)
     assert.equal(memberCheck.status, 403)
+
+    // An admin manages monitors like the owner (platform 0.7.0).
+    const adminPost = await post(`/sites/${site.id}/monitors`, goodBody({ label: 'مدیر' }), admin)
+    assert.equal(adminPost.status, 201, JSON.stringify(adminPost.body))
+    const adminPatch = await patch(`/sites/${site.id}/monitors/${adminPost.body.id}`, { enabled: false }, admin)
+    assert.equal(adminPatch.status, 200, JSON.stringify(adminPatch.body))
 
     const strangerList = await get(`/sites/${site.id}/monitors`, stranger)
     assert.equal(strangerList.status, 404, 'existence is not disclosed to strangers')

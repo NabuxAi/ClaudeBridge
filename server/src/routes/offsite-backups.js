@@ -46,6 +46,17 @@ async function loadOwnerSite(req, res) {
   return site
 }
 
+// Owner or admin (platform 0.7.0); a viewer reads only. See routes/sites.js.
+async function loadManagerSite(req, res) {
+  const site = await loadSite(req, res)
+  if (!site) return null
+  if (req.siteRole !== 'owner' && req.siteRole !== 'admin') {
+    res.status(403).json({ message: req.t('common.managerOnly') })
+    return null
+  }
+  return site
+}
+
 const targetLimit = limiter('offsite-target', {
   limit: 30, windowMs: 60 * 60 * 1000, keyFn: ip,
   message: 'offsite.limit.target',
@@ -116,7 +127,7 @@ router.get('/sites/:id/offsite-backups/jobs', async (req, res, next) => {
 
 router.post('/sites/:id/offsite-backups/jobs', jobLimit, async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
 
     const targetId = req.body?.targetId

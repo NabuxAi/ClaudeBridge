@@ -46,6 +46,17 @@ async function loadOwnerSite(req, res) {
   return site
 }
 
+// Owner or admin (platform 0.7.0); a viewer reads only. See routes/sites.js.
+async function loadManagerSite(req, res) {
+  const site = await loadSite(req, res)
+  if (!site) return null
+  if (req.siteRole !== 'owner' && req.siteRole !== 'admin') {
+    res.status(403).json({ message: req.t('common.managerOnly') })
+    return null
+  }
+  return site
+}
+
 const writeLimit = limiter('monitor-write', {
   limit: 30, windowMs: 60 * 60 * 1000, keyFn: ip,
   message: 'monitors.limit.write',
@@ -79,7 +90,7 @@ router.get('/sites/:id/monitors', async (req, res, next) => {
 
 router.post('/sites/:id/monitors', writeLimit, async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const monitor = await monitors.create(site.id, req.body || {})
     res.status(201).json(monitor)
@@ -88,7 +99,7 @@ router.post('/sites/:id/monitors', writeLimit, async (req, res, next) => {
 
 router.patch('/sites/:id/monitors/:monitorId', writeLimit, async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const monitor = await monitors.update(site.id, req.params.monitorId, req.body || {})
     res.json(monitor)
@@ -97,7 +108,7 @@ router.patch('/sites/:id/monitors/:monitorId', writeLimit, async (req, res, next
 
 router.delete('/sites/:id/monitors/:monitorId', writeLimit, async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     await monitors.remove(site.id, req.params.monitorId)
     res.json({ ok: true })
@@ -126,7 +137,7 @@ router.get('/sites/:id/monitors/:monitorId/results', async (req, res, next) => {
 // this server fire a request at the URL, which is not "reading".
 router.post('/sites/:id/monitors/:monitorId/check', checkLimit, async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const monitor = await monitors.get(site.id, req.params.monitorId)
     if (!monitor) return res.status(404).json({ message: req.t('monitors.notFound') })

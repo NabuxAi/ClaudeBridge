@@ -29,7 +29,8 @@
   },
   "effective": {
     "full": "Full management",
-    "readOnly": "Read only"
+    "readOnly": "Read only",
+    "manage": "Manages the site (not the team, the AI authority level or full database downloads)"
   },
   "inviteMail": {
     "subject": "Invitation to help manage {site}",

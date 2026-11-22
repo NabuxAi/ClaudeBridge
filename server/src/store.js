@@ -564,7 +564,7 @@ const VALID_ROLES = Object.keys(ROLE_LABEL)
  */
 const EFFECTIVE_ACCESS = {
   owner: { level: 'owner', label: 'team.effective.full' },
-  admin: { level: 'report', label: 'team.effective.readOnly' },
+  admin: { level: 'manage', label: 'team.effective.manage' },
   viewer: { level: 'report', label: 'team.effective.readOnly' },
 }
 const roleLabel = (locale, role) => (ROLE_LABEL[role] ? t(locale, ROLE_LABEL[role]) : role)

@@ -63,13 +63,30 @@ async function loadSite(req, res) {
   return raw
 }
 
-// Membership layer for mutating routes: a non-owner member is read-only
-// (report level), so every state change, settings write, pairing action and
-// job start stays with the owner. The 403 fires BEFORE route-specific 400s
-// (unpaired site, missing confirm, …) on purpose — a member probing for what
-// would work must not get a different error map than the owner. This is
-// membership only: the sensitive-tool classification in authority.js and the
-// site's own authority level are untouched and keep applying on top.
+// Membership layer for mutating routes (since platform 0.7.0):
+//   - owner and admin manage the site: settings, jobs (scan, updates, backups,
+//     restores), actions, the assistant, monitors, pairing checks, approvals;
+//   - viewer reads only;
+//   - a few things stay with the owner alone (loadOwnerSite): the authority
+//     level (how much the AI may do unattended), minting/streaming a full
+//     database dump, offsite storage credentials, and the team itself.
+// The 403 fires BEFORE route-specific 400s (unpaired site, missing confirm, …)
+// on purpose — a member probing for what would work must not get a different
+// error map than the owner. Membership only: the sensitive-tool
+// classification in authority.js and the site's authority level still apply
+// on top, for admins exactly as for the owner.
+const MANAGERS = new Set(['owner', 'admin'])
+
+async function loadManagerSite(req, res) {
+  const site = await loadSite(req, res)
+  if (!site) return null
+  if (!MANAGERS.has(req.siteRole)) {
+    res.status(403).json({ message: req.t('common.managerOnly') })
+    return null
+  }
+  return site
+}
+
 async function loadOwnerSite(req, res) {
   const site = await loadSite(req, res)
   if (!site) return null
@@ -543,10 +560,10 @@ router.get('/sites/:id/settings', concern('settings'))
  */
 router.patch('/sites/:id/update-policy', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
 
-    const { policy, refused } = await sites.setPolicy(site.id, req.user.sub, req.body || {})
+    const { policy, refused } = await sites.setPolicy(site.id, site.user_id, req.body || {})
 
     let pushed = null
     if (site.paired && site.url && site.secret) {
@@ -611,7 +628,7 @@ router.post('/sites/:id/rescue/:step', async (req, res, next) => {
     const step = RESCUE_STEPS[req.params.step]
     if (!step) return res.status(404).json({ message: req.t('sites.unknownStep') })
 
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: req.t('common.siteNotPaired') })
@@ -678,7 +695,7 @@ router.patch('/sites/:id/authority', async (req, res, next) => {
  */
 router.post('/sites/:id/conflict', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: req.t('common.siteNotPaired') })
@@ -712,7 +729,7 @@ router.post('/sites/:id/conflict', async (req, res, next) => {
  */
 router.post('/sites/:id/scan', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: req.t('common.siteNotPaired') })
@@ -738,7 +755,7 @@ router.post('/sites/:id/scan', async (req, res, next) => {
  */
 router.post('/sites/:id/perf', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: req.t('common.siteNotPaired') })
@@ -764,7 +781,7 @@ router.post('/sites/:id/perf', async (req, res, next) => {
  */
 router.post('/sites/:id/perf/analyse', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const profile = req.body?.profile
     if (!profile || typeof profile !== 'object') {
@@ -783,7 +800,7 @@ router.post('/sites/:id/perf/analyse', async (req, res, next) => {
  */
 router.post('/sites/:id/updates/run', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: req.t('common.siteNotPaired') })
@@ -886,7 +903,7 @@ router.get('/sites/:id/backups/preflight', async (req, res, next) => {
  */
 router.post('/sites/:id/backups', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: req.t('common.siteNotPaired') })
@@ -921,7 +938,7 @@ router.post('/sites/:id/backups', async (req, res, next) => {
  */
 router.post('/sites/:id/backups/:backupId/restore', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: req.t('common.siteNotPaired') })
@@ -1054,10 +1071,10 @@ router.get('/sites/:id/backup-policy', async (req, res, next) => {
 
 router.put('/sites/:id/backup-policy', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const patch = req.body || {}
-    const updated = await sites.setBackupPolicy(site.id, req.user.sub, patch)
+    const updated = await sites.setBackupPolicy(site.id, site.user_id, patch)
     if (site.paired && site.url && site.secret) {
       try {
         await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, 'backup_policy_set', {
@@ -1077,7 +1094,7 @@ router.put('/sites/:id/backup-policy', async (req, res, next) => {
 
 router.post('/sites/:id/backups/prune', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: req.t('common.siteNotPaired') })
@@ -1145,7 +1162,7 @@ router.get('/sites/:id/offsite/jobs', async (req, res, next) => {
 
 router.post('/sites/:id/offsite/sync', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.paired || !site.url || !site.secret) {
       return res.status(400).json({ message: req.t('common.siteNotPaired') })
@@ -1208,7 +1225,7 @@ router.get('/sites/:id/jobs/:jobId?', async (req, res, next) => {
  */
 router.post('/sites/:id/incidents/:eventId/dismiss', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const ok = await events.resolveOne(site.id, req.params.eventId)
     if (!ok) return res.status(404).json({ message: req.t('sites.openEventNotFound') })
@@ -1230,9 +1247,9 @@ router.post('/sites/:id/incidents/:eventId/dismiss', async (req, res, next) => {
  */
 router.patch('/sites/:id/hosting', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
-    const updated = await sites.setHosting(site.id, req.user.sub, req.body || {})
+    const updated = await sites.setHosting(site.id, site.user_id, req.body || {})
 
     events.record({
       siteId: site.id, kind: 'policy', severity: 'info',
@@ -1270,7 +1287,7 @@ router.get('/sites/:id/pairing', async (req, res, next) => {
 // "reading" from the site's point of view.
 router.post('/sites/:id/speedtest', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.url) return res.status(400).json({ message: req.t('sites.noUrlShort') })
     const samples = Math.min(5, Math.max(1, Number(req.body?.samples) || 3))
@@ -1281,7 +1298,7 @@ router.post('/sites/:id/speedtest', async (req, res, next) => {
 // Live connection check via the signed /connector/ping.
 router.post('/sites/:id/ping', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.url || !site.secret) return res.status(400).json({ message: req.t('sites.notReadyToPair') })
     try {
@@ -1299,7 +1316,7 @@ router.post('/sites/:id/ping', async (req, res, next) => {
 // the answer: which of them can see it, and the road this server takes.
 router.post('/sites/:id/reach', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     if (!site.url) return res.status(400).json({ message: req.t('sites.noUrlShort') })
     let reach
@@ -1337,7 +1354,7 @@ router.get('/sites/:id/proposals', async (req, res, next) => {
 /** Decline a proposal. It keeps the row: who said no is worth knowing too. */
 router.post('/sites/:id/proposals/:proposalId/reject', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const rejected = await proposals.resolve(site.id, req.params.proposalId, 'rejected', {
       by: req.user?.sub,
@@ -1351,7 +1368,7 @@ router.post('/sites/:id/proposals/:proposalId/reject', async (req, res, next) =>
 
 router.post('/sites/:id/actions', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const { action, tool, args = {}, approved, proposalId } = req.body || {}
     const op = tool || action
@@ -1422,7 +1439,7 @@ router.post('/sites/:id/actions', async (req, res, next) => {
 
 router.post('/sites/:id/assistant', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const { message, maxToolSteps } = req.body || {}
     res.json(await assistant.answer(site, message, { maxToolSteps, locale: req.locale }))
@@ -1442,7 +1459,7 @@ router.get('/sites/:id/conversations', async (req, res, next) => {
 
 router.post('/sites/:id/conversations', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const { title } = req.body || {}
     const created = await conversations.create(site.id, req.user?.sub, title)
@@ -1462,7 +1479,7 @@ router.get('/sites/:id/conversations/:convId', async (req, res, next) => {
 
 router.patch('/sites/:id/conversations/:convId', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const { title, status } = req.body || {}
     const updated = await conversations.update(site.id, req.params.convId, { title, status })
@@ -1473,7 +1490,7 @@ router.patch('/sites/:id/conversations/:convId', async (req, res, next) => {
 
 router.delete('/sites/:id/conversations/:convId', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const ok = await conversations.deleteConv(site.id, req.params.convId)
     if (!ok) return res.status(404).json({ message: req.t('conversations.notFound') })
@@ -1483,7 +1500,7 @@ router.delete('/sites/:id/conversations/:convId', async (req, res, next) => {
 
 router.post('/sites/:id/conversations/:convId/messages', async (req, res, next) => {
   try {
-    const site = await loadOwnerSite(req, res)
+    const site = await loadManagerSite(req, res)
     if (!site) return
     const { message, maxToolSteps, waitForReply = true } = req.body || {}
     const result = await conversations.postAndProcess(site, req.params.convId, message, {

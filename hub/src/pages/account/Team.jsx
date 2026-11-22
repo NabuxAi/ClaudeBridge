@@ -13,9 +13,9 @@ const ROLE_CFG = {
 }
 
 const roleOptions = () => [
-  // برچسب نقشِ «مدیر» نباید چیزی را وعده بدهد که سرور فعلاً اجرا نمی‌کند: لایهٔ
-  // عضویت (server/src/routes/sites.js) هر عضو غیرمالک را فقط-خواندنی نگه
-  // می‌دارد و همین زیر هر عضو هم نشان داده می‌شود.
+  // «مدیر» از نسخهٔ 0.7.0 واقعاً می‌نویسد (loadManagerSite در
+  // server/src/routes/sites.js)؛ «فقط مشاهده» فقط می‌خواند. تیم، سطح اختیار
+  // هوش مصنوعی و دانلود کامل پایگاه داده همچنان فقط با مالک است.
   { value: 'admin', label: t('team.roles.admin') },
   { value: 'viewer', label: t('team.roles.viewer') },
 ]
@@ -26,7 +26,9 @@ const roleOptions = () => [
 const effectiveOf = (m) => m?.effective
   || (m?.role === 'owner'
     ? { level: 'owner', label: t('team.effective.owner') }
-    : { level: 'report', label: t('team.effective.report') })
+    : m?.role === 'admin'
+      ? { level: 'manage', label: t('team.effective.manage') }
+      : { level: 'report', label: t('team.effective.report') })
 
 const COLS = '2.2fr 1fr 1.4fr 1fr 0.6fr'
 

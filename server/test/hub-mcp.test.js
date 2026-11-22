@@ -177,7 +177,12 @@ if (!dsn) {
     assert.deepEqual(reached, ['site_info', 'flush_cache'])
 
     // A change made from an AI client is in the site's audit trail.
-    const { rows } = await query("SELECT detail FROM events WHERE site_id = $1 AND kind = 'action'", [siteId])
+    // The audit write is fire-and-forget after the answer; give it a moment under load.
+    let rows = []
+    for (let i = 0; i < 40 && !rows.some((r) => r.detail?.via === 'hub-mcp' && r.detail?.op === 'flush_cache'); i++) {
+      if (i) await new Promise((r) => setTimeout(r, 50));
+      ({ rows } = await query("SELECT detail FROM events WHERE site_id = $1 AND kind = 'action'", [siteId]))
+    }
     assert.ok(rows.some((r) => r.detail?.via === 'hub-mcp' && r.detail?.op === 'flush_cache'))
   })
 
@@ -221,6 +226,26 @@ if (!dsn) {
     const refused = await rpc(token, 'tools/call', { name: 'call_site_tool', arguments: { site: siteId, tool: 'flush_cache', arguments: { id: 1 } } })
     assert.equal(refused.body.result.isError, true)
     assert.deepEqual(reached, ['site_info'])
+  })
+
+  test('an admin member runs changes through MCP; sensitive ones still wait for approval', async () => {
+    const owner = await account()
+    const siteId = await pairedSite(owner.auth)
+    const admin = await account()
+    const invited = await send(`/sites/${siteId}/team/invitations`, {
+      method: 'POST', headers: owner.auth, body: JSON.stringify({ email: admin.email, role: 'admin' }),
+    })
+    assert.equal(invited.status, 201, JSON.stringify(invited.body))
+    const accepted = await send('/team/invitations/accept', { method: 'POST', headers: admin.auth, body: JSON.stringify({ token: invited.body.raw }) })
+    assert.equal(accepted.status, 201, JSON.stringify(accepted.body))
+    const { token } = await newToken(admin.auth)
+
+    reached.length = 0
+    const changed = await rpc(token, 'tools/call', { name: 'call_site_tool', arguments: { site: siteId, tool: 'flush_cache', arguments: { id: 1 } } })
+    assert.equal(callText(changed).ran, 'flush_cache')
+    const sensitive = callText(await rpc(token, 'tools/call', { name: 'call_site_tool', arguments: { site: siteId, tool: 'db_query', arguments: { sql: 'SELECT 1' } } }))
+    assert.equal(sensitive.requiresApproval, true)
+    assert.deepEqual(reached, ['flush_cache'])
   })
 
   test('a paired WordPress site can verify only one other DigiWP account', async () => {

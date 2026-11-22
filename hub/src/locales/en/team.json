@@ -2,13 +2,14 @@
   "title": "Team members",
   "subtitle": "People and their access to your sites",
   "roles": {
-    "admin": "Admin — reports and status (making changes is not yet enabled for members)",
+    "admin": "Admin — manages the site: updates, scans, backups, restores, monitors, the assistant (not the team or the AI authority level)",
     "viewer": "View only — reports and status"
   },
   "effective": {
     "owner": "Full management",
     "report": "Read only",
-    "current": "Current access: {label}"
+    "current": "Current access: {label}",
+    "manage": "Manages the site"
   },
   "mailFail": {
     "no_email_url": "the email service is not configured on the server",

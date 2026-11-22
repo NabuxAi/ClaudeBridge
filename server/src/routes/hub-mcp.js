@@ -13,7 +13,7 @@
 //
 // Three tools: list_sites, site_tools, call_site_tool. The policy is the
 // panel's own (/sites/:id/actions), not a new one:
-//   - a team member may run read-only tools; every change stays with the owner;
+//   - a view-only member may run read-only tools; owner and admin run changes;
 //   - a sensitive tool (authority.js) never runs from here: it becomes a
 //     proposal the owner approves in the panel, like WPVibe's approval link;
 //   - a change that ran is written to the site's event log.
@@ -62,7 +62,7 @@ const TOOLS = [
   },
   {
     name: 'call_site_tool',
-    description: 'Run one tool on one site. Read-only tools run for owners and team members; changes run for the owner only; sensitive tools (file edits, deletes, database, restores, publishing…) are filed as a proposal for the owner to approve in the panel and do not run immediately.',
+    description: 'Run one tool on one site. Read-only tools run for every member; changes run for the owner and admins; sensitive tools (file edits, deletes, database, restores, publishing…) are filed as a proposal for the owner to approve in the panel and do not run immediately.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -243,8 +243,8 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
   if (!tool) return textResult('`tool` is required.', true)
   const kind = classify(tool, toolArgs)
 
-  if (kind !== 'read' && site.member_role !== 'owner') {
-    return textResult(`Only the site owner can run "${tool}" (${kind}); as a team member you can run read-only tools.`, true)
+  if (kind !== 'read' && site.member_role !== 'owner' && site.member_role !== 'admin') {
+    return textResult(`Only the site owner or an admin can run "${tool}" (${kind}); with view-only access you can run read-only tools.`, true)
   }
 
   if (kind === 'sensitive') {

@@ -473,7 +473,8 @@ for UI convenience.
   (`/register?invite=<token>&email=…`) next to the signed-in accept link.
   The root installations at `clashroyale.ir` and `bodogame.com` allow two
   active DigiWP accounts each: the existing owner and one invitee. The second
-  account uses its own Hub MCP token with the existing read-only member role.
+  account uses its own Hub MCP token with the role it was invited with
+  (an admin invitee manages the site since 0.8.0; a viewer reads).
   The owner sends an email-bound invitation (one link, `/invite?token=`, since 0.7.0: an existing account signs in and accepts; a new one registers). Either acceptance route acquires
   the same per-host PostgreSQL lock and checks the cap before it consumes the
   invitation. Root domain aliases with or without `www` use the same connector
@@ -482,7 +483,7 @@ for UI convenience.
   those paired roots. Plugin 3.9.3 lets a user with `manage_options` submit
   the code and the intended account's email over the existing HMAC connector.
   Server-side approval consumes the code within the same capacity lock as
-  email invitations and grants the existing read-only member role.
+  email invitations and grants the read-only (viewer) member role.
 - Per-site member roles ARE enforced on the site routes (2026-10-01,
   membership layer): `sites.rawWithRole` resolves owner/admin/viewer in one
   query, `routes/sites.js` and `routes/offsite-backups.js` admit an active
@@ -499,11 +500,18 @@ for UI convenience.
   because the token's `sub` is the minting owner (pinned in
   `server/test/team-roles.test.js`). This is membership only: the authority
   ladder (report/confirm/auto) and the sensitive-tool classification are
-  untouched, and admin/viewer are both read-only at this layer — the stored
-  role distinction is not yet load-bearing. The Team page renders the honest
-  effective access (`effective:{level,label}` on each member) instead of
-  promising writes the server refuses. Not yet built: shared sites in the
-  member's own site list, and any admin-beyond-read behaviour.
+  untouched. Platform 0.8.0 made the admin role load-bearing:
+  `loadManagerSite` (owner or admin) gates every site operation — settings,
+  pairing checks, job starts including restores, actions and proposal
+  approval/rejection, the assistant, monitors, offsite jobs — and hub MCP
+  changes; a viewer still gets 403 (`common.managerOnly`) before the route's
+  own 400. Owner-only (`loadOwnerSite`) remains for the authority level, the
+  backup download-token mint and stream, offsite storage targets
+  (credentials), and team management. Setting writes are stored against the
+  site's owner row (`site.user_id`). Effective access: admin =
+  `{level:'manage'}`. Sensitive tools still need approval for admins exactly
+  as for the owner. Pinned in `team-roles.test.js`, `monitors.test.js`,
+  `hub-mcp.test.js`.
 - Account deletion (2026-10-01): `POST /account/delete`
   (`server/src/routes/account.js`) asks for the current password behind the
   live session — wrong answers get one generic 400 and a per-account limiter
@@ -547,8 +555,8 @@ for UI convenience.
 - Account-level multi-user RBAC. (Invitation acceptance without a prior
   account and per-site member-role enforcement on site routes shipped on
   2026-10-01 — see the team-management bullet under "Partial"; what remains
-  unbuilt is any distinction beyond owner-vs-read for admin/viewer, shared
-  sites in the member's site list, and account-level role grants.)
+  unbuilt is account-level role grants and a per-permission matrix beyond
+  owner/admin/viewer; admin writes shipped in 0.8.0.)
 - Browser push subscription enrollment from the hub. (Web Push/VAPID
   enrollment shipped on 2026-10-02 — see the bullet under "Implemented or
   materially implemented". What remains unbuilt: production VAPID keys set in
@@ -1485,7 +1493,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.7.0** (invite landing, cross-server account links, Digi mascot, 2026-11-22), shared by `hub/package.json` and
+- Current platform release: **0.8.0** (admin role manages the site, 2026-11-22), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a
@@ -1576,8 +1584,7 @@ Do this before expanding the feature list:
   reset, and any 2FA recovery path beyond the 8 one-time codes.)
 - Team invitations, roles, per-site grants, and immutable permission audit.
   (Invitations — including acceptance at registration — and per-site
-  read-only membership shipped on 2026-10-01; what remains: any
-  admin-beyond-read behaviour, shared sites in the member's own list, and
+  membership shipped on 2026-10-01, admin writes in 0.8.0; what remains:
   the permission audit.)
 - Browser push: what shipped on 2026-10-02 is VAPID enrollment + the owner
   alert `web-push` channel; what remains is end-to-end channel readiness UX
