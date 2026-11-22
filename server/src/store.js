@@ -9,6 +9,7 @@ import { applyPolicyChange, readPolicy } from './policy.js'
 import { sendMail } from './mailer.js'
 import { normalizeSiteAddress } from './site-address.js'
 import { canonicalEmail } from './email-identity.js'
+import { pinRoute } from './peer-relay.js'
 
 const twoAccountHosts = new Set(['clashroyale.ir', 'bodogame.com'])
 
@@ -38,6 +39,7 @@ const publicSite = (s) => s && ({
   backupPolicy: s.backup_policy || { destination: 'local', maxDaily: 5, retentionDays: 30, maxStorageMb: 2048, autoPruneOnFull: true },
   updateState: s.update_state || null,
   hosting: describeHosting(s.hosting),
+  reach: s.reach || null,
   // No invented metrics here. This object feeds the sites list, where an
   // uptime of "99.98%" for a site nobody has ever monitored is the most
   // convincing lie in the product: it is on the first screen, it is precise,
@@ -393,6 +395,36 @@ export const sites = {
       [newId('tm_'), site.id, userId, Date.now()]
     )
     return { ...publicSite(row), secret: site.secret, siteKey: site.site_key } // secret shown ONCE
+  },
+
+  /** Store what a reachability check saw and pin the road it chose. */
+  async setReach(id, reach) {
+    const row = await one('UPDATE sites SET reach = $2 WHERE id = $1 RETURNING url, reach', [id, JSON.stringify(reach)])
+    if (row) pinRoute(row.url, reach?.route)
+    return row?.reach || null
+  },
+
+  /**
+   * A signed connector call just succeeded over `route`. When that differs
+   * from the stored road (a site whose filter changed), the stored road
+   * follows the evidence; what each server saw at discovery stays as seen.
+   */
+  async noteRoute(id, route) {
+    if (!['direct', 'peer'].includes(route)) return null
+    const row = await one(
+      `UPDATE sites SET reach = jsonb_set(COALESCE(reach, '{"servers":[]}'::jsonb), '{route}', to_jsonb($2::text))
+       WHERE id = $1 RETURNING url, reach`,
+      [id, route]
+    )
+    if (row) pinRoute(row.url, route)
+    return row?.reach || null
+  },
+
+  /** At boot: re-pin every stored road so the first call takes the right one. */
+  async loadRoutes() {
+    const rows = await all(`SELECT url, reach->>'route' AS route FROM sites WHERE reach->>'route' = 'peer' AND status <> 'deleted'`)
+    for (const row of rows) pinRoute(row.url, row.route)
+    return rows.length
   },
 
   async markPaired(id, connector = {}) {

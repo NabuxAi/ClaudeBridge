@@ -5,6 +5,7 @@ import Icon from '../../lib/icons.jsx'
 import { Button, Input, Select, Badge, SkeletonStats, SkeletonCard } from '../../components/index.js'
 import { site as siteApi, account } from '../../lib/api.js'
 import { t } from '../../lib/i18n.js'
+import SiteReach from '../../components/SiteReach.jsx'
 
 /**
  * Where this site is hosted.
@@ -25,6 +26,9 @@ export default function Hosting() {
   // rendered state belongs to: until it matches, the skeleton shows and no
   // stale message or value leaks through.
   const [loadedFor, setLoadedFor] = useState(null)
+  const [reach, setReach] = useState(null)
+  const [rechecking, setRechecking] = useState(false)
+  const [reachError, setReachError] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -35,6 +39,7 @@ export default function Hosting() {
         const me = sites.find((s) => s.id === siteId)
         const h = me?.hosting || {}
         setDescribed(h)
+        setReach(me?.reach || null); setReachError('')
         setForm({
           region: h.region || 'unknown',
           provider: h.provider || 'other',
@@ -104,6 +109,16 @@ export default function Hosting() {
     setSaved('')
   }
 
+  async function recheck() {
+    setRechecking(true); setReachError('')
+    try {
+      const res = await siteApi(siteId).recheckReach()
+      setReach(res.reach || null)
+    } catch (e) {
+      setReachError(e?.message || t('sites.reach.recheckFailed'))
+    } finally { setRechecking(false) }
+  }
+
   async function save() {
     // The server silently nulls a callback URL it cannot parse
     // (server/src/hosting.js normaliseUrl). Refuse the same input here, so the
@@ -142,6 +157,14 @@ export default function Hosting() {
   return (
     <>
       {head}
+
+      <div className="gd-card gd-card--e-sm gd-card--p-md" style={{ marginBottom: 16 }}>
+        <SiteReach reach={reach} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end', flexWrap: 'wrap', marginTop: 8 }}>
+          {reachError && <span role="alert" style={{ fontSize: 12.5, color: 'var(--gd-danger-text)' }}>{reachError}</span>}
+          <Button variant="secondary" size="sm" leftIcon="refresh-cw" loading={rechecking} onClick={recheck}>{t('sites.reach.recheck')}</Button>
+        </div>
+      </div>
 
       <div className="gd-card gd-card--e-sm gd-card--p-md">
         <Field

@@ -12,7 +12,7 @@ import { sessions } from '../sessions.store.js'
 import { twoFactor } from '../twofactor.store.js'
 import { billing } from '../billing.store.js'
 import { limiter, hit, clientIp } from '../security/ratelimit.js'
-import { discoverWordPress } from '../site-address.js'
+import { checkReach, recalled } from '../reachability.js'
 
 const router = Router()
 // Idempotent with the app-level middleware; keeps req.t/req.locale present
@@ -31,10 +31,15 @@ router.get('/sites', async (req, res, next) => {
 })
 
 // Read-only discovery before creating a site or disclosing a pairing secret.
+// Both servers look — this one directly, the partner (Iran ↔ international)
+// through the signed relay — and `reach` says which of them can see the site.
 router.post('/sites/discover', limiter('site-discovery', {
   limit: 20, windowMs: 60_000, keyFn: (req) => req.user.sub,
 }), async (req, res, next) => {
-  try { res.json(await discoverWordPress(req.body?.url)) } catch (e) { next(e) }
+  try {
+    const { result, reach } = await checkReach(req.body?.url)
+    res.json({ ...result, reach })
+  } catch (e) { next(e) }
 })
 
 router.post('/sites/wordpress-access', limiter('wordpress-access-request', {
@@ -59,6 +64,17 @@ router.post('/sites', async (req, res, next) => {
     const { name, title } = req.body || {}
     await billing.canAddSite(req.user.sub, req.locale)
     const site = await sites.add(req.user.sub, { name, title })
+    // Keep what the discovery just saw, so this server takes the right road
+    // from the first call. A client that skipped discovery gets the check now,
+    // in the background: creating the site does not wait on two networks.
+    const seen = recalled(site.url)
+    if (seen) await sites.setReach(site.id, seen)
+    else {
+      checkReach(site.url)
+        .then(({ reach }) => sites.setReach(site.id, reach))
+        .catch((e) => (e?.details?.reach ? sites.setReach(site.id, e.details.reach) : null))
+        .catch(() => {})
+    }
     res.status(201).json({
       id: site.id, name: site.name, title: site.title, status: site.status,
       pairing: {

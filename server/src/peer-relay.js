@@ -50,7 +50,21 @@ const CONNECT_ERRORS = new Set([
   'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'CERT_HAS_EXPIRED', 'ERR_TLS_CERT_ALTNAME_INVALID',
 ])
 
+// Failures that happen before a single byte of the request is sent: no TCP
+// connection, no DNS answer, no TLS session. A write that failed like this
+// cannot have run on the site, so it may take the other road. ECONNRESET and
+// socket errors are NOT here — they can arrive after the body was sent.
+const PRE_SEND_ERRORS = new Set([
+  'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT', 'CERT_HAS_EXPIRED', 'ERR_TLS_CERT_ALTNAME_INVALID',
+])
+
 const viaPeerUntil = new Map() // host -> epoch ms
+// Durable choice per host, from a reachability check (reachability.js) and
+// stored on the site row: 'peer' means this server cannot reach the site but
+// the partner can, so every call — writes included — goes through the peer
+// first instead of paying a failed direct attempt.
+const pinnedRoute = new Map() // host -> 'peer'
 
 export function isConfigured() {
   return Boolean(config.peerRelay.url && config.peerRelay.secret)
@@ -102,6 +116,7 @@ function hostOf(url) {
 }
 
 export function prefersPeer(url) {
+  if (pinnedRoute.get(hostOf(url)) === 'peer') return true
   const until = viaPeerUntil.get(hostOf(url))
   if (!until) return false
   if (until < Date.now()) { viaPeerUntil.delete(hostOf(url)); return false }
@@ -112,8 +127,25 @@ function remember(url) {
   viaPeerUntil.set(hostOf(url), Date.now() + REMEMBER_MS)
 }
 
+/** Remember (or forget) the road a reachability check chose for a site. */
+export function pinRoute(url, route) {
+  const host = hostOf(url)
+  if (!host) return
+  if (route === 'peer') pinnedRoute.set(host, 'peer')
+  else {
+    pinnedRoute.delete(host)
+    viaPeerUntil.delete(host)
+  }
+}
+
+/** Failed before anything was sent; see PRE_SEND_ERRORS. */
+export function neverSent(err) {
+  return PRE_SEND_ERRORS.has(err?.cause?.code || err?.code)
+}
+
 export function _reset() {
   viaPeerUntil.clear()
+  pinnedRoute.clear()
 }
 
 /** Send one connector request through the peer; resolves to a Response. */
@@ -147,8 +179,19 @@ export async function viaPeer(url, { method = 'GET', headers = {}, body = null }
 export async function connectorFetch(url, init = {}, { idempotent = false, singleAttempt = false } = {}) {
   const peerInit = { method: init.method || 'GET', headers: init.headers || {}, body: init.body ?? null }
   // Mutations must not switch roads after an ambiguous peer or origin error.
-  if (singleAttempt) return isConfigured() && prefersPeer(url) ? viaPeer(url, peerInit) : fetch(url, init)
-
+  // The one unambiguous case: the direct connection never opened, so the
+  // request was never sent and cannot have run — the peer may carry it.
+  if (singleAttempt) {
+    if (isConfigured() && prefersPeer(url)) return viaPeer(url, peerInit)
+    try {
+      return await fetch(url, init)
+    } catch (err) {
+      if (!isConfigured() || !neverSent(err)) throw err
+      const relayed = await viaPeer(url, peerInit)
+      remember(url)
+      return relayed
+    }
+  }
 
   if (isConfigured() && prefersPeer(url)) {
     try {
@@ -181,6 +224,28 @@ export async function connectorFetch(url, init = {}, { idempotent = false, singl
     }
   }
   return res
+}
+
+/**
+ * Ask the partner server to run the same public WordPress discovery from its
+ * side of the border. Resolves to `{ ok: true, result }` or
+ * `{ ok: false, key }` (an i18n key naming why it could not see the site).
+ */
+export async function discoverViaPeer(siteUrl) {
+  const payload = JSON.stringify({ url: siteUrl })
+  const res = await fetch(`${config.peerRelay.url}/relay/discover`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...signRelay(payload) },
+    body: payload,
+    signal: AbortSignal.timeout(20000),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok || !data || typeof data.ok !== 'boolean') {
+    const err = new Error(`peer discovery refused: ${data?.message || `HTTP ${res.status}`}`)
+    err.peer = true
+    throw err
+  }
+  return data
 }
 
 /**

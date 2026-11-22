@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import SiteReach from '../../components/SiteReach.jsx'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import { Button, Input } from '../../components/index.js'
@@ -125,6 +126,8 @@ export default function Onboarding() {
   const [checking, setChecking] = useState(false)
   const [canVerifyWordPress, setCanVerifyWordPress] = useState(false)
   const [accessRequest, setAccessRequest] = useState(null)
+  // What each DigiWP server (international / Iran) saw, also when neither did.
+  const [failedReach, setFailedReach] = useState(null)
   const discoveryRequest = useRef(null)
   useEffect(() => () => discoveryRequest.current?.abort(), [])
 
@@ -132,12 +135,13 @@ export default function Onboarding() {
     if (discoveryRequest.current || !url.trim()) return
     const controller = new AbortController()
     discoveryRequest.current = controller
-    setChecking(true); setErr(''); setConfirmed(false)
+    setChecking(true); setErr(''); setConfirmed(false); setFailedReach(null)
     try {
       const result = await account.discoverSite(url, controller.signal)
       if (!controller.signal.aborted) setDetection(result)
     } catch (error) {
       if (!controller.signal.aborted) {
+        setFailedReach(error?.data?.details?.reach || null)
         setErr(error instanceof ApiError && error.status < 500
           ? error.message
           : t('onboarding.input.discoveryFailed'))
@@ -153,7 +157,7 @@ export default function Onboarding() {
   const editAddress = (value) => {
     discoveryRequest.current?.abort()
     discoveryRequest.current = null
-    setChecking(false); setDetection(null); setConfirmed(false); setErr(''); setUrl(value)
+    setChecking(false); setDetection(null); setConfirmed(false); setErr(''); setUrl(value); setFailedReach(null)
     setCanVerifyWordPress(false)
   }
 
@@ -233,6 +237,7 @@ export default function Onboarding() {
                 <div><dt>{t('onboarding.input.path')}</dt><dd dir="ltr">{detection.path}</dd></div>
               </dl>
               <div className="ob-location__address" dir="ltr">{detection.siteUrl}</div>
+              {detection.reach && <SiteReach reach={detection.reach} />}
               {!detection.connectorDetected && <p className="ob-location__note">{t('onboarding.input.connectorMissing')}</p>}
               <label className="ob-location__confirm">
                 <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} disabled={busy} required />
@@ -240,6 +245,7 @@ export default function Onboarding() {
               </label>
               <p className="ob-location__edit">{t('onboarding.input.editHint')}</p>
             </section>}
+            {!detection && failedReach && <section className="ob-location"><SiteReach reach={failedReach} /></section>}
           </div>
           <div style={{ display: 'flex', gap: 11, background: 'var(--gd-info-bg)', border: '1px solid var(--gd-info-border)', borderRadius: 'var(--gd-radius-lg)', padding: '14px 16px', margin: '20px 0' }}>
             <Icon name="shield-check" size={18} style={{ color: 'var(--gd-info)', flex: '0 0 auto', marginTop: 1 }} />

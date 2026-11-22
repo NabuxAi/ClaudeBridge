@@ -69,7 +69,7 @@
   },
   "mcp": {
     "title": "AI clients (MCP)",
-    "intro": "One address for Claude, ChatGPT or any MCP client to manage every site you can reach here. Read-only tools run right away; changes run only for the site owner; sensitive actions (file edits, deletes, database, restores) wait for your approval on the site's page. Sites this server cannot reach are reached through our partner server inside or outside Iran.",
+    "intro": "One address for Claude, ChatGPT or any MCP client to manage every site you can reach here. Read-only tools run right away; changes run only for the site owner; sensitive actions (file edits, deletes, database, restores) wait for your approval on the site's page. A site this server cannot reach is reached through the partner server — international to Iran and Iran to international — using the route found when the site was added.",
     "urlLabel": "MCP address",
     "namePlaceholder": "Name, e.g. Claude on my laptop",
     "create": "Create token",
@@ -87,6 +87,8 @@
     "loadError": "Couldn't load your MCP tokens.",
     "loadNotFound": "The MCP endpoint isn't enabled on this server yet.",
     "createError": "Couldn't create a token.",
-    "revokeError": "Couldn't revoke the token."
+    "revokeError": "Couldn't revoke the token.",
+    "pageTitle": "AI clients (MCP)",
+    "pageSubtitle": "One address and a personal token for Claude, ChatGPT or any MCP client."
   }
 }

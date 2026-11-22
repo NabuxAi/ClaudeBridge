@@ -176,6 +176,13 @@ for UI convenience.
 - Iran ↔ international peer relay (`peer-relay.js`, `POST /v1/relay/forward`):
   connector calls a server cannot deliver are re-sent through the partner server.
   Off unless both `PEER_RELAY_URL` and `PEER_RELAY_SECRET` are set.
+  Platform 0.6.0: adding a site checks it from both servers
+  (`reachability.js`, `POST /v1/relay/discover`) and stores `sites.reach`;
+  a site only the partner sees is pinned to the peer road (reloaded at boot),
+  so panel, jobs and hub MCP — writes included — go through the partner first.
+  A write falls back to the peer only when the direct connection never opened
+  (refused/DNS/connect timeout/TLS), never after a reset or timeout.
+  `SERVER_REGION=intl|ir` only labels the report. MCP tokens live on `/app/mcp`.
 - Core/plugin/theme inventory and update policy.
 - Transactional manual update pipeline (`3.8.0`): preflight, per-wave file
   snapshots, health gates, automatic plugin/theme rollback, durable journal —
@@ -1001,6 +1008,8 @@ These rules override visual mockups and optimistic marketing copy:
 - The hub is the only intended browser client of the server API.
 - `DATABASE_URL` is required for real server operation.
 - `LIVE=1` enables real connector relay.
+- `SERVER_REGION` (`intl` or `ir`) labels which side of the border this
+  server is on in reachability reports; unset reads "this server".
 - `PEER_RELAY_URL` (the partner server's API base, same form as
   `PUBLIC_BASE_URL`) and `PEER_RELAY_SECRET` (identical on both servers) enable the
   Iran ↔ international relay. `PEER_RELAY_ALLOW_PRIVATE=1` is for hermetic tests
@@ -1459,7 +1468,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.5.0** (Liquid Glass, 2026-11-12), shared by `hub/package.json` and
+- Current platform release: **0.6.0** (dual-server reachability + MCP menu, 2026-11-22), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

@@ -27,6 +27,7 @@ const Alerts = lazy(() => import('./pages/account/Alerts.jsx'))
 // حساب/امنیت: نشست‌ها و دستگاه‌های حساب (/app/security). هم‌نام صفحهٔ امنیتِ
 // هر سایت است (pages/site/Security.jsx) اما مسیر و مأموریتشان جداست.
 const AccountSecurity = lazy(() => import('./pages/account/Security.jsx'))
+const Mcp = lazy(() => import('./pages/account/Mcp.jsx'))
 // D · per-site panel
 const Overview = lazy(() => import('./pages/site/Overview.jsx'))
 const Incidents = lazy(() => import('./pages/site/Incidents.jsx'))
@@ -104,6 +105,7 @@ export default function App() {
         <Route path="notifications" element={<Notifications />} />
         <Route path="alerts" element={<Alerts />} />
         <Route path="security" element={<AccountSecurity />} />
+        <Route path="mcp" element={<Mcp />} />
         <Route path="profile" element={<Profile />} />
       </Route>
 

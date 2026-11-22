@@ -1,6 +1,30 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-12. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-22. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.6.0 — dual-server reachability and the MCP menu (2026-11-22)
+
+- `server/src/reachability.js`: `checkReach()` runs the public WordPress
+  discovery here and asks the partner server (`POST /v1/relay/discover`,
+  same HMAC as `/relay/forward`) in parallel. Result `reach = {checkedAt,
+  route: direct|peer|null, servers:[{region, self, ok, reason}]}`, `intl`
+  listed first. `/sites/discover` returns it; when neither side sees the
+  site the 422 carries `details.reach`. Kept 15 min by address so `POST
+  /sites` stores what discovery saw (`sites.reach` JSONB); a client that
+  skipped discovery gets the check in the background.
+- `peer-relay.js`: `pinRoute()` keeps a durable per-host `peer` road
+  (loaded at boot by `sites.loadRoutes()`, updated by `setReach` and by the
+  road a signed ping actually took, `noteRoute`). Mutations now take the peer
+  when the direct connection never opened (`neverSent`: refused, DNS,
+  connect timeout, TLS) — never after ECONNRESET/socket errors or timeouts.
+- `POST /sites/:id/reach` (owner) re-checks and stores. Hub MCP `list_sites`
+  carries `reach`. `SERVER_REGION=intl|ir` labels the report only.
+- Hub: `SiteReach` component on onboarding (also on a failed discovery) and
+  the site Hosting page with re-check; MCP tokens moved to their own page
+  `/app/mcp` with a main-menu entry.
+- Verification: 511/511 server tests on PostgreSQL 16 (new
+  `reachability.test.js`, updated `peer-relay.test.js`), hub lint/build,
+  40/40 Playwright.
 
 ## Platform 0.5.0 — Liquid Glass panel (2026-11-12)
 

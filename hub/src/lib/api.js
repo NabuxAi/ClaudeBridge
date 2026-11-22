@@ -263,6 +263,9 @@ export function site(siteId) {
       (body) => mock.setHosting(siteId, body),
       (body) => http(p('/hosting'), { method: 'PATCH', body })
     ),
+    // Look at the site again from both DigiWP servers (international / Iran).
+    // No mock: a fabricated "reachable" would be exactly the green zero we refuse.
+    recheckReach: () => http(p('/reach'), { method: 'POST', body: {} }),
     // A full malware scan. Queued: it walks every file under wp-content.
     startScan: call(
       () => mock.startScan(siteId),

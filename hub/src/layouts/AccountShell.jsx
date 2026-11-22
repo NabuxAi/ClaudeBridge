@@ -8,6 +8,7 @@ const NAV = [
   { to: '/app', end: true, icon: 'layout-grid', label: 'dashboard', group: 'shell.panel.mainMenu' },
   { to: '/app/sites', icon: 'globe', label: 'sites', group: 'shell.panel.mainMenu' },
   { to: '/app/alerts', icon: 'bell-ring', label: 'alerts', group: 'shell.panel.mainMenu' },
+  { to: '/app/mcp', icon: 'bot', label: 'mcp', group: 'shell.panel.mainMenu' },
   { to: '/app/team', icon: 'users', label: 'team', group: 'shell.panel.accountMenu' },
   { to: '/app/billing', icon: 'credit-card', label: 'billing', group: 'shell.panel.accountMenu' },
   { to: '/app/notifications', icon: 'bell', label: 'notifications', group: 'shell.panel.accountMenu' },

@@ -23,6 +23,7 @@ import pushRouter from './routes/push.js'
 import adminRouter from './routes/admin.js'
 import billingRouter from './routes/billing.js'
 import { billing } from './billing.store.js'
+import { sites } from './store.js'
 import notificationsRouter from './routes/notifications.js'
 import teamRouter from './routes/team.js'
 import relayRouter from './routes/relay.js'
@@ -191,6 +192,7 @@ const app = createApp()
 /** Connect, migrate, seed, then accept traffic and start the daily jobs. */
 export function start() {
   return initDb()
+    .then(() => sites.loadRoutes())
     .then(initIntel)
     .then(() => {
       app.listen(config.port, () => {

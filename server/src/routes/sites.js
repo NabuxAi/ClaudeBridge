@@ -3,6 +3,7 @@ import { config, publicApiBase } from '../config.js'
 import { sites } from '../store.js'
 import { siteData } from '../seed.js'
 import * as connector from '../connector.js'
+import { checkReach } from '../reachability.js'
 import { describePolicy, policyForConnector } from '../policy.js'
 import { provenanceFor, updatesFromStatus } from '../live.js'
 import * as events from '../events.js'
@@ -1284,12 +1285,31 @@ router.post('/sites/:id/ping', async (req, res, next) => {
     if (!site) return
     if (!site.url || !site.secret) return res.status(400).json({ message: req.t('sites.notReadyToPair') })
     try {
-      const out = await connector.ping({ url: site.url, secret: site.secret, siteKey: site.site_key })
+      const { route, ...out } = await connector.ping({ url: site.url, secret: site.secret, siteKey: site.site_key })
       await sites.markPaired(site.id, { version: out.version })
-      res.json({ ok: true, connector: out })
+      const reach = await sites.noteRoute(site.id, route)
+      res.json({ ok: true, connector: out, reach })
     } catch (e) {
       res.status(e.status || 502).json({ ok: false, message: errorMessage(req.locale, e) })
     }
+  } catch (e) { next(e) }
+})
+
+// Look at the site again from both servers (Iran and international) and keep
+// the answer: which of them can see it, and the road this server takes.
+router.post('/sites/:id/reach', async (req, res, next) => {
+  try {
+    const site = await loadOwnerSite(req, res)
+    if (!site) return
+    if (!site.url) return res.status(400).json({ message: req.t('sites.noUrlShort') })
+    let reach
+    try {
+      reach = (await checkReach(site.url)).reach
+    } catch (e) {
+      if (!e?.details?.reach) throw e
+      reach = e.details.reach
+    }
+    res.json({ reach: await sites.setReach(site.id, reach) })
   } catch (e) { next(e) }
 })
 

@@ -94,6 +94,7 @@ services:
       # Unset = sites are reached directly only.
       - PEER_RELAY_URL=${PEER_RELAY_URL:-}
       - PEER_RELAY_SECRET=${PEER_RELAY_SECRET:-}
+      - SERVER_REGION=${SERVER_REGION:-}
     depends_on:
       db:
         condition: service_healthy

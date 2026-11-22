@@ -151,6 +151,18 @@ function describeSite(r) {
     role: r.member_role,
     paired: Boolean(r.paired),
     authority: r.authority,
+    reach: describeReach(r.reach),
+  }
+}
+
+/** Which DigiWP server sees the site, and the road calls from here take. */
+function describeReach(reach) {
+  if (!reach || !Array.isArray(reach.servers)) return null
+  const label = (s) => s.region || (s.self ? 'this-server' : 'partner-server')
+  return {
+    route: reach.route === 'peer' ? 'via-partner-server' : reach.route === 'direct' ? 'direct' : 'unreachable',
+    reachableFrom: reach.servers.filter((s) => s.ok).map(label),
+    checkedAt: reach.checkedAt ? new Date(reach.checkedAt).toISOString() : null,
   }
 }
 

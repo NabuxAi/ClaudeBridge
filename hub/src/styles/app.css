@@ -139,3 +139,15 @@
 .dwp-lang { position: relative; display: inline-flex; align-items: center; gap: 6px; color: var(--gd-text-secondary); font-size: 13px; font-weight: 600; }
 .dwp-lang select { appearance: none; background: transparent; border: 1px solid var(--gd-border); border-radius: var(--gd-radius-md); color: inherit; font: inherit; padding: 5px 10px; cursor: pointer; }
 .dwp-lang select:focus-visible { outline: 2px solid var(--gd-primary); outline-offset: 2px; }
+
+/* Which DigiWP server (international / Iran) can reach a site — SiteReach.jsx. */
+.site-reach { margin: 12px 0 4px; font-size: 12.5px; }
+.site-reach__title { font-weight: 700; font-size: 13px; color: var(--gd-text-primary); margin-bottom: 8px; }
+.site-reach__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.site-reach__list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.site-reach__list li.is-ok { color: var(--gd-success-text, var(--gd-success)); }
+.site-reach__list li.is-fail { color: var(--gd-danger-text); }
+.site-reach__server { font-weight: 600; color: var(--gd-text-primary); }
+.site-reach__state { margin-inline-start: auto; }
+.site-reach__route, .site-reach__when, .site-reach__none { margin: 8px 0 0; color: var(--gd-text-secondary); line-height: 1.8; }
+.site-reach__when { font-size: 11.5px; color: var(--gd-text-muted); }

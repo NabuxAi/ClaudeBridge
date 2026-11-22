@@ -157,9 +157,53 @@ async function withFailingDirect(error, fn) {
   try { return await fn() } finally { globalThis.fetch = real }
 }
 
-test('a change never switches roads after a connection error', async () => {
+test('a change takes the peer only when the direct connection never opened', async () => {
+  // Refused before a byte was sent: the change cannot have run, so the peer carries it once.
   const refused = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } })
-  await assert.rejects(withFailingDirect(refused, () => connector.callTool(site, 'update_posts', { id: 2 })))
+  const ran = await withFailingDirect(refused, () => connector.callTool(site, 'update_posts', { id: 2 }))
+  assert.equal(ran.content[0].text, '{"ok":true}')
+  assert.equal(seen.length, 1, 'exactly one delivery, through the peer')
+
+  // A reset may come after the body was sent: never sent twice.
+  seen.length = 0
+  peerRelay._reset()
+  const reset = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } })
+  await assert.rejects(withFailingDirect(reset, () => connector.callTool(site, 'update_posts', { id: 2 })))
+  assert.equal(seen.length, 0)
+})
+
+test('a site pinned to the peer is reached through it first, changes included', async () => {
+  const real = globalThis.fetch
+  let direct = 0
+  globalThis.fetch = async (url, init) => {
+    if (String(url).startsWith(wpUrl)) direct++
+    return real(url, init)
+  }
+  try {
+    // The relay receiver in this process is what reaches the stub, so the
+    // counter sees that one hop: one call in total means no direct attempt.
+    peerRelay.pinRoute(wpUrl, 'peer')
+    const ran = await connector.callTool(site, 'update_posts', { id: 5 })
+    assert.equal(ran.content[0].text, '{"ok":true}')
+    assert.equal(direct, 1, 'only the peer\'s own delivery touched the site')
+    assert.equal(seen.length, 1)
+
+    peerRelay.pinRoute(wpUrl, 'direct')
+    assert.equal(peerRelay.prefersPeer(`${wpUrl}/wp-json/claude-bridge/v1/mcp`), false)
+  } finally {
+    globalThis.fetch = real
+  }
+})
+
+test('peer discovery: signed only, and the same public-address rule', async () => {
+  const raw = JSON.stringify({ url: wpUrl })
+  const unsigned = await fetch(`${API}/relay/discover`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: raw })
+  assert.equal(unsigned.status, 401)
+  const answer = await peerRelay.discoverViaPeer(wpUrl)
+  // PEER_RELAY_ALLOW_PRIVATE governs forwarding only; discovery keeps its
+  // public-address/standard-port rule and never looks inside a private network.
+  assert.equal(answer.ok, false)
+  assert.ok(['sites.publicAddressRequired', 'sites.invalidAddress'].includes(answer.key), answer.key)
   assert.equal(seen.length, 0)
 })
 

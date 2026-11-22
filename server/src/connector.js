@@ -106,9 +106,10 @@ export async function ping(site) {
     lastStatus = res.status
     if (res.status === 403) forbidden = true
     const data = await res.json().catch(() => null)
+    const route = res.headers.get('x-digiwp-route') === 'peer' ? 'peer' : 'direct'
     if (valid(res, data)) {
       remember(site, index)
-      return data
+      return { ...data, route }
     }
     if (res.status === 401) {
       // A plugin build from before nonce support rejects the current scheme.
@@ -116,7 +117,7 @@ export async function ping(site) {
       const oldData = await old.json().catch(() => null)
       if (valid(old, oldData)) {
         remember(site, index, true)
-        return { ...oldData, legacySignature: true }
+        return { ...oldData, legacySignature: true, route: old.headers.get('x-digiwp-route') === 'peer' ? 'peer' : 'direct' }
       }
       throw connectionFailure(401, 'sites.connectorAuth')
     }

@@ -36,7 +36,8 @@
       "notifications": "Notifications",
       "security": "Account security",
       "profile": "Profile & account",
-      "admin": "Admin panel"
+      "admin": "Admin panel",
+      "mcp": "AI clients (MCP)"
     }
   },
   "admin": {

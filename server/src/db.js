@@ -92,6 +92,11 @@ const SCHEMA = `
   ALTER TABLE sites ADD COLUMN IF NOT EXISTS hosting JSONB
     NOT NULL DEFAULT '{"region":"unknown","provider":"other","providerName":null,"egress":"auto","callbackUrl":null}'::jsonb;
 
+  -- Which DigiWP server can see the site (reachability.js): the international
+  -- one, the Iran one, or both, and the road this server takes to it. NULL
+  -- until the first check — never a guessed default.
+  ALTER TABLE sites ADD COLUMN IF NOT EXISTS reach JSONB;
+
   -- Backup storage and retention policy per site.
   ALTER TABLE sites ADD COLUMN IF NOT EXISTS backup_policy JSONB
     NOT NULL DEFAULT '{"destination":"local","maxDaily":5,"retentionDays":30,"maxStorageMb":2048,"autoPruneOnFull":true}'::jsonb;

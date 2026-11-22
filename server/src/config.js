@@ -37,6 +37,10 @@ export const config = {
   // Absent is a supported state: sites are then reached directly only.
   // `allowPrivate` lets the forwarder reach private addresses and other
   // ports — for a hermetic test stack only, never on a public server.
+  // Which side of the border THIS server stands on: 'intl' or 'ir'. Only a
+  // label for reachability reports ("reachable from the international
+  // server / the Iran server"); unset is honest and reads "this server".
+  serverRegion: ['ir', 'intl'].includes(process.env.SERVER_REGION) ? process.env.SERVER_REGION : '',
   peerRelay: {
     url: (process.env.PEER_RELAY_URL || '').replace(/\/+$/, ''),
     secret: process.env.PEER_RELAY_SECRET || '',

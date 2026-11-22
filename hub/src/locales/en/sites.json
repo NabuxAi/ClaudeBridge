@@ -13,5 +13,32 @@
     "title": "No sites added yet",
     "desc": "Add your first WordPress site to start monitoring, backups and alerts."
   },
-  "openPanel": "Open panel"
+  "openPanel": "Open panel",
+  "reach": {
+    "title": "Reachable from",
+    "server": {
+      "intl": "International server",
+      "ir": "Iran server",
+      "self": "This server",
+      "peer": "Partner server"
+    },
+    "thisServer": "this panel",
+    "ok": "Reachable",
+    "reason": {
+      "timeout": "No answer in time",
+      "forbidden": "Blocked (403)",
+      "notFound": "WordPress not found",
+      "peerUnavailable": "Partner server did not answer",
+      "unknown": "Not reachable"
+    },
+    "route": {
+      "direct": "This server talks to the site directly.",
+      "peer": "This server cannot reach the site, so every call — including from MCP — goes through the partner server.",
+      "none": "Neither server could reach the site. Check the address, firewall or hosting."
+    },
+    "checkedAt": "Checked {when}",
+    "unchecked": "Not checked yet.",
+    "recheck": "Check again from both servers",
+    "recheckFailed": "The check did not complete. Try again."
+  }
 }
