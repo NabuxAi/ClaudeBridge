@@ -178,6 +178,105 @@ function McpSection({ showToast }) {
 }
 
 
+const REGION_KEY = { intl: 'sites.reach.server.intl', ir: 'sites.reach.server.ir' }
+const regionName = (r) => t(REGION_KEY[r] || 'sites.reach.server.peer')
+
+/**
+ * Link this account with one on the partner server, so one MCP token reaches
+ * the sites of both. Proof is a short code made while signed in there and
+ * typed here (server: peer-link.js). Same email alone is never enough.
+ */
+function PeerLinkSection({ showToast }) {
+  const [data, setData] = useState(null)
+  const [loadError, setLoadError] = useState('')
+  const [code, setCode] = useState(null)
+  const [entry, setEntry] = useState('')
+  const [busy, setBusy] = useState('')
+  const [err, setErr] = useState('')
+
+  const load = useCallback(() => {
+    accountApi.peerLink()
+      .then((d) => { setData(d); setLoadError('') })
+      .catch((e) => { if (!handleSessionGone(e)) setLoadError(describeApiError(e, t('accountSecurity.peer.loadError'), t('accountSecurity.peer.loadError'))) })
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const run = async (what, fn) => {
+    setBusy(what); setErr('')
+    try { await fn() } catch (e) {
+      if (!handleSessionGone(e)) setErr(describeApiError(e, t('accountSecurity.peer.failed'), t('accountSecurity.peer.failed')))
+    } finally { setBusy('') }
+  }
+
+  const makeCode = () => run('code', async () => setCode(await accountApi.peerLinkCode()))
+  const redeem = (e) => {
+    e.preventDefault()
+    run('redeem', async () => {
+      await accountApi.peerLinkRedeem(entry.trim())
+      setEntry(''); setCode(null)
+      showToast(t('accountSecurity.peer.linkedToast'))
+      load()
+    })
+  }
+  const unlink = () => {
+    if (!window.confirm(t('accountSecurity.peer.confirmUnlink'))) return
+    run('unlink', async () => { await accountApi.peerUnlink(); showToast(t('accountSecurity.peer.unlinkedToast')); load() })
+  }
+
+  if (data && !data.enabled) return null
+  const other = data ? regionName(data.peerRegion) : ''
+
+  return (
+    <div className="dwp-card" style={{ marginTop: 22 }}>
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--gd-border)', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Icon name="link-2" size={17} /> {t('accountSecurity.peer.title')}
+      </div>
+      <div style={{ padding: '16px 20px', fontSize: 13, color: 'var(--gd-text-secondary)', lineHeight: 1.9 }}>
+        {loadError && <AlertCard severity="critical" title={t('accountSecurity.error')} desc={loadError}
+          actions={<Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={load} type="button">{t('common.retry')}</Button>} />}
+        {!data && !loadError && <div role="status">{t('common.loading')}</div>}
+
+        {data?.link && (
+          <>
+            <p style={{ marginTop: 0 }}>{t('accountSecurity.peer.linked', { email: data.link.peerEmail, server: other, when: fmtDate(data.link.linkedAt) })}</p>
+            <p>{t('accountSecurity.peer.linkedHint')}</p>
+            <Button variant="ghost" size="sm" leftIcon="unlink" loading={busy === 'unlink'} onClick={unlink} type="button">{t('accountSecurity.peer.unlink')}</Button>
+          </>
+        )}
+
+        {data && !data.link && (
+          <>
+            <p style={{ marginTop: 0 }}>{t('accountSecurity.peer.intro', { server: other })}</p>
+            <ol style={{ paddingInlineStart: 20, margin: '0 0 14px' }}>
+              <li>{t('accountSecurity.peer.step1', { server: other })}{data.peerPanelUrl && <> — <a href={`${data.peerPanelUrl}/app/mcp`} target="_blank" rel="noreferrer" dir="ltr">{data.peerPanelUrl.replace(/^https?:\/\//, '')}</a></>}</li>
+              <li>{t('accountSecurity.peer.step2')}</li>
+            </ol>
+            <form onSubmit={redeem} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ flex: '1 1 200px', minWidth: 0 }}>
+                <Input value={entry} onChange={(e) => setEntry(e.target.value)} placeholder="ABCDE-FGHJK" maxLength={16} dir="ltr"
+                  aria-label={t('accountSecurity.peer.codeLabel')} autoCapitalize="characters" autoComplete="one-time-code" spellCheck={false} />
+              </span>
+              <Button variant="primary" size="sm" leftIcon="link-2" loading={busy === 'redeem'} type="submit" disabled={!entry.trim()}>{t('accountSecurity.peer.redeem')}</Button>
+            </form>
+            <div style={{ borderTop: '1px solid var(--gd-border)', paddingTop: 12 }}>
+              <p style={{ margin: '0 0 8px' }}>{t('accountSecurity.peer.orMake', { server: other })}</p>
+              {code ? (
+                <div>
+                  <SecretField label={t('accountSecurity.peer.codeLabel')} value={code.code} />
+                  <div style={{ fontSize: 12 }}>{t('accountSecurity.peer.codeExpires', { when: fmtDateTime(code.expiresAt) })}</div>
+                </div>
+              ) : (
+                <Button variant="secondary" size="sm" leftIcon="key-round" loading={busy === 'code'} onClick={makeCode} type="button">{t('accountSecurity.peer.makeCode')}</Button>
+              )}
+            </div>
+          </>
+        )}
+        {err && <div role="alert" style={{ color: 'var(--gd-danger, #c0392b)', marginTop: 10 }}>{err}</div>}
+      </div>
+    </div>
+  )
+}
+
 export default function Mcp() {
   const [toast, setToast] = useState(null)
   const showToast = (title, tone = 'success') => {
@@ -188,6 +287,7 @@ export default function Mcp() {
     <>
       <PageHead title={t('accountSecurity.mcp.pageTitle')} subtitle={t('accountSecurity.mcp.pageSubtitle')} />
       <McpSection showToast={showToast} />
+      <PeerLinkSection showToast={showToast} />
       {toast && (
         <div style={{ position: 'fixed', insetInlineEnd: 20, bottom: 20, zIndex: 100 }}>
           <Toast tone={toast.tone} title={toast.title} />

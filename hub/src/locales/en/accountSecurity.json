@@ -90,5 +90,24 @@
     "revokeError": "Couldn't revoke the token.",
     "pageTitle": "AI clients (MCP)",
     "pageSubtitle": "One address and a personal token for Claude, ChatGPT or any MCP client."
+  },
+  "peer": {
+    "title": "Link with the other server",
+    "intro": "Have an account on the {server} panel too? Link the two accounts and one MCP token, here or there, reaches the sites of both.",
+    "step1": "Sign in on the {server} panel, open “AI clients (MCP)” and make a link code",
+    "step2": "Type that code here. It works once, for ten minutes.",
+    "codeLabel": "Link code",
+    "redeem": "Link accounts",
+    "orMake": "Or start here: make a code and type it on the {server} panel.",
+    "makeCode": "Make a link code",
+    "codeExpires": "Valid until {when}, once.",
+    "linked": "Linked with {email} on the {server} panel since {when}.",
+    "linkedHint": "Your MCP clients list that account's sites too (ids start with “peer:”). Each site still follows the rules of the server it lives on: sensitive actions wait for approval there.",
+    "unlink": "Unlink",
+    "confirmUnlink": "Unlink the two accounts? MCP clients stop seeing the other server's sites right away.",
+    "linkedToast": "Accounts linked.",
+    "unlinkedToast": "Accounts unlinked.",
+    "loadError": "Couldn't load the link status.",
+    "failed": "That didn't work. Try again."
   }
 }

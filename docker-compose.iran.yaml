@@ -48,6 +48,8 @@ services:
       PEER_RELAY_SECRET: ${PEER_RELAY_SECRET:-}
       # This server stands inside Iran; labels reachability reports only.
       SERVER_REGION: ir
+      PEER_PANEL_URL: ${PEER_PANEL_URL:-https://ai.digiwp.com}
+      PUBLIC_PANEL_URL: https://${DOMAIN:-wp.nabuxai.ir}
       SEED_DEMO: ${SEED_DEMO:-0}
       # تنظیمات دستیار هوش مصنوعی (دروازه داخلی ایران / لوکال)
       ASSISTANT_URL: ${ASSISTANT_URL:-https://gate.nabuxai.ir/v1}

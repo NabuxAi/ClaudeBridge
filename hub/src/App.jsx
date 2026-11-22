@@ -15,6 +15,7 @@ const Landing = lazy(() => import('./pages/marketing/Landing.jsx'))
 const Login = lazy(() => import('./pages/auth/Login.jsx'))
 const Reset = lazy(() => import('./pages/auth/Reset.jsx'))
 const Register = lazy(() => import('./pages/auth/Register.jsx'))
+const Invite = lazy(() => import('./pages/auth/Invite.jsx'))
 const Onboarding = lazy(() => import('./pages/auth/Onboarding.jsx'))
 // C · account panel
 const Dashboard = lazy(() => import('./pages/account/Dashboard.jsx'))
@@ -93,6 +94,7 @@ export default function App() {
         <Route path="/reset" element={<Reset />} />
         <Route path="/reset-password" element={<Reset />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/invite" element={<Invite />} />
       </Route>
       <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
 

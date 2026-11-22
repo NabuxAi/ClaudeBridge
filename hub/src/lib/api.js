@@ -85,6 +85,11 @@ export const auth = {
   challengeState: call(mock.challengeState, () => http('/auth/challenge-state')),
   forgotPassword: call(mock.forgotPassword, (b) => http('/auth/forgot-password', { method: 'POST', body: b })),
   resetPassword: call(mock.resetPassword, (b) => http('/auth/reset-password', { method: 'POST', body: b })),
+  // What an invitation link is, asked before anyone signs in (token-gated).
+  invitation: call(
+    () => Promise.resolve({ state: 'gone' }),
+    (token) => http('/auth/invitation', { method: 'POST', body: { token } })
+  ),
   // خروج: نشست سمت سرور باطل می‌شود (POST /auth/logout سطرِ همین نشست را
   // revoked می‌کند) و توکن محلی همیشه پاک می‌شود — حتی اگر فراخوانی ناموفق
   // باشد (نشست از قبل باطل، شبکه در دسترس نیست). اگر سرور فقط توکن را از
@@ -141,6 +146,11 @@ export const account = {
   // Personal tokens for the hub MCP endpoint. The mock lists none and cannot
   // mint one: a token only means something to the real server.
   mcpTokens: call(() => Promise.resolve({ tokens: [], mcpUrl: '' }), () => http('/account/mcp-tokens')),
+  // Link this account with one on the partner server (Iran <-> international).
+  peerLink: call(() => Promise.resolve({ enabled: false, link: null }), () => http('/account/peer-link')),
+  peerLinkCode: () => http('/account/peer-link/code', { method: 'POST', body: {} }),
+  peerLinkRedeem: (code) => http('/account/peer-link/redeem', { method: 'POST', body: { code } }),
+  peerUnlink: () => http('/account/peer-link', { method: 'DELETE' }),
   createMcpToken: call(
     () => Promise.reject(new ApiError('', 503)),
     (name) => http('/account/mcp-tokens', { method: 'POST', body: { name } })
@@ -527,6 +537,14 @@ export function site(siteId) {
 }
 
 // ---- Admin panel (operator only) --------------------------------
+// Accepting by token alone: the /invite page knows no site id.
+export const team = {
+  acceptInvitation: call(
+    () => Promise.reject(new ApiError('', 503)),
+    (token) => http('/team/invitations/accept', { method: 'POST', body: { token } })
+  ),
+}
+
 export const admin = {
   stats: call(() => Promise.resolve({ users: 0, sites: 0, pairedSites: 0, openIncidents: 0, events24h: 0, events7d: 0 }), () => http('/admin/stats')),
   users: call(

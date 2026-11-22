@@ -167,6 +167,19 @@ const loginLimit = limiter('login', {
  * with a wrong code it is a 401 that feeds the same failure counters — code
  * guessing is priced exactly like password guessing.
  */
+// Public: the /invite page asks what an invitation link is before anyone
+// signs in, so an invitee who already has an account goes to sign in and
+// one who does not goes to register. Token-gated (see team.lookup).
+const inviteLookupLimit = limiter('invite-lookup', {
+  limit: 30, windowMs: 60 * 1000, keyFn: (req) => clientIp(req, { trustProxy: config.trustProxy }),
+})
+router.post('/auth/invitation', inviteLookupLimit, async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store')
+    res.json(await team.lookup(req.body?.token, req.locale))
+  } catch (e) { next(e) }
+})
+
 router.post('/auth/login', loginLimit, async (req, res, next) => {
   try {
     const { email, password, captchaId, captchaAnswer } = req.body || {}

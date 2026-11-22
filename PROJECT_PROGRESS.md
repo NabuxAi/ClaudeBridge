@@ -1,6 +1,38 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-22. Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-22 (0.7.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.7.0 — invite landing, cross-server account links, Digi (2026-11-22)
+
+- Invitations: one link `/invite?token=` (`team.lookup` via public, token-gated,
+  rate-limited `POST /auth/invitation`: site, role, address, `hasAccount`).
+  Existing accounts sign in and accept (`POST /team/invitations/accept` now
+  takes the token alone and returns `siteId`); new ones register with the
+  token. Old `/register?invite=` links redirect when the account exists.
+  Acceptance and the invite's account check match by mailbox
+  (`canonicalEmail`). Verified in production first: the bodogame.com admin
+  invite for an existing account was pending and its link led to register.
+- Bug fixed: `config.publicPanelUrl` was empty on both production servers, so
+  reset and invite emails linked to `http://localhost:8080`. It now falls back
+  to `CORS_ORIGIN`; both compose files pass `PUBLIC_PANEL_URL`.
+- Account links (`server/src/peer-link.js`, tables `account_links`,
+  `account_link_codes`): a 10-char code (SHA-256, 10 min, once) made on one
+  server is redeemed on the other over the signed relay (`/relay/link/redeem`,
+  `/relay/link/revoke`). Hub MCP `list_sites` adds the linked account's sites
+  as `peer:<id>` with `server`; `site_tools`/`call_site_tool` on them go to
+  `/relay/mcp`, which acts only when its own row pairs exactly those accounts
+  and runs the partner's own policy (`federated`: no second hop). Events say
+  `via: hub-mcp-partner`. Account deletion revokes MCP tokens and the link.
+  `PEER_PANEL_URL` names the partner panel in the UI.
+- Digi: `hub/mascot/digiForm.ts` (anidoodle interactive piece, flat vector,
+  original character), vendored host in `hub/mascot/engine/` (transparent
+  canvas), built by `hub/scripts/build-mascot.sh` into
+  `src/vendor/digi-mascot.js`, lazy-loaded by `DigiMascot.jsx` on login,
+  register and invite. Targets: `data-anidoodle` name/email/password/reveal/submit.
+- Verification: 516/516 server tests on PostgreSQL 16 (new
+  `peer-link.test.js`), hub lint/build, 45/45 Playwright (new
+  `invite.spec.js`); mascot states checked by eye in the browser (idle,
+  reading, covering, peeking, cheering) and at 320 px.
 
 ## Platform 0.6.0 — dual-server reachability and the MCP menu (2026-11-22)
 

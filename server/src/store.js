@@ -630,9 +630,47 @@ function lockTestSite(client, host) {
   return client.query("SELECT pg_advisory_xact_lock(hashtext('team_test_site:' || $1))", [host])
 }
 
+/** The panel page every invitation link opens. */
+export const inviteLink = (panelUrl, raw) => `${panelUrl}/invite?token=${raw}`
+
+const inviteTokenHash = (raw) => crypto.createHash('sha256').update(String(raw)).digest('hex')
+
+/**
+ * What the holder of an invitation token may know before signing in: which
+ * site, which role, the invited address, and whether that address already
+ * has an account here. Only someone holding the 256-bit token — the person
+ * the mail was sent to — can ask, so this tells nobody anything about other
+ * addresses. A used, revoked, expired or unknown token is one answer: gone.
+ */
+async function lookupTeamInvitation(rawToken, locale) {
+  if (!rawToken || String(rawToken).length < 32) return { state: 'gone' }
+  const row = await one(
+    `SELECT i.site_id, i.email, i.role, i.expires_at, s.name AS site_name, s.title AS site_title
+       FROM invitations i JOIN sites s ON s.id = i.site_id
+      WHERE i.token_hash = $1 AND i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > $2
+        AND s.status <> 'deleted' AND i.inviter_id = s.user_id`,
+    [inviteTokenHash(rawToken), Date.now()]
+  )
+  if (!row) return { state: 'gone' }
+  const account = await one(
+    'SELECT 1 FROM users WHERE email = $1 OR email_canonical = $2 LIMIT 1',
+    [row.email, canonicalEmail(row.email)]
+  )
+  return {
+    state: 'pending',
+    siteId: row.site_id,
+    site: row.site_title || row.site_name,
+    role: row.role,
+    roleLabel: roleLabel(locale, row.role),
+    email: row.email,
+    hasAccount: Boolean(account),
+    expiresAt: Number(row.expires_at),
+  }
+}
+
 async function acceptTeamInvitation(rawToken, user, { siteId = null, locale } = {}) {
   if (!rawToken || String(rawToken).length < 32) throw httpError(400, 'team.invalidInviteLink')
-  const tokenHash = crypto.createHash('sha256').update(String(rawToken)).digest('hex')
+  const tokenHash = inviteTokenHash(rawToken)
   const goneMessage = siteId ? 'team.inviteLinkGone' : 'team.inviteGone'
   const client = await pool.connect()
   try {
@@ -647,7 +685,9 @@ async function acceptTeamInvitation(rawToken, user, { siteId = null, locale } = 
       [tokenHash, siteId, Date.now()]
     )
     if (!invitation) throw httpError(400, goneMessage)
-    if (user.email !== invitation.email) {
+    // One mailbox, one person: shm.379@gmail.com may accept an invitation
+    // sent to shm379@gmail.com (email-identity.js).
+    if (canonicalEmail(user.email) !== canonicalEmail(invitation.email)) {
       throw httpError(403, siteId ? 'team.inviteOtherEmail' : 'team.inviteOtherEmailRegister')
     }
 
@@ -676,7 +716,7 @@ async function acceptTeamInvitation(rawToken, user, { siteId = null, locale } = 
     if (!member) throw httpError(409, 'team.youAreMember')
     await client.query('UPDATE invitations SET used_at = $2 WHERE id = $1', [invitation.id, now])
     await client.query('COMMIT')
-    return publicMember({ ...member, name: user.name, email: user.email }, locale)
+    return { ...publicMember({ ...member, name: user.name, email: user.email }, locale), siteId: invitation.site_id }
   } catch (e) {
     await client.query('ROLLBACK')
     throw e
@@ -827,7 +867,10 @@ export const team = {
       throw httpError(400, 'team.invalidInviteRole')
     }
 
-    const existingUser = await one('SELECT id, lang FROM users WHERE email = $1', [normalized])
+    const existingUser = await one(
+      'SELECT id, lang FROM users WHERE email = $1 OR email_canonical = $2 ORDER BY (email = $1) DESC LIMIT 1',
+      [normalized, canonicalEmail(normalized)]
+    )
     if (existingUser) {
       const already = await one(
         `SELECT 1 FROM team_members
@@ -856,12 +899,11 @@ export const team = {
     }
 
     const publicPanelUrl = config.publicPanelUrl || 'http://localhost:8080'
-    // Two landing paths, because we cannot know whether the address has an
-    // account yet: one registers with the token attached, one signs in and
-    // accepts from the team page. Both carry the same single-use token, so
-    // whichever is opened first wins and the other reports it as spent.
-    const registerUrl = `${publicPanelUrl}/register?invite=${raw}&email=${encodeURIComponent(normalized)}`
-    const acceptUrl = `${publicPanelUrl}/app/team?accept=${raw}&site=${siteId}`
+    // One link. The panel's /invite page asks the server (with this token)
+    // whether the invited address already has an account and sends the
+    // person to sign in or to register — so an existing member is never
+    // pushed into a registration that can only fail.
+    const inviteUrl = inviteLink(publicPanelUrl, raw)
     // The invitee's own language when they already have an account; the
     // inviter's request language otherwise.
     const lang = existingUser?.lang || locale
@@ -869,8 +911,8 @@ export const team = {
     const mailResult = await sendMail({
       to: normalized,
       subject: t(lang, 'team.inviteMail.subject', vars),
-      text: `${t(lang, 'team.inviteMail.intro', vars)}\n\n${t(lang, 'team.inviteMail.registerText')}\n${registerUrl}\n\n${t(lang, 'team.inviteMail.acceptText')}\n${acceptUrl}\n\n${t(lang, 'team.inviteMail.validity', vars)}`,
-      html: `<p>${t(lang, 'team.inviteMail.intro', vars)}</p><p>${t(lang, 'team.inviteMail.registerHtml', { link: registerUrl })}</p><p>${t(lang, 'team.inviteMail.acceptHtml', { link: acceptUrl })}</p><p>${t(lang, 'team.inviteMail.validity', vars)}</p>`,
+      text: `${t(lang, 'team.inviteMail.intro', vars)}\n\n${t(lang, 'team.inviteMail.linkText')}\n${inviteUrl}\n\n${t(lang, 'team.inviteMail.validity', vars)}`,
+      html: `<p>${t(lang, 'team.inviteMail.intro', vars)}</p><p>${t(lang, 'team.inviteMail.linkHtml', { link: inviteUrl })}</p><p>${t(lang, 'team.inviteMail.validity', vars)}</p>`,
     })
 
     return {
@@ -882,7 +924,9 @@ export const team = {
     }
   },
 
-  /** Spend an invitation and add the user to the site. */
+  lookup: (rawToken, locale) => lookupTeamInvitation(rawToken, locale),
+
+  /** Spend an invitation and add the user to the site. `siteId` may be null: the token alone names it. */
   async accept(siteId, rawToken, userId, locale) {
     const user = await one('SELECT id, email, name FROM users WHERE id = $1', [userId])
     if (!user) throw httpError(401, 'team.signInFirst')

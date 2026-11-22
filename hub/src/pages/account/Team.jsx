@@ -180,7 +180,7 @@ export default function Team() {
       // قابل گرفتن نیست.
       if (result?.raw) {
         setInviteLink({
-          url: `${window.location.origin}/register?invite=${result.raw}&email=${encodeURIComponent(result?.invitation?.email || '')}`,
+          url: `${window.location.origin}/invite?token=${result.raw}`,
           email: result?.invitation?.email || '',
         })
       }

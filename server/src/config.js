@@ -120,7 +120,14 @@ export const config = {
   },
   // Where the panel lives, for links inside alerts. An alert without a link is
   // an alert someone has to go hunting after.
-  publicPanelUrl: (process.env.PUBLIC_PANEL_URL || '').replace(/\/$/, ''),
+  // Falls back to CORS_ORIGIN, which every deployment sets to the panel's own
+  // address. Without that, password-reset and invitation emails were sent
+  // with http://localhost:8080 links (found 2026-11-22: neither compose file
+  // passed PUBLIC_PANEL_URL into the container).
+  publicPanelUrl: (process.env.PUBLIC_PANEL_URL
+    || (/^https?:\/\/[^,\s*]+$/.test(process.env.CORS_ORIGIN || '') ? process.env.CORS_ORIGIN : '')).replace(/\/$/, ''),
+  // The partner server's panel, shown when linking accounts (peer-link.js).
+  peerPanelUrl: (process.env.PEER_PANEL_URL || '').replace(/\/$/, ''),
   // Emergency channels. Every one of them is optional and the dispatcher walks
   // whatever exists — but a deployment with none configured can reach nobody,
   // which /alerts/readiness reports rather than leaving to be discovered on

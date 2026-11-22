@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
+import DigiMascot from '../../components/DigiMascot.jsx'
 import Icon from '../../lib/icons.jsx'
 import { useAuth } from '../../lib/auth.jsx'
+import { auth as authApi } from '../../lib/api.js'
 import { AuthTitle, PasswordField } from './shared.jsx'
 import { t } from '../../lib/i18n.js'
 
@@ -21,15 +23,30 @@ export default function Register() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [inviteError, setInviteError] = useState('')
+  const [mood, setMood] = useState('')
+  // Digi stays worried after a failed submit until the person types again.
+  const calm = () => setMood((m) => (m === 'error' ? '' : m))
   // Registration always demands one: there is no prior failure to key off, and
   // an open registration endpoint is how a user table fills with junk.
   const [captchaId, setCaptchaId] = useState('')
   const [captchaAnswer, setCaptchaAnswer] = useState('')
   const [captchaKey, setCaptchaKey] = useState(0)
 
+  // An invitation link that predates /invite (or a hand-copied one) may bring
+  // someone who already has an account here; registering would only fail.
+  // Ask the server and send them to the invite page, which signs them in.
+  useEffect(() => {
+    if (!inviteToken) return
+    let alive = true
+    authApi.invitation(inviteToken)
+      .then((r) => { if (alive && r?.state === 'pending' && r.hasAccount) nav(`/invite?token=${encodeURIComponent(inviteToken)}`, { replace: true }) })
+      .catch(() => { /* the form still works; the server re-checks the token */ })
+    return () => { alive = false }
+  }, [inviteToken, nav])
+
   const submit = async (e) => {
     e.preventDefault()
-    setBusy(true); setErr(''); setInviteError('')
+    setBusy(true); setErr(''); setInviteError(''); setMood('busy')
     try {
       const res = await register({
         name, email, password, captchaId, captchaAnswer,
@@ -39,10 +56,16 @@ export default function Register() {
         // حساب ساخته شده و کاربر وارد شده، اما دعوت اعمال نشد. صفحه را ترک
         // نمی‌کنیم تا دلیلش دیده شود؛ ادامهٔ مسیر با دکمهٔ پایین انجام می‌شود.
         setInviteError(res.invite.error || t('auth.register.inviteNotApplied'))
+        setMood('error')
         return
       }
-      nav('/onboarding')
+      // Joined someone's site: go to it, not to adding a site of one's own.
+      const joinedSite = res.invite?.applied && res.invite.member?.siteId
+      setMood('success')
+      await new Promise((r) => setTimeout(r, 650))
+      nav(joinedSite ? `/site/${joinedSite}` : '/onboarding')
     } catch (e2) {
+      setMood('error')
       setErr(e2?.message || t('auth.register.failed'))
       // Single-use on the server, so a failed submit burns it.
       setCaptchaAnswer('')
@@ -54,6 +77,7 @@ export default function Register() {
 
   return (
     <>
+      <DigiMascot state={mood} />
       <div className="dwp-auth-head">
         <span className="gd-sec-head__eyebrow"><Icon name="user-plus" size={13} /> {t('auth.register.eyebrow')}</span>
         <h2 className="dwp-auth-title"><AuthTitle k="auth.register.title" /></h2>
@@ -67,16 +91,16 @@ export default function Register() {
       )}
       <form onSubmit={submit} className="dwp-auth-form">
         <Input label={t('auth.register.nameLabel')} placeholder={t('auth.register.namePlaceholder')} leftIcon="user"
-          value={name} onChange={(e) => setName(e.target.value)} required autoFocus autoComplete="name" />
+          value={name} onChange={(e) => setName(e.target.value)} required autoFocus autoComplete="name" data-anidoodle="name" />
         <Input label={t('auth.shared.emailLabel')} type="email" placeholder={t('auth.shared.emailPlaceholder')} leftIcon="mail"
-          value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" inputMode="email" />
+          value={email} onChange={(e) => { setEmail(e.target.value); calm() }} required autoComplete="username" inputMode="email" data-anidoodle="email" />
         <PasswordField
           id="register-password"
           label={t('auth.shared.passwordLabel')}
           hint={t('auth.register.passwordHint')}
           autoComplete="new-password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => { setPassword(e.target.value); calm() }}
         />
         <Captcha
           value={captchaAnswer}
@@ -87,7 +111,7 @@ export default function Register() {
         {err && (
           <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{err}</div>
         )}
-        <Button variant="primary" size="lg" fullWidth leftIcon="sparkles" type="submit" loading={busy}>
+        <Button variant="primary" size="lg" fullWidth leftIcon="sparkles" type="submit" loading={busy} data-anidoodle="submit">
           {/* No "14-day free trial" here: no trial clock or entitlement exists
               server-side (billing is NOT_BUILT). What this button really does
               is create a pilot account — the label must say exactly that. */}

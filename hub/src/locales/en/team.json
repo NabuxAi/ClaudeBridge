@@ -66,8 +66,8 @@
   "removeMember": "Remove member",
   "noMembers": "No members yet.",
   "inviteLink": {
-    "title": "Sign-up link for “{email}”",
-    "desc": "If this person has no account, they sign up with this link and become a member of the site right away. The link is valid for 7 days and can be used only once.",
+    "title": "Invitation link for “{email}”",
+    "desc": "Send this link to them. If they already have an account they sign in and accept; otherwise they sign up with the invited email and join right away. Valid for 7 days, usable once.",
     "copy": "Copy link"
   },
   "pending": {

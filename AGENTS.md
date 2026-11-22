@@ -112,6 +112,9 @@ Support**. Keep these roles explicit instead of mixing the names casually.
 - `hub/src/styles/panel.css` — approved green panel layout, tokens and brand
   colours. The owner restored it on 2026-11-05 (0.4.2) and asked for no
   redesign without an explicit request.
+- `hub/mascot/` — Digi, the auth-page mascot (anidoodle interactive piece +
+  vendored host). Rebuild `src/vendor/digi-mascot.js` with
+  `hub/scripts/build-mascot.sh` after editing; never hand-edit the bundle.
 - `hub/src/styles/liquid-glass.css` — the Liquid Glass material layer the
   owner explicitly requested on 2026-11-12 (platform 0.5.0). It loads after
   `panel.css` and changes surface material only; brand/status colours and
@@ -183,6 +186,11 @@ for UI convenience.
   A write falls back to the peer only when the direct connection never opened
   (refused/DNS/connect timeout/TLS), never after a reset or timeout.
   `SERVER_REGION=intl|ir` only labels the report. MCP tokens live on `/app/mcp`.
+  Platform 0.7.0: accounts on the two servers can be linked with a one-time
+  code (`peer-link.js`; same email is never sufficient — neither panel
+  verifies addresses). A linked hub MCP token lists both accounts' sites
+  (`peer:` ids) and `/relay/mcp` runs the partner's own policy as its own
+  user, never forwarding again.
 - Core/plugin/theme inventory and update policy.
 - Transactional manual update pipeline (`3.8.0`): preflight, per-wave file
   snapshots, health gates, automatic plugin/theme rollback, durable journal —
@@ -466,7 +474,7 @@ for UI convenience.
   The root installations at `clashroyale.ir` and `bodogame.com` allow two
   active DigiWP accounts each: the existing owner and one invitee. The second
   account uses its own Hub MCP token with the existing read-only member role.
-  The owner sends an email-bound invitation. Either acceptance route acquires
+  The owner sends an email-bound invitation (one link, `/invite?token=`, since 0.7.0: an existing account signs in and accepts; a new one registers). Either acceptance route acquires
   the same per-host PostgreSQL lock and checks the cap before it consumes the
   invitation. Root domain aliases with or without `www` use the same connector
   registration. Separate WordPress installation paths keep their team rules.
@@ -1008,6 +1016,10 @@ These rules override visual mockups and optimistic marketing copy:
 - The hub is the only intended browser client of the server API.
 - `DATABASE_URL` is required for real server operation.
 - `LIVE=1` enables real connector relay.
+- `PUBLIC_PANEL_URL` builds links in emails (reset, invitations, alerts). If
+  unset it falls back to `CORS_ORIGIN`; before 0.7.0 it was unset on both
+  servers and emails linked to localhost. `PEER_PANEL_URL` names the partner
+  panel on the account-link card.
 - `SERVER_REGION` (`intl` or `ir`) labels which side of the border this
   server is on in reachability reports; unset reads "this server".
 - Two deployments of the same commit: `ai.digiwp.com`/`api.digiwp.com`
@@ -1473,7 +1485,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.6.0** (dual-server reachability + MCP menu, 2026-11-22), shared by `hub/package.json` and
+- Current platform release: **0.7.0** (invite landing, cross-server account links, Digi mascot, 2026-11-22), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

@@ -232,17 +232,30 @@ export async function connectorFetch(url, init = {}, { idempotent = false, singl
  * `{ ok: false, key }` (an i18n key naming why it could not see the site).
  */
 export async function discoverViaPeer(siteUrl) {
-  const payload = JSON.stringify({ url: siteUrl })
-  const res = await fetch(`${config.peerRelay.url}/relay/discover`, {
+  const data = await peerPost('/relay/discover', { url: siteUrl }, 20000)
+  if (typeof data.ok !== 'boolean') throw Object.assign(new Error('peer discovery: malformed answer'), { peer: true })
+  return data
+}
+
+/**
+ * One signed JSON call to the partner server (same HMAC as /relay/forward).
+ * Resolves to the parsed answer of a 2xx; anything else throws with the
+ * partner's own message and `status` when it sent one.
+ */
+export async function peerPost(path, payload, timeoutMs = 30000) {
+  const raw = JSON.stringify(payload)
+  const res = await fetch(`${config.peerRelay.url}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...signRelay(payload) },
-    body: payload,
-    signal: AbortSignal.timeout(20000),
+    headers: { 'Content-Type': 'application/json', ...signRelay(raw) },
+    body: raw,
+    signal: AbortSignal.timeout(timeoutMs),
   })
   const data = await res.json().catch(() => null)
-  if (!res.ok || !data || typeof data.ok !== 'boolean') {
-    const err = new Error(`peer discovery refused: ${data?.message || `HTTP ${res.status}`}`)
+  if (!res.ok || !data) {
+    const err = new Error(data?.message || `partner server answered HTTP ${res.status}`)
     err.peer = true
+    err.status = res.status
+    if (data?.i18n) err.i18n = data.i18n
     throw err
   }
   return data

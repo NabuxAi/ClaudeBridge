@@ -34,10 +34,8 @@
   "inviteMail": {
     "subject": "Invitation to help manage {site}",
     "intro": "You have been invited to help manage the site “{site}” with the role “{role}”.",
-    "registerText": "If you don't have an account, register with this link to join the site:",
-    "acceptText": "If you already have an account, sign in and accept the invitation with this link:",
-    "registerHtml": "If you don't have an account, <a href=\"{link}\">register with this same email</a> to join the site.",
-    "acceptHtml": "If you already have an account, sign in and <a href=\"{link}\">accept the invitation from the team page</a>.",
-    "validity": "These links are valid for {days} days and can be used only once."
+    "validity": "This link is valid for {days} days and can be used only once.",
+    "linkText": "Open this link to join the site. If you already have an account you sign in; otherwise you register with this same email:",
+    "linkHtml": "<a href=\"{link}\">Open the invitation</a>. If you already have an account you will sign in; otherwise you will register with this same email."
   }
 }

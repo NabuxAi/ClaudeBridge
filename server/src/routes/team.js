@@ -54,10 +54,11 @@ router.post('/sites/:id/team/invitations', inviteLimit, async (req, res, next) =
 router.post('/team/invitations/accept', async (req, res, next) => {
   try {
     const { siteId, token } = req.body || {}
-    if (!siteId || !token) {
+    if (!token) {
       return res.status(400).json({ message: req.t('team.siteAndTokenRequired') })
     }
-    const member = await team.accept(siteId, token, req.user.sub, req.locale)
+    // The /invite page knows only the token; the team page also sends siteId.
+    const member = await team.accept(siteId || null, token, req.user.sub, req.locale)
     res.status(201).json(member)
   } catch (e) { next(e) }
 })

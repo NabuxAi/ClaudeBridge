@@ -13,6 +13,7 @@ import { twoFactor } from '../twofactor.store.js'
 import { billing } from '../billing.store.js'
 import { limiter, hit, clientIp } from '../security/ratelimit.js'
 import { checkReach, recalled } from '../reachability.js'
+import { peerLinks } from '../peer-link.js'
 
 const router = Router()
 // Idempotent with the app-level middleware; keeps req.t/req.locale present
@@ -305,6 +306,10 @@ router.post('/account/delete', deleteIpLimit, async (req, res, next) => {
     // URL per browser): the account is tombstoned, not deleted, so nothing
     // cascades — they must be erased explicitly or they outlive the account.
     await query('DELETE FROM push_subscriptions WHERE user_id = $1', [req.user.sub])
+    // Access that outlives a session: MCP tokens and the cross-server link.
+    await query('UPDATE mcp_tokens SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL', [req.user.sub, Date.now()])
+    await query('DELETE FROM account_link_codes WHERE user_id = $1', [req.user.sub])
+    await peerLinks.unlink(req.user.sub).catch(() => {})
     await query('DELETE FROM password_resets WHERE user_id = $1', [req.user.sub])
     await query('DELETE FROM subscriptions WHERE user_id = $1', [req.user.sub])
     // The TOTP secret and recovery-code hashes are credentials: the account is

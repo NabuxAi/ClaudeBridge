@@ -22,7 +22,7 @@
 // ============================================================
 import { Router } from 'express'
 import { config, publicApiBase } from '../config.js'
-import { sites } from '../store.js'
+import { sites, users } from '../store.js'
 import { mcpTokens } from '../mcp-tokens.store.js'
 import * as connector from '../connector.js'
 import * as proposals from '../proposals.js'
@@ -30,6 +30,8 @@ import * as events from '../events.js'
 import { classify } from '../authority.js'
 import { limiter, clientIp } from '../security/ratelimit.js'
 import { errorMessage, httpError } from '../i18n.js'
+import { peerLinks } from '../peer-link.js'
+import { peerPost } from '../peer-relay.js'
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 const SERVER_INFO = { name: 'digiwp-hub', version: '1.0.0' }
@@ -171,18 +173,53 @@ function panelLink(siteId) {
   return origin ? `${origin}/site/${siteId}` : null
 }
 
-async function runTool(user, name, args = {}) {
+const PEER_PREFIX = 'peer:'
+const thisServer = () => config.serverRegion || 'this-server'
+const partnerServer = () => (config.serverRegion === 'ir' ? 'intl' : config.serverRegion === 'intl' ? 'ir' : 'partner-server')
+
+/** Run one hub tool on the partner server as the linked account there. */
+async function onPartner(link, user, name, args) {
+  const answer = await peerPost('/relay/mcp', { userId: link.peer_user_id, peerUserId: user.userId, name, args }, 60000)
+  return answer.result
+}
+
+const parseText = (result) => {
+  try { return JSON.parse(result?.content?.[0]?.text || 'null') } catch { return null }
+}
+
+/**
+ * `federated` is set when the partner server asks on behalf of a linked
+ * account: the answer then covers this server's sites only, so a request
+ * can never bounce between the two servers.
+ */
+export async function runTool(user, name, args = {}, { federated = false } = {}) {
   const rows = await sites.listAccessibleRaw(user.userId)
+  const link = federated || !peerLinks.enabled() ? null : await peerLinks.get(user.userId)
 
   if (name === 'list_sites') {
-    return textResult({ sites: rows.map(describeSite) })
+    const local = rows.map((r) => ({ ...describeSite(r), server: thisServer() }))
+    if (!link) return textResult({ sites: local })
+    try {
+      const remote = parseText(await onPartner(link, user, 'list_sites', {}))?.sites || []
+      return textResult({
+        sites: [...local, ...remote.map((r) => ({ ...r, id: `${PEER_PREFIX}${r.id}`, server: partnerServer() }))],
+      })
+    } catch (e) {
+      return textResult({ sites: local, partner: { server: partnerServer(), error: `The linked account on the partner server could not be listed: ${e.message}` } })
+    }
   }
 
   if (name !== 'site_tools' && name !== 'call_site_tool') {
     return textResult(`Unknown tool: ${name}`, true)
   }
 
+  const ref = String(args.site ?? '')
+  if (link && ref.startsWith(PEER_PREFIX)) {
+    return onPartner(link, user, name, { ...args, site: ref.slice(PEER_PREFIX.length) })
+  }
   const site = pickSite(rows, args.site)
+  // An address or host that is not here may belong to the linked account there.
+  if (!site && link) return onPartner(link, user, name, args)
   if (!site) return textResult(`No site "${args.site ?? ''}" among the sites you can manage. Call list_sites.`, true)
   if (!site.paired || !site.url || !site.secret) {
     return textResult(`${site.url || site.name} is not paired with this server yet — install WP Claude Bridge there and complete Hub Connector pairing in the panel.`, true)
@@ -213,7 +250,9 @@ async function runTool(user, name, args = {}) {
   if (kind === 'sensitive') {
     const proposal = await proposals.record({
       siteId: site.id, userId: user.userId, tool, args: toolArgs, kind,
-      reason: 'Requested from an AI client over the DigiWP hub MCP.', authority: site.authority,
+      reason: user.viaPeer
+        ? 'Requested from an AI client over the DigiWP hub MCP of the partner server (linked account).'
+        : 'Requested from an AI client over the DigiWP hub MCP.', authority: site.authority,
     })
     const link = panelLink(site.id)
     return textResult({
@@ -228,7 +267,7 @@ async function runTool(user, name, args = {}) {
   if (kind === 'mutating') {
     events.record({
       siteId: site.id, kind: 'action', severity: 'info',
-      ...events.i18nTitle('sites.events.mcpRan', { op: tool }, { op: tool, args: toolArgs, via: 'hub-mcp', tokenId: user.tokenId }),
+      ...events.i18nTitle('sites.events.mcpRan', { op: tool }, { op: tool, args: toolArgs, via: user.viaPeer ? 'hub-mcp-partner' : 'hub-mcp', tokenId: user.tokenId }),
     }).catch(() => {})
   }
   return result && Array.isArray(result.content) ? result : textResult(result)
@@ -306,4 +345,35 @@ mcpTokensRouter.delete('/account/mcp-tokens/:id', async (req, res, next) => {
     if (!(await mcpTokens.revoke(req.user.sub, req.params.id))) throw httpError(404, 'mcp.tokenNotFound')
     res.json({ ok: true })
   } catch (e) { next(e) }
+})
+
+// ---- account link with the partner server (peer-link.js) ----
+
+const linkCodeLimit = limiter('peer-link-code', { limit: 10, windowMs: 10 * 60 * 1000, keyFn: (req) => req.user.sub })
+// Codes are 10 characters from 31: 2^49. Five tries per ten minutes per
+// account, and one per second per address, price guessing out completely.
+const linkRedeemLimit = limiter('peer-link-redeem', { limit: 5, windowMs: 10 * 60 * 1000, keyFn: (req) => req.user.sub })
+
+mcpTokensRouter.get('/account/peer-link', async (req, res, next) => {
+  try { res.json(await peerLinks.status(req.user.sub)) } catch (e) { next(e) }
+})
+
+mcpTokensRouter.post('/account/peer-link/code', linkCodeLimit, async (req, res, next) => {
+  try {
+    if (await peerLinks.get(req.user.sub)) throw httpError(409, 'peerLink.alreadyLinked')
+    res.set('Cache-Control', 'no-store')
+    res.status(201).json(await peerLinks.createCode(req.user.sub))
+  } catch (e) { next(e) }
+})
+
+mcpTokensRouter.post('/account/peer-link/redeem', linkRedeemLimit, async (req, res, next) => {
+  try {
+    const me = await users.byId(req.user.sub)
+    if (!me) throw httpError(401, 'team.signInFirst')
+    res.status(201).json({ link: await peerLinks.redeem(me, req.body?.code) })
+  } catch (e) { next(e) }
+})
+
+mcpTokensRouter.delete('/account/peer-link', async (req, res, next) => {
+  try { res.json(await peerLinks.unlink(req.user.sub)) } catch (e) { next(e) }
 })

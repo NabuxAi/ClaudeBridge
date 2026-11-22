@@ -45,6 +45,7 @@ import Landmark from 'lucide-react/dist/esm/icons/landmark.js'
 import LayoutDashboard from 'lucide-react/dist/esm/icons/layout-dashboard.js'
 import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js'
 import Link2 from 'lucide-react/dist/esm/icons/link-2.js'
+import Unlink from 'lucide-react/dist/esm/icons/unlink.js'
 import ListChecks from 'lucide-react/dist/esm/icons/list-checks.js'
 import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js'
 import Lock from 'lucide-react/dist/esm/icons/lock.js'
@@ -154,6 +155,7 @@ export const ICONS = {
   'layout-dashboard': LayoutDashboard,
   'layout-grid': LayoutGrid,
   'link-2': Link2,
+  'unlink': Unlink,
   'list-checks': ListChecks,
   'loader-2': Loader2,
   'lock': Lock,

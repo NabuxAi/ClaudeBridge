@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react'
+import { setMascotState } from '../../lib/mascot.js'
 import Icon from '../../lib/icons.jsx'
 import Trans from '../../components/Trans.jsx'
 import { t, digits } from '../../lib/i18n.js'
@@ -46,11 +47,13 @@ export function PasswordField({
           autoComplete={autoComplete}
           placeholder={placeholder}
           autoFocus={autoFocus}
+          data-anidoodle="password"
         />
         <button
           type="button"
           className="dwp-auth-pass__toggle"
-          onClick={() => setShow((s) => !s)}
+          data-anidoodle="reveal"
+          onClick={() => setShow((s) => { setMascotState(s ? 'idle' : 'peek'); return !s })}
           aria-label={show ? t('auth.shared.hidePassword') : t('auth.shared.showPassword')}
           aria-pressed={show}
         >

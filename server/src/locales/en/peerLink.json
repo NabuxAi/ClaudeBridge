@@ -1,0 +1,6 @@
+{
+  "notConfigured": "Linking with the partner server is not enabled on this server.",
+  "badCode": "That code is wrong, expired or already used. Make a new one on the other panel.",
+  "alreadyLinked": "This account is already linked. Unlink it first to link another.",
+  "peerUnavailable": "The partner server did not answer. Try again in a minute."
+}

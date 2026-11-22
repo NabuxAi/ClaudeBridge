@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Button, Input } from '../../components/index.js'
 import Captcha from '../../components/captcha.jsx'
+import DigiMascot from '../../components/DigiMascot.jsx'
 import Icon from '../../lib/icons.jsx'
 import { useAuth } from '../../lib/auth.jsx'
 import { auth as authApi } from '../../lib/api.js'
@@ -12,7 +13,8 @@ export default function Login() {
   const { login } = useAuth()
   const nav = useNavigate()
   const location = useLocation()
-  const [email, setEmail] = useState('')
+  // An invitation hands over the invited address (Invite.jsx).
+  const [email, setEmail] = useState(() => location.state?.email || '')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -27,6 +29,9 @@ export default function Login() {
   // می‌یابد — ایمیل و رمز دوباره فرستاده می‌شوند چون جریان stateless است.
   const [totpStep, setTotpStep] = useState(false)
   const [totpCode, setTotpCode] = useState('')
+  const [mood, setMood] = useState('')
+  // Digi stays worried after a failed submit until the person types again.
+  const calm = () => setMood((m) => (m === 'error' ? '' : m))
 
   useEffect(() => {
     let alive = true
@@ -40,7 +45,7 @@ export default function Login() {
 
   const submit = async (e) => {
     e.preventDefault()
-    setBusy(true); setErr('')
+    setBusy(true); setErr(''); setMood('busy')
     try {
       const r = await login({
         email,
@@ -49,6 +54,7 @@ export default function Login() {
         ...(needCaptcha ? { captchaId, captchaAnswer } : {}),
       })
       if (r?.totp_required) {
+        setMood('')
         setTotpStep(true)
         setTotpCode('')
         setBusy(false)
@@ -56,8 +62,12 @@ export default function Login() {
       }
       const returnTo = location.state?.returnTo || sessionStorage.getItem('loginReturnTo') || '/app'
       sessionStorage.removeItem('loginReturnTo')
+      // A short cheer from Digi before the panel opens.
+      setMood('success')
+      await new Promise((r) => setTimeout(r, 650))
       nav(returnTo, { replace: true })
     } catch (e2) {
+      setMood('error')
       setErr(e2?.message || t('auth.login.failed'))
       // The server tells us when the next attempt needs one. A challenge is
       // single-use, so any failed submit also burns the current one.
@@ -71,6 +81,7 @@ export default function Login() {
 
   return (
     <>
+      <DigiMascot state={mood} scan={totpStep ? 1 : 0} />
       <div className="dwp-auth-head">
         <span className="gd-sec-head__eyebrow"><Icon name="lock-keyhole" size={13} /> {t('auth.login.eyebrow')}</span>
         <h2 className="dwp-auth-title"><AuthTitle k={totpStep ? 'auth.login.titleTotp' : 'auth.login.title'} /></h2>
@@ -79,9 +90,9 @@ export default function Login() {
       <form onSubmit={submit} className="dwp-auth-form">
         {/* autoFocus: the email is the first thing every visitor types. */}
         <Input label={t('auth.shared.emailLabel')} type="email" placeholder={t('auth.shared.emailPlaceholder')} leftIcon="mail"
-          value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus={!totpStep}
+          value={email} onChange={(e) => { setEmail(e.target.value); calm() }} required autoFocus={!totpStep}
           disabled={totpStep}
-          autoComplete="username" inputMode="email" />
+          autoComplete="username" inputMode="email" data-anidoodle="email" />
         {/* "Remember me" lived here as a defaultChecked checkbox with no
             handler — the token is kept for 7 days regardless (api.js token
             storage). A control that claims behaviour it has is removed until
@@ -91,7 +102,7 @@ export default function Login() {
           label={t('auth.shared.passwordLabel')}
           labelExtra={<Link to="/reset-password" className="dwp-auth-link">{t('auth.login.forgot')}</Link>}
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => { setPassword(e.target.value); calm() }}
           disabled={totpStep}
         />
         {totpStep && (
@@ -119,7 +130,7 @@ export default function Login() {
         {err && (
           <div className="gd-field__msg gd-field__msg--error"><Icon name="alert-circle" size={13} />{err}</div>
         )}
-        <Button variant="primary" size="lg" fullWidth rightIcon="arrow-left" type="submit" loading={busy}>
+        <Button variant="primary" size="lg" fullWidth rightIcon="arrow-left" type="submit" loading={busy} data-anidoodle="submit">
           {totpStep ? t('auth.login.submitTotp') : t('auth.login.submit')}
         </Button>
       </form>
