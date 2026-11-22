@@ -1010,6 +1010,11 @@ These rules override visual mockups and optimistic marketing copy:
 - `LIVE=1` enables real connector relay.
 - `SERVER_REGION` (`intl` or `ir`) labels which side of the border this
   server is on in reachability reports; unset reads "this server".
+- Two deployments of the same commit: `ai.digiwp.com`/`api.digiwp.com`
+  (Coolify app `aurq5lmwbsfvh2ckr886h056`, `docker-compose.yaml`,
+  `SERVER_REGION=intl`) and `wp.nabuxai.ir` (Iran host, `/opt/digiwp`,
+  `docker-compose.iran.yaml` built on the host with `NPM_REGISTRY` mirror,
+  secrets in its `.env`, `SERVER_REGION=ir`). Ship both together.
 - `PEER_RELAY_URL` (the partner server's API base, same form as
   `PUBLIC_BASE_URL`) and `PEER_RELAY_SECRET` (identical on both servers) enable the
   Iran ↔ international relay. `PEER_RELAY_ALLOW_PRIVATE=1` is for hermetic tests

@@ -5,11 +5,13 @@ WORKDIR /app
 # All no-ops when unset, so normal builds are unaffected.
 ARG HTTP_PROXY=
 ARG HTTPS_PROXY=
+# A reachable npm mirror where registry.npmjs.org is not (the Iran server).
+ARG NPM_REGISTRY=https://registry.npmjs.org
 ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} NO_PROXY=localhost,127.0.0.1
 COPY server/package.json server/package-lock.json ./
 RUN --mount=type=secret,id=ca_bundle,target=/tmp/ca.crt \
     { [ -s /tmp/ca.crt ] && export NODE_EXTRA_CA_CERTS=/tmp/ca.crt; }; \
-    npm ci --omit=dev --no-audit --no-fund
+    npm ci --omit=dev --no-audit --no-fund --registry=${NPM_REGISTRY}
 
 # ---- slim runtime ----
 FROM node:20-bookworm-slim AS runtime

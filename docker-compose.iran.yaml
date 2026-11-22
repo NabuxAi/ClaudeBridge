@@ -1,0 +1,170 @@
+# ==============================================================================
+# DigiWP / WP Claude Bridge — Iran Server & Intranet Deployment
+# استقرار ویژه سرور ایران و شبکه ملی اطلاعات (مستقل از اینترنت بین‌الملل)
+# ==============================================================================
+# دامنه پیش‌فرض: wp.nabuxai.ir (یا هر دامنه/IP داخلی تنظیم‌شده در .env)
+# مسیریابی و گواهی SSL: اتصال مستقیم به شبکه coolify و پروکسی Traefik
+# پایداری در قطع اینترنت: فونت‌های محلی، موتور قوانین آفلاین و هوش مصنوعی داخلی
+# ==============================================================================
+
+services:
+  # ---- دیتابیس هاب (PostgreSQL 16) ----
+  db:
+    image: postgres:16-alpine
+    container_name: digiwp-iran-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: digiwp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: digiwp
+    volumes:
+      - digiwp-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digiwp -d digiwp"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal
+
+  # ---- سرور واسط / API رله (Node.js) ----
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    container_name: digiwp-iran-server
+    restart: unless-stopped
+    environment:
+      PORT: 8787
+      DATABASE_URL: postgres://digiwp:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/digiwp
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      PUBLIC_BASE_URL: https://${DOMAIN:-wp.nabuxai.ir}/api
+      CORS_ORIGIN: https://${DOMAIN:-wp.nabuxai.ir}
+      TRUST_PROXY: "1"
+      LIVE: "1"
+      PEER_RELAY_URL: ${PEER_RELAY_URL:-}
+      PEER_RELAY_SECRET: ${PEER_RELAY_SECRET:-}
+      # This server stands inside Iran; labels reachability reports only.
+      SERVER_REGION: ir
+      SEED_DEMO: ${SEED_DEMO:-0}
+      # تنظیمات دستیار هوش مصنوعی (دروازه داخلی ایران / لوکال)
+      ASSISTANT_URL: ${ASSISTANT_URL:-https://gate.nabuxai.ir/v1}
+      ASSISTANT_API_KEY: ${ASSISTANT_API_KEY:-}
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-nabu-smart}
+      # سامانه‌های اطلاع‌رسانی بومی (بدون وابستگی به تلگرام در زمان فیلترینگ)
+      SMS_URL: ${SMS_URL:-}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      SMS_AUTH_HEADER: ${SMS_AUTH_HEADER:-}
+      SMS_TO_FIELD: ${SMS_TO_FIELD:-to}
+      SMS_TEXT_FIELD: ${SMS_TEXT_FIELD:-text}
+      SMS_FROM_FIELD: ${SMS_FROM_FIELD:-from}
+      NAJVA_API_KEY: ${NAJVA_API_KEY:-}
+      # ایمیل تراکنشی (سرور SMTP داخلی)
+      EMAIL_SERVER: ${EMAIL_SERVER:-}
+      EMAIL_FROM: ${EMAIL_FROM:-alerts@nabuxai.ir}
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8787"
+    networks:
+      - internal
+
+  # ---- پنل مدیریت و رابط وب (React + Nginx) ----
+  hub:
+    build:
+      context: ./hub
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        VITE_API_BASE_URL: /api
+        VITE_USE_MOCK: 0
+    container_name: digiwp-iran-hub
+    restart: unless-stopped
+    depends_on:
+      - server
+    expose:
+      - "80"
+    networks:
+      - internal
+      - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      # روتر HTTP (دسترسی مستقیم بدون خطا در اینترانت یا زمان اختلال SSL)
+      - "traefik.http.routers.digiwp-hub-http.entrypoints=http"
+      - "traefik.http.routers.digiwp-hub-http.rule=Host(`${DOMAIN:-wp.nabuxai.ir}`)"
+      - "traefik.http.routers.digiwp-hub-http.service=digiwp-hub"
+      # روتر اصلی HTTPS با SSL رایگان لِتس‌انکریپت
+      - "traefik.http.routers.digiwp-hub.entrypoints=https"
+      - "traefik.http.routers.digiwp-hub.rule=Host(`${DOMAIN:-wp.nabuxai.ir}`)"
+      - "traefik.http.routers.digiwp-hub.service=digiwp-hub"
+      - "traefik.http.routers.digiwp-hub.tls=true"
+      - "traefik.http.routers.digiwp-hub.tls.certresolver=letsencrypt"
+      - "traefik.http.services.digiwp-hub.loadbalancer.server.port=80"
+
+  # ---- سایت وردپرس مدیریت‌شده دمو (اختیاری جهت تست مستقیم) ----
+  demo-db:
+    image: mariadb:11
+    container_name: digiwp-iran-demo-db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: ${DEMO_DB_PASSWORD:?set DEMO_DB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${DEMO_DB_ROOT_PASSWORD:?set DEMO_DB_ROOT_PASSWORD in .env}
+    volumes:
+      - digiwp-demo-db:/var/lib/mysql
+    networks:
+      - internal
+
+  demo:
+    build:
+      context: .
+      dockerfile: deploy/demo.Dockerfile
+    container_name: digiwp-iran-demo
+    restart: unless-stopped
+    environment:
+      WORDPRESS_DB_HOST: demo-db
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${DEMO_DB_PASSWORD:?set DEMO_DB_PASSWORD in .env}
+      WORDPRESS_CONFIG_EXTRA: |
+        if (!empty($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') { $$_SERVER['HTTPS'] = 'on'; }
+        define('WP_HOME', 'https://demo.${DOMAIN:-wp.nabuxai.ir}');
+        define('WP_SITEURL', 'https://demo.${DOMAIN:-wp.nabuxai.ir}');
+    volumes:
+      - digiwp-demo-wp:/var/www/html
+    depends_on:
+      - demo-db
+    expose:
+      - "80"
+    networks:
+      - internal
+      - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      # روتر HTTP وردپرس دمو
+      - "traefik.http.routers.digiwp-demo-http.entrypoints=http"
+      - "traefik.http.routers.digiwp-demo-http.rule=Host(`demo.${DOMAIN:-wp.nabuxai.ir}`)"
+      - "traefik.http.routers.digiwp-demo-http.service=digiwp-demo"
+      # روتر HTTPS وردپرس دمو
+      - "traefik.http.routers.digiwp-demo.entrypoints=https"
+      - "traefik.http.routers.digiwp-demo.rule=Host(`demo.${DOMAIN:-wp.nabuxai.ir}`)"
+      - "traefik.http.routers.digiwp-demo.service=digiwp-demo"
+      - "traefik.http.routers.digiwp-demo.tls=true"
+      - "traefik.http.routers.digiwp-demo.tls.certresolver=letsencrypt"
+      - "traefik.http.services.digiwp-demo.loadbalancer.server.port=80"
+
+volumes:
+  digiwp-pgdata:
+  digiwp-demo-db:
+  digiwp-demo-wp:
+
+networks:
+  internal:
+    driver: bridge
+  coolify:
+    external: true

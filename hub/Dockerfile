@@ -5,11 +5,13 @@ WORKDIR /app
 # All no-ops when unset, so normal builds are unaffected.
 ARG HTTP_PROXY=
 ARG HTTPS_PROXY=
+# A reachable npm mirror where registry.npmjs.org is not (the Iran server).
+ARG NPM_REGISTRY=https://registry.npmjs.org
 ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} NO_PROXY=localhost,127.0.0.1
 COPY package.json package-lock.json ./
 RUN --mount=type=secret,id=ca_bundle,target=/tmp/ca.crt \
     { [ -s /tmp/ca.crt ] && export NODE_EXTRA_CA_CERTS=/tmp/ca.crt; }; \
-    npm ci --include=dev --no-audit --no-fund
+    npm ci --include=dev --no-audit --no-fund --registry=${NPM_REGISTRY}
 COPY . .
 # The API endpoint is configurable via build args and defaults to the server API domain.
 ARG VITE_API_BASE_URL=https://api.digiwp.com/v1
