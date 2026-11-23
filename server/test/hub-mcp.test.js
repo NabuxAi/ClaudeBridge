@@ -22,6 +22,12 @@ test('temporary file grants require current ownership, exact paths, and future e
   assert.equal(isGrantedEdit(user, site, { path: 'plugins/shop/other.php' }), false)
   assert.equal(isGrantedEdit(user, site, { path, theme: 'child' }), false)
   assert.equal(isGrantedEdit({ editWindow: { ...editWindow, expiresAt: Date.now() - 1 } }, site, { path }), false)
+  const all = { editWindow: { ...editWindow, paths: null } }
+  assert.equal(isGrantedEdit(all, site, { path: 'themes/shop/style.css' }), true)
+  assert.equal(isGrantedEdit(all, site, { path: 'mu-plugins/shop.php' }), true)
+  assert.equal(isGrantedEdit(all, site, { path: 'plugins/../wp-config.php' }), false)
+  assert.equal(isGrantedEdit(all, site, { path: 'uploads/index.php' }), false)
+  assert.equal(isGrantedEdit(all, { ...site, member_role: 'admin' }, { path }), false)
 })
 
 if (!dsn) {
@@ -308,7 +314,7 @@ if (!dsn) {
     const otherSite = await pairedSite(auth)
     const { token, record } = await newToken(auth)
     const url = `/account/mcp-tokens/${record.id}/edit-window`
-    const grant = { siteId, paths: [wpEdit.path], hours: 12 }
+    const grant = { siteId, allFiles: true, hours: 24 }
     const activate = (body = grant, headers = auth) => send(url, { method: 'POST', headers, body: JSON.stringify(body) })
     const end = (expiresAt) => send(url, { method: 'DELETE', headers: auth, body: JSON.stringify({ expiresAt }) })
     const queuedEdit = { ...wpEdit, search: 'already pending' }
@@ -316,6 +322,8 @@ if (!dsn) {
 
     reached.length = 0
     for (const hours of [0, 25, 1.5, '3']) assert.equal((await activate({ ...grant, hours })).status, 400)
+    assert.equal((await activate({ ...grant, paths: [] })).status, 400)
+    assert.equal((await activate({ siteId, hours: 24 })).status, 400)
     const stranger = await account()
     assert.equal((await activate(grant, stranger.auth)).status, 404)
     const foreignSite = await pairedSite(stranger.auth)
@@ -325,32 +333,38 @@ if (!dsn) {
     const activated = await activate()
     assert.equal(activated.status, 200, JSON.stringify(activated.body))
     const { editWindow } = activated.body
-    assert.deepEqual(editWindow.paths, grant.paths)
-    assert.ok(editWindow.expiresAt >= before + 12 * 3600_000 && editWindow.expiresAt <= Date.now() + 12 * 3600_000)
+    assert.equal(editWindow.paths, null)
+    assert.ok(editWindow.expiresAt >= before + 24 * 3600_000 && editWindow.expiresAt <= Date.now() + 24 * 3600_000)
     assert.equal((await activate()).status, 409)
     assert.equal(callText(await siteTool(token, siteId, 'edit_file', queuedEdit)).proposalId, queued.proposalId)
+    assert.equal(callText(await siteTool(token, siteId, 'edit_file_with_backup', queuedEdit)).proposalId, queued.proposalId)
     const toolList = callText(await rpc(token, 'tools/call', { name: 'site_tools', arguments: { site: siteId } }))
     assert.equal(toolList.site.directEditExpiresAt, editWindow.expiresAt)
-    assert.deepEqual(toolList.site.directEditPaths, grant.paths)
+    assert.equal(toolList.site.directEditScope, 'all_editable_files')
     reached.length = 0
     const direct = callText(await siteTool(token, siteId, 'edit_file', wpEdit))
     assert.equal(direct.ran, 'edit_file_with_backup')
     assert.match(direct.backup_id, /^[a-f0-9]{32}$/)
     assert.equal(callText(await siteTool(token, otherSite, 'edit_file', wpEdit)).requiresApproval, true)
-    assert.equal(callText(await siteTool(token, siteId, 'edit_file', { ...wpEdit, path: 'plugins/test/other.php' })).requiresApproval, true)
+    const anotherPath = { ...wpEdit, path: 'themes/store/style.css' }
+    assert.equal(callText(await siteTool(token, siteId, 'edit_file_with_backup', anotherPath)).ran, 'edit_file_with_backup')
+    assert.equal(callText(await siteTool(token, siteId, 'delete_file', { path: wpEdit.path })).requiresApproval, true)
     assert.equal(callText(await siteTool(token, siteId, 'restore_file_edit', { backup_id: direct.backup_id })).requiresApproval, true)
-    assert.deepEqual(reached, ['edit_file_with_backup'])
+    assert.deepEqual(reached, ['edit_file_with_backup', 'edit_file_with_backup'])
 
     await query('UPDATE mcp_tokens SET edit_window_expires_at = $2 WHERE id = $1', [record.id, Date.now() - 1])
     const listed = await send('/account/mcp-tokens', { headers: auth })
     assert.equal(listed.body.tokens.find(({ id }) => id === record.id).editWindow, null)
     assert.equal(callText(await siteTool(token, siteId, 'edit_file', { ...wpEdit, search: 'after expiry' })).requiresApproval, true)
-    const restarted = await activate({ ...grant, hours: 1 })
+    const restarted = await activate({ siteId, paths: [wpEdit.path], hours: 1 })
     assert.equal(restarted.status, 200)
+    assert.deepEqual(restarted.body.editWindow.paths, [wpEdit.path])
+    assert.equal(callText(await siteTool(token, siteId, 'edit_file_with_backup', { ...wpEdit, search: 'scoped edit' })).ran, 'edit_file_with_backup')
+    assert.equal(callText(await siteTool(token, siteId, 'edit_file', anotherPath)).requiresApproval, true)
     assert.equal((await end(editWindow.expiresAt)).status, 409)
     assert.equal((await end(restarted.body.editWindow.expiresAt)).status, 200)
     assert.equal(callText(await siteTool(token, siteId, 'edit_file', { ...wpEdit, search: 'after early end' })).requiresApproval, true)
-    assert.deepEqual(reached, ['edit_file_with_backup'])
+    assert.deepEqual(reached, ['edit_file_with_backup', 'edit_file_with_backup', 'edit_file_with_backup'])
   })
 
   test('an invited test site member may read through a personal MCP token but not change the site', async () => {

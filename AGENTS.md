@@ -199,7 +199,10 @@ for UI convenience.
   In `/app/mcp`, owners can also grant a regular token 1 to 24 hours of backed-up
   `edit_file` on exact paths of one locally owned site. The server enforces
   expiry and early revocation. Existing pending proposals and sensitive tools
-  outside that exact grant still require approval.
+  outside that exact grant still require approval. Platform `0.13.0` lets the
+  owner choose all files supported by the backed-up operation as an alternative
+  to exact paths. An existing grant keeps its scope. Both edit tool names honor
+  the window. File deletion and restoration still require separate approval.
 - Iran ↔ international peer relay (`peer-relay.js`, `POST /v1/relay/forward`):
   connector calls a server cannot deliver are re-sent through the partner server.
   Off unless both `PEER_RELAY_URL` and `PEER_RELAY_SECRET` are set.
@@ -1076,8 +1079,9 @@ These rules override visual mockups and optimistic marketing copy:
   UI flow easier.
 - Database restore, file deletion/editing, theme activation, unknown tools, and
   update/restore jobs must remain human-approved unless a separately designed
-  reversible transaction proves otherwise. The scoped `edit_file` token is
-  that exception for explicitly granted paths, via `edit_file_with_backup`.
+  reversible transaction proves otherwise. File edit grants use
+  `edit_file_with_backup` on an owned site, with exact paths or an explicit
+  temporary grant for all files eligible for backed-up editing.
 - Do not upload customer source files or malware samples to public third-party
   analysis services.
 - Add hub/nginx security headers deliberately; API headers in `server/src/index.js`
@@ -1561,7 +1565,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform version: **0.12.0** (batch approvals and temporary MCP file edits, 2026-11-23), shared by `hub/package.json` and
+- Current platform version: **0.13.0** (temporary MCP file edit scope, 2026-11-23), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

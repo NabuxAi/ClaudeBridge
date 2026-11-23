@@ -68,11 +68,14 @@ function SecretField({ label, value }) {
 
 function EditWindowDialog({ token, initialSite, ownedSites, sitesError, loadOwnedSites, onClose, onStarted }) {
   const [siteId, setSiteId] = useState(initialSite)
+  const [scope, setScope] = useState('paths')
   const [paths, setPaths] = useState('')
   const [hours, setHours] = useState('3')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const validSite = ownedSites?.some((site) => site.id === siteId)
+  const allFiles = scope === 'all'
+  const canStart = validSite && !sitesError && (allFiles || paths.trim())
   const durationOptions = Array.from({ length: 24 }, (_, i) => ({
     value: String(i + 1),
     label: t('accountSecurity.mcp.editWindowHours', { hours: digits(i + 1) }),
@@ -80,11 +83,12 @@ function EditWindowDialog({ token, initialSite, ownedSites, sitesError, loadOwne
 
   const start = async (e) => {
     e.preventDefault()
-    if (busy || !validSite || !paths.trim()) return
+    if (busy || !canStart) return
     setBusy(true)
     setErr('')
     try {
-      const { editWindow } = await accountApi.startMcpEditWindow(token.id, { siteId, paths: parsePaths(paths), hours: Number(hours) })
+      const fileScope = allFiles ? { allFiles: true } : { paths: parsePaths(paths) }
+      const { editWindow } = await accountApi.startMcpEditWindow(token.id, { siteId, ...fileScope, hours: Number(hours) })
       if (!editWindow) throw new Error(t('accountSecurity.mcp.editWindowError'))
       onStarted(token.id, editWindow)
     } catch (e2) {
@@ -100,7 +104,7 @@ function EditWindowDialog({ token, initialSite, ownedSites, sitesError, loadOwne
       desc={t('accountSecurity.mcp.editWindowHint')}
       footer={<>
         <Button variant="secondary" disabled={busy} onClick={onClose} type="button">{t('common.cancel')}</Button>
-        <Button loading={busy} disabled={!validSite || !paths.trim() || sitesError} type="submit" form="mcp-window-form">
+        <Button loading={busy} disabled={!canStart} type="submit" form="mcp-window-form">
           {t('accountSecurity.mcp.startEditWindow')}
         </Button>
       </>}>
@@ -119,8 +123,15 @@ function EditWindowDialog({ token, initialSite, ownedSites, sitesError, loadOwne
             options={[{ value: '', label: t('accountSecurity.mcp.chooseDirectSite') },
               ...ownedSites.map((site) => ({ value: site.id, label: site.title || site.name }))]} />
         )}
-        <Textarea id="mcp-window-paths" label={t('accountSecurity.mcp.directPaths')} required disabled={busy} dir="ltr"
-          value={paths} onChange={(e) => setPaths(e.target.value)} placeholder="plugins/my-plugin/main.php" />
+        <Select id="mcp-window-scope" label={t('accountSecurity.mcp.editWindowScope')} disabled={busy}
+          value={scope} onChange={(e) => setScope(e.target.value)} options={[
+            { value: 'paths', label: t('accountSecurity.mcp.editWindowScopePaths') },
+            { value: 'all', label: t('accountSecurity.mcp.editWindowScopeAll') },
+          ]} />
+        {allFiles ? <p style={{ margin: 0 }}>{t('accountSecurity.mcp.editWindowAllHint')}</p> : (
+          <Textarea id="mcp-window-paths" label={t('accountSecurity.mcp.directPaths')} required disabled={busy} dir="ltr"
+            value={paths} onChange={(e) => setPaths(e.target.value)} placeholder="plugins/my-plugin/main.php" />
+        )}
         <Select id="mcp-window-hours" label={t('accountSecurity.mcp.editWindowDuration')} disabled={busy}
           value={hours} onChange={(e) => setHours(e.target.value)} options={durationOptions} />
         {err && <div role="alert" className="pbk-note pbk-note--danger">{err}</div>}
@@ -326,7 +337,7 @@ function McpSection({ showToast }) {
                 {' · '}
                 {tok.lastUsedAt ? t('accountSecurity.mcp.lastUsed', { when: fmtDateTime(tok.lastUsedAt) }) : t('accountSecurity.mcp.neverUsed')}
               </span>
-              {scope && (
+              {scope?.paths && (
                 <details style={{ flex: '1 1 240px', overflowWrap: 'anywhere' }}>
                   <summary>{t('accountSecurity.mcp.scopedToken', { site: scope.siteId })}</summary>
                   <ul dir="ltr" style={{ marginBlock: 4, textAlign: 'start' }}>
@@ -334,6 +345,7 @@ function McpSection({ showToast }) {
                   </ul>
                 </details>
               )}
+              {tok.editWindow?.paths === null && <span>{t('accountSecurity.mcp.allEditableFiles', { site: tok.editWindow.siteId })}</span>}
               {tok.editWindow && <span>{t('accountSecurity.mcp.editWindowEnds', { when: fmtDateTime(tok.editWindow.expiresAt) })}</span>}
               <span style={{ marginInlineStart: 'auto', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {!tok.fileEdit && (tok.editWindow ? (

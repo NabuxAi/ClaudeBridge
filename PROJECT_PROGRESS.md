@@ -1,6 +1,14 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-23 (0.12.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-23 (0.13.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.13.0 - temporary file edit scope
+
+- A site owner can choose exact paths or all files supported by the connector's
+  backed-up edit operation for one site and 1 to 24 hours. Existing path grants
+  keep their scope. New all-file windows require an explicit request.
+- Both edit tool names use the backed-up operation inside a temporary window.
+  Existing matching proposals, file deletion, and restoration require approval.
 
 ## Platform 0.12.0 - batch approvals and temporary MCP file edits
 

@@ -131,7 +131,7 @@ test('Alerts confirms only the chosen batch, keeps its order, and reports indivi
   expect(calls).toEqual(['oldest', 'middle', 'later', 'newest'])
 })
 
-test('MCP starts and ends a 12-hour edit window on an existing token', async ({ page }) => {
+test('MCP supports both specific paths and all editable files on an existing token', async ({ page }) => {
   await setup(page)
   const record = { id: 'mcpt_existing', name: 'Editor', createdAt: Date.now() }
   const paths = ['plugins/shop/main.php', 'themes/child/style.css']
@@ -145,8 +145,11 @@ test('MCP starts and ends a 12-hour edit window on an existing token', async ({ 
   await page.route('**/api/account/mcp-tokens/mcpt_existing/edit-window', (route) => {
     changes += 1
     if (route.request().method() === 'POST') {
-      expect(route.request().postDataJSON()).toEqual({ siteId: 'shop', paths, hours: 12 })
-      editWindow = { siteId: 'shop', paths, expiresAt: Date.now() + 12 * 3600_000 }
+      const first = changes === 1
+      expect(route.request().postDataJSON()).toEqual(first
+        ? { siteId: 'shop', paths, hours: 12 }
+        : { siteId: 'shop', allFiles: true, hours: 24 })
+      editWindow = { siteId: 'shop', paths: first ? paths : null, expiresAt: Date.now() + (first ? 12 : 24) * 3600_000 }
       return route.fulfill({ json: { editWindow } })
     }
     expect(route.request().method()).toBe('DELETE')
@@ -164,17 +167,31 @@ test('MCP starts and ends a 12-hour edit window on an existing token', async ({ 
   await expect(dialog.getByRole('option', { name: 'WordPress blog' })).toHaveCount(0)
   await expect(dialog.getByRole('option', { name: / h$/ })).toHaveCount(24)
   const duration = dialog.getByRole('combobox', { name: 'Permission duration' })
+  const scope = dialog.getByRole('combobox', { name: 'File scope' })
+  const pathField = dialog.getByLabel('Exact paths relative to wp-content, one file per line')
+  const start = dialog.getByRole('button', { name: 'Start temporary permission' })
+  await expect(scope).toHaveValue('paths')
+  await expect(start).toBeDisabled()
   await expect(duration).toHaveValue('3')
   await duration.selectOption('12')
-  await dialog.getByLabel('Exact paths relative to wp-content, one file per line').fill(paths.join('\n'))
-  await dialog.getByRole('button', { name: 'Start temporary permission' }).click()
+  await pathField.fill(paths.join('\n'))
+  await start.click()
   await expect(page.getByText('Active until', { exact: false })).toBeVisible()
   await page.reload()
   await expect(page.getByText('Active until', { exact: false })).toBeVisible()
   await page.getByRole('button', { name: 'End temporary permission' }).click()
   await expect(page.getByText('Temporary edit permission ended.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Temporary file edits', exact: true })).toBeVisible()
-  expect(changes).toBe(2)
+  await page.getByRole('button', { name: 'Temporary file edits', exact: true }).click()
+  await scope.selectOption('all')
+  await expect(pathField).toHaveCount(0)
+  await duration.selectOption('24')
+  await start.click()
+  await expect(page.getByText('All editable files on shop')).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('All editable files on shop')).toBeVisible()
+  await page.getByRole('button', { name: 'End temporary permission' }).click()
+  await expect(page.getByText('All editable files on shop')).toHaveCount(0)
+  expect(changes).toBe(4)
 })
 
 test('theme and collapsed menu persist across page switches and reloads', async ({ page }) => {

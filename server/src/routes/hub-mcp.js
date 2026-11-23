@@ -32,7 +32,7 @@ import { limiter, clientIp } from '../security/ratelimit.js'
 import { errorMessage, httpError } from '../i18n.js'
 import { peerLinks } from '../peer-link.js'
 import { peerPost } from '../peer-relay.js'
-import { fileEditGrant, validateFileEditGrant, isGrantedEdit, relayFileEdit } from '../mcp-file-edits.js'
+import { fileEditGrant, validateFileEditGrant, validateEditWindowGrant, isGrantedEdit, relayFileEdit } from '../mcp-file-edits.js'
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 const SERVER_INFO = { name: 'digiwp-hub', version: '1.0.0' }
@@ -41,7 +41,7 @@ const INSTRUCTIONS =
   'DigiWP hub: manage every WordPress site you can reach from one connection. ' +
   'Call list_sites first, then site_tools to see what a site offers, then call_site_tool. ' +
   'Sites are reached through a signed relay (and through the partner server inside or outside Iran when a site cannot be reached directly). ' +
-  'Sensitive tools require approval in the site Alerts page. A scoped file-edit token can run edit_file with an automatic backup on its allowed paths.'
+  'Sensitive tools require approval in the site Alerts page. Site owners can grant backed-up file edits. Check site_tools for the grant scope and any expiry.'
 
 const TOOLS = [
   {
@@ -63,7 +63,7 @@ const TOOLS = [
   },
   {
     name: 'call_site_tool',
-    description: 'Run one tool on one site. Read-only tools run for every member; changes run for the owner and admins. Sensitive tools need approval in Alerts. A scoped file-edit token runs edit_file on its allowed paths with a backup. Pass a wp-content-relative path, for example plugins/example/main.php.',
+    description: 'Run one tool on one site. Read-only tools run for every member; changes run for the owner and admins. Sensitive tools need approval in Alerts. An active edit window permits edit_file and edit_file_with_backup within its scope. A permanent scoped token permits edit_file on its listed paths. Granted edits always save a backup. Pass a wp-content-relative path, for example plugins/example/main.php.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -236,8 +236,12 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
   if (name === 'site_tools') {
     const tools = await connector.listTools(target)
     const grant = fileEditGrant(user, site)
+    const editAccess = grant ? {
+      ...(grant.paths === null ? { directEditScope: 'all_editable_files' } : { directEditPaths: grant.paths }),
+      ...(grant.expiresAt ? { directEditExpiresAt: grant.expiresAt } : {}),
+    } : {}
     return textResult({
-      site: { ...describeSite(site), ...(grant ? { directEditPaths: grant.paths, ...(grant.expiresAt ? { directEditExpiresAt: grant.expiresAt } : {}) } : {}) },
+      site: { ...describeSite(site), ...editAccess },
       tools: tools.map((t) => ({ name: t.name, kind: classify(t.name), description: t.description, inputSchema: t.inputSchema })),
     })
   }
@@ -252,9 +256,15 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
     return textResult(`Only the site owner or an admin can run "${tool}" (${kind}); with view-only access you can run read-only tools.`, true)
   }
 
-  if (tool === 'edit_file' && isGrantedEdit(user, site, toolArgs)) {
+  const directEditTool = tool === 'edit_file' || (tool === 'edit_file_with_backup' && user.editWindow)
+  if (directEditTool && isGrantedEdit(user, site, toolArgs)) {
     const pending = await proposals.findPending(site.id, tool, toolArgs)
     if (pending) return approvalResult(pending, site.id, tool)
+    if (user.editWindow) {
+      const equivalentTool = tool === 'edit_file' ? 'edit_file_with_backup' : 'edit_file'
+      const equivalent = await proposals.findPending(site.id, equivalentTool, toolArgs)
+      if (equivalent) return approvalResult(equivalent, site.id, equivalentTool)
+    }
     const stillActive = user.fileEdit || await mcpTokens.editWindowStillActive(user.tokenId, site.id, user.editWindow.expiresAt)
     if (stillActive && isGrantedEdit(user, site, toolArgs)) return relayFileEdit(user, site, target, toolArgs)
   }
@@ -368,9 +378,9 @@ mcpTokensRouter.delete('/account/mcp-tokens/:id', async (req, res, next) => {
 
 mcpTokensRouter.post('/account/mcp-tokens/:id/edit-window', async (req, res, next) => {
   try {
-    const { siteId, paths, hours } = req.body || {}
+    const { siteId, paths, allFiles, hours } = req.body || {}
     if (!Number.isInteger(hours) || hours < 1 || hours > 24) throw httpError(400, 'mcp.editWindowDuration')
-    const grant = await validateFileEditGrant(req.user.sub, { siteId, paths })
+    const grant = await validateEditWindowGrant(req.user.sub, { siteId, paths, allFiles })
     const token = await mcpTokens.startEditWindow(req.user.sub, req.params.id, { ...grant, hours })
     if (!token) throw httpError(409, 'mcp.editWindowUnavailable')
     events.record({ siteId, kind: 'action', ...events.i18nTitle('mcp.editWindowStarted', { hours }, {

@@ -16,6 +16,7 @@ const TOUCH_THROTTLE_MS = 60 * 1000
 
 export const tokenHash = (token) => crypto.createHash('sha256').update(String(token)).digest('hex')
 
+// JSON null authorizes all editable files. Older grants keep their path array.
 const activeEditWindow = (row) => row.edit_window_site_id && Number(row.edit_window_expires_at) > Date.now()
   ? { siteId: row.edit_window_site_id, paths: row.edit_window_paths, expiresAt: Number(row.edit_window_expires_at) }
   : null

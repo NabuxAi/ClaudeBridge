@@ -15,14 +15,29 @@ export async function validateFileEditGrant(userId, grant) {
   if (typeof siteId !== 'string' || !Array.isArray(paths) || paths.length < 1 || paths.length > 50 || !paths.every(validPath)) {
     throw httpError(400, 'mcp.invalidFileEditGrant')
   }
+  return { siteId: await ownedEditSite(userId, siteId), paths: [...new Set(paths)] }
+}
+
+export async function validateEditWindowGrant(userId, { siteId, paths, allFiles }) {
+  // Older clients can still open a scoped window. An unrestricted list of
+  // editable paths requires an explicit allFiles choice in the request.
+  if (allFiles === undefined) return validateFileEditGrant(userId, { siteId, paths })
+  if (allFiles !== true || paths !== undefined || typeof siteId !== 'string' || !siteId) {
+    throw httpError(400, 'mcp.invalidEditWindow')
+  }
+  return { siteId: await ownedEditSite(userId, siteId), paths: null }
+}
+
+async function ownedEditSite(userId, siteId) {
   const site = await sites.rawForUser(siteId, userId)
   if (!site || site.status === 'deleted') throw httpError(404, 'mcp.fileEditOwnerRequired')
-  return { siteId: site.id, paths: [...new Set(paths)] }
+  return site.id
 }
 
 export function isGrantedEdit(user, site, args) {
   const grant = fileEditGrant(user, site)
-  return grant !== null && !args.theme && validPath(args.path) && grant.paths.includes(args.path)
+  return grant !== null && !args.theme && validPath(args.path) &&
+    ((!user.fileEdit && grant.paths === null) || (Array.isArray(grant.paths) && grant.paths.includes(args.path)))
 }
 
 export function fileEditGrant(user, site) {
