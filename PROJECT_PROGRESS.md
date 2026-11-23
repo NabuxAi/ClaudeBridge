@@ -1,6 +1,16 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-23 (0.13.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-23 (0.13.1). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.13.1 / plugin 3.9.6 - private staging and approval results
+
+- A WordPress admin can configure an existing private staging directory, or
+  the host can set `CB_FILE_EDIT_STAGING_DIR` in `wp-config.php`. Each backed-up
+  edit and restoration checks the web roots, access, device, and mount before
+  replacing the file. Builds on the Iran server advertise its local ZIP.
+- Alerts shows recent proposal decisions alongside the stored execution status.
+  Managers can read the connector error for each request. A claimed request
+  remains single-use.
 
 ## Platform 0.13.0 - temporary file edit scope
 

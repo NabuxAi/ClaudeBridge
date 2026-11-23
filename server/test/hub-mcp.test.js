@@ -257,14 +257,24 @@ if (!dsn) {
     assert.deepEqual(JSON.parse(decisions.find((d) => d.status === 200).body.result.content[0].text).args, wpEdit)
     const refreshed = await send(`/sites/${siteId}/incidents`, { headers: auth })
     assert.equal(refreshed.body.proposals.length, 0)
+    assert.equal(refreshed.body.proposalDecisions.find(({ id }) => id === proposalId)?.execution, 'ran')
 
     const failure = callText(await siteTool(token, siteId, 'edit_file', { ...wpEdit, search: 'missing' }))
     const refused = await send(`/sites/${siteId}/proposals/${failure.proposalId}/approve`, { method: 'POST', headers: auth })
     assert.equal(refused.status, 502)
+    assert.equal(refused.body.approved, true)
+    assert.equal(refused.body.proposalId, failure.proposalId)
     assert.match(refused.body.message, /Search string not found/)
     const stored = (await query('SELECT status, result FROM proposals WHERE id = $1', [failure.proposalId])).rows[0]
     assert.equal(stored.status, 'approved')
     assert.equal(stored.result.ok, false)
+    const view = await send(`/sites/${siteId}/incidents`, { headers: auth })
+    const failed = view.body.proposalDecisions.find(({ id }) => id === failure.proposalId)
+    assert.equal(failed.status, 'approved')
+    assert.equal(failed.execution, 'failed')
+    assert.equal(failed.path, wpEdit.path)
+    assert.match(failed.error, /Search string not found/)
+    assert.equal(failed.args, undefined)
   })
 
   test('scoped MCP token backs up granted file edits, audits failures, and holds other sensitive calls', async () => {

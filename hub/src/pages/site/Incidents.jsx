@@ -3,7 +3,7 @@ import { Link, useOutletContext } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
 import { Button, Badge, AlertCard, Checkbox, Dialog, Tabs, Provenance, SkeletonTable, SkeletonCard, NotMeasured } from '../../components/index.js'
-import { t, digits } from '../../lib/i18n.js'
+import { t, digits, dateTime } from '../../lib/i18n.js'
 import { site as siteApi } from '../../lib/api.js'
 
 // Timeline dot styling per event tone.
@@ -19,6 +19,12 @@ const SEV = {
   critical: { bg: 'var(--gd-danger-bg)', text: 'var(--gd-danger-text)', icon: 'alert-octagon' },
   warning: { bg: 'var(--gd-warning-bg)', text: 'var(--gd-warning-text)', icon: 'shield-alert' },
   info: { bg: 'var(--gd-info-bg)', text: 'var(--gd-info-text)', icon: 'info' },
+}
+
+const EXECUTION = {
+  ran: { label: 'incidents.executionRan', variant: 'success' },
+  failed: { label: 'incidents.executionFailed', variant: 'danger' },
+  unconfirmed: { label: 'incidents.executionUnconfirmed', variant: 'warning' },
 }
 
 export default function Incidents() {
@@ -143,7 +149,7 @@ export default function Incidents() {
     )
   }
 
-  const { featured, canManage, proposals = [] } = data
+  const { featured, canManage, proposals = [], proposalDecisions = [] } = data
   const selectedProposals = proposals.filter(({ id }) => selected.has(id))
   const allSelected = proposals.length > 0 && selectedProposals.length === proposals.length
   const list = data.list.filter((it) => it.kind !== 'proposal' || it.resolved)
@@ -264,6 +270,29 @@ export default function Incidents() {
           {confirmBatch?.map(({ id, tool, args }) => <li key={id}><bdi>{tool}{args?.path ? ` · ${args.path}` : ''}</bdi></li>)}
         </ul>
       </Dialog>
+
+      {proposalDecisions.length > 0 && (
+        <section aria-labelledby="proposal-decisions-title" style={{ marginBottom: 22 }}>
+          <h2 id="proposal-decisions-title" style={{ fontSize: 15, marginBlock: '0 12px' }}>{t('incidents.proposalDecisions')}</h2>
+          {proposalDecisions.map((row) => {
+            const execution = EXECUTION[row.execution]
+            return (
+              <article key={row.id} className="pbk-panel" style={{ padding: '12px 18px', marginBottom: 8, overflowWrap: 'anywhere' }}>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                  <strong><bdi>{row.tool}</bdi></strong>
+                  <Badge variant="info" appearance="soft">{t(row.status === 'approved' ? 'incidents.decisionApproved' : 'incidents.decisionRejected')}</Badge>
+                  {execution && <Badge variant={execution.variant} appearance="soft">{t(execution.label)}</Badge>}
+                  {row.decidedAt && <time dateTime={new Date(row.decidedAt).toISOString()} style={{ marginInlineStart: 'auto' }}>
+                    {dateTime(row.decidedAt, { dateStyle: 'short', timeStyle: 'short' })}
+                  </time>}
+                </div>
+                <div><code dir="ltr">{row.id}</code>{row.path && <> · <bdi>{row.path}</bdi></>}</div>
+                {row.error && <div><bdi>{row.error}</bdi></div>}
+              </article>
+            )
+          })}
+        </section>
+      )}
 
       {/* Severity filter */}
       <div style={{ marginBottom: 20 }}>

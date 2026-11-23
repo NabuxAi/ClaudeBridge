@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a scoped static Bearer token sent in the Authorization header. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.9.5
+ * Version: 3.9.6
  * Author: Account City
  * License: GPLv2 or later
  * Text Domain: wp-claude-bridge
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.9.5' );
+define( 'CB_VERSION', '3.9.6' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' ); // Legacy plaintext option.
 define( 'CB_TOKEN_HASH_OPTION', 'cb_mcp_token_sha256' );
 define( 'CB_SCOPE_OPTION', 'cb_mcp_token_scope' );
@@ -309,32 +309,81 @@ function cb_with_file_edit_lock( $path, $operation ) {
 	}
 }
 
+function cb_file_edit_staging_root( $path, $configured ) {
+	$normalized = is_string( $path ) ? wp_normalize_path( $path ) : '';
+	if ( ! preg_match( '~\A(?:[A-Za-z]:)?/~', $normalized ) || false !== strpos( $normalized, "\0" ) ) {
+		return new WP_Error( 'cb_edit_staging', 'Use an absolute path for private file-edit storage.' );
+	}
+	clearstatcache( true, $path );
+	$temp_dir = realpath( $path );
+	if ( false === $temp_dir || ! is_dir( $temp_dir ) || ! is_writable( $temp_dir ) ) {
+		return new WP_Error( 'cb_edit_staging', 'Private temporary storage must exist and be writable by PHP.' );
+	}
+	$roots = array( ! empty( $_SERVER['DOCUMENT_ROOT'] ) ? $_SERVER['DOCUMENT_ROOT'] : ABSPATH, ABSPATH, WP_CONTENT_DIR );
+	$uploads = wp_get_upload_dir();
+	if ( ! empty( $uploads['basedir'] ) && is_dir( $uploads['basedir'] ) ) {
+		$roots[] = $uploads['basedir'];
+	}
+	$windows = '\\' === DIRECTORY_SEPARATOR;
+	$directory = rtrim( wp_normalize_path( $temp_dir ), '/' ) . '/';
+	foreach ( $roots as $root ) {
+		$resolved = realpath( $root );
+		if ( false === $resolved ) {
+			return new WP_Error( 'cb_edit_staging', 'Could not verify the web roots for private file-edit storage.' );
+		}
+		$prefix = rtrim( wp_normalize_path( $resolved ), '/' ) . '/';
+		if ( 0 === strpos( $windows ? strtolower( $directory ) : $directory, $windows ? strtolower( $prefix ) : $prefix ) ) {
+			return new WP_Error( 'cb_edit_staging', 'Private temporary storage must be outside the web document root, WordPress, and uploads.' );
+		}
+	}
+	if ( $configured && ! $windows ) {
+		$mode = @fileperms( $temp_dir );
+		if ( false === $mode || 0 !== ( $mode & 0077 ) ) {
+			return new WP_Error( 'cb_edit_staging', 'Private temporary storage must deny group and other access. Use directory mode 0700.' );
+		}
+	}
+	return $temp_dir;
+}
+
 /**
- * Stage outside the web root, then replace in one rename on the same device.
+ * Stage privately, then replace in one rename on the same mount.
  * A failed write/rename leaves the original in place.
  */
 function cb_replace_file_atomically( $target, $before, $after ) {
-	$temp_dir = realpath( sys_get_temp_dir() );
-	$docroot  = realpath( $_SERVER['DOCUMENT_ROOT'] ?? ABSPATH );
-	$wp_root  = realpath( ABSPATH );
-	$content_root = realpath( WP_CONTENT_DIR );
-	if ( ! $temp_dir || ! $docroot || ! $wp_root || ! $content_root ||
-		0 === strpos( wp_normalize_path( $temp_dir ) . '/', rtrim( wp_normalize_path( $docroot ), '/' ) . '/' ) ||
-		0 === strpos( wp_normalize_path( $temp_dir ) . '/', rtrim( wp_normalize_path( $wp_root ), '/' ) . '/' ) ||
-		0 === strpos( wp_normalize_path( $temp_dir ) . '/', rtrim( wp_normalize_path( $content_root ), '/' ) . '/' ) ) {
-		return new WP_Error( 'cb_edit_staging', 'Private temporary storage is unavailable.' );
+	$configured = defined( 'CB_FILE_EDIT_STAGING_DIR' ) ? CB_FILE_EDIT_STAGING_DIR : get_option( 'cb_file_edit_staging_dir', '' );
+	$temp_dir = cb_file_edit_staging_root( '' === $configured ? sys_get_temp_dir() : $configured, '' !== $configured );
+	if ( is_wp_error( $temp_dir ) ) {
+		return $temp_dir;
 	}
+	clearstatcache( true, $target );
 	$original = @stat( $target );
+	if ( ! $original ) {
+		return new WP_Error( 'cb_edit_target_stat', 'Could not inspect the destination file before replacing it.' );
+	}
 	$storage  = @stat( $temp_dir );
-	if ( ! $original || ! $storage || $original['dev'] !== $storage['dev'] ) {
-		return new WP_Error( 'cb_edit_staging', 'Private temporary storage must be on the same filesystem as the file.' );
+	if ( ! $storage ) {
+		return new WP_Error( 'cb_edit_staging', 'Could not inspect private temporary storage.' );
+	}
+	if ( $original['dev'] !== $storage['dev'] ) {
+		return new WP_Error( 'cb_edit_mount', 'Private temporary storage must be on the same filesystem as the file. Set a private folder on that mount in DigiWP Bridge settings.' );
 	}
 	$stage = $temp_dir . '/cb-edit-' . wp_generate_uuid4();
 	if ( ! @mkdir( $stage, 0700 ) ) {
 		return new WP_Error( 'cb_edit_staging', 'Could not stage the file.' );
 	}
 	$temp = $stage . '/file';
+	$probe = $stage . '/mount-check';
 	try {
+		// A same-device check alone misses separate bind mounts. A hard link
+		// can only succeed across paths PHP can reach on the same mount. The
+		// probe stays in the private directory and rename cannot fall back
+		// to a cross-mount copy after a successful check.
+		if ( ! function_exists( 'link' ) || ! @link( $target, $probe ) ) {
+			return new WP_Error( 'cb_edit_mount', 'Could not verify atomic replacement on the same mount. Check the private folder mount and PHP hard-link permissions.' );
+		}
+		if ( ! @unlink( $probe ) ) {
+			return new WP_Error( 'cb_edit_staging', 'Could not clean up the private file-edit mount check.' );
+		}
 		if ( strlen( $after ) !== @file_put_contents( $temp, $after ) ||
 			! @chmod( $temp, $original['mode'] & 0777 ) ) {
 			return new WP_Error( 'cb_edit_staging', 'Could not stage the new contents with the file permissions.' );
@@ -357,6 +406,9 @@ function cb_replace_file_atomically( $target, $before, $after ) {
 		}
 		return true;
 	} finally {
+		if ( is_file( $probe ) || is_link( $probe ) ) {
+			@unlink( $probe );
+		}
 		if ( is_file( $temp ) ) {
 			@unlink( $temp );
 		}
@@ -7066,6 +7118,18 @@ add_action( 'admin_init', function () {
 			cb_activity_clear();
 		}
 	}
+	if ( isset( $_POST['cb_edit_staging_save'] ) && current_user_can( 'manage_options' ) && ! defined( 'CB_FILE_EDIT_STAGING_DIR' ) ) {
+		check_admin_referer( 'cb_edit_staging' );
+		$submitted = $_POST['cb_edit_staging_dir'] ?? '';
+		$path = is_string( $submitted ) ? trim( wp_unslash( $submitted ) ) : null;
+		$directory = '' === $path ? '' : cb_file_edit_staging_root( $path, true );
+		if ( is_wp_error( $directory ) ) {
+			add_settings_error( 'cb_edit_staging', $directory->get_error_code(), $directory->get_error_message() );
+		} else {
+			update_option( 'cb_file_edit_staging_dir', $directory, false );
+			add_settings_error( 'cb_edit_staging', 'cb_edit_staging_saved', __( 'Private file-edit storage settings saved.', 'wp-claude-bridge' ), 'success' );
+		}
+	}
 } );
 
 function cb_settings_page() {
@@ -7208,6 +7272,22 @@ function cb_settings_page() {
 			</table>
 			<?php submit_button( __( 'Save connector settings', 'wp-claude-bridge' ) ); ?>
 		</form>
+
+		<h2><?php esc_html_e( 'Private file-edit storage', 'wp-claude-bridge' ); ?></h2>
+		<?php settings_errors( 'cb_edit_staging' ); ?>
+		<p><?php esc_html_e( 'Use an existing directory on the same mount as the files being edited. It must be writable by PHP and outside every web-served path. On Unix, give the directory to the PHP user with permissions 0700.', 'wp-claude-bridge' ); ?></p>
+		<?php if ( defined( 'CB_FILE_EDIT_STAGING_DIR' ) ) : ?>
+			<p><?php esc_html_e( 'The host manages this setting through CB_FILE_EDIT_STAGING_DIR in wp-config.php.', 'wp-claude-bridge' ); ?></p>
+		<?php else : ?>
+			<form method="post">
+				<?php wp_nonce_field( 'cb_edit_staging' ); ?>
+				<input type="hidden" name="cb_edit_staging_save" value="1">
+				<label for="cb-edit-staging-dir"><?php esc_html_e( 'Absolute private directory path', 'wp-claude-bridge' ); ?></label>
+				<input type="text" id="cb-edit-staging-dir" name="cb_edit_staging_dir" class="large-text" value="<?php echo esc_attr( get_option( 'cb_file_edit_staging_dir', '' ) ); ?>">
+				<p class="description"><?php esc_html_e( 'An empty path uses the PHP system temporary directory. The mount is checked against each destination file before replacement.', 'wp-claude-bridge' ); ?></p>
+				<?php submit_button( __( 'Save private file-edit storage', 'wp-claude-bridge' ) ); ?>
+			</form>
+		<?php endif; ?>
 
 		<?php if ( cb_connector_enabled() && cb_connector_wordpress_access_supported() && current_user_can( 'manage_options' ) ) : ?>
 			<h3 id="cb-wordpress-access"><?php esc_html_e( 'Verify a DigiWP account', 'wp-claude-bridge' ); ?></h3>

@@ -57,6 +57,30 @@ test('Alerts reviews and approves a stored MCP proposal on a narrow screen', asy
   expect(approved).toBe(1)
 })
 
+test('Alerts keeps approval and execution separate after reload', async ({ page }) => {
+  await setup(page)
+  const error = 'Private temporary storage must be on the same filesystem as the file.'
+  const result = (id, execution, extra = {}) => ({ id, status: 'approved', tool: 'edit_file_with_backup', execution, decidedAt: Date.now(), ...extra })
+  await page.route('**/api/sites/shop/incidents', (route) => route.fulfill({ json: {
+    featured: null, list: [], canManage: true, proposals: [],
+    proposalDecisions: [
+      result('prop_failed', 'failed', { path: 'themes/shop/style.css', error }),
+      result('prop_succeeded', 'ran'),
+      result('prop_waiting', 'unconfirmed'),
+    ],
+  } }))
+  await page.goto('/site/shop/incidents')
+  await page.reload()
+  const failed = page.getByRole('article').filter({ hasText: 'prop_failed' })
+  await expect(failed.getByText('Approved', { exact: true })).toBeVisible()
+  await expect(failed.getByText('Execution failed', { exact: true })).toBeVisible()
+  await expect(failed.getByText('themes/shop/style.css', { exact: true })).toBeVisible()
+  await expect(failed.getByText(error, { exact: true })).toBeVisible()
+  await expect(failed.getByText('Executed', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('article').filter({ hasText: 'prop_succeeded' })).toContainText('Executed')
+  await expect(page.getByRole('article').filter({ hasText: 'prop_waiting' })).toContainText('Execution unconfirmed')
+})
+
 test('MCP page submits the selected site and exact paths for a direct edit token', async ({ page }) => {
   await setup(page)
   await page.route('**/api/sites', (route) => route.fulfill({ json: sites.map((site, i) => ({ ...site, role: i ? 'admin' : 'owner' })) }))

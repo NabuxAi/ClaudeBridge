@@ -76,6 +76,15 @@ export function pending(siteId) {
   )
 }
 
+export function recentDecisions(siteId) {
+  return all(
+    `SELECT id, tool, args->>'path' AS path, status, resolved_at, result
+       FROM proposals WHERE site_id = $1 AND status IN ('approved', 'rejected')
+       ORDER BY resolved_at DESC NULLS LAST, id DESC LIMIT 60`,
+    [siteId]
+  )
+}
+
 export function findPending(siteId, tool, args) {
   return one(
     "SELECT id FROM proposals WHERE site_id = $1 AND tool = $2 AND md5(args::text) = md5(($3::jsonb)::text) AND args = $3 AND status = 'pending'",
@@ -136,10 +145,8 @@ export async function resolve(siteId, id, status, { by, result } = {}) {
  *
  * Approval claims the row BEFORE the tool executes, which is what stops two
  * people approving the same change into two identical edits. The cost of that
- * ordering is a gap: if the call to the site then fails, the proposal reads
- * "approved" while nothing was done, and neither the panel nor the audit trail
- * says otherwise. Someone reading the queue later sees a decision that was
- * carried out, because that is what approved has always meant here.
+ * ordering is a gap between the recorded decision and the connector result.
+ * Keep those states separate so the panel can display both after reload.
  *
  * The row is not returned to pending. Re-arming it would invite exactly the
  * double execution the claim exists to prevent — the request may well have

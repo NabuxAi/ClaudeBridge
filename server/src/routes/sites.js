@@ -396,6 +396,17 @@ function concern(name) {
         data.list = rows.map((ev) => toIncident(ev, req.locale, data.canManage))
         data.featured = await featuredIncident(site.id, rows, req.locale)
         data.proposals = await pendingProposals(site.id, req.locale, data.canManage)
+        data.proposalDecisions = (await proposals.recentDecisions(site.id)).map((row) => ({
+          id: row.id,
+          tool: row.tool,
+          status: row.status,
+          decidedAt: row.resolved_at == null ? null : Number(row.resolved_at),
+          execution: row.status !== 'approved' ? null
+            : row.result?.ok === true ? 'ran'
+            : row.result?.unconfirmed ? 'unconfirmed'
+            : row.result?.ok === false ? 'failed' : 'unconfirmed',
+          ...(data.canManage ? { path: row.path, error: row.result?.error } : {}),
+        }))
         data.empty = rows.length === 0
         // An empty log is not a clean bill of health, and the view has to be
         // able to say which it is. Sites are only observed when scanned, so
@@ -1422,14 +1433,15 @@ async function relayPanelAction(req, res, site, op, args, approved, claimed = nu
   } catch (e) {
     if (claimed) {
       const error = errorMessage(req.locale, e)
-      await proposals.recordOutcome(site.id, claimed.id, { ok: false, at: Date.now(), error })
+      await proposals.recordOutcome(site.id, claimed.id, { ok: false, at: Date.now(), error, unconfirmed: !result?.isError })
       await events.record({
         siteId: site.id, kind: 'action', severity: 'warning',
         ...i18nTitle('sites.events.approvedFailed', { op }, { op, proposalId: claimed.id, error }),
         fingerprint: `proposal-failed:${claimed.id}`,
       })
     }
-    return res.status(e.status >= 400 && e.status < 600 ? e.status : 502).json({ ok: false, message: errorMessage(req.locale, e) })
+    return res.status(e.status >= 400 && e.status < 600 ? e.status : 502)
+      .json({ ok: false, message: errorMessage(req.locale, e), ...(claimed ? { approved: true, proposalId: claimed.id } : {}) })
   }
 
   if (claimed) await proposals.recordOutcome(site.id, claimed.id, { ok: true, at: Date.now() })

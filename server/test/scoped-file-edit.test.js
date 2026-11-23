@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -36,8 +36,9 @@ function add_option( $key, $value, $deprecated, $autoload ) {
 	$options[ $key ] = $value;
 	return true;
 }
-function get_option( $key ) { global $options; return $options[ $key ] ?? false; }
+function get_option( $key, $default = false ) { global $options; return $options[ $key ] ?? $default; }
 function delete_option( $key ) { global $options; unset( $options[ $key ] ); }
+function wp_get_upload_dir() { return array( 'basedir' => dirname( ABSPATH ) . '/public-uploads' ); }
 define( 'ABSPATH', $argv[2] );
 define( 'WP_CONTENT_DIR', ABSPATH . '/wp-content' );
 $_SERVER['DOCUMENT_ROOT'] = ABSPATH;
@@ -52,6 +53,26 @@ $args = array( 'path' => $path, 'search' => 'old', 'replace' => 'new' );
 function expect( $ok, $label ) {
 	if ( ! $ok ) { fwrite( STDERR, $label . "\n" ); exit( 1 ); }
 }
+$private = $argv[3];
+$other_mount = $argv[4] ?? '';
+$options['cb_file_edit_staging_dir'] = $private;
+foreach ( array( 'relative', $private . '/missing', ABSPATH . '/wp-content', wp_get_upload_dir()['basedir'] ) as $bad_dir ) {
+	$options['cb_file_edit_staging_dir'] = $bad_dir;
+	$bad = cb_op_edit_file_with_backup( $args );
+	expect( is_wp_error( $bad ) && $bad->code === 'cb_edit_staging', 'unsafe staging directory accepted' );
+	expect( file_get_contents( $target ) === $old && count( $options ) === 1, 'unsafe staging changed file or left a snapshot' );
+}
+if ( $other_mount ) {
+	$options['cb_file_edit_staging_dir'] = $other_mount;
+	$bad = cb_op_edit_file_with_backup( $args );
+	expect( is_wp_error( $bad ) && $bad->code === 'cb_edit_mount', 'different mount accepted' );
+	expect( file_get_contents( $target ) === $old && count( $options ) === 1, 'mount failure changed original or left a snapshot' );
+	unset( $options['cb_file_edit_staging_dir'] );
+	$bad = cb_op_edit_file_with_backup( $args );
+	expect( is_wp_error( $bad ) && $bad->code === 'cb_edit_mount', 'mismatched default PHP temp was accepted' );
+	expect( file_get_contents( $target ) === $old && count( $options ) === 0, 'mismatched PHP temp changed original or left a snapshot' );
+}
+$options['cb_file_edit_staging_dir'] = $private;
 $backup_available = false;
 $failure = cb_op_edit_file_with_backup( $args );
 expect( is_wp_error( $failure ) && $failure->code === 'cb_edit_backup', 'backup failure was not reported' );
@@ -59,7 +80,7 @@ expect( file_get_contents( $target ) === $old, 'file changed without a backup' )
 $backup_available = true;
 $invalid = cb_op_edit_file_with_backup( array( 'path' => $path, 'search' => "return 'old';", 'replace' => 'return (;' ) );
 expect( is_wp_error( $invalid ) && $invalid->code === 'cb_edit_syntax', 'invalid PHP was accepted' );
-expect( file_get_contents( $target ) === $old && count( $options ) === 0, 'invalid PHP changed the file or backup store' );
+expect( file_get_contents( $target ) === $old && count( $options ) === 1, 'invalid PHP changed the file or backup store' );
 
 $first = cb_op_edit_file_with_backup( $args );
 expect( ! is_wp_error( $first ), is_wp_error( $first ) ? $first->message : '' );
@@ -77,22 +98,32 @@ $broken = cb_op_restore_file_edit( $first );
 expect( is_wp_error( $broken ) && file_get_contents( $target ) === $new, 'corrupt backup overwrote the file' );
 $options[ 'cb_file_edit_' . $first['backup_id'] ] = $snapshot;
 expect( ! is_wp_error( cb_op_restore_file_edit( $first ) ) && file_get_contents( $target ) === $old, 'original bytes were not restored' );
+expect( glob( $private . '/cb-edit-*' ) === array(), 'staging files were not cleaned up' );
 `
 
+const secondMount = process.platform === 'linux' && existsSync('/dev/shm') && statSync('/dev/shm').dev !== statSync(tmpdir()).dev
+
 for (const source of sources) {
-  test(`${source}: backed-up file edits are reversible and check the current file`, { skip: !hasPhp }, () => {
+  test(`${source}: private staging and backed-up edits`, { skip: !hasPhp }, () => {
     const temp = mkdtempSync(join(tmpdir(), 'cb-file-edit-'))
+    let crossMount
     try {
       const site = join(temp, 'wordpress')
       const plugin = join(site, 'wp-content', 'plugins', 'sample')
+      const privateDir = join(temp, 'private')
+      if (secondMount) crossMount = mkdtempSync('/dev/shm/cb-file-edit-')
       mkdirSync(plugin, { recursive: true })
+      mkdirSync(privateDir, { mode: 0o700 })
+      mkdirSync(join(temp, 'public-uploads'))
       writeFileSync(join(plugin, 'main.php'), "<?php return 'old';\n")
       const script = join(temp, 'test.php')
       writeFileSync(script, harness)
-      const output = spawnSync('php', [script, fileURLToPath(new URL(`../../${source}`, import.meta.url)), site], { encoding: 'utf8' })
+      const phpOpts = crossMount ? ['-d', `sys_temp_dir=${crossMount}`] : []
+      const output = spawnSync('php', [...phpOpts, script, fileURLToPath(new URL(`../../${source}`, import.meta.url)), site, privateDir, crossMount || ''], { encoding: 'utf8' })
       assert.equal(output.status, 0, output.stderr || output.stdout)
     } finally {
       rmSync(temp, { recursive: true, force: true })
+      if (crossMount) rmSync(crossMount, { recursive: true, force: true })
     }
   })
 }

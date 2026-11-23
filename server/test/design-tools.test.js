@@ -183,11 +183,11 @@ test('the server classifies the design tools by consequence', () => {
   }
 })
 
-test('all three sources are the 3.9.5 release', () => {
+test('all three sources are the 3.9.6 release', () => {
   for (const { p, src } of sources) {
     assert.ok(
-      /define\(\s*'CB_VERSION',\s*'3\.9\.5'\s*\);/.test(src),
-      `${p} must pin CB_VERSION to 3.9.5`,
+      /define\(\s*'CB_VERSION',\s*'3\.9\.6'\s*\);/.test(src),
+      `${p} must pin CB_VERSION to 3.9.6`,
     )
   }
 })

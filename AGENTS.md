@@ -43,8 +43,9 @@ AI/MCP client --------------------------------> WordPress plugin directly
      Connector Mode.
    - PHP 7.4+ / WordPress 5.6+ target.
    - Version at baseline: `3.7.4`.
-   - Release source: `3.9.5` (2026-11-23) adds backed-up file edits and guarded
-     restoration. In `3.9.4`, signed hub requests that fail
+   - Release source: `3.9.6` (2026-11-23) lets each site configure a private
+     directory on the edit target's mount. Version `3.9.5` added backed-up file
+     edits and guarded restoration. In `3.9.4`, signed hub requests that fail
      answer a named reason (`cb_signature_invalid`, `cb_signature_expired`,
      `cb_nonce_store_failed` 503, …) instead of one bare 401; see the
      connector invariant under Security. Earlier: `3.9.1` (verified 2026-10-02) — the `render_blocks`
@@ -203,6 +204,11 @@ for UI convenience.
   owner choose all files supported by the backed-up operation as an alternative
   to exact paths. An existing grant keeps its scope. Both edit tool names honor
   the window. File deletion and restoration still require separate approval.
+- Platform `0.13.1` shows proposal decisions separately from execution
+  outcomes in Alerts. With plugin `3.9.6`, hosts can set
+  `CB_FILE_EDIT_STAGING_DIR` or configure the private directory in WordPress
+  Tools. Both editing and restoration fail closed if the directory cannot
+  support an atomic replacement on the target mount.
 - Iran ↔ international peer relay (`peer-relay.js`, `POST /v1/relay/forward`):
   connector calls a server cannot deliver are re-sent through the partner server.
   Off unless both `PEER_RELAY_URL` and `PEER_RELAY_SECRET` are set.
@@ -1565,7 +1571,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform version: **0.13.0** (temporary MCP file edit scope, 2026-11-23), shared by `hub/package.json` and
+- Current platform version: **0.13.1** (private staging and approval results, 2026-11-23), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a
