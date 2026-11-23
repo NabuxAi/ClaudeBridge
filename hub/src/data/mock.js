@@ -86,8 +86,8 @@ export const billing = () => delay({
     metadata: {},
   },
   provenance: { live: ['subscriptions'], unavailable: null },
-  payment: { provenance: { live: [], unavailable: 'درگاه پرداخت هنوز متصل نیست و کارتی ذخیره نمی‌شود.' } },
-  invoices: { provenance: { live: [], unavailable: 'فاکتوری صادر نمی‌شود چون سیستم پرداخت هنوز وجود ندارد.' }, list: [] },
+  payment: { configured: false, gateway: null, months: [1, 3, 6, 12], provenance: { live: [], unavailable: 'درگاه پرداخت در حالت توسعه متصل نیست.' } },
+  invoices: { provenance: { live: ['invoices'], unavailable: null }, list: [] },
 })
 export const trial = () => delay({
   status: 'trialing',
@@ -98,17 +98,12 @@ export const trial = () => delay({
   cancelAtPeriodEnd: false,
 })
 export const requestPilot = (plan) => delay({ ok: true, subscription: { ...billing().subscription, plan: plans().find((p) => p.id === plan) || plans()[0], pilotRequested: true } })
-export const invoices = () => delay({
-  provenance: { live: [], unavailable: 'فاکتوری صادر نمی‌شود چون سیستم پرداخت هنوز وجود ندارد.' },
-  list: [],
-})
-export const invoice = (id) => delay({
-  id, date: '۱۴۰۳/۰۴/۱۲', dueDate: '۱۴۰۳/۰۴/۱۲', status: 'paid',
-  seller: { name: 'دیجی‌وردپرس (DigiWP Ai Support)', id: 'ai.digiwp.com', taxId: '۱۴۰۱۲۳۴۵۶۷۸' },
-  buyer: { name: 'مریم رضایی', email: 'maryam@example.com' },
-  items: [{ desc: 'اشتراک پلن حرفه‌ای — یک ماه', qty: 1, unit: 490000 }],
-  subtotal: 490000, tax: 44100, total: 534100,
-})
+export const invoices = () => delay([])
+// Development data: no gateway exists in mock mode, so checkout says so.
+export const checkout = () => Promise.reject(Object.assign(new Error('پرداخت آنلاین در حالت توسعه فعال نیست.'), { status: 503 }))
+export const recheckInvoice = (id) => delay({ id, status: 'pending' })
+export const billingAvailability = () => delay({ payment: { configured: false, gateway: null } })
+export const invoice = (id) => Promise.reject(Object.assign(new Error('فاکتور پیدا نشد.'), { status: 404, id }))
 
 export const activity = () => delay({ events: [] })
 

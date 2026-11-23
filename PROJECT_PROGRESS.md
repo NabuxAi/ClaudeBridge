@@ -1,6 +1,36 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-23 (0.9.1). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-23 (0.10.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.10.0 — online payment with Aqayepardakht (2026-11-23)
+
+- Gateway: Aqayepardakht API v2 on `panel.aqayepardakht.ir` (create →
+  `/startpay/{transid}` → browser return → server-to-server verify). v3
+  (`api.aqayepardakht.ir`) timed out from both servers and a workstation on
+  2026-11-23; v2 answered from both (sandbox create ok; verify codes 0 unpaid,
+  -10 amount mismatch). Amounts are toman. Client: `server/src/payments/aqayepardakht.js`
+  (fetch seam `_setFetchForTests`).
+- `invoices` table (`payments.schema.js`); `payments.store.js`: price from the
+  plans table (`priceFor`: 12 months = 10 × monthly, the price page's promise),
+  `settle()` locks invoice + subscription in one transaction (one period per
+  paid invoice; renewals start at the paid period's end; failed → paid allowed
+  when verify later says paid), `verifyAndSettle({final})` (a re-check while
+  paying leaves pending; an unreachable gateway never fails an invoice).
+- Routes: `POST /billing/checkout`, `GET /billing/invoices[/:id]`,
+  `POST /billing/invoices/:id/recheck`, public `ALL /billing/aqayepardakht/callback`
+  (redirects to `/app/billing?invoice=`), public `GET /billing/availability`,
+  admin `POST /admin/users/:id/subscription` (manual grant). Expired paid period
+  → 402 `subscription_expired` on site add.
+- Security: removed `POST /billing/webhook` (any signed-in user could rewrite
+  any account's plan/trial); pilot access once per account (409).
+- Hub: real Checkout, Invoice, Billing (result banner, invoices, buy/renew),
+  Pricing buy button when payment is live, admin manual-grant card; `http()`
+  `isPublic` keeps a public 401 from forcing /login.
+- Config: `AQAYEPARDAKHT_PIN` (both compose files). Privacy: service #11 in
+  `docs/PRIVACY.md` and the hub privacy page.
+- Verification: 541/541 server tests (PostgreSQL 16), hub lint/build, 52/52
+  Playwright. Not verified: a real payment end to end (needs the merchant PIN
+  and a registered callback domain on the gateway side).
 
 ## Platform 0.9.1 — assistant uptime, connector-mode-off check (2026-11-23)
 

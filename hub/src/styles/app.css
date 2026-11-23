@@ -151,3 +151,6 @@
 .site-reach__state { margin-inline-start: auto; }
 .site-reach__route, .site-reach__when, .site-reach__none { margin: 8px 0 0; color: var(--gd-text-secondary); line-height: 1.8; }
 .site-reach__when { font-size: 11.5px; color: var(--gd-text-muted); }
+
+/* Checkout choices: the radio is visually hidden, so the card shows keyboard focus. */
+.dwp-choice:focus-within { outline: 2px solid var(--gd-primary); outline-offset: 2px; }

@@ -33,6 +33,11 @@ const publicPlan = (p, locale) => p && ({
 const trialStateOf = (s, isTrialing) =>
   isTrialing ? 'trialing' : s.status === 'trialing' ? 'expired' : 'ended'
 
+// A paid period that has run out. Reads stay open; adding sites stops, the
+// same rule as an expired trial.
+const paidPeriodOver = (s, now = Date.now()) =>
+  s.status === 'active' && s.current_period_end != null && Number(s.current_period_end) <= now
+
 const publicSubscription = (s, plan, siteLimit, sitesUsed, locale) => {
   if (!s) return null
   const now = Date.now()
@@ -48,6 +53,12 @@ const publicSubscription = (s, plan, siteLimit, sitesUsed, locale) => {
     trialState: trialStateOf(s, isTrialing),
     trialEndsAt,
     daysLeftInTrial,
+    // The paid period: active while it lasts, 'expired' once it has run out.
+    isPaid: s.status === 'active' && !paidPeriodOver(s, now),
+    paidExpired: paidPeriodOver(s, now),
+    daysLeftInPeriod: s.status === 'active' && !paidPeriodOver(s, now) && s.current_period_end
+      ? Math.max(0, Math.ceil((Number(s.current_period_end) - now) / (24 * 60 * 60 * 1000)))
+      : null,
     currentPeriodStart: s.current_period_start ? Number(s.current_period_start) : null,
     currentPeriodEnd: s.current_period_end ? Number(s.current_period_end) : null,
     cancelAtPeriodEnd: !!s.cancel_at_period_end,
@@ -182,6 +193,11 @@ export const billing = {
       e.details = { subscription }
       throw e
     }
+    if (paidPeriodOver(s, now)) {
+      const e = httpError(402, 'billing.periodExpired', null, 'subscription_expired')
+      e.details = { subscription }
+      throw e
+    }
     if (siteLimit != null && sitesUsed >= siteLimit) {
       const e = httpError(402, 'billing.siteLimitReached', {
         plan: plan ? planText(locale, plan.id, 'name', plan.name) : s.plan,
@@ -205,6 +221,11 @@ export const billing = {
     if (!plan) throw httpError(404, 'billing.planNotFound')
 
     const s = await this.ensure(userId)
+    // Pilot access is granted once per account. Repeating the request used to
+    // add another 14 days each time — an endless free trial once payment exists.
+    if (s.metadata?.pilotRequested) throw httpError(409, 'billing.pilotOnce', null, 'pilot_already_used')
+    // A paying account keeps its paid plan; a pilot request must not replace it.
+    if (s.status === 'active') throw httpError(409, 'billing.pilotWhilePaid', null, 'already_paid')
     const now = Date.now()
     const trialEndsAt = Math.max(Number(s.trial_ends_at) || now, now) + TRIAL_DAYS * 24 * 60 * 60 * 1000
 
@@ -224,12 +245,35 @@ export const billing = {
   },
 
   /**
-   * Apply a plan/trial change from an internal source.
-   *
-   * This is what the webhook placeholder uses: it does not pretend a payment
-   * happened, but it does persist an explicit plan or trial change sent by a
-   * trusted internal caller.
+   * Apply a plan/trial change from a trusted internal caller (operator tools
+   * and tests). No HTTP route reaches this for a customer: the former
+   * `POST /billing/webhook` let any signed-in user rewrite any account's plan
+   * and was removed with the payment wave.
    */
+  /**
+   * Operator grant: an active paid period of `days` for `planId`, starting now
+   * or at the end of the current paid period. Used for manual activation
+   * (bank transfer, pilot customers) through the admin API.
+   */
+  async grant(userId, planId, days, grantedBy, locale) {
+    const plan = await one('SELECT * FROM plans WHERE id = $1', [planId])
+    if (!plan) throw httpError(404, 'billing.planNotFound')
+    if (!Number.isInteger(days) || days < 1 || days > 3660) throw httpError(400, 'billing.grantDays')
+    const s = await this.ensure(userId)
+    const now = Date.now()
+    const from = s.status === 'active' && Number(s.current_period_end) > now ? Number(s.current_period_end) : now
+    await one(
+      `UPDATE subscriptions
+          SET plan = $2, status = 'active', current_period_start = $3, current_period_end = $4,
+              metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb, updated_at = $6
+        WHERE id = $1 RETURNING id`,
+      [s.id, planId, from === now ? now : Number(s.current_period_start) || now, from + days * 24 * 60 * 60 * 1000,
+        JSON.stringify({ lastGrant: { by: grantedBy, days, plan: planId, at: now } }), now]
+    )
+    await one('UPDATE users SET plan = $2 WHERE id = $1', [userId, plan.name])
+    return this.forUser(userId, locale)
+  },
+
   async applyChange(userId, { plan: planId, trialDays, cancelAtPeriodEnd } = {}, locale) {
     const s = await this.ensure(userId)
     let targetPlan = s.plan

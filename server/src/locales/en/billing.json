@@ -62,10 +62,22 @@
   "webhookRecorded": "Payment is not active yet, but the plan/trial change was recorded.",
   "limit": {
     "pilot": "Too many trial-access requests from this address. Try again in an hour.",
-    "webhook": "Too many webhooks received from this address."
+    "webhook": "Too many webhooks received from this address.",
+    "checkout": "Too many payment attempts. Try again later."
   },
   "trialExpired": "Your trial access has ended; adding new sites is paused until a subscription is activated. Payment is not available yet — to continue, request trial access from the subscription page or contact support.",
   "siteLimitReached_one": "The “{plan}” plan is full ({count} site). Upgrade your plan to add more sites. Payment is not available yet — contact support to upgrade.",
   "siteLimitReached_other": "The “{plan}” plan is full ({count} sites). Upgrade your plan to add more sites. Payment is not available yet — contact support to upgrade.",
-  "siteLimitReached": "The “{plan}” plan is full ({count} sites). Upgrade your plan to add more sites. Payment is not available yet — contact support to upgrade."
+  "siteLimitReached": "The “{plan}” plan is full ({count} sites). Upgrade your plan to add more sites. Payment is not available yet — contact support to upgrade.",
+  "invoiceNotFound": "Invoice not found.",
+  "gatewayUnreachable": "The payment gateway did not answer. The invoice stays pending; try checking again in a few minutes.",
+  "periodExpired": "Your paid period has ended. Renew your plan to add sites; everything already in your account stays readable.",
+  "pilotOnce": "Pilot access has already been used on this account. Choose a plan to continue.",
+  "pilotWhilePaid": "This account already has a paid plan, so pilot access is not needed.",
+  "grantDays": "Days must be a whole number between 1 and 3660.",
+  "checkout": {
+    "badMonths": "Choose 1, 3, 6 or 12 months.",
+    "notConfigured": "Online payment is not configured on this server yet.",
+    "gatewayFailed": "The payment gateway refused to open the payment (code {code}). Nothing was charged."
+  }
 }

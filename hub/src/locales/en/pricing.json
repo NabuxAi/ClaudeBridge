@@ -1,5 +1,5 @@
 {
-  "badge": "Pricing page — payments aren't active yet",
+  "badge": "Prices in toman",
   "title": "A plan that grows with your business",
   "lead": "From one store to dozens of client sites — there's always a plan that fits. Change or cancel anytime.",
   "trial": {
@@ -69,5 +69,7 @@
     "onSite": "On the site itself",
     "ticket": "Ticket",
     "priority": "Priority"
-  }
+  },
+  "badgePay": "Online payment with Aqayepardakht",
+  "buy": "Buy"
 }

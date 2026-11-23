@@ -1,9 +1,9 @@
 // Billing / subscription / entitlement skeleton.
 //
 // Covers: schema bootstrap, default subscription materialisation, plan
-// listing, current subscription read, trial status, pilot request, and the
-// webhook placeholder that honestly says payment is NOT_BUILT while still
-// persisting plan/trial changes.
+// listing, current subscription read, trial status, the once-only pilot
+// request, and the removal of the old open plan-rewriting webhook.
+// The payment flow itself is in payments.test.js.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
@@ -112,7 +112,7 @@ if (!dsn) {
     assert.equal(userRow.rows[0].plan, 'آژانس')
   })
 
-  test('applyChange via webhook persists plan and trial changes', async () => {
+  test('applyChange (trusted internal caller) persists plan and trial changes', async () => {
     const user = await makeUser()
     const before = await billing.forUser(user.id)
     const sub = await billing.applyChange(user.id, { plan: 'base', trialDays: 3 })
@@ -188,8 +188,9 @@ if (!dsn) {
     }
   })
 
-  test('POST /billing/webhook is honest NOT_BUILT but persists changes', async () => {
+  test('the old plan-rewriting webhook is gone: a user cannot grant themselves a plan', async () => {
     const user = await makeUser()
+    const victim = await makeUser()
     const app = makeApp(user.id)
     const server = app.listen(0)
     await new Promise((r) => server.once('listening', r))
@@ -197,20 +198,28 @@ if (!dsn) {
     const H = await authHeaders(user.id)
 
     try {
+      const before = await billing.forUser(victim.id)
       const res = await fetch(`${base}/billing/webhook`, {
         method: 'POST',
         headers: H,
-        body: JSON.stringify({ userId: user.id, plan: 'base', trialDays: 7 }),
+        body: JSON.stringify({ userId: victim.id, plan: 'agency', trialDays: 3650 }),
       })
-      assert.equal(res.status, 200)
-      const body = await res.json()
-      assert.equal(body.ok, true)
-      assert.equal(body.payment, 'NOT_BUILT')
-      assert.equal(body.persisted.plan.id, 'base')
-      assert.equal(body.persisted.daysLeftInTrial, 7)
+      assert.equal(res.status, 404)
+      const after = await billing.forUser(victim.id)
+      assert.equal(after.plan.id, before.plan.id)
+      assert.equal(after.trialEndsAt, before.trialEndsAt)
     } finally {
       server.close()
     }
+  })
+
+  test('pilot access is granted once: a second request does not extend the trial', async () => {
+    const user = await makeUser()
+    const first = await billing.requestPilot(user.id, 'pro')
+    await assert.rejects(billing.requestPilot(user.id, 'agency'), (e) => e.status === 409 && e.code === 'pilot_already_used')
+    const now = await billing.forUser(user.id)
+    assert.equal(now.trialEndsAt, first.trialEndsAt)
+    assert.equal(now.plan.id, 'pro')
   })
 
   test('billing endpoints require authentication', async () => {

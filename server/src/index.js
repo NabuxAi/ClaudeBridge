@@ -21,6 +21,8 @@ import offsiteBackupsRouter from './routes/offsite-backups.js'
 import monitorsRouter from './routes/monitors.js'
 import pushRouter from './routes/push.js'
 import adminRouter from './routes/admin.js'
+import paymentsCallbackRouter from './routes/payments-callback.js'
+import { paymentsConfigured } from './payments.store.js'
 import billingRouter from './routes/billing.js'
 import { billing } from './billing.store.js'
 import { sites } from './store.js'
@@ -98,6 +100,8 @@ export function createApp() {
 
   // Public: hub auth + the plugin's signed register receiver.
   app.use('/v1', authRouter)
+  // Public: the payment gateway returns the customer's browser here.
+  app.use('/v1', paymentsCallbackRouter)
   app.use('/v1', connectorRouter)
   // Public: recipes are prompts, not secrets, and a site that has lost its
   // pairing still needs its playbooks — that is precisely when someone is
@@ -110,6 +114,8 @@ export function createApp() {
   app.use('/v1', mcpRouter)
   // Public: the price list is shown to anonymous visitors on /pricing.
   app.get('/v1/billing/plans', (req, res) => res.json(billing.localizePlans(req.locale, plans)))
+  // Public: whether this server can take an online payment, for the price page.
+  app.get('/v1/billing/availability', (_req, res) => res.json({ payment: { configured: paymentsConfigured(), gateway: paymentsConfigured() ? 'aqayepardakht' : null } }))
   // Protected: everything the hub reads after login.
   // The real billing router must be mounted before the account router:
   // account.js keeps an honest NOT_BUILT stub for GET /billing, and Express

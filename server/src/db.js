@@ -25,6 +25,7 @@ import { SCHEMA as MONITORS_SCHEMA } from './monitors.schema.js'
 import { SCHEMA as PUSH_SCHEMA } from './push.schema.js'
 import { SCHEMA as MCP_TOKENS_SCHEMA } from './mcp-tokens.schema.js'
 import { SCHEMA as PEER_LINK_SCHEMA } from './peer-link.schema.js'
+import { SCHEMA as PAYMENTS_SCHEMA } from './payments.schema.js'
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 })
 
@@ -112,7 +113,7 @@ const SCHEMA = `
   -- registered before the rule may already collide, and they stay usable.
   ALTER TABLE users ADD COLUMN IF NOT EXISTS email_canonical TEXT;
   CREATE INDEX IF NOT EXISTS idx_users_email_canonical ON users(email_canonical);
-` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA + CONVERSATIONS_SCHEMA + SESSIONS_SCHEMA + TWOFACTOR_SCHEMA + MONITORS_SCHEMA + PUSH_SCHEMA + MCP_TOKENS_SCHEMA + PEER_LINK_SCHEMA
+` + EVENTS_SCHEMA + PROPOSALS_SCHEMA + SWEEP_SCHEMA + PASSWORD_RESETS_SCHEMA + TEAM_SCHEMA + NOTIFICATIONS_SCHEMA + BILLING_SCHEMA + OFFSITE_BACKUPS_SCHEMA + CONVERSATIONS_SCHEMA + SESSIONS_SCHEMA + TWOFACTOR_SCHEMA + MONITORS_SCHEMA + PUSH_SCHEMA + MCP_TOKENS_SCHEMA + PEER_LINK_SCHEMA + PAYMENTS_SCHEMA
 
 /** Wait for Postgres to accept connections (compose may start us first). */
 async function waitForDb(retries = 30) {

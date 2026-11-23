@@ -81,5 +81,20 @@
     "empty": "No users registered yet.",
     "demote": "Remove admin",
     "promote": "Make admin"
+  },
+  "grant": {
+    "title": "Activate a plan manually",
+    "hint": "For a payment received outside the gateway (bank transfer) or a pilot customer. Starts now, or after the current paid period. Nothing is charged.",
+    "plan": "Plan",
+    "days": "Days",
+    "daysUnit": "days",
+    "action": "Activate",
+    "done": "Active on {plan} until {date}.",
+    "failed": "Activation failed.",
+    "plans": {
+      "base": "Basic",
+      "pro": "Pro",
+      "agency": "Agency"
+    }
   }
 }

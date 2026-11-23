@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
-import { Button, Badge, StatusPill } from '../../components/index.js'
+import { Button, Badge, StatusPill, Select, Input } from '../../components/index.js'
 import { admin } from '../../lib/api.js'
-import { t, digits, dateTime } from '../../lib/i18n.js'
+import { t, digits, dateTime, date } from '../../lib/i18n.js'
 
 // /admin/users/:id serves the public user shape (users.byId → publicUser in
 // server/src/store.js), which carries no created_at — Number(undefined) used
@@ -69,6 +69,43 @@ export default function AdminUserDetail() {
           )}
         </div>
       </div>
+      <GrantCard userId={user.id} />
     </>
+  )
+}
+
+/** Operator activation: a paid period on a plan, without a gateway payment. */
+function GrantCard({ userId }) {
+  const [plan, setPlan] = useState('pro')
+  const [days, setDays] = useState('30')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+
+  async function grant() {
+    setBusy(true); setResult(null)
+    try {
+      const sub = await admin.grantSubscription(userId, plan, Number(days))
+      setResult({ ok: true, text: t('admin.grant.done', { plan: sub.plan?.name || plan, date: date(sub.currentPeriodEnd) }) })
+    } catch (e) {
+      setResult({ ok: false, text: e?.message || t('admin.grant.failed') })
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="gd-card gd-card--e-sm gd-card--p-md" style={{ marginTop: 16 }}>
+      <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>{t('admin.grant.title')}</div>
+      <p style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', margin: '0 0 12px', lineHeight: 1.8 }}>{t('admin.grant.hint')}</p>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Select value={plan} onChange={(e) => setPlan(e.target.value)} aria-label={t('admin.grant.plan')}>
+          <option value="base">{t('admin.grant.plans.base')}</option>
+          <option value="pro">{t('admin.grant.plans.pro')}</option>
+          <option value="agency">{t('admin.grant.plans.agency')}</option>
+        </Select>
+        <Input type="number" min="1" max="3660" value={days} onChange={(e) => setDays(e.target.value)} aria-label={t('admin.grant.days')} style={{ width: 110 }} />
+        <span style={{ fontSize: 12.5, color: 'var(--gd-text-muted)' }}>{t('admin.grant.daysUnit')}</span>
+        <Button variant="primary" size="sm" loading={busy} onClick={grant}>{t('admin.grant.action')}</Button>
+      </div>
+      {result && <p role={result.ok ? 'status' : 'alert'} style={{ fontSize: 13, margin: '10px 0 0', color: result.ok ? 'var(--gd-success-text)' : 'var(--gd-danger-text)' }}>{result.text}</p>}
+    </div>
   )
 }

@@ -1,7 +1,19 @@
 {
-  "title": "Payments aren't active yet",
-  "lead": "Invoicing and the payment gateway haven't been built yet. No payment is taken on this page.",
-  "note": "All accounts currently run in pilot mode. To use DigiWP in production or learn more, please contact the team.",
-  "cta": "Request pilot access",
-  "back": "Back to dashboard"
+  "title": "Buy a plan",
+  "lead": "Choose a plan and a period. You pay on Aqayepardakht’s secure page and come back here.",
+  "loadFailed": "The plans could not be loaded.",
+  "failed": "The payment could not be started.",
+  "plan": "Plan",
+  "period": "Period",
+  "perMonth": "{amount} toman a month",
+  "months_one": "{count} month",
+  "months_other": "{count} months",
+  "months": "{count} months",
+  "yearBonus": "2 months free",
+  "total": "Total",
+  "toman": "toman",
+  "pay": "Pay with Aqayepardakht",
+  "gatewayNote": "Your card details go only to the bank’s page. The plan activates as soon as the bank confirms the payment.",
+  "notConfigured": "Online payment is not active on this server yet, so nothing can be paid here. The price above is what you will pay once it is.",
+  "back": "Back to billing"
 }

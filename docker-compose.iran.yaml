@@ -54,6 +54,7 @@ services:
       # تنظیمات دستیار هوش مصنوعی (دروازه داخلی ایران / لوکال)
       ASSISTANT_URL: ${ASSISTANT_URL:-https://gate.nabuxai.ir/v1}
       ASSISTANT_API_KEY: ${ASSISTANT_API_KEY:-}
+      AQAYEPARDAKHT_PIN: ${AQAYEPARDAKHT_PIN:-}
       ASSISTANT_MODEL: ${ASSISTANT_MODEL:-nabu-smart}
       # سامانه‌های اطلاع‌رسانی بومی (بدون وابستگی به تلگرام در زمان فیلترینگ)
       SMS_URL: ${SMS_URL:-}

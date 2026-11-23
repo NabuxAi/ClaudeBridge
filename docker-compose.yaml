@@ -97,6 +97,8 @@ services:
       - SERVER_REGION=${SERVER_REGION:-}
       # The partner's panel, shown when linking accounts across the servers.
       - PEER_PANEL_URL=${PEER_PANEL_URL:-}
+      # Online payment: the Aqayepardakht gateway PIN (merchant code). Empty = payment honestly off.
+      - AQAYEPARDAKHT_PIN=${AQAYEPARDAKHT_PIN:-}
       # Links inside emails (password reset, invitations, alerts).
       - PUBLIC_PANEL_URL=${PUBLIC_PANEL_URL:-${SERVICE_URL_HUB:-}}
     depends_on:

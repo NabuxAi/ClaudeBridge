@@ -4,6 +4,7 @@ import { sites, users } from '../store.js'
 import * as events from '../events.js'
 import { localizeEvent } from '../event-text.js'
 import { query } from '../db.js'
+import { billing } from '../billing.store.js'
 
 const router = Router()
 // Idempotent with the app-level middleware; keeps req.t/req.locale present
@@ -72,6 +73,21 @@ router.patch('/users/:id/role', async (req, res, next) => {
     }
     const updated = await users.setRole(req.params.id, req.body.role)
     res.json(users.withLabels(req.locale, updated))
+  } catch (e) { next(e) }
+})
+
+/**
+ * Manual activation by an operator (bank transfer, pilot customer): an active
+ * paid period of `days` on `plan`, starting now or after the current one.
+ * Admin-only through the /v1/admin mount; recorded on the subscription.
+ */
+router.post('/users/:id/subscription', async (req, res, next) => {
+  try {
+    const target = await users.byId(req.params.id)
+    if (!target) return res.status(404).json({ message: req.t('common.notFound') })
+    const plan = String(req.body?.plan || '').trim()
+    const days = Number(req.body?.days)
+    res.json(await billing.grant(target.id, plan, days, req.user.sub, req.locale))
   } catch (e) { next(e) }
 })
 

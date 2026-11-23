@@ -154,6 +154,11 @@ export const config = {
     emailApiKey: process.env.EMAIL_API_KEY || '',
     emailFrom: process.env.EMAIL_FROM || 'alerts@digiwp.com',
   },
+  // Online payment. The Aqayepardakht gateway PIN (merchant code); empty means
+  // checkout honestly answers "payment is not configured on this server".
+  payments: {
+    aqayepardakhtPin: (process.env.AQAYEPARDAKHT_PIN || '').trim(),
+  },
   // Language of operator-only text (Telegram digest). English unless set.
   operatorLocale: process.env.OPERATOR_LOCALE || 'en',
   // Hour (UTC, 0–23) to send the daily digest.

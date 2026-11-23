@@ -80,6 +80,10 @@
       {
         "t": "Browser push service (Web Push) — optional",
         "d": "If you enable browser notifications, alerts are sent from our server to your own browser's push service (such as FCM or the Mozilla/Apple services): each message is encrypted with your device's subscription keys before sending, so the push service sees only ciphertext; the sender's identity is verified with the server's VAPID keys. Without VAPID configured on the deployment, this path is honestly reported as “not configured” and nothing is sent."
+      },
+      {
+        "t": "Payment gateway (Aqayepardakht) — when you buy a plan",
+        "d": "When you pay for a plan, our server sends Aqayepardakht the amount in toman, the invoice number, your account email and a short description (plan and months). You enter your card details only on the gateway/bank page; they never reach our server. From the return trip we keep the bank tracking number and a masked card number (first 6 and last 4 digits). A payment counts only after our server confirms it with the gateway directly."
       }
     ]
   },

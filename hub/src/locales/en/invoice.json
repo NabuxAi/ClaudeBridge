@@ -1,7 +1,32 @@
 {
-  "title": "Invoice {id} not found",
-  "lead": "Payments and invoicing haven't been built yet. No invoice with this number exists.",
-  "note": "Your account is running in pilot mode and you haven't been charged anything. Contact us for more information.",
-  "cta": "Request information",
-  "back": "Back to dashboard"
+  "title": "Invoice",
+  "notFound": "Invoice {id} was not found.",
+  "loadFailed": "The invoice could not be loaded.",
+  "number": "Invoice number",
+  "plan": "Plan",
+  "planMonths_one": "{plan}, {count} month",
+  "planMonths_other": "{plan}, {count} months",
+  "planMonths": "{plan}, {count} months",
+  "plans": {
+    "base": "Basic",
+    "pro": "Pro",
+    "agency": "Agency"
+  },
+  "amount": "Amount",
+  "toman": "toman",
+  "created": "Issued",
+  "paidAt": "Paid",
+  "period": "Period",
+  "periodRange": "{from} to {to}",
+  "bankRef": "Bank tracking number",
+  "card": "Card",
+  "status": {
+    "paid": "Paid",
+    "pending": "Awaiting payment",
+    "failed": "Not paid"
+  },
+  "failedNote": "This payment was not completed and nothing was activated.",
+  "pendingNote": "The bank has not confirmed this payment yet. If you have just paid, check again.",
+  "recheck": "Check payment again",
+  "back": "Back to billing"
 }

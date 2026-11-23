@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import PageHead from '../../layouts/PageHead.jsx'
 import { Button, Badge, NotMeasured } from '../../components/index.js'
 import Trans from '../../components/Trans.jsx'
 import { t, num, digits, date } from '../../lib/i18n.js'
 import { account, ApiError } from '../../lib/api.js'
+import { INVOICE_BADGE } from '../../lib/pricing.js'
 
 const head = () => ({ title: t('billing.title'), subtitle: t('billing.subtitle') })
 
@@ -28,6 +29,36 @@ export default function Billing() {
   const [error, setError] = useState(null)
   const [requesting, setRequesting] = useState(null)
   const [requestOk, setRequestOk] = useState(null)
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  // The gateway brings the browser back here with ?invoice=<id>.
+  const returnedId = params.get('invoice')
+  const [returned, setReturned] = useState(null)
+  const [rechecking, setRechecking] = useState(false)
+
+  useEffect(() => {
+    if (!returnedId) return undefined
+    let alive = true
+    account.invoice(returnedId).then((r) => alive && setReturned(r)).catch(() => {})
+    return () => { alive = false }
+  }, [returnedId])
+
+  async function recheckReturned() {
+    setRechecking(true)
+    try {
+      const r = await account.recheckInvoice(returned.id)
+      setReturned(r)
+      if (r.status === 'paid') setData((prev) => prev && { ...prev, stale: true })
+    } catch { /* the banner keeps its pending state and the button stays */ } finally { setRechecking(false) }
+  }
+
+  // A payment that just settled changes the subscription: reload it.
+  useEffect(() => {
+    if (!data?.stale && !(returned?.status === 'paid')) return undefined
+    let alive = true
+    account.billing().then((billing) => alive && setData((prev) => prev && { ...prev, billing, stale: false })).catch(() => {})
+    return () => { alive = false }
+  }, [returned?.status, data?.stale])
 
   useEffect(() => {
     let alive = true
@@ -100,6 +131,11 @@ export default function Billing() {
       || (subscription.isTrialing ? 'trialing' : subscription.status === 'trialing' ? 'expired' : 'ended'))
     : null
   const trialExpired = trialState === 'expired'
+  const paymentConfigured = !!billing?.payment?.configured
+  const invoiceList = billing?.invoices?.list || []
+  // Pilot access: once per account, never over a running trial or a paid plan
+  // (the server refuses the same cases with 409).
+  const canPilot = subscription && !subscription.pilotRequested && !subscription.isTrialing && subscription.status !== 'active'
   const currentPlan = subscription?.plan
   const currentPlanLimit = currentPlan?.siteLimit ?? null
   const capReached = currentPlanLimit != null && (subscription?.sitesUsed || 0) >= currentPlanLimit
@@ -108,6 +144,37 @@ export default function Billing() {
   return (
     <>
       <PageHead {...head()} />
+
+      {returnedId && (
+        <div role="status" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', borderRadius: 'var(--gd-radius-lg)', padding: '14px 18px', marginBottom: 20,
+          background: returned?.status === 'paid' ? 'var(--gd-success-bg)' : returned?.status === 'failed' ? 'var(--gd-danger-bg)' : 'var(--gd-warning-bg)',
+          border: `1px solid ${returned?.status === 'paid' ? 'var(--gd-success-border)' : returned?.status === 'failed' ? 'var(--gd-danger)' : 'var(--gd-warning)'}` }}>
+          <Icon name={returned?.status === 'paid' ? 'check-circle-2' : returned?.status === 'failed' ? 'alert-octagon' : 'clock'} size={19} />
+          <div style={{ flex: 1, fontSize: 13.5, lineHeight: 1.8 }}>
+            {!returned ? t('billing.result.loading')
+              : returned.status === 'paid' ? t('billing.result.paid', { date: formatDate(returned.periodEnd) })
+                : returned.status === 'failed' ? t('billing.result.failed')
+                  : t('billing.result.pending')}
+          </div>
+          {returned?.status === 'pending' && (
+            <Button variant="secondary" size="sm" leftIcon="refresh-cw" loading={rechecking} onClick={recheckReturned}>{t('billing.result.recheck')}</Button>
+          )}
+          {returned && <Button as={Link} to={`/invoice/${returned.id}`} variant="ghost" size="sm">{t('billing.result.view')}</Button>}
+        </div>
+      )}
+      {params.get('payment') === 'unknown' && (
+        <div role="status" style={{ background: 'var(--gd-warning-bg)', border: '1px solid var(--gd-warning)', borderRadius: 'var(--gd-radius-lg)', padding: '14px 18px', marginBottom: 20, fontSize: 13.5, lineHeight: 1.8 }}>
+          {t('billing.result.unknown')}
+        </div>
+      )}
+      {subscription?.paidExpired && (
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'var(--gd-warning-bg)', border: '1px solid var(--gd-warning)', borderRadius: 'var(--gd-radius-lg)', padding: '15px 18px', marginBottom: 24 }}>
+          <Icon name="alert-triangle" size={19} style={{ color: 'var(--gd-warning)', flex: '0 0 auto', marginTop: 1 }} />
+          <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--gd-text-secondary)' }}>
+            <b style={{ color: 'var(--gd-text)' }}>{t('billing.paidExpired.lead')}</b>{' '}{t('billing.paidExpired.body')}
+          </div>
+        </div>
+      )}
 
       {/* Expired trial: say what is actually blocked (adding sites), what
           still works (everything already in the account), and what does NOT
@@ -149,6 +216,8 @@ export default function Billing() {
                     <Badge variant="primary" appearance="solid">{t('billing.badge.trial')}</Badge>
                   ) : trialExpired ? (
                     <Badge variant="danger" appearance="solid">{t('billing.badge.trialExpired')}</Badge>
+                  ) : subscription.paidExpired ? (
+                    <Badge variant="danger" appearance="solid">{t('billing.badge.paidExpired')}</Badge>
                   ) : (
                     <Badge variant="success" appearance="solid">{t('billing.badge.active')}</Badge>
                   )}
@@ -158,8 +227,10 @@ export default function Billing() {
                     <><Icon name="sparkles" size={14} /> {formatTrial(subscription.daysLeftInTrial)}</>
                   ) : trialExpired ? (
                     <Trans k="billing.trialEndedOn" vars={{ date: formatDate(subscription?.trialEndsAt) }} components={monoDate} />
+                  ) : subscription.isPaid ? (
+                    <Trans k="billing.paidUntil" vars={{ date: formatDate(subscription?.currentPeriodEnd), count: subscription.daysLeftInPeriod ?? 0 }} components={monoDate} />
                   ) : subscription?.currentPeriodEnd ? (
-                    <Trans k="billing.nextRenewal" vars={{ date: formatDate(subscription?.currentPeriodEnd) }} components={monoDate} />
+                    <Trans k="billing.periodEndedOn" vars={{ date: formatDate(subscription?.currentPeriodEnd) }} components={monoDate} />
                   ) : (
                     <>{t('billing.noRenewal')}</>
                   )}
@@ -185,7 +256,12 @@ export default function Billing() {
               )}
             </div>
             <div style={{ display: 'flex', gap: 9, marginTop: 18 }}>
-              <Button as={Link} to="/pricing" variant="primary" size="sm" leftIcon="arrow-up-circle">{t('billing.changePlan')}</Button>
+              {paymentConfigured && (
+                <Button as={Link} to={`/checkout?plan=${currentPlan?.id || 'pro'}`} variant="primary" size="sm" leftIcon="credit-card">
+                  {subscription.status === 'active' ? t('billing.renew') : t('billing.buy')}
+                </Button>
+              )}
+              <Button as={Link} to="/pricing" variant={paymentConfigured ? 'secondary' : 'primary'} size="sm" leftIcon="arrow-up-circle">{t('billing.changePlan')}</Button>
             </div>
           </div>
         )}
@@ -197,16 +273,16 @@ export default function Billing() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--gd-bg-subtle)', border: '1px solid var(--gd-border-subtle)', borderRadius: 'var(--gd-radius-lg)', padding: '13px 15px' }}>
             <span style={{ width: 40, height: 40, borderRadius: 9, background: 'var(--gd-bg-surface)', border: '1px solid var(--gd-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
-              <Icon name="landmark" size={20} style={{ color: 'var(--gd-text-secondary)' }} />
+              <Icon name="landmark" size={20} style={{ color: paymentConfigured ? 'var(--gd-primary)' : 'var(--gd-text-secondary)' }} />
             </span>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700 }}>{t('billing.payment.noGateway')}</div>
-              <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 1 }}>{paymentUnavailable || t('billing.payment.notActive')}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 700 }}>{paymentConfigured ? t('billing.payment.gateway') : t('billing.payment.noGateway')}</div>
+              <div style={{ fontSize: 12, color: 'var(--gd-text-muted)', marginTop: 1 }}>{paymentConfigured ? t('billing.payment.gatewayNote') : (paymentUnavailable || t('billing.payment.notActive'))}</div>
             </div>
-            <Badge variant="neutral" appearance="soft">{t('billing.payment.disabled')}</Badge>
+            <Badge variant={paymentConfigured ? 'success' : 'neutral'} appearance="soft">{paymentConfigured ? t('billing.payment.enabled') : t('billing.payment.disabled')}</Badge>
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--gd-text-muted)', lineHeight: 1.7 }}>
-            {t('billing.payment.note')}
+            {paymentConfigured ? t('billing.payment.noCardStored') : t('billing.payment.note')}
           </div>
         </div>
       </div>
@@ -217,7 +293,6 @@ export default function Billing() {
         {plans.map((plan) => {
           const isCurrent = plan.id === currentPlan?.id
           const canRenewTrial = isCurrent && trialExpired
-          const isDowngrade = plan.price < (currentPlan?.price || 0)
           const requested = requestOk?.planId === plan.id
           const busy = requesting === plan.id
           return (
@@ -250,22 +325,26 @@ export default function Billing() {
                   </span>
                 ))}
               </div>
-              {isCurrent && !canRenewTrial ? (
-                <Button variant="secondary" size="sm" fullWidth disabled>{t('billing.yourCurrentPlan')}</Button>
-              ) : (
+              {paymentConfigured ? (
+                <Button variant={plan.popular ? 'primary' : 'secondary'} size="sm" fullWidth leftIcon="credit-card"
+                  onClick={() => navigate(`/checkout?plan=${plan.id}`)}>
+                  {isCurrent && subscription?.status === 'active' ? t('billing.renew') : t('billing.buyPlan', { name: plan.name })}
+                </Button>
+              ) : null}
+              {canPilot && (
                 <Button
-                  variant={isDowngrade ? 'ghost' : 'primary'}
+                  variant="ghost"
                   size="sm"
                   fullWidth
                   disabled={requesting !== null}
                   leftIcon={busy ? 'loader' : undefined}
                   onClick={() => requestPilot(plan.id)}
                 >
-                  {busy ? t('billing.submitting')
-                    : canRenewTrial ? t('billing.renewTrial')
-                      : !currentPlan ? t('billing.requestTrial')
-                        : isDowngrade ? t('billing.downgradeTo', { name: plan.name }) : t('billing.upgradeTo', { name: plan.name })}
+                  {busy ? t('billing.submitting') : canRenewTrial ? t('billing.renewTrial') : t('billing.requestTrial')}
                 </Button>
+              )}
+              {!paymentConfigured && !canPilot && isCurrent && (
+                <Button variant="secondary" size="sm" fullWidth disabled>{t('billing.yourCurrentPlan')}</Button>
               )}
               {requested && (
                 <div style={{ fontSize: 12, color: requestOk.error ? 'var(--gd-danger)' : 'var(--gd-success-text)', textAlign: 'center' }}>
@@ -289,9 +368,17 @@ export default function Billing() {
             <span>{t('billing.invoices.status')}</span>
             <span />
           </div>
-          {(billing?.invoices?.list || []).length === 0 && (
+          {invoiceList.length === 0 && (
             <div style={{ padding: '20px', textAlign: 'center', fontSize: 13, color: 'var(--gd-text-muted)' }}>{t('billing.invoices.empty')}</div>
           )}
+          {invoiceList.map((inv) => (
+            <div key={inv.id} style={{ display: 'grid', gridTemplateColumns: INVOICE_COLS, gap: 12, padding: '12px 20px', borderTop: '1px solid var(--gd-border-subtle)', fontSize: 13, alignItems: 'center' }}>
+              <span>{formatDate(inv.createdAt)}</span>
+              <span style={{ fontFamily: 'var(--gd-font-mono)', fontWeight: 700 }}>{num(inv.amount)}</span>
+              <span><Badge variant={INVOICE_BADGE[inv.status] || 'neutral'} appearance="soft">{t(`invoice.status.${inv.status}`)}</Badge></span>
+              <span style={{ textAlign: 'end' }}><Link to={`/invoice/${inv.id}`} style={{ fontWeight: 700 }}>{t('billing.invoices.view')}</Link></span>
+            </div>
+          ))}
         </div>
       )}
     </>

@@ -26,7 +26,9 @@ const TOKEN_KEY = 'digiwp.token'
 export const getToken = () => localStorage.getItem(TOKEN_KEY) || ''
 export const setToken = (t) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY))
 
-async function http(path, { method = 'GET', body, signal } = {}) {
+// `isPublic`: a route that needs no session. Its 401 (an older server, a proxy)
+// is an answer to show, never a reason to throw a visitor out to /login.
+async function http(path, { method = 'GET', body, signal, isPublic = false } = {}) {
   const finish = beginPending()
   try {
     const res = await fetch(`${BASE}${path}`, {
@@ -46,7 +48,7 @@ async function http(path, { method = 'GET', body, signal } = {}) {
       // an unknown reset token — and must reach the form as a thrown error so
       // its message and captcha flag are shown. Everywhere else a 401 means the
       // session itself is gone, and the honest move is the hard reset to /login.
-      if (res.status === 401 && !path.startsWith('/auth/')) {
+      if (res.status === 401 && !isPublic && !path.startsWith('/auth/')) {
         setToken('')
         sessionStorage.setItem('loginReturnTo', window.location.pathname + window.location.search)
         window.location.replace('/login')
@@ -170,6 +172,11 @@ export const account = {
   requestPilot: call(mock.requestPilot, (plan) => http('/billing/request-pilot', { method: 'POST', body: { plan } })),
   invoices: call(mock.invoices, () => http('/billing/invoices')),
   invoice: call(mock.invoice, (id) => http(`/billing/invoices/${id}`)),
+  // Opens a gateway payment; the response carries the URL the browser goes to.
+  checkout: call(mock.checkout, (plan, months) => http('/billing/checkout', { method: 'POST', body: { plan, months } })),
+  recheckInvoice: call(mock.recheckInvoice, (id) => http(`/billing/invoices/${id}/recheck`, { method: 'POST', body: {} })),
+  // Public: whether this server takes online payment (the price page asks signed out).
+  billingAvailability: call(mock.billingAvailability, () => http('/billing/availability', { isPublic: true })),
   team: call(mock.team, () => http('/team')),
   notificationPreferences: call(mock.notificationPreferences, () => http('/notifications/preferences')),
   saveNotificationPreference: call(
@@ -560,6 +567,11 @@ export const admin = {
   setUserRole: call(
     (id, role) => Promise.resolve({ id, role }),
     (id, role) => http(`/admin/users/${id}/role`, { method: 'PATCH', body: { role } })
+  ),
+  // Manual activation (bank transfer, pilot customer): a paid period on a plan.
+  grantSubscription: call(
+    () => Promise.reject(Object.assign(new Error('Not available in development data.'), { status: 501 })),
+    (id, plan, days) => http(`/admin/users/${id}/subscription`, { method: 'POST', body: { plan, days } })
   ),
   events: call(
     () => Promise.resolve({ events: [], total: 0, limit: 50, offset: 0 }),

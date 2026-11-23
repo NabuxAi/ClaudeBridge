@@ -21,7 +21,8 @@
   "badge": {
     "trial": "Trial access",
     "trialExpired": "Trial access expired",
-    "active": "Active"
+    "active": "Active",
+    "paidExpired": "Period ended"
   },
   "trialEndedOn": "Trial access ended on <date>{date}</date>. Adding new sites is paused until a subscription is activated.",
   "nextRenewal": "Next renewal: <date>{date}</date>",
@@ -37,7 +38,11 @@
     "noGateway": "No gateway connected",
     "notActive": "Payment is not active yet.",
     "disabled": "Disabled",
-    "note": "No charges are being made right now. To activate payment, contact the sales team."
+    "note": "No charges are being made right now. To activate payment, contact the sales team.",
+    "gateway": "Aqayepardakht",
+    "gatewayNote": "Pay by any Shetab bank card on the gateway’s secure page.",
+    "enabled": "Active",
+    "noCardStored": "Your card details are entered on the bank’s page and are never stored here."
   },
   "plansTitle": "Plans",
   "currentPlan": "Current plan",
@@ -52,6 +57,25 @@
     "date": "Date",
     "amount": "Amount",
     "status": "Status",
-    "empty": "No invoices on record."
-  }
+    "empty": "No invoices on record.",
+    "view": "View"
+  },
+  "result": {
+    "loading": "Checking your payment…",
+    "paid": "Payment received. Your plan is active until {date}.",
+    "failed": "The payment was not completed and nothing was activated. If money left your account, the bank returns it automatically; you can try again any time.",
+    "pending": "We have not received the bank’s confirmation yet. Check again in a minute.",
+    "recheck": "Check again",
+    "view": "View invoice",
+    "unknown": "We could not match this return from the payment page to an invoice. If you paid, check your invoices below or contact support with the bank’s tracking number."
+  },
+  "paidExpired": {
+    "lead": "Your paid period has ended.",
+    "body": "Adding new sites is paused until you renew; your sites and everything in this account stay available."
+  },
+  "paidUntil": "Active until <date>{date}</date> ({count} days left)",
+  "periodEndedOn": "The paid period ended on <date>{date}</date>.",
+  "renew": "Renew",
+  "buy": "Buy",
+  "buyPlan": "Buy {name}"
 }

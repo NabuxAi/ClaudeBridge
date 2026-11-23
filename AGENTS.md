@@ -463,6 +463,31 @@ for UI convenience.
   «پایان دسترسی آزمایشی» line) instead of a fabricated «تمدید بعدی». Pinned
   in `server/test/entitlement.test.js` (4 tests, real PostgreSQL). Pairing an
   already-added site is deliberately NOT gated — the slot is already counted.
+- Online payment (platform 0.10.0, 2026-11-23): Aqayepardakht API v2
+  (`server/src/payments/aqayepardakht.js`; v3 at `api.aqayepardakht.ir` did
+  not answer from either server). `POST /billing/checkout` opens an invoice
+  priced from the plans table — never from the request; 12 months = 10 ×
+  monthly, the price page's «۲ ماه رایگان» — and returns the gateway's
+  `/startpay/{transid}`. The public return route
+  `ALL /billing/aqayepardakht/callback` finds OUR invoice by transid and
+  settles it only after server-to-server verify of the invoice's own amount;
+  browser fields never decide. `invoices.settle()` locks invoice and
+  subscription in one transaction: one period per paid invoice, renewals start
+  at the paid period's end, failed → paid when verify later says paid; an
+  unreachable gateway leaves the invoice pending (re-check route). Only the
+  gateway's masked card and the bank tracking number are stored. An expired
+  paid period answers 402 `subscription_expired` on site add. Operators grant
+  periods by hand with `POST /admin/users/:id/subscription` (hub: admin user
+  page). Config `AQAYEPARDAKHT_PIN`; without it every surface says payment is
+  off. The former `POST /billing/webhook`, which let any signed-in user rewrite
+  any account's plan, is removed, and pilot access is once per account.
+  Pinned in `server/test/payments.test.js` (fake gateway, real PostgreSQL),
+  `billing.test.js`, `hub/test/billing.spec.js`. Honest boundaries: no real
+  payment has run end to end — it needs the merchant PIN, and the gateway may
+  require the callback domain (`api.digiwp.com`, `wp.nabuxai.ir`) to be
+  registered on its side; the two servers keep separate accounts, so each
+  takes its own payments; no recurring charge, refund, proration or Moadian
+  tax invoice exists; no receipt email is sent.
 - Per-site team management: invitations with hashed single-use tokens and
   7-day expiry, role changes, and member removal (`server/src/store.js`,
   `server/src/routes/team.js`), rendered in `hub/src/pages/account/Team.jsx`.
@@ -545,11 +570,11 @@ for UI convenience.
 
 ### Not built at baseline
 
-- Payment gateways and invoices. (Site-count/trial-expiry enforcement at site
-  creation shipped on 2026-10-01 — see the subscription bullet under
-  "Partial"; what remains unbuilt is any paid activation path itself, cap
-  enforcement beyond `POST /sites`, and trial-expiry handling for jobs the
-  sites already run.)
+- A second payment gateway, recurring/automatic charges, official tax
+  invoices (Moadian), refunds, and plan proration. (Online payment through
+  Aqayepardakht with invoices shipped in platform 0.10.0 — see the payment
+  bullet under "Partial". Still unbuilt: cap enforcement beyond `POST /sites`
+  and expiry handling for jobs the sites already run.)
 - Passkeys. (TOTP two-factor authentication shipped on 2026-10-02 — see the
   bullet under "Implemented or materially implemented": enrollment, the login
   second step, one-time recovery codes, and the disable flow are live. What
@@ -1065,6 +1090,9 @@ These rules override visual mockups and optimistic marketing copy:
   only the on-disk `.env`/`docker-compose.yaml` survives until the next deploy
   overwrites it (verified 2026-09-30).
 - `ASSISTANT_URL` and `ASSISTANT_API_KEY` enable model reasoning.
+- `AQAYEPARDAKHT_PIN` (the gateway merchant code) enables online payment; on
+  Coolify it must be saved in the UI like `EMAIL_SERVER`, on the Iran host in
+  `/opt/digiwp/.env`.
 - `ASSISTANT_SWEEP` is intentionally off by default because it costs tokens and
   can perform recoverable changes on `auto` sites.
 - `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` reach the operator, not the site
@@ -1511,7 +1539,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.9.1** (assistant reads monitor uptime; connector-mode-off check, 2026-11-23), shared by `hub/package.json` and
+- Current platform release: **0.10.0** (online payment with Aqayepardakht, 2026-11-23), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

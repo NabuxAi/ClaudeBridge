@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Icon from '../../lib/icons.jsx'
 import { Button } from '../../components/index.js'
 import { t, num } from '../../lib/i18n.js'
@@ -102,17 +103,20 @@ export default function Pricing() {
   const [requesting, setRequesting] = useState(null)
   const [requestOk, setRequestOk] = useState(null)
   const [cycle, setCycle] = useState('yearly')
+  const [canPay, setCanPay] = useState(false)
+  const navigate = useNavigate()
 
   useEffect(() => {
     let alive = true
     // The price list is public. The trial is per account: asking for it
     // signed out earns a 401, and the global 401 handler would send a
     // visitor who only wanted prices to /login.
-    Promise.all([account.plans(), getToken() ? account.trial() : null])
-      .then(([p, tr]) => {
+    Promise.all([account.plans(), getToken() ? account.trial() : null, account.billingAvailability().catch(() => null)])
+      .then(([p, tr, avail]) => {
         if (!alive) return
         setPlans(p)
         setTrial(tr)
+        setCanPay(!!avail?.payment?.configured)
       })
       .catch((e) => alive && setError(e?.message || t('pricing.loadFailed')))
     return () => { alive = false }
@@ -175,7 +179,7 @@ export default function Pricing() {
       {/* Hero */}
       <div style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto', padding: '46px 24px 10px' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, color: 'var(--gd-success-text)', background: 'var(--gd-success-bg)', border: '1px solid var(--gd-success-border)', borderRadius: 999, padding: '6px 13px' }}>
-          <Icon name="info" size={14} /> {t('pricing.badge')}
+          <Icon name={canPay ? 'lock' : 'info'} size={14} /> {canPay ? t('pricing.badgePay') : t('pricing.badge')}
         </span>
         <h1 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-.02em', margin: '18px 0 0', lineHeight: 1.2 }}>{t('pricing.title')}</h1>
         <p style={{ fontSize: 15, lineHeight: 1.85, color: 'var(--gd-text-secondary)', margin: '12px 0 0' }}>{t('pricing.lead')}</p>
@@ -232,9 +236,12 @@ export default function Pricing() {
                 fullWidth
                 disabled={busy}
                 leftIcon={busy ? 'loader' : undefined}
-                onClick={() => requestPilot(plan.id)}
+                // With online payment live, the button buys: checkout opens
+                // with this plan and the period chosen above (a year = 12 months
+                // priced as ten). Without it, the once-only pilot request stays.
+                onClick={() => (canPay ? navigate(`/checkout?plan=${plan.id}&months=${isYearly ? 12 : 1}`) : requestPilot(plan.id))}
               >
-                {busy ? t('pricing.submitting') : t(detail.cta)}
+                {busy ? t('pricing.submitting') : canPay ? t('pricing.buy') : t(detail.cta)}
               </Button>
               {requested && (
                 <div style={{ fontSize: 12.5, color: requestOk.error ? 'var(--gd-danger)' : 'var(--gd-success-text)', textAlign: 'center' }}>
