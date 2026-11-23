@@ -19,6 +19,9 @@ export const SCHEMA = `
 
   ALTER TABLE mcp_tokens ADD COLUMN IF NOT EXISTS edit_site_id TEXT REFERENCES sites(id) ON DELETE CASCADE;
   ALTER TABLE mcp_tokens ADD COLUMN IF NOT EXISTS edit_paths JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE mcp_tokens ADD COLUMN IF NOT EXISTS edit_window_site_id TEXT REFERENCES sites(id) ON DELETE SET NULL;
+  ALTER TABLE mcp_tokens ADD COLUMN IF NOT EXISTS edit_window_paths JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE mcp_tokens ADD COLUMN IF NOT EXISTS edit_window_expires_at BIGINT;
 
   CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_tokens_hash ON mcp_tokens(token_hash);
   CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id, created_at DESC);

@@ -1410,7 +1410,7 @@ async function approveProposal(req, res, site, proposalId) {
     return res.status(503).json({ ok: false, message: req.t(config.live ? 'common.siteNotPairedYet' : 'common.liveOff') })
   }
   const claimed = await proposals.resolve(site.id, proposalId, 'approved', { by: req.user.sub })
-  if (!claimed) return res.status(409).json({ ok: false, message: req.t('sites.proposalSettled') })
+  if (!claimed) return res.status(409).json({ ok: false, code: 'proposal_already_settled', message: req.t('sites.proposalSettled') })
   return relayPanelAction(req, res, site, claimed.tool, claimed.args, true, claimed)
 }
 

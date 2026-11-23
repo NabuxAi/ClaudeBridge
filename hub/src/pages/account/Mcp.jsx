@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, AlertCard, Toast, Input, Checkbox, Select, Textarea } from '../../components/index.js'
+import { Button, AlertCard, Toast, Input, Checkbox, Dialog, Select, Textarea } from '../../components/index.js'
 import { account as accountApi, setToken, ApiError } from '../../lib/api.js'
-import { t, date, dateTime } from '../../lib/i18n.js'
+import { t, date, dateTime, digits } from '../../lib/i18n.js'
 
 const fmtDateTime = (ts) => dateTime(ts, { dateStyle: 'short', timeStyle: 'short' })
 const fmtDate = (ts) => date(ts)
+const parsePaths = (paths) => paths.split(/\r?\n/).map((path) => path.trim()).filter(Boolean)
 
 function describeApiError(e, fallback, notFound) {
   if (e instanceof ApiError) {
@@ -64,12 +66,76 @@ function SecretField({ label, value }) {
   )
 }
 
+function EditWindowDialog({ token, initialSite, ownedSites, sitesError, loadOwnedSites, onClose, onStarted }) {
+  const [siteId, setSiteId] = useState(initialSite)
+  const [paths, setPaths] = useState('')
+  const [hours, setHours] = useState('3')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const validSite = ownedSites?.some((site) => site.id === siteId)
+  const durationOptions = Array.from({ length: 24 }, (_, i) => ({
+    value: String(i + 1),
+    label: t('accountSecurity.mcp.editWindowHours', { hours: digits(i + 1) }),
+  }))
+
+  const start = async (e) => {
+    e.preventDefault()
+    if (busy || !validSite || !paths.trim()) return
+    setBusy(true)
+    setErr('')
+    try {
+      const { editWindow } = await accountApi.startMcpEditWindow(token.id, { siteId, paths: parsePaths(paths), hours: Number(hours) })
+      if (!editWindow) throw new Error(t('accountSecurity.mcp.editWindowError'))
+      onStarted(token.id, editWindow)
+    } catch (e2) {
+      if (!handleSessionGone(e2)) setErr(describeApiError(e2, t('accountSecurity.mcp.editWindowError'), t('accountSecurity.mcp.loadNotFound')))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onClose={() => { if (!busy) onClose() }}
+      title={t('accountSecurity.mcp.editWindowTitle', { name: token.name })}
+      desc={t('accountSecurity.mcp.editWindowHint')}
+      footer={<>
+        <Button variant="secondary" disabled={busy} onClick={onClose} type="button">{t('common.cancel')}</Button>
+        <Button loading={busy} disabled={!validSite || !paths.trim() || sitesError} type="submit" form="mcp-window-form">
+          {t('accountSecurity.mcp.startEditWindow')}
+        </Button>
+      </>}>
+      <form id="mcp-window-form" onSubmit={start} style={{ display: 'grid', gap: 12 }}>
+        {sitesError && (
+          <div role="alert">
+            {t('accountSecurity.mcp.directSiteError')}{' '}
+            <Button variant="ghost" size="sm" onClick={loadOwnedSites} type="button">{t('common.retry')}</Button>
+          </div>
+        )}
+        {!ownedSites && !sitesError && <div role="status">{t('common.loading')}</div>}
+        {ownedSites?.length === 0 && <div>{t('accountSecurity.mcp.noOwnedSites')}</div>}
+        {ownedSites?.length > 0 && (
+          <Select id="mcp-window-site" label={t('accountSecurity.mcp.directSite')} required disabled={busy}
+            value={validSite ? siteId : ''} onChange={(e) => setSiteId(e.target.value)}
+            options={[{ value: '', label: t('accountSecurity.mcp.chooseDirectSite') },
+              ...ownedSites.map((site) => ({ value: site.id, label: site.title || site.name }))]} />
+        )}
+        <Textarea id="mcp-window-paths" label={t('accountSecurity.mcp.directPaths')} required disabled={busy} dir="ltr"
+          value={paths} onChange={(e) => setPaths(e.target.value)} placeholder="plugins/my-plugin/main.php" />
+        <Select id="mcp-window-hours" label={t('accountSecurity.mcp.editWindowDuration')} disabled={busy}
+          value={hours} onChange={(e) => setHours(e.target.value)} options={durationOptions} />
+        {err && <div role="alert" className="pbk-note pbk-note--danger">{err}</div>}
+      </form>
+    </Dialog>
+  )
+}
+
 /**
  * «کلاینت‌های هوش مصنوعی (MCP)» — یک نشانی برای همهٔ سایت‌ها، مثل WPVibe.
  * توکن فقط یک بار، همان لحظهٔ ساخت، نشان داده می‌شود؛ سرور فقط هش آن را دارد.
  * سیاست اجرا سمت سرور است (routes/hub-mcp.js)، نه این صفحه.
  */
 function McpSection({ showToast }) {
+  const [params] = useSearchParams()
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const [name, setName] = useState('')
@@ -82,6 +148,8 @@ function McpSection({ showToast }) {
   const [err, setErr] = useState('')
   const [fresh, setFresh] = useState(null)
   const [revoking, setRevoking] = useState({})
+  const [windowToken, setWindowToken] = useState(null)
+  const [endingWindow, setEndingWindow] = useState('')
 
   const load = useCallback(() => {
     accountApi.mcpTokens()
@@ -92,6 +160,19 @@ function McpSection({ showToast }) {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const expiry = Math.min(...(data?.tokens || []).map((tok) => tok.editWindow?.expiresAt || Infinity))
+    if (!Number.isFinite(expiry)) return
+    const timer = setTimeout(() => {
+      const now = Date.now()
+      setData((current) => ({
+        ...current,
+        tokens: current.tokens.map((tok) => tok.editWindow?.expiresAt <= now ? { ...tok, editWindow: null } : tok),
+      }))
+    }, Math.max(0, expiry - Date.now()) + 50)
+    return () => clearTimeout(timer)
+  }, [data])
 
   const loadOwnedSites = () => {
     setSitesError(false)
@@ -105,7 +186,7 @@ function McpSection({ showToast }) {
     setBusy(true)
     setErr('')
     try {
-      const fileEdit = directEdit ? { siteId: editSite, paths: paths.split(/\r?\n/).map((path) => path.trim()).filter(Boolean) } : undefined
+      const fileEdit = directEdit ? { siteId: editSite, paths: parsePaths(paths) } : undefined
       const made = await accountApi.createMcpToken(name.trim(), fileEdit)
       setFresh(made)
       setName('')
@@ -136,6 +217,30 @@ function McpSection({ showToast }) {
   }
 
   const mcpUrl = fresh?.mcpUrl || data?.mcpUrl || ''
+
+  const updateWindow = (id, editWindow) => {
+    setData((current) => ({
+      ...current,
+      tokens: current.tokens.map((tok) => tok.id === id ? { ...tok, editWindow } : tok),
+    }))
+  }
+  const endWindow = async (tok) => {
+    setEndingWindow(tok.id)
+    setErr('')
+    try {
+      const result = await accountApi.endMcpEditWindow(tok.id, tok.editWindow.expiresAt)
+      if (!result?.ok) throw new Error(t('accountSecurity.mcp.editWindowError'))
+      updateWindow(tok.id, null)
+      showToast(t('accountSecurity.mcp.editWindowEnded'))
+    } catch (e) {
+      if (!handleSessionGone(e)) {
+        setErr(describeApiError(e, t('accountSecurity.mcp.editWindowError'), t('accountSecurity.mcp.loadNotFound')))
+        load()
+      }
+    } finally {
+      setEndingWindow('')
+    }
+  }
 
   return (
     <div className="dwp-card" style={{ marginBottom: 22 }}>
@@ -200,31 +305,54 @@ function McpSection({ showToast }) {
         )}
         {err && <div role="alert" style={{ color: 'var(--gd-danger, #c0392b)', marginBottom: 10 }}>{err}</div>}
 
+        {windowToken && (
+          <EditWindowDialog token={windowToken} initialSite={params.get('site') || ''} ownedSites={ownedSites}
+            sitesError={sitesError} loadOwnedSites={loadOwnedSites} onClose={() => setWindowToken(null)}
+            onStarted={(id, grant) => {
+              updateWindow(id, grant)
+              setWindowToken(null)
+              showToast(t('accountSecurity.mcp.editWindowStarted'))
+            }} />
+        )}
         {data && data.tokens.length === 0 && <div>{t('accountSecurity.mcp.none')}</div>}
-        {data?.tokens?.map((tok) => (
-          <div key={tok.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 0', borderTop: '1px solid var(--gd-border)' }}>
-            <Icon name="key-round" size={15} />
-            <span style={{ fontWeight: 600, color: 'var(--gd-text-primary)', overflowWrap: 'anywhere' }}>{tok.name}</span>
-            <span style={{ fontSize: 12 }}>
-              {t('accountSecurity.mcp.created', { when: fmtDate(tok.createdAt) })}
-              {' · '}
-              {tok.lastUsedAt ? t('accountSecurity.mcp.lastUsed', { when: fmtDateTime(tok.lastUsedAt) }) : t('accountSecurity.mcp.neverUsed')}
-            </span>
-            {tok.fileEdit && (
-              <details style={{ flex: '1 1 240px', overflowWrap: 'anywhere' }}>
-                <summary>{t('accountSecurity.mcp.scopedToken', { site: tok.fileEdit.siteId })}</summary>
-                <ul dir="ltr" style={{ marginBlock: 4, textAlign: 'start' }}>
-                  {tok.fileEdit.paths.map((path) => <li key={path}>{path}</li>)}
-                </ul>
-              </details>
-            )}
-            <span style={{ marginInlineStart: 'auto' }}>
-              <Button variant="ghost" size="sm" leftIcon="trash-2" loading={!!revoking[tok.id]} onClick={() => revoke(tok)} type="button">
-                {t('accountSecurity.mcp.revoke')}
-              </Button>
-            </span>
-          </div>
-        ))}
+        {data?.tokens?.map((tok) => {
+          const scope = tok.fileEdit || tok.editWindow
+          return (
+            <div key={tok.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 0', borderTop: '1px solid var(--gd-border)' }}>
+              <Icon name="key-round" size={15} />
+              <span style={{ fontWeight: 600, color: 'var(--gd-text-primary)', overflowWrap: 'anywhere' }}>{tok.name}</span>
+              <span style={{ fontSize: 12 }}>
+                {t('accountSecurity.mcp.created', { when: fmtDate(tok.createdAt) })}
+                {' · '}
+                {tok.lastUsedAt ? t('accountSecurity.mcp.lastUsed', { when: fmtDateTime(tok.lastUsedAt) }) : t('accountSecurity.mcp.neverUsed')}
+              </span>
+              {scope && (
+                <details style={{ flex: '1 1 240px', overflowWrap: 'anywhere' }}>
+                  <summary>{t('accountSecurity.mcp.scopedToken', { site: scope.siteId })}</summary>
+                  <ul dir="ltr" style={{ marginBlock: 4, textAlign: 'start' }}>
+                    {scope.paths.map((path) => <li key={path}>{path}</li>)}
+                  </ul>
+                </details>
+              )}
+              {tok.editWindow && <span>{t('accountSecurity.mcp.editWindowEnds', { when: fmtDateTime(tok.editWindow.expiresAt) })}</span>}
+              <span style={{ marginInlineStart: 'auto', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {!tok.fileEdit && (tok.editWindow ? (
+                  <Button variant="secondary" size="sm" loading={endingWindow === tok.id} disabled={Boolean(endingWindow) || !!revoking[tok.id]}
+                    onClick={() => endWindow(tok)} type="button">{t('accountSecurity.mcp.endEditWindow')}</Button>
+                ) : (
+                  <Button variant="secondary" size="sm" disabled={Boolean(endingWindow) || !!revoking[tok.id]}
+                    onClick={() => {
+                      setWindowToken(tok)
+                      if (!ownedSites) loadOwnedSites()
+                    }} type="button">{t('accountSecurity.mcp.editWindow')}</Button>
+                ))}
+                <Button variant="ghost" size="sm" leftIcon="trash-2" loading={!!revoking[tok.id]} onClick={() => revoke(tok)} type="button">
+                  {t('accountSecurity.mcp.revoke')}
+                </Button>
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

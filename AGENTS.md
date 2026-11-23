@@ -194,6 +194,12 @@ for UI convenience.
   file recovery, with PHP syntax validation and without site health probes;
   if WordPress itself cannot boot, restoration requires host access. Ordinary
   and linked-account tokens follow the normal proposal policy.
+- Platform `0.12.0` adds batch approval from Alerts with explicit confirmation
+  of the selected IDs and sequential calls to the one-time approval route.
+  In `/app/mcp`, owners can also grant a regular token 1 to 24 hours of backed-up
+  `edit_file` on exact paths of one locally owned site. The server enforces
+  expiry and early revocation. Existing pending proposals and sensitive tools
+  outside that exact grant still require approval.
 - Iran ↔ international peer relay (`peer-relay.js`, `POST /v1/relay/forward`):
   connector calls a server cannot deliver are re-sent through the partner server.
   Off unless both `PEER_RELAY_URL` and `PEER_RELAY_SECRET` are set.
@@ -1555,7 +1561,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform version: **0.11.0** (MCP approvals and scoped file editing, 2026-11-23), shared by `hub/package.json` and
+- Current platform version: **0.12.0** (batch approvals and temporary MCP file edits, 2026-11-23), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a
@@ -1570,6 +1576,9 @@ unreachable, so a throwaway stack was used):
   A platform UI release does not imply a plugin update on customer sites.
 - Record GitHub publication and production deployment as separate observed
   states. A version/tag is not evidence that Coolify deployed it successfully.
+- After checking a DigiWP change, deploy it to the Iran production instance
+  (`wp.nabuxai.ir`) as part of the task. Verify the running hub and API before
+  reporting completion. This is the owner's default deployment instruction.
 
 ### Canonical release verification
 

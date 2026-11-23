@@ -21,8 +21,14 @@ export async function validateFileEditGrant(userId, grant) {
 }
 
 export function isGrantedEdit(user, site, args) {
-  return site.member_role === 'owner' && user.fileEdit?.siteId === site.id &&
-    !args.theme && validPath(args.path) && user.fileEdit.paths.includes(args.path)
+  const grant = fileEditGrant(user, site)
+  return grant !== null && !args.theme && validPath(args.path) && grant.paths.includes(args.path)
+}
+
+export function fileEditGrant(user, site) {
+  const temporary = user.editWindow
+  const grant = user.fileEdit || (temporary?.expiresAt > Date.now() ? temporary : null)
+  return site.member_role === 'owner' && grant?.siteId === site.id ? grant : null
 }
 
 export async function relayFileEdit(user, site, target, args) {

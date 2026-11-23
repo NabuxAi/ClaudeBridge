@@ -81,6 +81,102 @@ test('MCP page submits the selected site and exact paths for a direct edit token
   await expect(page.getByText('Direct file edits on shop')).toBeVisible()
 })
 
+test('Alerts confirms only the chosen batch, keeps its order, and reports individual failures', async ({ page }) => {
+  await setup(page)
+  const proposal = (id, created_at) => ({
+    id, created_at, tool: 'edit_file', args: { path: `plugins/shop/${id}.php` },
+  })
+  let pending = [proposal('newest', 4), proposal('later', 3), proposal('middle', 2), proposal('oldest', 1)]
+  const calls = []
+  await page.route('**/api/sites/shop/incidents', (route) => route.fulfill({
+    json: { featured: null, list: [], canManage: true, proposals: pending },
+  }))
+  await page.route('**/api/sites/shop/proposals/*/approve', (route) => {
+    const id = new URL(route.request().url()).pathname.split('/').at(-2)
+    calls.push(id)
+    pending = pending.filter((item) => item.id !== id)
+    if (id === 'oldest') return route.fulfill({ status: 409, json: { message: 'The file changed on WordPress.' } })
+    if (id === 'later') return route.fulfill({ status: 409, json: { code: 'proposal_already_settled' } })
+    return route.fulfill({ json: { ok: true, relayed: true } })
+  })
+  await page.goto('/site/shop/incidents')
+  const dialog = page.getByRole('dialog')
+  const approveAll = page.getByRole('button', { name: 'Approve all requests' })
+  await approveAll.click()
+  await expect(dialog.getByText('Run these 4 requests?')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  expect(calls).toEqual([])
+
+  const selectAll = page.getByRole('checkbox', { name: 'Select all' })
+  await selectAll.check()
+  await expect(page.getByRole('button', { name: 'Approve selected (4)' })).toBeEnabled()
+  for (const id of ['newest', 'later']) await page.getByRole('checkbox', { name: `Select request for plugins/shop/${id}.php` }).uncheck()
+  await expect(selectAll).toHaveAttribute('aria-checked', 'mixed')
+  await page.getByRole('button', { name: 'Approve selected (2)' }).click()
+  await expect(dialog.getByRole('listitem')).toHaveText([
+    'edit_file · plugins/shop/oldest.php',
+    'edit_file · plugins/shop/middle.php',
+  ])
+  await dialog.getByRole('button', { name: 'Approve and run' }).click()
+  await expect(page.getByRole('alert')).toContainText('The file changed on WordPress.')
+  await expect(page.getByRole('alert')).toContainText('1 ran, 1 failed or could not be verified, 0 were already handled.')
+  await expect(page.getByRole('checkbox', { name: 'Select request for plugins/shop/oldest.php' })).toHaveCount(0)
+  expect(calls).toEqual(['oldest', 'middle'])
+
+  await approveAll.click()
+  await expect(dialog.getByText('Run these 2 requests?')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Approve and run' }).click()
+  await expect(page.getByText('1 ran, 0 failed or could not be verified, 1 were already handled.')).toBeVisible()
+  await expect(approveAll).toHaveCount(0)
+  expect(calls).toEqual(['oldest', 'middle', 'later', 'newest'])
+})
+
+test('MCP starts and ends a 12-hour edit window on an existing token', async ({ page }) => {
+  await setup(page)
+  const record = { id: 'mcpt_existing', name: 'Editor', createdAt: Date.now() }
+  const paths = ['plugins/shop/main.php', 'themes/child/style.css']
+  let editWindow = null
+  let changes = 0
+  await page.route('**/api/sites', (route) => route.fulfill({ json: sites.map((site, i) => ({ ...site, role: i ? 'admin' : 'owner' })) }))
+  await page.route('**/api/account/mcp-tokens', (route) => {
+    expect(route.request().method()).toBe('GET')
+    return route.fulfill({ json: { tokens: [{ ...record, editWindow }] } })
+  })
+  await page.route('**/api/account/mcp-tokens/mcpt_existing/edit-window', (route) => {
+    changes += 1
+    if (route.request().method() === 'POST') {
+      expect(route.request().postDataJSON()).toEqual({ siteId: 'shop', paths, hours: 12 })
+      editWindow = { siteId: 'shop', paths, expiresAt: Date.now() + 12 * 3600_000 }
+      return route.fulfill({ json: { editWindow } })
+    }
+    expect(route.request().method()).toBe('DELETE')
+    expect(route.request().postDataJSON()).toEqual({ expiresAt: editWindow.expiresAt })
+    editWindow = null
+    return route.fulfill({ json: { ok: true } })
+  })
+  await page.route('**/api/sites/shop/incidents', (route) => route.fulfill({ json: { featured: null, list: [], canManage: true } }))
+  await page.goto('/site/shop/incidents')
+  await page.getByRole('link', { name: 'Temporary MCP file edits' }).click()
+  await expect(page).toHaveURL(/\/app\/mcp\?site=shop$/)
+  await page.getByRole('button', { name: 'Temporary file edits', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('combobox', { name: 'Site*' })).toHaveValue('shop')
+  await expect(dialog.getByRole('option', { name: 'WordPress blog' })).toHaveCount(0)
+  await expect(dialog.getByRole('option', { name: / h$/ })).toHaveCount(24)
+  const duration = dialog.getByRole('combobox', { name: 'Permission duration' })
+  await expect(duration).toHaveValue('3')
+  await duration.selectOption('12')
+  await dialog.getByLabel('Exact paths relative to wp-content, one file per line').fill(paths.join('\n'))
+  await dialog.getByRole('button', { name: 'Start temporary permission' }).click()
+  await expect(page.getByText('Active until', { exact: false })).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('Active until', { exact: false })).toBeVisible()
+  await page.getByRole('button', { name: 'End temporary permission' }).click()
+  await expect(page.getByText('Temporary edit permission ended.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Temporary file edits', exact: true })).toBeVisible()
+  expect(changes).toBe(2)
+})
+
 test('theme and collapsed menu persist across page switches and reloads', async ({ page }) => {
   await setup(page)
   await page.getByRole('button', { name: 'Switch to light theme' }).click()

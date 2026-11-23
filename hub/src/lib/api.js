@@ -161,6 +161,10 @@ export const account = {
     () => Promise.resolve({ ok: true }),
     (id) => http(`/account/mcp-tokens/${encodeURIComponent(id)}`, { method: 'DELETE' })
   ),
+  startMcpEditWindow: (id, body) =>
+    http(`/account/mcp-tokens/${encodeURIComponent(id)}/edit-window`, { method: 'POST', body }),
+  endMcpEditWindow: (id, expiresAt) =>
+    http(`/account/mcp-tokens/${encodeURIComponent(id)}/edit-window`, { method: 'DELETE', body: { expiresAt } }),
   // Discovery always uses the server, including during a mock UI preview.
   discoverSite: (url, signal) => http('/sites/discover', { method: 'POST', body: { url }, signal }),
   requestWordPressAccess: (url) => http('/sites/wordpress-access', { method: 'POST', body: { url } }),

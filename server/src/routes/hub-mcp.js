@@ -32,7 +32,7 @@ import { limiter, clientIp } from '../security/ratelimit.js'
 import { errorMessage, httpError } from '../i18n.js'
 import { peerLinks } from '../peer-link.js'
 import { peerPost } from '../peer-relay.js'
-import { validateFileEditGrant, isGrantedEdit, relayFileEdit } from '../mcp-file-edits.js'
+import { fileEditGrant, validateFileEditGrant, isGrantedEdit, relayFileEdit } from '../mcp-file-edits.js'
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 const SERVER_INFO = { name: 'digiwp-hub', version: '1.0.0' }
@@ -235,8 +235,9 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
 
   if (name === 'site_tools') {
     const tools = await connector.listTools(target)
+    const grant = fileEditGrant(user, site)
     return textResult({
-      site: { ...describeSite(site), ...(user.fileEdit ? { directEditPaths: user.fileEdit.paths } : {}) },
+      site: { ...describeSite(site), ...(grant ? { directEditPaths: grant.paths, ...(grant.expiresAt ? { directEditExpiresAt: grant.expiresAt } : {}) } : {}) },
       tools: tools.map((t) => ({ name: t.name, kind: classify(t.name), description: t.description, inputSchema: t.inputSchema })),
     })
   }
@@ -253,8 +254,9 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
 
   if (tool === 'edit_file' && isGrantedEdit(user, site, toolArgs)) {
     const pending = await proposals.findPending(site.id, tool, toolArgs)
-    if (!pending) return relayFileEdit(user, site, target, toolArgs)
-    return approvalResult(pending, site.id, tool)
+    if (pending) return approvalResult(pending, site.id, tool)
+    const stillActive = user.fileEdit || await mcpTokens.editWindowStillActive(user.tokenId, site.id, user.editWindow.expiresAt)
+    if (stillActive && isGrantedEdit(user, site, toolArgs)) return relayFileEdit(user, site, target, toolArgs)
   }
 
   if (kind === 'sensitive') {
@@ -360,6 +362,33 @@ mcpTokensRouter.post('/account/mcp-tokens', async (req, res, next) => {
 mcpTokensRouter.delete('/account/mcp-tokens/:id', async (req, res, next) => {
   try {
     if (!(await mcpTokens.revoke(req.user.sub, req.params.id))) throw httpError(404, 'mcp.tokenNotFound')
+    res.json({ ok: true })
+  } catch (e) { next(e) }
+})
+
+mcpTokensRouter.post('/account/mcp-tokens/:id/edit-window', async (req, res, next) => {
+  try {
+    const { siteId, paths, hours } = req.body || {}
+    if (!Number.isInteger(hours) || hours < 1 || hours > 24) throw httpError(400, 'mcp.editWindowDuration')
+    const grant = await validateFileEditGrant(req.user.sub, { siteId, paths })
+    const token = await mcpTokens.startEditWindow(req.user.sub, req.params.id, { ...grant, hours })
+    if (!token) throw httpError(409, 'mcp.editWindowUnavailable')
+    events.record({ siteId, kind: 'action', ...events.i18nTitle('mcp.editWindowStarted', { hours }, {
+      tokenId: token.id, by: req.user.sub, hours, paths: grant.paths, expiresAt: token.editWindow.expiresAt,
+    }) }).catch(() => {})
+    res.json({ editWindow: token.editWindow })
+  } catch (e) { next(e) }
+})
+
+mcpTokensRouter.delete('/account/mcp-tokens/:id/edit-window', async (req, res, next) => {
+  try {
+    const { expiresAt } = req.body || {}
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= 0) throw httpError(400, 'mcp.editWindowUnavailable')
+    const ended = await mcpTokens.endEditWindow(req.user.sub, req.params.id, expiresAt)
+    if (!ended) throw httpError(409, 'mcp.editWindowUnavailable')
+    if (ended.site_id) events.record({ siteId: ended.site_id, kind: 'action', ...events.i18nTitle('mcp.editWindowEnded', {}, {
+      tokenId: req.params.id, by: req.user.sub,
+    }) }).catch(() => {})
     res.json({ ok: true })
   } catch (e) { next(e) }
 })

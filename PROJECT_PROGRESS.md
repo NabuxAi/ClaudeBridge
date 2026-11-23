@@ -1,6 +1,21 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-23 (0.11.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-23 (0.12.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.12.0 - batch approvals and temporary MCP file edits
+
+- Alerts lets managers select individual pending requests, select all, or
+  confirm the entire queue. The browser submits the confirmed IDs in order
+  from oldest to newest using the existing one-time approval route. The page
+  shows progress and keeps individual failures visible.
+- Owners can grant an existing regular hub token 1 to 24 hours of backed-up
+  editing for exact paths on one owned site. The server enforces expiry and
+  permits early revocation. Existing pending requests still require approval.
+- Temporary edits use the existing plugin 3.9.5 connector operation and leave
+  the ordinary policy in force for other tools, files, and sites.
+- Local verification passed for the hub build and lint, four browser tests,
+  36 targeted server and PHP checks, and a standalone PostgreSQL migration and
+  expiry check. The environment denied loopback access for the full HTTP suite.
 
 ## Platform 0.11.0 / plugin 3.9.5 — MCP approvals and scoped file edits
 
