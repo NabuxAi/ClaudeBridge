@@ -109,6 +109,8 @@ export const SENSITIVE_TOOLS = Object.freeze([
   'delete_theme',
   'activate_theme',
   'edit_file',
+  'edit_file_with_backup',
+  'restore_file_edit',
   'delete_file',
   'db_query',
   'rescue_rotate_keys',

@@ -1,6 +1,23 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-23 (0.10.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-23 (0.11.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.11.0 / plugin 3.9.5 — MCP approvals and scoped file edits
+
+- Alerts shows the durable approval queue. Approval uses the stored arguments,
+  claims a proposal once, and records connector and WordPress tool failures.
+- A new MCP token can carry an owner-approved grant for one site and exact file
+  paths. Every granted edit uses the plugin's backed-up operation and records
+  the path, token ID, outcome, and backup ID in the site log.
+- Plugin 3.9.5 stores snapshots in the WordPress database before replacing files
+  and checks the edited hash before restoration. A site on an older plugin
+  can still use panel approval.
+- Local verification: hub lint/build, both browser scenarios against the
+  compiled hub with fixture responses, 54 targeted server/PHP checks, and a
+  standalone PostgreSQL 16 check of token migration and one-time approval
+  claims. Loopback access was denied for the full HTTP integration suite.
+- Live GemPino still advertises only the original `edit_file`. The release is
+  local and the pending GemPino edit has not been executed.
 
 ## Platform 0.10.0 — online payment with Aqayepardakht (2026-11-23)
 

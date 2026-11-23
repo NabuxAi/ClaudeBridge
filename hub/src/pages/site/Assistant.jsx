@@ -308,42 +308,24 @@ export default function Assistant() {
   }
 
   // Approve a proposal
-  const handleApproveProposal = async (msgId, proposal) => {
+  const handleApproveProposal = async (msgId, proposal, proposalIndex) => {
     try {
       setActiveConv((prev) => ({
         ...prev,
         messages: prev.messages.map((m) =>
-          m.id === msgId ? { ...m, running: proposal.tool } : m
+          m.id === msgId ? { ...m, running: proposalIndex } : m
         ),
       }))
 
-      // Proposals carried inside a message have no server id. Finding the
-      // matching pending row and sending its id is what arms claim-once: the
-      // server claims the row before the tool runs, and the proposals queue
-      // cannot approve and run the same action a second time.
-      let proposalId = proposal.id || null
+      // Older messages predate proposal IDs. Match both name and arguments.
+      let proposalId = proposal.id
       if (!proposalId) {
-        try {
-          const pend = await siteApi(siteId).pendingProposals()
-          const rows = (pend?.proposals || []).filter((p) => p.tool === proposal.tool)
-          if (rows.length === 1) {
-            proposalId = rows[0].id
-          } else if (rows.length > 1) {
-            proposalId = (rows.find((p) => stableJson(p.args) === stableJson(proposal.args)) || {}).id || null
-          }
-        } catch {
-          // Queue unreadable: run without a claim, as before, rather than
-          // blocking an explicitly approved action.
-        }
+        const pending = await siteApi(siteId).pendingProposals()
+        proposalId = pending.proposals.find((p) => p.tool === proposal.tool && stableJson(p.args) === stableJson(proposal.args))?.id
       }
-
-      const res = await siteApi(siteId).runAction(proposal.tool, {
-        args: proposal.args,
-        approved: true,
-        ...(proposalId ? { proposalId } : {}),
-      })
-
-      const outcome = res?.ok === false ? (res.message || t('assistant.errors.notRun')) : t('assistant.outcomeOk')
+      if (!proposalId) throw new Error(t('incidents.proposalUnavailable'))
+      const res = await siteApi(siteId).approveProposal(proposalId)
+      const outcome = res?.ok && res.relayed ? t('assistant.outcomeOk') : (res?.message || t('assistant.errors.notRun'))
 
       setActiveConv((prev) => ({
         ...prev,
@@ -352,8 +334,8 @@ export default function Assistant() {
           return {
             ...m,
             running: null,
-            proposals: (m.proposals || []).map((pr) =>
-              pr.tool === proposal.tool ? { ...pr, outcome } : pr
+            proposals: (m.proposals || []).map((pr, index) =>
+              index === proposalIndex ? { ...pr, outcome } : pr
             ),
           }
         }),
@@ -367,8 +349,8 @@ export default function Assistant() {
           return {
             ...m,
             running: null,
-            proposals: (m.proposals || []).map((pr) =>
-              pr.tool === proposal.tool ? { ...pr, outcome } : pr
+            proposals: (m.proposals || []).map((pr, index) =>
+              index === proposalIndex ? { ...pr, outcome } : pr
             ),
           }
         }),
@@ -648,10 +630,10 @@ export default function Assistant() {
                                 size="sm"
                                 variant="subtle"
                                 style={{ marginTop: 8 }}
-                                disabled={Boolean(m.running)}
-                                onClick={() => handleApproveProposal(m.id, pr)}
+                                disabled={m.running != null}
+                                onClick={() => handleApproveProposal(m.id, pr, k)}
                               >
-                                {m.running === pr.tool ? t('assistant.running') : t('assistant.approve')}
+                                {m.running === k ? t('assistant.running') : t('assistant.approve')}
                               </Button>
                             )}
                           </div>

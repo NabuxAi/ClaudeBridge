@@ -1,0 +1,62 @@
+import { sites } from './store.js'
+import { callTool, ConnectorError } from './connector.js'
+import * as events from './events.js'
+import { errorMessage, httpError } from './i18n.js'
+
+const PATH = /^(plugins|themes|mu-plugins)(\/[A-Za-z0-9_-][A-Za-z0-9_.-]*)+$/
+
+function validPath(path) {
+  return typeof path === 'string' && path.length <= 512 && PATH.test(path) && !/[\r\n]/.test(path)
+}
+
+export async function validateFileEditGrant(userId, grant) {
+  if (grant === undefined || grant === null) return null
+  const { siteId, paths } = grant
+  if (typeof siteId !== 'string' || !Array.isArray(paths) || paths.length < 1 || paths.length > 50 || !paths.every(validPath)) {
+    throw httpError(400, 'mcp.invalidFileEditGrant')
+  }
+  const site = await sites.rawForUser(siteId, userId)
+  if (!site || site.status === 'deleted') throw httpError(404, 'mcp.fileEditOwnerRequired')
+  return { siteId: site.id, paths: [...new Set(paths)] }
+}
+
+export function isGrantedEdit(user, site, args) {
+  return site.member_role === 'owner' && user.fileEdit?.siteId === site.id &&
+    !args.theme && validPath(args.path) && user.fileEdit.paths.includes(args.path)
+}
+
+export async function relayFileEdit(user, site, target, args) {
+  // Persist the attempt before sending a signed write. Record the tool outcome
+  // against the same event so a dropped connection leaves a visible attempt.
+  const action = { op: 'edit_file', path: args.path, tokenId: user.tokenId, by: user.userId, via: 'hub-mcp-file-edit' }
+  const start = await events.record({
+    siteId: site.id, kind: 'action',
+    ...events.i18nTitle('mcp.fileEditStarted', { path: args.path }, { ...action, outcome: 'unconfirmed' }),
+  })
+  let result
+  let error
+  try {
+    result = await callTool(target, 'edit_file_with_backup', {
+      path: args.path, search: args.search, replace: args.replace, replace_all: args.replace_all,
+    })
+  } catch (e) {
+    error = e
+  }
+
+  let backupId
+  try { backupId = JSON.parse(result?.content?.[0]?.text || 'null')?.backup_id } catch { /* invalid tool response */ }
+  const ok = !result?.isError && typeof backupId === 'string' && /^[a-f0-9]{32}$/.test(backupId)
+  if (ok) {
+    await events.finishAction(start.id, 'info', events.i18nTitle('mcp.fileEditRan', { path: args.path }, { ...action, outcome: 'performed', backupId }))
+    return result
+  }
+
+  const failed = result?.isError || (error instanceof ConnectorError && Boolean(error.reason))
+  await events.finishAction(start.id, 'warning', events.i18nTitle(failed ? 'mcp.fileEditFailed' : 'mcp.fileEditUnconfirmed',
+    { path: args.path }, { ...action, outcome: failed ? 'failed' : 'unconfirmed' }))
+  const upstream = result?.content?.[0]?.text
+  const message = upstream === 'Unknown tool: edit_file_with_backup'
+    ? 'Update DigiWP Ai Bridge on this site to 3.9.5 or later to use direct editing with backups.'
+    : (upstream || (error && errorMessage('en', error)) || 'The connector did not confirm a backed-up edit.')
+  return { isError: true, content: [{ type: 'text', text: message }] }
+}

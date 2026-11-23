@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import PageHead from '../../layouts/PageHead.jsx'
 import Icon from '../../lib/icons.jsx'
-import { Button, AlertCard, Toast, Input } from '../../components/index.js'
+import { Button, AlertCard, Toast, Input, Checkbox, Select, Textarea } from '../../components/index.js'
 import { account as accountApi, setToken, ApiError } from '../../lib/api.js'
 import { t, date, dateTime } from '../../lib/i18n.js'
 
@@ -73,6 +73,11 @@ function McpSection({ showToast }) {
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const [name, setName] = useState('')
+  const [ownedSites, setOwnedSites] = useState(null)
+  const [sitesError, setSitesError] = useState(false)
+  const [directEdit, setDirectEdit] = useState(false)
+  const [editSite, setEditSite] = useState('')
+  const [paths, setPaths] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [fresh, setFresh] = useState(null)
@@ -88,14 +93,25 @@ function McpSection({ showToast }) {
 
   useEffect(() => { load() }, [load])
 
+  const loadOwnedSites = () => {
+    setSitesError(false)
+    accountApi.sites()
+      .then((rows) => setOwnedSites(rows.filter((site) => site.role === 'owner' && site.status !== 'deleted')))
+      .catch((e) => { if (!handleSessionGone(e)) setSitesError(true) })
+  }
+
   const create = async (e) => {
     e.preventDefault()
     setBusy(true)
     setErr('')
     try {
-      const made = await accountApi.createMcpToken(name.trim())
+      const fileEdit = directEdit ? { siteId: editSite, paths: paths.split(/\r?\n/).map((path) => path.trim()).filter(Boolean) } : undefined
+      const made = await accountApi.createMcpToken(name.trim(), fileEdit)
       setFresh(made)
       setName('')
+      setDirectEdit(false)
+      setEditSite('')
+      setPaths('')
       load()
     } catch (e2) {
       if (!handleSessionGone(e2)) setErr(describeApiError(e2, t('accountSecurity.mcp.createError'), t('accountSecurity.mcp.loadNotFound')))
@@ -146,11 +162,40 @@ function McpSection({ showToast }) {
         )}
 
         {!loadError && (
-          <form onSubmit={create} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '4px 0 12px' }}>
-            <span style={{ flex: '1 1 220px', minWidth: 0 }}>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('accountSecurity.mcp.namePlaceholder')} maxLength={80} aria-label={t('accountSecurity.mcp.namePlaceholder')} />
-            </span>
-            <Button variant="secondary" size="sm" leftIcon="key-round" loading={busy} type="submit">{t('accountSecurity.mcp.create')}</Button>
+          <form onSubmit={create} style={{ display: 'grid', gap: 10, margin: '4px 0 12px' }}>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('accountSecurity.mcp.namePlaceholder')} maxLength={80} aria-label={t('accountSecurity.mcp.namePlaceholder')} />
+            <Checkbox checked={directEdit} disabled={busy}
+              label={t('accountSecurity.mcp.directEdit')}
+              onChange={(e) => {
+                setDirectEdit(e.target.checked)
+                if (e.target.checked && !ownedSites) loadOwnedSites()
+              }} />
+            {directEdit && (
+              <>
+                <p style={{ margin: 0 }}>{t('accountSecurity.mcp.directEditHint')}</p>
+                {sitesError && (
+                  <div role="alert">
+                    {t('accountSecurity.mcp.directSiteError')}{' '}
+                    <Button variant="ghost" size="sm" onClick={loadOwnedSites} type="button">{t('common.retry')}</Button>
+                  </div>
+                )}
+                {ownedSites && ownedSites.length === 0 && <p style={{ margin: 0 }}>{t('accountSecurity.mcp.noOwnedSites')}</p>}
+                {ownedSites?.length > 0 && (
+                  <>
+                    <Select id="mcp-edit-site" label={t('accountSecurity.mcp.directSite')} required
+                      value={editSite} onChange={(e) => setEditSite(e.target.value)}
+                      options={[{ value: '', label: t('accountSecurity.mcp.chooseDirectSite') },
+                        ...ownedSites.map((site) => ({ value: site.id, label: site.title || site.name }))]} />
+                    <Textarea id="mcp-edit-paths" label={t('accountSecurity.mcp.directPaths')} required dir="ltr"
+                      value={paths} onChange={(e) => setPaths(e.target.value)} placeholder="plugins/my-plugin/main.php" />
+                  </>
+                )}
+              </>
+            )}
+            <div>
+              <Button variant="secondary" size="sm" leftIcon="key-round" loading={busy} type="submit"
+                disabled={directEdit && (!editSite || !paths.trim() || sitesError)}>{t('accountSecurity.mcp.create')}</Button>
+            </div>
           </form>
         )}
         {err && <div role="alert" style={{ color: 'var(--gd-danger, #c0392b)', marginBottom: 10 }}>{err}</div>}
@@ -165,6 +210,14 @@ function McpSection({ showToast }) {
               {' · '}
               {tok.lastUsedAt ? t('accountSecurity.mcp.lastUsed', { when: fmtDateTime(tok.lastUsedAt) }) : t('accountSecurity.mcp.neverUsed')}
             </span>
+            {tok.fileEdit && (
+              <details style={{ flex: '1 1 240px', overflowWrap: 'anywhere' }}>
+                <summary>{t('accountSecurity.mcp.scopedToken', { site: tok.fileEdit.siteId })}</summary>
+                <ul dir="ltr" style={{ marginBlock: 4, textAlign: 'start' }}>
+                  {tok.fileEdit.paths.map((path) => <li key={path}>{path}</li>)}
+                </ul>
+              </details>
+            )}
             <span style={{ marginInlineStart: 'auto' }}>
               <Button variant="ghost" size="sm" leftIcon="trash-2" loading={!!revoking[tok.id]} onClick={() => revoke(tok)} type="button">
                 {t('accountSecurity.mcp.revoke')}

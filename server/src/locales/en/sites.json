@@ -83,6 +83,7 @@
   "noUrlShort": "The site has no address.",
   "notReadyToPair": "The site is not ready to connect yet.",
   "proposalSettled": "This proposal has already been decided.",
+  "actionFailed": "WordPress reported that the action failed.",
   "actionRequired": "action/tool is required.",
   "needsApproval": "This action is sensitive and needs your approval.",
   "simulated": "Simulation — the site is not paired live.",

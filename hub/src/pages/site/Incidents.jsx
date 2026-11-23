@@ -28,6 +28,7 @@ export default function Incidents() {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [decision, setDecision] = useState(null)
 
   // Soft refresh while the page is shown: on failure the already-loaded data
   // stays and the error surfaces in the banner below — a failed refresh never
@@ -54,6 +55,23 @@ export default function Incidents() {
     try { await siteApi(siteId).dismissIncident(id); await load() }
     catch (e) { setError(e?.message || t('incidents.dismissError')) }
     finally { setBusy('') }
+  }
+
+  async function decide(proposal, approve) {
+    setBusy(proposal.id)
+    setDecision(null)
+    let outcome
+    try {
+      const api = siteApi(siteId)
+      const result = await (approve ? api.approveProposal(proposal.id) : api.rejectProposal(proposal.id))
+      if (!result?.ok || (approve && !result.relayed)) throw new Error(t('incidents.proposalFailed'))
+      outcome = { text: t(approve ? 'incidents.proposalRan' : 'incidents.proposalRejected', { tool: proposal.tool }) }
+    } catch (e) {
+      outcome = { text: e?.message || t('incidents.proposalFailed'), failed: true }
+    }
+    await load()
+    setDecision(outcome)
+    setBusy('')
   }
 
   const head = <PageHead title={t('incidents.title')} subtitle={t('incidents.subtitle')} />
@@ -83,7 +101,8 @@ export default function Incidents() {
     )
   }
 
-  const { featured, list } = data
+  const { featured, canManage, proposals = [] } = data
+  const list = data.list.filter((it) => it.kind !== 'proposal' || it.resolved)
   const filtered = list.filter((it) => {
     if (tab === 'all') return true
     if (tab === 'resolved') return it.resolved
@@ -104,7 +123,7 @@ export default function Incidents() {
         title={t('incidents.title')}
         subtitle={t('incidents.subtitle')}
         action={(
-          <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={load}>
+          <Button variant="secondary" size="sm" leftIcon="refresh-cw" onClick={load} disabled={Boolean(busy)}>
             {t('incidents.reload')}
           </Button>
         )}
@@ -113,6 +132,40 @@ export default function Incidents() {
       {/* Failed dismiss/refresh — visible, with the loaded data kept below */}
       {error && (
         <div className="pbk-note pbk-note--danger">{error}</div>
+      )}
+      {decision && (
+        <div role={decision.failed ? 'alert' : 'status'} className={`pbk-note${decision.failed ? ' pbk-note--danger' : ''}`}>{decision.text}</div>
+      )}
+
+      {proposals.length > 0 && (
+        <section aria-labelledby="pending-proposals-title" style={{ marginBottom: 22 }}>
+          <h2 id="pending-proposals-title" style={{ fontSize: 15, marginBlock: '0 12px' }}>{t('incidents.pendingProposals')}</h2>
+          {proposals.map((proposal) => (
+            <div key={proposal.id} className="pbk-panel" style={{ padding: '14px 18px', marginBottom: 10 }}>
+              <strong><bdi>{proposal.tool}</bdi></strong>
+              {proposal.args?.path && <div dir="ltr" style={{ textAlign: 'start', overflowWrap: 'anywhere' }}>{proposal.args.path}</div>}
+              {proposal.reason && <div>{proposal.reason}</div>}
+              {canManage && (
+                <>
+                  <details style={{ marginBlock: 8 }}>
+                    <summary>{t('incidents.proposalDetails')}</summary>
+                    <pre dir="ltr" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 300, overflow: 'auto' }}>
+                      {JSON.stringify(proposal.args, null, 2)}
+                    </pre>
+                  </details>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <Button variant="primary" size="sm" disabled={Boolean(busy)} onClick={() => decide(proposal, true)}>
+                      {t('incidents.approveAndRun')}
+                    </Button>
+                    <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => decide(proposal, false)}>
+                      {t('incidents.rejectProposal')}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </section>
       )}
 
       {/* Severity filter */}
@@ -129,10 +182,10 @@ export default function Incidents() {
             time={featured.time}
             desc={featured.desc}
             fields={featured.fields}
-            actions={(
+            actions={canManage && (
               <Button
                 variant="ghost" size="sm"
-                disabled={busy === featured.id}
+                disabled={Boolean(busy)}
                 onClick={() => featured.id && dismiss(featured.id)}
               >
                 {t('incidents.ignore')}
@@ -186,7 +239,8 @@ export default function Incidents() {
                 <Icon name={s.icon} size={18} />
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>{it.title}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere' }}>{it.title}</div>
+                {it.backupId && <div style={{ overflowWrap: 'anywhere' }}>{t('incidents.editBackup')} <code dir="ltr">{it.backupId}</code></div>}
               </div>
               <span style={{ fontFamily: 'var(--gd-font-mono)', fontSize: 12, color: 'var(--gd-text-muted)', whiteSpace: 'nowrap' }}>{it.time}</span>
               {it.resolved
@@ -194,9 +248,9 @@ export default function Incidents() {
                 : (
                   <>
                     <Badge variant="warning" appearance="soft">{t('incidents.open')}</Badge>
-                    <Button variant="ghost" size="sm" disabled={busy === it.id} onClick={() => dismiss(it.id)}>
+                    {canManage && <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => dismiss(it.id)}>
                       {t('incidents.ignore')}
-                    </Button>
+                    </Button>}
                   </>
                 )}
             </div>

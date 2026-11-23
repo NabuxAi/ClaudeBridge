@@ -76,6 +76,13 @@ export function pending(siteId) {
   )
 }
 
+export function findPending(siteId, tool, args) {
+  return one(
+    "SELECT id FROM proposals WHERE site_id = $1 AND tool = $2 AND md5(args::text) = md5(($3::jsonb)::text) AND args = $3 AND status = 'pending'",
+    [siteId, tool, JSON.stringify(args)]
+  )
+}
+
 /**
  * Everything waiting across every site, for the daily digest.
  *

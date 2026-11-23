@@ -14,8 +14,8 @@
 // Three tools: list_sites, site_tools, call_site_tool. The policy is the
 // panel's own (/sites/:id/actions), not a new one:
 //   - a view-only member may run read-only tools; owner and admin run changes;
-//   - a sensitive tool (authority.js) never runs from here: it becomes a
-//     proposal the owner approves in the panel, like WPVibe's approval link;
+//   - sensitive calls become proposals. A site owner may grant one token
+//     direct, backed-up edits to explicitly named files;
 //   - a change that ran is written to the site's event log.
 //
 // Token management (/v1/account/mcp-tokens) is a normal signed-in route.
@@ -32,6 +32,7 @@ import { limiter, clientIp } from '../security/ratelimit.js'
 import { errorMessage, httpError } from '../i18n.js'
 import { peerLinks } from '../peer-link.js'
 import { peerPost } from '../peer-relay.js'
+import { validateFileEditGrant, isGrantedEdit, relayFileEdit } from '../mcp-file-edits.js'
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 const SERVER_INFO = { name: 'digiwp-hub', version: '1.0.0' }
@@ -40,7 +41,7 @@ const INSTRUCTIONS =
   'DigiWP hub: manage every WordPress site you can reach from one connection. ' +
   'Call list_sites first, then site_tools to see what a site offers, then call_site_tool. ' +
   'Sites are reached through a signed relay (and through the partner server inside or outside Iran when a site cannot be reached directly). ' +
-  'Sensitive tools are not run from here: they are filed as a proposal the site owner approves in the DigiWP panel.'
+  'Sensitive tools require approval in the site Alerts page. A scoped file-edit token can run edit_file with an automatic backup on its allowed paths.'
 
 const TOOLS = [
   {
@@ -62,7 +63,7 @@ const TOOLS = [
   },
   {
     name: 'call_site_tool',
-    description: 'Run one tool on one site. Read-only tools run for every member; changes run for the owner and admins; sensitive tools (file edits, deletes, database, restores, publishing…) are filed as a proposal for the owner to approve in the panel and do not run immediately.',
+    description: 'Run one tool on one site. Read-only tools run for every member; changes run for the owner and admins. Sensitive tools need approval in Alerts. A scoped file-edit token runs edit_file on its allowed paths with a backup. Pass a wp-content-relative path, for example plugins/example/main.php.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -169,8 +170,8 @@ function describeReach(reach) {
 }
 
 function panelLink(siteId) {
-  const origin = /^https?:\/\//.test(config.corsOrigin || '') ? config.corsOrigin.replace(/\/+$/, '') : ''
-  return origin ? `${origin}/site/${siteId}` : null
+  const origin = config.publicPanelUrl.replace(/\/+$/, '')
+  return /^https?:\/\//.test(origin) ? `${origin}/site/${encodeURIComponent(siteId)}/incidents` : null
 }
 
 const PEER_PREFIX = 'peer:'
@@ -193,8 +194,11 @@ const parseText = (result) => {
  * can never bounce between the two servers.
  */
 export async function runTool(user, name, args = {}, { federated = false } = {}) {
-  const rows = await sites.listAccessibleRaw(user.userId)
-  const link = federated || !peerLinks.enabled() ? null : await peerLinks.get(user.userId)
+  const accessible = await sites.listAccessibleRaw(user.userId)
+  const rows = user.fileEdit
+    ? accessible.filter((site) => site.id === user.fileEdit.siteId && site.member_role === 'owner')
+    : accessible
+  const link = federated || user.fileEdit || !peerLinks.enabled() ? null : await peerLinks.get(user.userId)
 
   if (name === 'list_sites') {
     const local = rows.map((r) => ({ ...describeSite(r), server: thisServer() }))
@@ -232,7 +236,7 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
   if (name === 'site_tools') {
     const tools = await connector.listTools(target)
     return textResult({
-      site: describeSite(site),
+      site: { ...describeSite(site), ...(user.fileEdit ? { directEditPaths: user.fileEdit.paths } : {}) },
       tools: tools.map((t) => ({ name: t.name, kind: classify(t.name), description: t.description, inputSchema: t.inputSchema })),
     })
   }
@@ -247,6 +251,12 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
     return textResult(`Only the site owner or an admin can run "${tool}" (${kind}); with view-only access you can run read-only tools.`, true)
   }
 
+  if (tool === 'edit_file' && isGrantedEdit(user, site, toolArgs)) {
+    const pending = await proposals.findPending(site.id, tool, toolArgs)
+    if (!pending) return relayFileEdit(user, site, target, toolArgs)
+    return approvalResult(pending, site.id, tool)
+  }
+
   if (kind === 'sensitive') {
     const proposal = await proposals.record({
       siteId: site.id, userId: user.userId, tool, args: toolArgs, kind,
@@ -254,13 +264,7 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
         ? 'Requested from an AI client over the DigiWP hub MCP of the partner server (linked account).'
         : 'Requested from an AI client over the DigiWP hub MCP.', authority: site.authority,
     })
-    const link = panelLink(site.id)
-    return textResult({
-      ran: false,
-      requiresApproval: true,
-      proposalId: proposal?.id || null,
-      message: `"${tool}" is sensitive, so it was not run. It is waiting for the owner's approval in the DigiWP panel${link ? ` (${link})` : ''}; once approved there it runs once.`,
-    })
+    return approvalResult(proposal, site.id, tool)
   }
 
   const result = await connector.callTool(target, tool, toolArgs)
@@ -271,6 +275,17 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
     }).catch(() => {})
   }
   return result && Array.isArray(result.content) ? result : textResult(result)
+}
+
+function approvalResult(proposal, siteId, tool) {
+  const link = panelLink(siteId)
+  return textResult({
+    ran: false,
+    requiresApproval: true,
+    proposalId: proposal?.id || null,
+    ...(link ? { approvalUrl: link } : {}),
+    message: `"${tool}" is waiting for approval in the site's Alerts page${link ? ` (${link})` : ''}.`,
+  })
 }
 
 mcpRouter.get('/mcp', (_req, res) => {
@@ -334,8 +349,10 @@ mcpTokensRouter.get('/account/mcp-tokens', async (req, res, next) => {
 mcpTokensRouter.post('/account/mcp-tokens', async (req, res, next) => {
   try {
     const name = String(req.body?.name || '').trim() || req.t('mcp.defaultName')
-    const { token, record } = await mcpTokens.create(req.user.sub, name)
+    const fileEdit = await validateFileEditGrant(req.user.sub, req.body?.fileEdit)
+    const { token, record } = await mcpTokens.create(req.user.sub, name, fileEdit)
     // The token is shown here once and never again.
+    res.set('Cache-Control', 'no-store')
     res.status(201).json({ token, record, mcpUrl: `${publicApiBase(req)}/mcp` })
   } catch (e) { next(e) }
 })

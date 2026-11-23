@@ -1,5 +1,11 @@
 {
   "tokenLimit": "You already have {max} active MCP tokens. Revoke one before creating another.",
   "tokenNotFound": "No such token.",
-  "defaultName": "AI client"
+  "defaultName": "AI client",
+  "invalidFileEditGrant": "Select a site and enter 1 to 50 exact plugin or theme file paths relative to wp-content.",
+  "fileEditOwnerRequired": "Select a site you own on this panel.",
+  "fileEditStarted": "MCP file edit started for {path}",
+  "fileEditRan": "MCP file edit completed with backup for {path}",
+  "fileEditFailed": "MCP file edit failed for {path}",
+  "fileEditUnconfirmed": "MCP file edit outcome could not be confirmed for {path}"
 }

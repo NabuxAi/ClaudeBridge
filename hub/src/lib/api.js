@@ -155,7 +155,7 @@ export const account = {
   peerUnlink: () => http('/account/peer-link', { method: 'DELETE' }),
   createMcpToken: call(
     () => Promise.reject(new ApiError('', 503)),
-    (name) => http('/account/mcp-tokens', { method: 'POST', body: { name } })
+    (name, fileEdit) => http('/account/mcp-tokens', { method: 'POST', body: { name, fileEdit } })
   ),
   revokeMcpToken: call(
     () => Promise.resolve({ ok: true }),
@@ -468,9 +468,13 @@ export function site(siteId) {
       () => Promise.resolve({ proposals: [] }),
       () => http(p('/proposals'))
     ),
+    approveProposal: call(
+      () => Promise.resolve({ ok: false, relayed: false }),
+      (proposalId) => http(p(`/proposals/${encodeURIComponent(proposalId)}/approve`), { method: 'POST' })
+    ),
     rejectProposal: call(
       () => Promise.resolve({ ok: true }),
-      (proposalId) => http(p(`/proposals/${proposalId}/reject`), { method: 'POST' })
+      (proposalId) => http(p(`/proposals/${encodeURIComponent(proposalId)}/reject`), { method: 'POST' })
     ),
     // Off-site (S3-compatible) backup targets and upload jobs.
     listOffsiteTargets: call(

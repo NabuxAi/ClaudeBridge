@@ -17,7 +17,7 @@ export const SCHEMA = `
     id          TEXT PRIMARY KEY,
     site_id     TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
     -- Who the assistant was answering when it proposed this. Kept for the audit
-    -- trail, not for permission: anyone who can reach the site may approve.
+    -- trail. The site's owner or admin may approve.
     user_id     TEXT,
     tool        TEXT NOT NULL,
     args        JSONB NOT NULL DEFAULT '{}'::jsonb,

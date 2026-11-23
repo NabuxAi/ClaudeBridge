@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Claude Bridge
  * Description: Turns this WordPress site into a full self-hosted MCP server — edit theme AND plugin files, create plugins, activate themes/plugins, draft preview, cache flush, PLUS complete WordPress + WooCommerce control via a generic REST proxy. Connects to Claude via OAuth using WordPress's native, revocable Application Passwords, or a scoped static Bearer token sent in the Authorization header. Ships a cookbook of ready-to-paste recipes shown right on the WordPress Dashboard, and exposes several fallback connection modes (REST, admin-ajax, query-var; JSON or SSE) so it can still connect when a host or security layer blocks one path. Free alternative to WPVibe.
- * Version: 3.9.4
+ * Version: 3.9.5
  * Author: Account City
  * License: GPLv2 or later
  * Text Domain: wp-claude-bridge
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CB_VERSION', '3.9.4' );
+define( 'CB_VERSION', '3.9.5' );
 define( 'CB_TOKEN_OPTION', 'cb_mcp_token' ); // Legacy plaintext option.
 define( 'CB_TOKEN_HASH_OPTION', 'cb_mcp_token_sha256' );
 define( 'CB_SCOPE_OPTION', 'cb_mcp_token_scope' );
@@ -236,8 +236,25 @@ function cb_op_edit_file( $args ) {
 		return new WP_Error( 'cb_no_file', 'File does not exist.' );
 	}
 	$content = cb_get_contents( $r['path'] );
-	$search  = (string) $args['search'];
-	$replace = (string) $args['replace'];
+	if ( false === $content ) {
+		return new WP_Error( 'cb_read_failed', 'Could not read file.' );
+	}
+	$edit = cb_file_replacement( $content, $args );
+	if ( is_wp_error( $edit ) ) {
+		return $edit;
+	}
+	if ( ! cb_put_contents( $r['path'], $edit['content'] ) ) {
+		return new WP_Error( 'cb_write_failed', 'Could not write file.' );
+	}
+	return array( 'path' => isset( $args['path'] ) ? $args['path'] : '', 'replaced' => $edit['count'] );
+}
+
+function cb_file_replacement( $content, $args, $max_bytes = null ) {
+	$search  = $args['search'] ?? null;
+	$replace = $args['replace'] ?? null;
+	if ( ! is_string( $search ) || '' === $search || ! is_string( $replace ) ) {
+		return new WP_Error( 'cb_bad_edit', 'A non-empty search string and a replacement string are required.' );
+	}
 	$count   = substr_count( $content, $search );
 	if ( $count === 0 ) {
 		return new WP_Error( 'cb_no_match', 'Search string not found in file.' );
@@ -245,13 +262,170 @@ function cb_op_edit_file( $args ) {
 	if ( empty( $args['replace_all'] ) && $count > 1 ) {
 		return new WP_Error( 'cb_multi_match', "Search string is not unique ($count matches). Set replace_all=true or refine it." );
 	}
-	$new = empty( $args['replace_all'] )
-		? preg_replace( '/' . preg_quote( $search, '/' ) . '/', addcslashes( $replace, '\\$' ), $content, 1 )
-		: str_replace( $search, $replace, $content );
-	if ( ! cb_put_contents( $r['path'], $new ) ) {
-		return new WP_Error( 'cb_write_failed', 'Could not write file.' );
+	if ( null !== $max_bytes && strlen( $content ) + $count * ( strlen( $replace ) - strlen( $search ) ) > $max_bytes ) {
+		return new WP_Error( 'cb_edit_size', 'The edited file would exceed the 1 MiB backup limit.' );
 	}
-	return array( 'path' => isset( $args['path'] ) ? $args['path'] : '', 'replaced' => empty( $args['replace_all'] ) ? 1 : $count );
+	return array( 'content' => str_replace( $search, $replace, $content ), 'count' => $count );
+}
+
+/**
+ * Scoped edits use exact wp-content-relative paths. Reject symlink aliases so
+ * a grant for one path cannot authorize a different file on the same host.
+ */
+function cb_guarded_edit_target( $path ) {
+	if ( ! is_string( $path ) || strlen( $path ) > 512 ||
+		! preg_match( '~\A(plugins|themes|mu-plugins)(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)+\z~', $path ) ) {
+		return new WP_Error( 'cb_edit_path', 'Use an exact plugin or theme file path relative to wp-content.' );
+	}
+	$root = realpath( WP_CONTENT_DIR );
+	if ( false === $root ) {
+		return new WP_Error( 'cb_edit_path', 'The wp-content directory is unavailable.' );
+	}
+	$target = wp_normalize_path( $root ) . '/' . $path;
+	clearstatcache( true, $target );
+	$real = realpath( $target );
+	if ( false === $real || wp_normalize_path( $real ) !== $target || ! is_file( $target ) ) {
+		return new WP_Error( 'cb_edit_path', 'The allowed file must exist and have no symlink aliases.' );
+	}
+	return $target;
+}
+
+/** Serializes guarded edits and restores of the same file across workers. */
+function cb_with_file_edit_lock( $path, $operation ) {
+	global $wpdb;
+	$target = cb_guarded_edit_target( $path );
+	if ( is_wp_error( $target ) ) {
+		return $target;
+	}
+	$lock = 'cb_edit_' . substr( hash( 'sha256', $target ), 0, 56 );
+	if ( 1 !== (int) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 5)', $lock ) ) ) {
+		return new WP_Error( 'cb_edit_busy', 'Could not lock the file for editing.' );
+	}
+	try {
+		$target = cb_guarded_edit_target( $path );
+		return is_wp_error( $target ) ? $target : $operation( $target );
+	} finally {
+		$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
+	}
+}
+
+/**
+ * Stage outside the web root, then replace in one rename on the same device.
+ * A failed write/rename leaves the original in place.
+ */
+function cb_replace_file_atomically( $target, $before, $after ) {
+	$temp_dir = realpath( sys_get_temp_dir() );
+	$docroot  = realpath( $_SERVER['DOCUMENT_ROOT'] ?? ABSPATH );
+	$wp_root  = realpath( ABSPATH );
+	$content_root = realpath( WP_CONTENT_DIR );
+	if ( ! $temp_dir || ! $docroot || ! $wp_root || ! $content_root ||
+		0 === strpos( wp_normalize_path( $temp_dir ) . '/', rtrim( wp_normalize_path( $docroot ), '/' ) . '/' ) ||
+		0 === strpos( wp_normalize_path( $temp_dir ) . '/', rtrim( wp_normalize_path( $wp_root ), '/' ) . '/' ) ||
+		0 === strpos( wp_normalize_path( $temp_dir ) . '/', rtrim( wp_normalize_path( $content_root ), '/' ) . '/' ) ) {
+		return new WP_Error( 'cb_edit_staging', 'Private temporary storage is unavailable.' );
+	}
+	$original = @stat( $target );
+	$storage  = @stat( $temp_dir );
+	if ( ! $original || ! $storage || $original['dev'] !== $storage['dev'] ) {
+		return new WP_Error( 'cb_edit_staging', 'Private temporary storage must be on the same filesystem as the file.' );
+	}
+	$stage = $temp_dir . '/cb-edit-' . wp_generate_uuid4();
+	if ( ! @mkdir( $stage, 0700 ) ) {
+		return new WP_Error( 'cb_edit_staging', 'Could not stage the file.' );
+	}
+	$temp = $stage . '/file';
+	try {
+		if ( strlen( $after ) !== @file_put_contents( $temp, $after ) ||
+			! @chmod( $temp, $original['mode'] & 0777 ) ) {
+			return new WP_Error( 'cb_edit_staging', 'Could not stage the new contents with the file permissions.' );
+		}
+		$staged = @stat( $temp );
+		if ( ! $staged ||
+			( $staged['uid'] !== $original['uid'] && ! @chown( $temp, $original['uid'] ) ) ||
+			( $staged['gid'] !== $original['gid'] && ! @chgrp( $temp, $original['gid'] ) ) ) {
+			return new WP_Error( 'cb_edit_staging', 'Could not preserve file ownership.' );
+		}
+		clearstatcache( true, $target );
+		if ( wp_normalize_path( (string) realpath( $target ) ) !== $target || cb_get_contents( $target ) !== $before ) {
+			return new WP_Error( 'cb_edit_changed', 'The file changed during the operation. Read it again before editing.' );
+		}
+		if ( ! @rename( $temp, $target ) ) {
+			return new WP_Error( 'cb_write_failed', 'Could not replace the file.' );
+		}
+		if ( function_exists( 'opcache_invalidate' ) ) {
+			@opcache_invalidate( $target, true );
+		}
+		return true;
+	} finally {
+		if ( is_file( $temp ) ) {
+			@unlink( $temp );
+		}
+		@rmdir( $stage );
+	}
+}
+
+function cb_op_edit_file_with_backup( $args ) {
+	$path = $args['path'] ?? '';
+	return cb_with_file_edit_lock( $path, function ( $target ) use ( $path, $args ) {
+		$size = @filesize( $target );
+		if ( false === $size || $size > 1048576 ) {
+			return new WP_Error( 'cb_edit_size', 'Backed-up file edits support files up to 1 MiB.' );
+		}
+		$before = cb_get_contents( $target );
+		if ( false === $before || strlen( $before ) > 1048576 ) {
+			return new WP_Error( 'cb_read_failed', 'Could not read the file for a backup.' );
+		}
+		$edit = cb_file_replacement( $before, $args, 1048576 );
+		if ( is_wp_error( $edit ) ) {
+			return $edit;
+		}
+		$after = $edit['content'];
+		if ( 'php' === strtolower( pathinfo( $target, PATHINFO_EXTENSION ) ) ) {
+			try {
+				token_get_all( $after, TOKEN_PARSE );
+			} catch ( ParseError $error ) {
+				return new WP_Error( 'cb_edit_syntax', 'PHP syntax check failed: ' . $error->getMessage() );
+			}
+		}
+		$id = str_replace( '-', '', wp_generate_uuid4() );
+		// Private and non-autoloaded. Encoding preserves arbitrary bytes.
+		$snapshot = array(
+			'path' => $path,
+			'before' => base64_encode( $before ),
+			'before_hash' => hash( 'sha256', $before ),
+			'after_hash' => hash( 'sha256', $after ),
+		);
+		if ( ! add_option( 'cb_file_edit_' . $id, $snapshot, '', false ) ) {
+			return new WP_Error( 'cb_edit_backup', 'Could not save a backup. The file was not edited.' );
+		}
+		$written = cb_replace_file_atomically( $target, $before, $after );
+		if ( is_wp_error( $written ) ) {
+			delete_option( 'cb_file_edit_' . $id );
+			return $written;
+		}
+		return array( 'path' => $path, 'replaced' => $edit['count'], 'backup_id' => $id );
+	} );
+}
+
+function cb_op_restore_file_edit( $args ) {
+	$id = $args['backup_id'] ?? '';
+	$snapshot = is_string( $id ) && preg_match( '/\A[a-f0-9]{32}\z/', $id ) ? get_option( 'cb_file_edit_' . $id ) : false;
+	if ( ! is_array( $snapshot ) ) {
+		return new WP_Error( 'cb_edit_backup', 'File edit backup was not found.' );
+	}
+	$before = base64_decode( $snapshot['before'] ?? '', true );
+	if ( false === $before || hash( 'sha256', $before ) !== ( $snapshot['before_hash'] ?? '' ) ) {
+		return new WP_Error( 'cb_edit_backup', 'File edit backup failed its integrity check.' );
+	}
+	return cb_with_file_edit_lock( $snapshot['path'], function ( $target ) use ( $snapshot, $id, $before ) {
+		$size = @filesize( $target );
+		$current = false !== $size && $size <= 1048576 ? cb_get_contents( $target ) : false;
+		if ( false === $current || hash( 'sha256', $current ) !== $snapshot['after_hash'] ) {
+			return new WP_Error( 'cb_edit_changed', 'The file no longer matches this edit. Undo later edits first or restore it manually.' );
+		}
+		$written = cb_replace_file_atomically( $target, $current, $before );
+		return is_wp_error( $written ) ? $written : array( 'path' => $snapshot['path'], 'restored' => true, 'backup_id' => $id );
+	} );
 }
 
 function cb_op_delete_file( $args ) {
@@ -2121,6 +2295,8 @@ function cb_tools() {
 
 	// Backups, taken by this plugin. Real snapshots, not a status screen.
 	$tools[] = array( 'name' => 'backup_run', 'description' => 'Take a snapshot of this site now: full database dump always, and optionally a zip of wp-content or selected sections. The dump is written in pure PHP so it works on hosts where exec() is disabled, and is verified complete before being recorded. Old snapshots beyond `keep` are pruned.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'files' => array( 'type' => 'boolean', 'description' => 'Also archive wp-content. Slow and large on media-heavy sites.' ), 'sections' => array( 'type' => 'array', 'items' => array( 'type' => 'string' ), 'description' => 'Selectable sections: db, plugins, themes, uploads.' ), 'label' => array( 'type' => 'string' ), 'keep' => array( 'type' => 'integer', 'description' => 'How many snapshots to retain (default 7).' ) ) ), 'op' => 'cb_op_backup_run' );
+	$tools[] = array( 'name' => 'edit_file_with_backup', 'description' => 'Edit an existing wp-content-relative plugin or theme file and save its previous contents in a private backup.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'path' => $path, 'search' => array( 'type' => 'string' ), 'replace' => array( 'type' => 'string' ), 'replace_all' => array( 'type' => 'boolean' ) ), 'required' => array( 'path', 'search', 'replace' ) ), 'op' => 'cb_op_edit_file_with_backup' );
+	$tools[] = array( 'name' => 'restore_file_edit', 'description' => 'Restore a backed-up file edit by backup ID if the file still matches that edit.', 'inputSchema' => array( 'type' => 'object', 'properties' => array( 'backup_id' => array( 'type' => 'string' ) ), 'required' => array( 'backup_id' ) ), 'op' => 'cb_op_restore_file_edit' );
 	$tools[] = array( 'name' => 'backup_list', 'description' => 'Every snapshot this site actually holds, with size, table and row counts, and whether the dump was verified complete. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_list', 'noargs' => true );
 	$tools[] = array( 'name' => 'backup_preflight', 'description' => 'Check free host disk space and estimate backup size and duration per section (db, plugins, themes, uploads). Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_preflight', 'noargs' => true );
 	$tools[] = array( 'name' => 'backup_policy_get', 'description' => 'Get current backup configuration policy: storage destination (local host or hub server), retention days, max daily backups limit, and storage capacity limit in MB. Read-only.', 'inputSchema' => array( 'type' => 'object', 'properties' => new stdClass() ), 'op' => 'cb_op_backup_policy_get', 'noargs' => true );

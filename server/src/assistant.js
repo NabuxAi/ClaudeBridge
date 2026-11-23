@@ -325,13 +325,7 @@ async function runToolCall(site, level, call, proposals, locale) {
   // by authority.localizeReason on the way out).
   if (!verdict.allowed) {
     const reason = t(locale, verdict.reasonKey)
-    proposals.push({ tool: name, args, kind: verdict.kind, reason, reasonKey: verdict.reasonKey })
-
-    // Also persisted, so the approval can arrive later and from someone else.
-    // Failing to record it must not turn a refusal into an error: the caller
-    // still sees the proposal in this answer, which is exactly how it behaved
-    // before there was a table at all.
-    proposalStore
+    const pending = await proposalStore
       .record({
         siteId: site.id,
         userId: site.user_id,
@@ -341,7 +335,9 @@ async function runToolCall(site, level, call, proposals, locale) {
         reason: verdict.reason,
         authority: level,
       })
-      .catch(() => {})
+      .catch(() => null)
+
+    proposals.push({ id: pending?.id, tool: name, args, kind: verdict.kind, reason, reasonKey: verdict.reasonKey })
 
     return { ok: false, refused: true, reason }
   }

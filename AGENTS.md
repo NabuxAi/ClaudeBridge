@@ -43,7 +43,8 @@ AI/MCP client --------------------------------> WordPress plugin directly
      Connector Mode.
    - PHP 7.4+ / WordPress 5.6+ target.
    - Version at baseline: `3.7.4`.
-   - Current release: `3.9.4` (2026-11-23): signed hub requests that fail
+   - Release source: `3.9.5` (2026-11-23) adds backed-up file edits and guarded
+     restoration. In `3.9.4`, signed hub requests that fail
      answer a named reason (`cb_signature_invalid`, `cb_signature_expired`,
      `cb_nonce_store_failed` 503, …) instead of one bare 401; see the
      connector invariant under Security. Earlier: `3.9.1` (verified 2026-10-02) — the `render_blocks`
@@ -51,11 +52,11 @@ AI/MCP client --------------------------------> WordPress plugin directly
      the 2026-09-29 smart-design wave (seven Gutenberg block / Elementor
      tools, `3.9.0`) and the 2026-09-28 transactional safe-update pipeline
      (P0.4).
-   - 151 advertised tools: 17 initial tools, 79 generated CRUD tools, and 55
-     appended tools (48 before the design wave plus the seven `3.9.0` design
+   - 153 advertised tools: 17 initial tools, 79 generated CRUD tools, and 57
+     appended tools (including the two `3.9.5` file tools and seven `3.9.0` design
      tools: `list_block_types`, `render_blocks`, `create_block_page`,
      `append_blocks`, `list_elementor_widgets`, `elementor_page_create`,
-     `elementor_section_append`). Counted from the source on 2026-09-29; the
+     `elementor_section_append`). Baseline count checked on 2026-09-29; the
      previous "16 initial / 50 appended ≈ 145" split was already off — the
      initial array holds 17 entries and the pre-design appended section 48.
 
@@ -177,8 +178,22 @@ for UI convenience.
 - WordPress MCP transport and direct tool execution.
 - HMAC Hub Connector Mode, pairing, ping, and live relay.
 - Hub MCP endpoint (`POST /v1/mcp`, platform `0.3.0`): one personal token per
-  client reaches every site its owner can reach; members read-only, sensitive tools
-  filed as proposals, never relayed. Tokens: `mcp_tokens`, `/app/security`.
+  client reaches every site its owner can reach. Owners and admins can make
+  changes; viewers can read. Sensitive calls create durable proposals and
+  link to the site's Alerts page. Approvals execute the stored tool and its
+  stored arguments once. The Alerts page shows pending proposals even when
+  their event is older than the recent-event list or was previously dismissed.
+- Platform `0.11.0` supports a separate owner-granted MCP token in `/app/mcp`
+  limited to one locally owned site. It lets `edit_file` run directly on exact
+  wp-content-relative plugin or theme paths by calling `edit_file_with_backup`
+  on plugin `3.9.5`+. The attempt and result are audited without code or token
+  secrets. WordPress stores the previous bytes in a non-autoloaded option and
+  stages the replacement in private storage on the same filesystem. Files
+  must fit the 1 MiB snapshot limit. `restore_file_edit` still requires approval
+  and verifies the current file against the saved post-edit hash. This covers
+  file recovery, with PHP syntax validation and without site health probes;
+  if WordPress itself cannot boot, restoration requires host access. Ordinary
+  and linked-account tokens follow the normal proposal policy.
 - Iran ↔ international peer relay (`peer-relay.js`, `POST /v1/relay/forward`):
   connector calls a server cannot deliver are re-sent through the partner server.
   Off unless both `PEER_RELAY_URL` and `PEER_RELAY_SECRET` are set.
@@ -1055,7 +1070,8 @@ These rules override visual mockups and optimistic marketing copy:
   UI flow easier.
 - Database restore, file deletion/editing, theme activation, unknown tools, and
   update/restore jobs must remain human-approved unless a separately designed
-  reversible transaction proves otherwise.
+  reversible transaction proves otherwise. The scoped `edit_file` token is
+  that exception for explicitly granted paths, via `edit_file_with_backup`.
 - Do not upload customer source files or malware samples to public third-party
   analysis services.
 - Add hub/nginx security headers deliberately; API headers in `server/src/index.js`
@@ -1539,7 +1555,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform release: **0.10.0** (online payment with Aqayepardakht, 2026-11-23), shared by `hub/package.json` and
+- Current platform version: **0.11.0** (MCP approvals and scoped file editing, 2026-11-23), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

@@ -21,19 +21,21 @@ const publicToken = (row) => row && ({
   name: row.name,
   createdAt: Number(row.created_at),
   lastUsedAt: row.last_used_at == null ? null : Number(row.last_used_at),
+  fileEdit: row.edit_site_id ? { siteId: row.edit_site_id, paths: row.edit_paths } : null,
 })
 
 export const mcpTokens = {
-  async create(userId, name = '') {
+  async create(userId, name = '', fileEdit = null) {
     const live = await one('SELECT COUNT(*)::int AS n FROM mcp_tokens WHERE user_id = $1 AND revoked_at IS NULL', [userId])
     if (live.n >= MAX_PER_USER) {
       throw httpError(409, 'mcp.tokenLimit', { max: MAX_PER_USER })
     }
     const token = TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url')
     const row = await one(
-      `INSERT INTO mcp_tokens (id, user_id, name, token_hash, created_at)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [newId('mcpt_'), userId, String(name || '').trim().slice(0, 80), tokenHash(token), Date.now()]
+      `INSERT INTO mcp_tokens (id, user_id, name, token_hash, created_at, edit_site_id, edit_paths)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [newId('mcpt_'), userId, String(name || '').trim().slice(0, 80), tokenHash(token), Date.now(),
+        fileEdit?.siteId || null, JSON.stringify(fileEdit?.paths || [])]
     )
     return { token, record: publicToken(row) }
   },
@@ -57,7 +59,7 @@ export const mcpTokens = {
   async resolve(token) {
     if (typeof token !== 'string' || !token.startsWith(TOKEN_PREFIX)) return null
     const row = await one(
-      `SELECT t.id, t.user_id, t.last_used_at, u.email, u.role
+      `SELECT t.id, t.user_id, t.last_used_at, t.edit_site_id, t.edit_paths, u.email, u.role
          FROM mcp_tokens t JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = $1 AND t.revoked_at IS NULL`,
       [tokenHash(token)]
@@ -67,6 +69,6 @@ export const mcpTokens = {
     if (!row.last_used_at || now - Number(row.last_used_at) > TOUCH_THROTTLE_MS) {
       await one('UPDATE mcp_tokens SET last_used_at = $2 WHERE id = $1', [row.id, now])
     }
-    return { tokenId: row.id, userId: row.user_id, email: row.email, role: row.role }
+    return { tokenId: row.id, userId: row.user_id, email: row.email, role: row.role, fileEdit: publicToken(row).fileEdit }
   },
 }

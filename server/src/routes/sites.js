@@ -392,8 +392,10 @@ function concern(name) {
       // or did; nothing is generated to make the page look inhabited.
       if (name === 'incidents') {
         const rows = await events.list(site.id, 60)
-        data.list = rows.map((ev) => toIncident(ev, req.locale))
+        data.canManage = MANAGERS.has(req.siteRole)
+        data.list = rows.map((ev) => toIncident(ev, req.locale, data.canManage))
         data.featured = await featuredIncident(site.id, rows, req.locale)
+        data.proposals = await pendingProposals(site.id, req.locale, data.canManage)
         data.empty = rows.length === 0
         // An empty log is not a clean bill of health, and the view has to be
         // able to say which it is. Sites are only observed when scanned, so
@@ -470,7 +472,7 @@ function relWhen(locale, ms) {
 }
 
 /** One event as the alerts list renders it. */
-function toIncident(ev, locale) {
+function toIncident(ev, locale, canManage) {
   return {
     id: ev.id,
     severity: ev.severity,
@@ -479,6 +481,7 @@ function toIncident(ev, locale) {
     at: Number(ev.created_at),
     resolved: Boolean(ev.resolved_at),
     kind: ev.kind,
+    ...(canManage && ev.detail?.backupId && { backupId: ev.detail.backupId }),
   }
 }
 
@@ -1356,6 +1359,14 @@ router.post('/sites/:id/reach', async (req, res, next) => {
 // The set lives in authority.js so this route and the assistant enforce one
 // policy rather than two that must be kept in step by hand.
 const SENSITIVE = SENSITIVE_SET
+
+async function pendingProposals(siteId, locale, canManage) {
+  return (await proposals.pending(siteId)).map((p) => ({
+    ...(canManage ? p : { id: p.id, tool: p.tool, created_at: p.created_at }),
+    reason: localizeReason(locale, p.reason),
+  }))
+}
+
 /**
  * What is still waiting for a human on this site.
  *
@@ -1367,8 +1378,7 @@ router.get('/sites/:id/proposals', async (req, res, next) => {
   try {
     const site = await loadSite(req, res)
     if (!site) return
-    const list = await proposals.pending(site.id)
-    res.json({ proposals: list.map((p) => ({ ...p, reason: localizeReason(req.locale, p.reason) })) })
+    res.json({ proposals: await pendingProposals(site.id, req.locale, MANAGERS.has(req.siteRole)) })
   } catch (e) { next(e) }
 })
 
@@ -1387,72 +1397,73 @@ router.post('/sites/:id/proposals/:proposalId/reject', async (req, res, next) =>
   } catch (e) { next(e) }
 })
 
+router.post('/sites/:id/proposals/:proposalId/approve', async (req, res, next) => {
+  try {
+    const site = await loadManagerSite(req, res)
+    if (!site) return
+    return await approveProposal(req, res, site, req.params.proposalId)
+  } catch (e) { next(e) }
+})
+
+async function approveProposal(req, res, site, proposalId) {
+  if (!config.live || !site.paired || !site.url || !site.secret) {
+    return res.status(503).json({ ok: false, message: req.t(config.live ? 'common.siteNotPairedYet' : 'common.liveOff') })
+  }
+  const claimed = await proposals.resolve(site.id, proposalId, 'approved', { by: req.user.sub })
+  if (!claimed) return res.status(409).json({ ok: false, message: req.t('sites.proposalSettled') })
+  return relayPanelAction(req, res, site, claimed.tool, claimed.args, true, claimed)
+}
+
+async function relayPanelAction(req, res, site, op, args, approved, claimed = null) {
+  let result
+  try {
+    result = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, op, args)
+    if (result?.isError) throw new Error(result.content?.find((item) => item.type === 'text')?.text || req.t('sites.actionFailed'))
+  } catch (e) {
+    if (claimed) {
+      const error = errorMessage(req.locale, e)
+      await proposals.recordOutcome(site.id, claimed.id, { ok: false, at: Date.now(), error })
+      await events.record({
+        siteId: site.id, kind: 'action', severity: 'warning',
+        ...i18nTitle('sites.events.approvedFailed', { op }, { op, proposalId: claimed.id, error }),
+        fingerprint: `proposal-failed:${claimed.id}`,
+      })
+    }
+    return res.status(e.status >= 400 && e.status < 600 ? e.status : 502).json({ ok: false, message: errorMessage(req.locale, e) })
+  }
+
+  if (claimed) await proposals.recordOutcome(site.id, claimed.id, { ok: true, at: Date.now() })
+  if (claimed || SENSITIVE.has(op)) {
+    const logged = events.record({
+      siteId: site.id, kind: 'action', severity: 'info',
+      ...i18nTitle('sites.events.sensitiveRan', { op }, {
+        op, approved, ...(claimed ? { proposalId: claimed.id, by: req.user.sub } : { args }),
+      }),
+    })
+    if (claimed) await logged
+    else logged.catch(() => {})
+  }
+  return res.json({ ok: true, relayed: true, result })
+}
+
 router.post('/sites/:id/actions', async (req, res, next) => {
   try {
     const site = await loadManagerSite(req, res)
     if (!site) return
     const { action, tool, args = {}, approved, proposalId } = req.body || {}
+    if (proposalId && approved === true) return await approveProposal(req, res, site, proposalId)
     const op = tool || action
     if (!op) return res.status(400).json({ message: req.t('sites.actionRequired') })
     // isSensitive rather than the name-only Set: job_start is one tool covering
     // seven jobs, and update_apply / backup_restore are sensitive while a scan
     // is not. A name-only check let the dangerous two through as merely
     // mutating the moment they became reachable from the tool schema.
-    if (isSensitive(op, args) && !approved) {
+    if ((proposalId || isSensitive(op, args)) && approved !== true) {
       return res.status(202).json({ ok: false, requiresApproval: true, message: req.t('sites.needsApproval') })
     }
 
-    // Approving a stored proposal claims it BEFORE the tool runs. The UPDATE
-    // matches only while the row is still pending, so two people clicking
-    // approve at the same moment produce one execution and one 409 — rather
-    // than two identical changes to the site, which is the failure an approval
-    // queue exists to prevent.
-    let claimed = null
-    if (proposalId) {
-      claimed = await proposals.resolve(site.id, proposalId, 'approved', { by: req.user?.sub })
-      if (!claimed) {
-        return res.status(409).json({
-          ok: false,
-          message: req.t('sites.proposalSettled'),
-        })
-      }
-    }
     if (config.live && site.paired && site.url && site.secret) {
-      try {
-        const result = await connector.callTool({ url: site.url, secret: site.secret, siteKey: site.site_key }, op, args)
-        // Sensitive ops are the ones that changed the site. They belong in the
-        // log whether a human approved them or the assistant ran them under
-        // standing authority — "nobody remembers doing that" is exactly what
-        // an audit trail is for.
-        if (SENSITIVE.has(op)) {
-          events.record({
-            siteId: site.id, kind: 'action', severity: 'warning',
-            ...i18nTitle('sites.events.sensitiveRan', { op }, { op, args, approved: Boolean(approved) }),
-          }).catch(() => {})
-        }
-        if (claimed) {
-          proposals.recordOutcome(site.id, claimed.id, { ok: true, at: Date.now() }).catch(() => {})
-        }
-        return res.json({ ok: true, relayed: true, result })
-      } catch (e) {
-        // The proposal was claimed before the tool ran, so at this point it
-        // reads "approved" while the site was never changed. Without this the
-        // queue shows a decision that was carried out — which is what approved
-        // has always meant here — and nothing anywhere says it failed.
-        if (claimed) {
-          proposals.recordOutcome(site.id, claimed.id, {
-            ok: false, at: Date.now(), error: e.message,
-          }).catch(() => {})
-          events.record({
-            siteId: site.id, kind: 'action', severity: 'warning',
-            ...i18nTitle('sites.events.approvedFailed', { op }, { op, args, proposalId: claimed.id, error: e.message }),
-            // Tied to the proposal so this sits with the decision it belongs
-            // to rather than becoming a loose alert nobody can place.
-            fingerprint: `proposal-failed:${claimed.id}`,
-          }).catch(() => {})
-        }
-        return res.status(e.status || 502).json({ ok: false, message: errorMessage(req.locale, e) })
-      }
+      return await relayPanelAction(req, res, site, op, args, approved === true)
     }
     res.json({ ok: true, relayed: false, action: op, note: req.t('sites.simulated') })
   } catch (e) { next(e) }

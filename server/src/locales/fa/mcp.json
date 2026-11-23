@@ -1,5 +1,11 @@
 {
   "tokenLimit": "هم‌اکنون {max} توکن MCP فعال دارید. پیش از ساختن توکن تازه، یکی را باطل کنید.",
   "tokenNotFound": "چنین توکنی پیدا نشد.",
-  "defaultName": "کلاینت هوش مصنوعی"
+  "defaultName": "کلاینت هوش مصنوعی",
+  "invalidFileEditGrant": "یک سایت و ۱ تا ۵۰ مسیر دقیق فایل افزونه یا پوسته را نسبت به wp-content وارد کنید.",
+  "fileEditOwnerRequired": "سایتی را انتخاب کنید که در همین پنل مالک آن هستید.",
+  "fileEditStarted": "ویرایش فایل {path} از طریق MCP شروع شد",
+  "fileEditRan": "ویرایش فایل {path} از طریق MCP با پشتیبان انجام شد",
+  "fileEditFailed": "ویرایش فایل {path} از طریق MCP ناموفق بود",
+  "fileEditUnconfirmed": "نتیجهٔ ویرایش فایل {path} از طریق MCP تأیید نشد"
 }

@@ -31,6 +31,56 @@ async function setup(page, { lang = 'en', theme = 'dark', path = '/app' } = {}) 
   return requests
 }
 
+test('Alerts reviews and approves a stored MCP proposal on a narrow screen', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 780 })
+  await setup(page, { lang: 'fa' })
+  const proposal = { id: 'prop_42', tool: 'edit_file', args: { path: 'plugins/shop/includes/merchant-ip.php', search: 'old', replace: 'new' } }
+  let pending = [proposal]
+  let approved = 0
+  await page.route('**/api/sites/shop/incidents', (route) => route.fulfill({ json: {
+    featured: null, list: [], canManage: true, proposals: pending,
+  } }))
+  await page.route('**/api/sites/shop/proposals/prop_42/approve', (route) => {
+    expect(route.request().method()).toBe('POST')
+    expect(route.request().postData()).toBeNull()
+    approved += 1
+    pending = []
+    return route.fulfill({ json: { ok: true, relayed: true } })
+  })
+  await page.goto('/site/shop/incidents')
+  await page.getByText('بررسی جزئیات تغییر', { exact: true }).click()
+  await expect(page.locator('pre')).toContainText('"replace": "new"')
+  await expect(page.getByRole('button', { name: 'نادیده گرفتن' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'تأیید و اجرا' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'روی سایت اجرا شد' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'درخواست‌های منتظر تأیید' })).toHaveCount(0)
+  expect(approved).toBe(1)
+})
+
+test('MCP page submits the selected site and exact paths for a direct edit token', async ({ page }) => {
+  await setup(page)
+  await page.route('**/api/sites', (route) => route.fulfill({ json: sites.map((site, i) => ({ ...site, role: i ? 'admin' : 'owner' })) }))
+  const mcpUrl = 'https://api.example.com/v1/mcp'
+  const fileEdit = { siteId: 'shop', paths: ['plugins/shop/main.php', 'themes/child/style.css'] }
+  const record = { id: 'mcpt_42', name: 'Editor', createdAt: Date.now(), fileEdit }
+  let tokens = []
+  await page.route('**/api/account/mcp-tokens', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { tokens, mcpUrl } })
+    expect(route.request().postDataJSON()).toEqual({ name: 'Editor', fileEdit })
+    tokens = [record]
+    return route.fulfill({ status: 201, json: { token: 'dwmcp_example', record, mcpUrl } })
+  })
+  await page.goto('/app/mcp')
+  await page.getByRole('checkbox', { name: 'Allow file edits without per-edit approval' }).check()
+  await expect(page.getByRole('option', { name: 'example.com/blog' })).toHaveCount(0)
+  await page.getByRole('combobox', { name: 'Site*', exact: true }).selectOption('shop')
+  await page.getByLabel('Exact paths relative to wp-content, one file per line').fill(fileEdit.paths.join('\n'))
+  await page.getByRole('textbox', { name: 'Name, e.g. Claude on my laptop' }).fill('Editor')
+  await page.getByRole('button', { name: 'Create token' }).click()
+  await expect(page.getByText('Copy it now', { exact: false })).toBeVisible()
+  await expect(page.getByText('Direct file edits on shop')).toBeVisible()
+})
+
 test('theme and collapsed menu persist across page switches and reloads', async ({ page }) => {
   await setup(page)
   await page.getByRole('button', { name: 'Switch to light theme' }).click()

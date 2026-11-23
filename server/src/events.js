@@ -129,6 +129,11 @@ export async function resolveOne(siteId, id) {
   return res.rowCount > 0
 }
 
+export async function finishAction(id, severity, { title, detail }) {
+  await query("UPDATE events SET title = $2, severity = $3, detail = $4, resolved_at = $5 WHERE id = $1 AND kind = 'action'",
+    [id, title, severity, detail, detail.outcome === 'performed' ? Date.now() : null])
+}
+
 export async function list(siteId, limit = 60) {
   return all(
     'SELECT * FROM events WHERE site_id = $1 ORDER BY created_at DESC LIMIT $2',

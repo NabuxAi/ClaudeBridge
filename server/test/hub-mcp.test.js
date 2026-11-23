@@ -50,6 +50,16 @@ if (!dsn) {
           { name: 'db_query', description: 'sql', inputSchema: { type: 'object' } },
         ] } }))
       }
+      const { name, arguments: args } = rpc.params
+      if (['edit_file', 'edit_file_with_backup'].includes(name)) {
+        const missing = args.search === 'missing'
+        return res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result: {
+          ...(missing ? { isError: true } : {}),
+          content: [{ type: 'text', text: missing ? 'Search string not found.' : JSON.stringify({
+            ran: name, args, ...(name === 'edit_file_with_backup' ? { backup_id: 'a'.repeat(32) } : {}),
+          }) }],
+        } }))
+      }
       res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result: {
         content: [{ type: 'text', text: JSON.stringify({ ok: true, ran: rpc.params.name }) }],
       } }))
@@ -118,8 +128,8 @@ if (!dsn) {
   const pairedSite = async (auth, name = `mcp-${Date.now()}-${crypto.randomInt(1e9)}`) =>
     (await pairConnector(auth, name)).id
 
-  const newToken = async (auth) => {
-    const made = await send('/account/mcp-tokens', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Claude' }) })
+  const newToken = async (auth, fileEdit) => {
+    const made = await send('/account/mcp-tokens', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Claude', fileEdit }) })
     assert.equal(made.status, 201, JSON.stringify(made.body))
     assert.match(made.body.token, /^dwmcp_/)
     assert.match(made.body.mcpUrl, /\/mcp$/)
@@ -201,6 +211,81 @@ if (!dsn) {
 
     const pending = await send(`/sites/${siteId}/proposals`, { headers: auth })
     assert.ok(pending.body.proposals.some((p) => p.id === out.proposalId && p.tool === 'db_query'))
+  })
+
+  const wpEdit = { path: 'plugins/test/main.php', search: 'old', replace: 'new' }
+  const siteTool = (token, siteId, tool, args) => rpc(token, 'tools/call', {
+    name: 'call_site_tool', arguments: { site: siteId, tool, arguments: args },
+  })
+
+  test('Alerts exposes stored proposals; approval relays the stored change exactly once', async () => {
+    const { auth } = await account()
+    const siteId = await pairedSite(auth)
+    const { token } = await newToken(auth)
+    const { proposalId } = callText(await siteTool(token, siteId, 'edit_file', wpEdit))
+    const incidents = await send(`/sites/${siteId}/incidents`, { headers: auth })
+    assert.equal(incidents.body.canManage, true)
+    assert.deepEqual(incidents.body.proposals.find(({ id }) => id === proposalId)?.args, wpEdit)
+
+    reached.length = 0
+    const approve = () => send(`/sites/${siteId}/proposals/${proposalId}/approve`, {
+      method: 'POST', headers: auth, body: JSON.stringify({ tool: 'db_query', args: {} }),
+    })
+    const decisions = await Promise.all([approve(), approve()])
+    assert.deepEqual(decisions.map((d) => d.status).sort(), [200, 409])
+    assert.deepEqual(reached, ['edit_file'])
+    assert.deepEqual(JSON.parse(decisions.find((d) => d.status === 200).body.result.content[0].text).args, wpEdit)
+    const refreshed = await send(`/sites/${siteId}/incidents`, { headers: auth })
+    assert.equal(refreshed.body.proposals.length, 0)
+
+    const failure = callText(await siteTool(token, siteId, 'edit_file', { ...wpEdit, search: 'missing' }))
+    const refused = await send(`/sites/${siteId}/proposals/${failure.proposalId}/approve`, { method: 'POST', headers: auth })
+    assert.equal(refused.status, 502)
+    assert.match(refused.body.message, /Search string not found/)
+    const stored = (await query('SELECT status, result FROM proposals WHERE id = $1', [failure.proposalId])).rows[0]
+    assert.equal(stored.status, 'approved')
+    assert.equal(stored.result.ok, false)
+  })
+
+  test('scoped MCP token backs up granted file edits, audits failures, and holds other sensitive calls', async () => {
+    const { auth } = await account()
+    const siteId = await pairedSite(auth)
+    const otherSite = await pairedSite(auth)
+    const fileEdit = { siteId, paths: [wpEdit.path] }
+    const { token, record } = await newToken(auth, fileEdit)
+    assert.deepEqual(record.fileEdit, fileEdit)
+    const listed = callText(await rpc(token, 'tools/call', { name: 'list_sites', arguments: {} }))
+    assert.deepEqual(listed.sites.map(({ id }) => id), [siteId])
+    reached.length = 0
+
+    const direct = callText(await siteTool(token, siteId, 'edit_file', wpEdit))
+    assert.equal(direct.ran, 'edit_file_with_backup')
+    assert.equal((await siteTool(token, siteId, 'edit_file', { ...wpEdit, search: 'missing' })).body.result.isError, true)
+    for (const [tool, args] of [
+      ['edit_file', { ...wpEdit, path: 'plugins/test/other.php' }],
+      ['edit_file', { ...wpEdit, theme: 'another-theme' }],
+      ['restore_file_edit', { backup_id: direct.backup_id }],
+      ['delete_file', { path: wpEdit.path }],
+      ['edit_file_with_backup', wpEdit],
+    ]) {
+      assert.equal(callText(await siteTool(token, siteId, tool, args)).requiresApproval, true)
+    }
+    assert.equal((await siteTool(token, otherSite, 'edit_file', wpEdit)).body.result.isError, true)
+    assert.deepEqual(reached, ['edit_file_with_backup', 'edit_file_with_backup'])
+    const audit = (await query(
+      "SELECT detail FROM events WHERE site_id = $1 AND detail->>'via' = 'hub-mcp-file-edit' ORDER BY created_at",
+      [siteId],
+    )).rows.map(({ detail }) => detail)
+    assert.deepEqual(audit.map(({ outcome }) => outcome), ['performed', 'failed'])
+    assert.equal(audit[0].backupId, direct.backup_id)
+    assert.equal(audit[0].tokenId, record.id)
+    assert.equal(audit[0].args, undefined)
+
+    const stranger = await account()
+    const forbidden = await send('/account/mcp-tokens', { method: 'POST', headers: stranger.auth, body: JSON.stringify({ fileEdit }) })
+    assert.equal(forbidden.status, 404)
+    await send(`/account/mcp-tokens/${record.id}`, { method: 'DELETE', headers: auth })
+    assert.equal((await siteTool(token, siteId, 'edit_file', wpEdit)).status, 401)
   })
 
   test('an invited test site member may read through a personal MCP token but not change the site', async () => {
