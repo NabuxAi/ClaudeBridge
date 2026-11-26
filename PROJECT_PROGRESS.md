@@ -1,6 +1,16 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-23 (0.13.1). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-26 (0.13.2). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.13.2 - temporary file edits when creating MCP tokens
+
+- Owners can choose all files eligible for backed-up editing for 1 to 24
+  hours when creating a token. The server stores the token and grant in one
+  insert. The token stays bound to its selected site after expiry or early end.
+- The owner can renew the window on the same site from the token list. The
+  existing backed-up edit operation and approval checks apply.
+- Local verification passed hub lint, the production build, all 58 browser
+  tests, and 16 focused server and connector tests with PostgreSQL 16.
 
 ## Platform 0.13.1 / plugin 3.9.6 - private staging and approval results
 

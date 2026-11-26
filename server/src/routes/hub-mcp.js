@@ -195,10 +195,11 @@ const parseText = (result) => {
  */
 export async function runTool(user, name, args = {}, { federated = false } = {}) {
   const accessible = await sites.listAccessibleRaw(user.userId)
-  const rows = user.fileEdit
-    ? accessible.filter((site) => site.id === user.fileEdit.siteId && site.member_role === 'owner')
+  const siteScope = user.siteScope || user.fileEdit?.siteId
+  const rows = siteScope
+    ? accessible.filter((site) => site.id === siteScope && site.member_role === 'owner')
     : accessible
-  const link = federated || user.fileEdit || !peerLinks.enabled() ? null : await peerLinks.get(user.userId)
+  const link = federated || siteScope || !peerLinks.enabled() ? null : await peerLinks.get(user.userId)
 
   if (name === 'list_sites') {
     const local = rows.map((r) => ({ ...describeSite(r), server: thisServer() }))
@@ -352,6 +353,13 @@ mcpRouter.post('/mcp', ipLimit, authenticate, mcpLimit, async (req, res) => {
 
 // ---- token management (signed-in hub user) ----
 
+function recordEditWindowStarted(token, userId, hours) {
+  const { siteId, paths, expiresAt } = token.editWindow
+  events.record({ siteId, kind: 'action', ...events.i18nTitle('mcp.editWindowStarted', { hours }, {
+    tokenId: token.id, by: userId, hours, paths, expiresAt,
+  }) }).catch(() => {})
+}
+
 mcpTokensRouter.get('/account/mcp-tokens', async (req, res, next) => {
   try {
     res.json({ tokens: await mcpTokens.list(req.user.sub), mcpUrl: `${publicApiBase(req)}/mcp` })
@@ -361,8 +369,13 @@ mcpTokensRouter.get('/account/mcp-tokens', async (req, res, next) => {
 mcpTokensRouter.post('/account/mcp-tokens', async (req, res, next) => {
   try {
     const name = String(req.body?.name || '').trim() || req.t('mcp.defaultName')
-    const fileEdit = await validateFileEditGrant(req.user.sub, req.body?.fileEdit)
-    const { token, record } = await mcpTokens.create(req.user.sub, name, fileEdit)
+    const requested = req.body?.fileEdit
+    // Keep the request inside fileEdit so older servers reject it rather
+    // than silently creating a regular token with access to other sites.
+    const editWindow = requested?.allFiles === true ? await validateEditWindowGrant(req.user.sub, requested) : null
+    const fileEdit = editWindow ? null : await validateFileEditGrant(req.user.sub, requested)
+    const { token, record } = await mcpTokens.create(req.user.sub, name, { fileEdit, editWindow })
+    if (editWindow) recordEditWindowStarted(record, req.user.sub, editWindow.hours)
     // The token is shown here once and never again.
     res.set('Cache-Control', 'no-store')
     res.status(201).json({ token, record, mcpUrl: `${publicApiBase(req)}/mcp` })
@@ -378,14 +391,10 @@ mcpTokensRouter.delete('/account/mcp-tokens/:id', async (req, res, next) => {
 
 mcpTokensRouter.post('/account/mcp-tokens/:id/edit-window', async (req, res, next) => {
   try {
-    const { siteId, paths, allFiles, hours } = req.body || {}
-    if (!Number.isInteger(hours) || hours < 1 || hours > 24) throw httpError(400, 'mcp.editWindowDuration')
-    const grant = await validateEditWindowGrant(req.user.sub, { siteId, paths, allFiles })
-    const token = await mcpTokens.startEditWindow(req.user.sub, req.params.id, { ...grant, hours })
+    const grant = await validateEditWindowGrant(req.user.sub, req.body || {})
+    const token = await mcpTokens.startEditWindow(req.user.sub, req.params.id, grant)
     if (!token) throw httpError(409, 'mcp.editWindowUnavailable')
-    events.record({ siteId, kind: 'action', ...events.i18nTitle('mcp.editWindowStarted', { hours }, {
-      tokenId: token.id, by: req.user.sub, hours, paths: grant.paths, expiresAt: token.editWindow.expiresAt,
-    }) }).catch(() => {})
+    recordEditWindowStarted(token, req.user.sub, grant.hours)
     res.json({ editWindow: token.editWindow })
   } catch (e) { next(e) }
 })

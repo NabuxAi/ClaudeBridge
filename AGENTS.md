@@ -209,6 +209,10 @@ for UI convenience.
   `CB_FILE_EDIT_STAGING_DIR` or configure the private directory in WordPress
   Tools. Both editing and restoration fail closed if the directory cannot
   support an atomic replacement on the target mount.
+- Platform `0.13.2` lets owners create a single-site MCP token with an
+  initial 1–24 hour grant for all files eligible for backed-up editing. The
+  grant can be ended or renewed on that site. Expiry leaves the token bound
+  to the selected site. The token and initial grant are stored together.
 - Iran ↔ international peer relay (`peer-relay.js`, `POST /v1/relay/forward`):
   connector calls a server cannot deliver are re-sent through the partner server.
   Off unless both `PEER_RELAY_URL` and `PEER_RELAY_SECRET` are set.
@@ -1571,7 +1575,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform version: **0.13.1** (private staging and approval results, 2026-11-23), shared by `hub/package.json` and
+- Current platform version: **0.13.2** (temporary file edits at MCP token creation, 2026-11-26), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

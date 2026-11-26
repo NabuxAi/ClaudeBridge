@@ -377,6 +377,53 @@ if (!dsn) {
     assert.deepEqual(reached, ['edit_file_with_backup', 'edit_file_with_backup', 'edit_file_with_backup'])
   })
 
+  test('a new token can start with all editable files and stays bound to one site after its grant ends', async () => {
+    const { auth } = await account()
+    const siteId = await pairedSite(auth)
+    const otherSite = await pairedSite(auth)
+    const grant = { siteId, allFiles: true, hours: 3 }
+    const create = (fileEdit, headers = auth) => send('/account/mcp-tokens', {
+      method: 'POST', headers, body: JSON.stringify({ name: 'Timed editor', fileEdit }),
+    })
+    for (const fileEdit of [{ siteId, allFiles: true }, { ...grant, hours: 25 }, { ...grant, paths: [] }, { siteId, paths: [] }]) {
+      assert.equal((await create(fileEdit)).status, 400)
+    }
+    const stranger = await account()
+    assert.equal((await create(grant, stranger.auth)).status, 404)
+    assert.deepEqual((await send('/account/mcp-tokens', { headers: auth })).body.tokens, [])
+
+    const before = Date.now()
+    const { token, record } = await newToken(auth, grant)
+    assert.equal(record.siteScope, siteId)
+    assert.equal(record.fileEdit, null)
+    assert.equal(record.editWindow.siteId, siteId)
+    assert.equal(record.editWindow.paths, null)
+    assert.ok(record.editWindow.expiresAt >= before + 3 * 3600_000)
+    assert.ok(record.editWindow.expiresAt <= Date.now() + 3 * 3600_000)
+    const visibleSiteIds = async () => callText(await rpc(token, 'tools/call', {
+      name: 'list_sites', arguments: {},
+    })).sites.map(({ id }) => id)
+    assert.deepEqual(await visibleSiteIds(), [siteId])
+
+    reached.length = 0
+    const edit = callText(await siteTool(token, siteId, 'edit_file', wpEdit))
+    assert.equal(edit.ran, 'edit_file_with_backup')
+    assert.equal((await siteTool(token, otherSite, 'site_info')).body.result.isError, true)
+    assert.equal(callText(await siteTool(token, siteId, 'restore_file_edit', { backup_id: edit.backup_id })).requiresApproval, true)
+    assert.deepEqual(reached, ['edit_file_with_backup'])
+
+    const windowUrl = `/account/mcp-tokens/${record.id}/edit-window`
+    const ended = await send(windowUrl, {
+      method: 'DELETE', headers: auth, body: JSON.stringify({ expiresAt: record.editWindow.expiresAt }),
+    })
+    assert.equal(ended.status, 200)
+    assert.deepEqual(await visibleSiteIds(), [siteId])
+    assert.equal(callText(await siteTool(token, siteId, 'edit_file', wpEdit)).requiresApproval, true)
+    const start = (editWindow) => send(windowUrl, { method: 'POST', headers: auth, body: JSON.stringify(editWindow) })
+    assert.equal((await start({ ...grant, siteId: otherSite })).status, 409)
+    assert.equal((await start(grant)).status, 200)
+  })
+
   test('an invited test site member may read through a personal MCP token but not change the site', async () => {
     const owner = await account()
     const siteId = await pairedSite(owner.auth, 'https://bodogame.com')

@@ -18,14 +18,15 @@ export async function validateFileEditGrant(userId, grant) {
   return { siteId: await ownedEditSite(userId, siteId), paths: [...new Set(paths)] }
 }
 
-export async function validateEditWindowGrant(userId, { siteId, paths, allFiles }) {
+export async function validateEditWindowGrant(userId, { siteId, paths, allFiles, hours }) {
+  if (!Number.isInteger(hours) || hours < 1 || hours > 24) throw httpError(400, 'mcp.editWindowDuration')
   // Older clients can still open a scoped window. An unrestricted list of
   // editable paths requires an explicit allFiles choice in the request.
-  if (allFiles === undefined) return validateFileEditGrant(userId, { siteId, paths })
+  if (allFiles === undefined) return { ...await validateFileEditGrant(userId, { siteId, paths }), hours }
   if (allFiles !== true || paths !== undefined || typeof siteId !== 'string' || !siteId) {
     throw httpError(400, 'mcp.invalidEditWindow')
   }
-  return { siteId: await ownedEditSite(userId, siteId), paths: null }
+  return { siteId: await ownedEditSite(userId, siteId), paths: null, hours }
 }
 
 async function ownedEditSite(userId, siteId) {

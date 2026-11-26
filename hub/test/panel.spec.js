@@ -218,6 +218,51 @@ test('MCP supports both specific paths and all editable files on an existing tok
   expect(changes).toBe(4)
 })
 
+test('MCP creates a site-bound token with temporary edits and no path list', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 780 })
+  await setup(page, { lang: 'fa' })
+  const mcpUrl = 'https://panel.example.test/api/mcp'
+  const editWindow = { siteId: 'shop', paths: null, expiresAt: Date.now() + 6 * 3600_000 }
+  let record
+  let posts = 0
+  await page.route('**/api/sites', (route) => route.fulfill({ json: sites.map((site, i) => ({ ...site, role: i ? 'admin' : 'owner' })) }))
+  await page.route('**/api/account/mcp-tokens', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { tokens: record ? [record] : [], mcpUrl } })
+    expect(route.request().method()).toBe('POST')
+    expect(route.request().postDataJSON()).toEqual({ name: 'Editor', fileEdit: { siteId: 'shop', allFiles: true, hours: 6 } })
+    posts += 1
+    record = { id: 'mcpt_created', name: 'Editor', createdAt: Date.now(), siteScope: 'shop', editWindow }
+    return route.fulfill({ status: 201, json: { token: 'dwmcp_test-fixture', record, mcpUrl } })
+  })
+  await page.goto('/app/mcp')
+  await page.getByRole('textbox', { name: 'نام، مثلاً Claude روی لپ‌تاپ' }).fill('Editor')
+  const allow = page.getByRole('checkbox', { name: 'اجازهٔ ویرایش فایل بدون تأیید جداگانه' })
+  await allow.focus()
+  await page.keyboard.press('Space')
+  await expect(allow).toBeChecked()
+  const site = page.getByRole('combobox', { name: 'سایت*' })
+  await expect(site.getByRole('option', { name: 'WordPress blog' })).toHaveCount(0)
+  await site.selectOption('shop')
+  const pathField = page.getByLabel('مسیر دقیق فایل‌ها نسبت به wp-content، هر فایل در یک خط')
+  await expect(pathField).toHaveAttribute('required', '')
+  const scope = page.getByRole('combobox', { name: 'محدودهٔ ویرایش' })
+  await expect(scope).toHaveValue('paths')
+  await scope.selectOption({ label: 'همهٔ فایل‌های قابل‌ویرایش (موقت)' })
+  await expect(pathField).toHaveCount(0)
+  await page.getByRole('combobox', { name: 'مدت مجوز' }).selectOption('6')
+  await page.getByRole('button', { name: 'ساخت توکن' }).click()
+  await expect(page.getByText('همهٔ فایل‌های قابل ویرایش در shop')).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'توکن (به‌صورت Authorization: Bearer … بفرستید)' })).toHaveValue('dwmcp_test-fixture')
+  await expect(page.getByRole('button', { name: 'پایان‌دادن به مجوز موقت' })).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('همهٔ فایل‌های قابل ویرایش در shop')).toBeVisible()
+  expect(posts).toBe(1)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(page.getByRole('button', { name: 'پایان‌دادن به مجوز موقت' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440)
+})
+
 test('theme and collapsed menu persist across page switches and reloads', async ({ page }) => {
   await setup(page)
   await page.getByRole('button', { name: 'Switch to light theme' }).click()

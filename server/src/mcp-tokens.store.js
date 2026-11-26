@@ -26,22 +26,29 @@ const publicToken = (row) => row && ({
   name: row.name,
   createdAt: Number(row.created_at),
   lastUsedAt: row.last_used_at == null ? null : Number(row.last_used_at),
-  fileEdit: row.edit_site_id ? { siteId: row.edit_site_id, paths: row.edit_paths } : null,
+  // An empty path list binds a newly created timed token to its site without
+  // granting any permanent edits. The binding outlives the edit window.
+  siteScope: row.edit_site_id || null,
+  fileEdit: row.edit_site_id && row.edit_paths.length ? { siteId: row.edit_site_id, paths: row.edit_paths } : null,
   editWindow: activeEditWindow(row),
 })
 
 export const mcpTokens = {
-  async create(userId, name = '', fileEdit = null) {
+  async create(userId, name = '', { fileEdit, editWindow } = {}) {
     const live = await one('SELECT COUNT(*)::int AS n FROM mcp_tokens WHERE user_id = $1 AND revoked_at IS NULL', [userId])
     if (live.n >= MAX_PER_USER) {
       throw httpError(409, 'mcp.tokenLimit', { max: MAX_PER_USER })
     }
     const token = TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url')
+    const now = Date.now()
     const row = await one(
-      `INSERT INTO mcp_tokens (id, user_id, name, token_hash, created_at, edit_site_id, edit_paths)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [newId('mcpt_'), userId, String(name || '').trim().slice(0, 80), tokenHash(token), Date.now(),
-        fileEdit?.siteId || null, JSON.stringify(fileEdit?.paths || [])]
+      `INSERT INTO mcp_tokens (id, user_id, name, token_hash, created_at, edit_site_id, edit_paths,
+                              edit_window_site_id, edit_window_paths, edit_window_expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [newId('mcpt_'), userId, String(name || '').trim().slice(0, 80), tokenHash(token), now,
+        fileEdit?.siteId ?? editWindow?.siteId ?? null, JSON.stringify(fileEdit?.paths ?? []),
+        editWindow?.siteId ?? null, JSON.stringify(editWindow ? editWindow.paths : []),
+        editWindow ? now + editWindow.hours * 3600_000 : null]
     )
     return { token, record: publicToken(row) }
   },
@@ -65,7 +72,8 @@ export const mcpTokens = {
     const now = Date.now()
     const row = await one(
       `UPDATE mcp_tokens SET edit_window_site_id = $3, edit_window_paths = $4, edit_window_expires_at = $5
-        WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL AND edit_site_id IS NULL
+        WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+          AND (edit_site_id IS NULL OR (edit_site_id = $3 AND edit_paths = '[]'::jsonb))
           AND (edit_window_site_id IS NULL OR edit_window_expires_at <= $6)
         RETURNING *`,
       [id, userId, siteId, JSON.stringify(paths), now + hours * 3600_000, now]
@@ -106,7 +114,7 @@ export const mcpTokens = {
     if (!row.last_used_at || now - Number(row.last_used_at) > TOUCH_THROTTLE_MS) {
       await one('UPDATE mcp_tokens SET last_used_at = $2 WHERE id = $1', [row.id, now])
     }
-    const { fileEdit, editWindow } = publicToken(row)
-    return { tokenId: row.id, userId: row.user_id, email: row.email, role: row.role, fileEdit, editWindow }
+    const { siteScope, fileEdit, editWindow } = publicToken(row)
+    return { tokenId: row.id, userId: row.user_id, email: row.email, role: row.role, siteScope, fileEdit, editWindow }
   },
 }

@@ -9,6 +9,11 @@ import { t, date, dateTime, digits } from '../../lib/i18n.js'
 const fmtDateTime = (ts) => dateTime(ts, { dateStyle: 'short', timeStyle: 'short' })
 const fmtDate = (ts) => date(ts)
 const parsePaths = (paths) => paths.split(/\r?\n/).map((path) => path.trim()).filter(Boolean)
+const defaultEditHours = '3'
+const editDurationOptions = () => Array.from({ length: 24 }, (_, i) => ({
+  value: String(i + 1),
+  label: t('accountSecurity.mcp.editWindowHours', { hours: digits(i + 1) }),
+}))
 
 function describeApiError(e, fallback, notFound) {
   if (e instanceof ApiError) {
@@ -67,19 +72,16 @@ function SecretField({ label, value }) {
 }
 
 function EditWindowDialog({ token, initialSite, ownedSites, sitesError, loadOwnedSites, onClose, onStarted }) {
-  const [siteId, setSiteId] = useState(initialSite)
-  const [scope, setScope] = useState('paths')
+  const [siteId, setSiteId] = useState(token.siteScope || initialSite)
+  const [scope, setScope] = useState(token.siteScope ? 'all' : 'paths')
   const [paths, setPaths] = useState('')
-  const [hours, setHours] = useState('3')
+  const [hours, setHours] = useState(defaultEditHours)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const validSite = ownedSites?.some((site) => site.id === siteId)
+  const siteChoices = token.siteScope ? ownedSites?.filter((site) => site.id === token.siteScope) : ownedSites
+  const validSite = siteChoices?.some((site) => site.id === siteId)
   const allFiles = scope === 'all'
   const canStart = validSite && !sitesError && (allFiles || paths.trim())
-  const durationOptions = Array.from({ length: 24 }, (_, i) => ({
-    value: String(i + 1),
-    label: t('accountSecurity.mcp.editWindowHours', { hours: digits(i + 1) }),
-  }))
 
   const start = async (e) => {
     e.preventDefault()
@@ -116,12 +118,12 @@ function EditWindowDialog({ token, initialSite, ownedSites, sitesError, loadOwne
           </div>
         )}
         {!ownedSites && !sitesError && <div role="status">{t('common.loading')}</div>}
-        {ownedSites?.length === 0 && <div>{t('accountSecurity.mcp.noOwnedSites')}</div>}
-        {ownedSites?.length > 0 && (
-          <Select id="mcp-window-site" label={t('accountSecurity.mcp.directSite')} required disabled={busy}
+        {siteChoices?.length === 0 && <div>{t(token.siteScope ? 'accountSecurity.mcp.boundSiteUnavailable' : 'accountSecurity.mcp.noOwnedSites')}</div>}
+        {siteChoices?.length > 0 && (
+          <Select id="mcp-window-site" label={t('accountSecurity.mcp.directSite')} required disabled={busy || Boolean(token.siteScope)}
             value={validSite ? siteId : ''} onChange={(e) => setSiteId(e.target.value)}
             options={[{ value: '', label: t('accountSecurity.mcp.chooseDirectSite') },
-              ...ownedSites.map((site) => ({ value: site.id, label: site.title || site.name }))]} />
+              ...siteChoices.map((site) => ({ value: site.id, label: site.title || site.name }))]} />
         )}
         <Select id="mcp-window-scope" label={t('accountSecurity.mcp.editWindowScope')} disabled={busy}
           value={scope} onChange={(e) => setScope(e.target.value)} options={[
@@ -133,7 +135,7 @@ function EditWindowDialog({ token, initialSite, ownedSites, sitesError, loadOwne
             value={paths} onChange={(e) => setPaths(e.target.value)} placeholder="plugins/my-plugin/main.php" />
         )}
         <Select id="mcp-window-hours" label={t('accountSecurity.mcp.editWindowDuration')} disabled={busy}
-          value={hours} onChange={(e) => setHours(e.target.value)} options={durationOptions} />
+          value={hours} onChange={(e) => setHours(e.target.value)} options={editDurationOptions()} />
         {err && <div role="alert" className="pbk-note pbk-note--danger">{err}</div>}
       </form>
     </Dialog>
@@ -154,6 +156,8 @@ function McpSection({ showToast }) {
   const [sitesError, setSitesError] = useState(false)
   const [directEdit, setDirectEdit] = useState(false)
   const [editSite, setEditSite] = useState('')
+  const [editScope, setEditScope] = useState('paths')
+  const [editHours, setEditHours] = useState(defaultEditHours)
   const [paths, setPaths] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -161,6 +165,8 @@ function McpSection({ showToast }) {
   const [revoking, setRevoking] = useState({})
   const [windowToken, setWindowToken] = useState(null)
   const [endingWindow, setEndingWindow] = useState('')
+  const allFiles = editScope === 'all'
+  const canCreate = !directEdit || (!sitesError && ownedSites?.length > 0)
 
   const load = useCallback(() => {
     accountApi.mcpTokens()
@@ -194,15 +200,23 @@ function McpSection({ showToast }) {
 
   const create = async (e) => {
     e.preventDefault()
+    if (busy || !canCreate) return
     setBusy(true)
     setErr('')
     try {
-      const fileEdit = directEdit ? { siteId: editSite, paths: parsePaths(paths) } : undefined
+      let fileEdit
+      if (directEdit) {
+        fileEdit = allFiles
+          ? { siteId: editSite, allFiles: true, hours: Number(editHours) }
+          : { siteId: editSite, paths: parsePaths(paths) }
+      }
       const made = await accountApi.createMcpToken(name.trim(), fileEdit)
       setFresh(made)
       setName('')
       setDirectEdit(false)
       setEditSite('')
+      setEditScope('paths')
+      setEditHours(defaultEditHours)
       setPaths('')
       load()
     } catch (e2) {
@@ -280,7 +294,7 @@ function McpSection({ showToast }) {
         {!loadError && (
           <form onSubmit={create} style={{ display: 'grid', gap: 10, margin: '4px 0 12px' }}>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('accountSecurity.mcp.namePlaceholder')} maxLength={80} aria-label={t('accountSecurity.mcp.namePlaceholder')} />
-            <Checkbox checked={directEdit} disabled={busy}
+            <Checkbox checked={directEdit} disabled={busy} aria-describedby={directEdit ? 'mcp-edit-help' : undefined}
               label={t('accountSecurity.mcp.directEdit')}
               onChange={(e) => {
                 setDirectEdit(e.target.checked)
@@ -288,29 +302,44 @@ function McpSection({ showToast }) {
               }} />
             {directEdit && (
               <>
-                <p style={{ margin: 0 }}>{t('accountSecurity.mcp.directEditHint')}</p>
+                <p id="mcp-edit-help" style={{ margin: 0 }}>{t('accountSecurity.mcp.directEditHint')}</p>
                 {sitesError && (
                   <div role="alert">
                     {t('accountSecurity.mcp.directSiteError')}{' '}
                     <Button variant="ghost" size="sm" onClick={loadOwnedSites} type="button">{t('common.retry')}</Button>
                   </div>
                 )}
+                {!ownedSites && !sitesError && <div role="status">{t('common.loading')}</div>}
                 {ownedSites && ownedSites.length === 0 && <p style={{ margin: 0 }}>{t('accountSecurity.mcp.noOwnedSites')}</p>}
                 {ownedSites?.length > 0 && (
                   <>
-                    <Select id="mcp-edit-site" label={t('accountSecurity.mcp.directSite')} required
+                    <Select id="mcp-edit-site" label={t('accountSecurity.mcp.directSite')} required disabled={busy}
                       value={editSite} onChange={(e) => setEditSite(e.target.value)}
                       options={[{ value: '', label: t('accountSecurity.mcp.chooseDirectSite') },
                         ...ownedSites.map((site) => ({ value: site.id, label: site.title || site.name }))]} />
-                    <Textarea id="mcp-edit-paths" label={t('accountSecurity.mcp.directPaths')} required dir="ltr"
-                      value={paths} onChange={(e) => setPaths(e.target.value)} placeholder="plugins/my-plugin/main.php" />
+                    <Select id="mcp-edit-scope" label={t('accountSecurity.mcp.editWindowScope')} disabled={busy}
+                      value={editScope} onChange={(e) => setEditScope(e.target.value)} options={[
+                        { value: 'paths', label: t('accountSecurity.mcp.editWindowScopePaths') },
+                        { value: 'all', label: t('accountSecurity.mcp.directEditScopeAll') },
+                      ]} />
+                    {allFiles ? (
+                      <>
+                        <p id="mcp-edit-all-help" style={{ margin: 0 }}>{t('accountSecurity.mcp.editWindowAllHint')}</p>
+                        <Select id="mcp-edit-hours" label={t('accountSecurity.mcp.editWindowDuration')} disabled={busy}
+                          aria-describedby="mcp-edit-all-help" value={editHours} onChange={(e) => setEditHours(e.target.value)}
+                          options={editDurationOptions()} />
+                      </>
+                    ) : (
+                      <Textarea id="mcp-edit-paths" label={t('accountSecurity.mcp.directPaths')} required disabled={busy} dir="ltr"
+                        value={paths} onChange={(e) => setPaths(e.target.value)} placeholder="plugins/my-plugin/main.php" />
+                    )}
                   </>
                 )}
               </>
             )}
             <div>
               <Button variant="secondary" size="sm" leftIcon="key-round" loading={busy} type="submit"
-                disabled={directEdit && (!editSite || !paths.trim() || sitesError)}>{t('accountSecurity.mcp.create')}</Button>
+                disabled={!canCreate}>{t('accountSecurity.mcp.create')}</Button>
             </div>
           </form>
         )}
@@ -347,6 +376,7 @@ function McpSection({ showToast }) {
               )}
               {tok.editWindow?.paths === null && <span>{t('accountSecurity.mcp.allEditableFiles', { site: tok.editWindow.siteId })}</span>}
               {tok.editWindow && <span>{t('accountSecurity.mcp.editWindowEnds', { when: fmtDateTime(tok.editWindow.expiresAt) })}</span>}
+              {!scope && tok.siteScope && <span>{t('accountSecurity.mcp.tokenBoundSite', { site: tok.siteScope })}</span>}
               <span style={{ marginInlineStart: 'auto', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {!tok.fileEdit && (tok.editWindow ? (
                   <Button variant="secondary" size="sm" loading={endingWindow === tok.id} disabled={Boolean(endingWindow) || !!revoking[tok.id]}
