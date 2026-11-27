@@ -1,6 +1,14 @@
 # WP Claude Bridge — progress
 
-Last updated 2026-11-26 (0.13.2). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+Last updated 2026-11-28 (0.14.0). Companion to [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md).
+
+## Platform 0.14.0 - edit window durations and plugin creation approvals
+
+- The token form and renewal dialog offer 24, 48, and 72 hours. Existing
+  grants keep their stored expiry and older clients can request shorter grants.
+- Tool discovery lists the backed-up edit tools available to the active token.
+  Plugin creation still queues an approval with an explicit reason, also shown
+  on the pending request in Alerts.
 
 ## Platform 0.13.2 - temporary file edits when creating MCP tokens
 

@@ -13,6 +13,7 @@
   },
   "ignore": "Ignore",
   "pendingProposals": "Requests awaiting approval",
+  "pluginCreationApproval": "Creating a plugin requires approval. A file-edit grant applies to existing files only.",
   "proposalDecisions": "Recent request results",
   "decisionApproved": "Approved",
   "decisionRejected": "Rejected",

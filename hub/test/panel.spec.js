@@ -62,7 +62,8 @@ test('Alerts keeps approval and execution separate after reload', async ({ page 
   const error = 'Private temporary storage must be on the same filesystem as the file.'
   const result = (id, execution, extra = {}) => ({ id, status: 'approved', tool: 'edit_file_with_backup', execution, decidedAt: Date.now(), ...extra })
   await page.route('**/api/sites/shop/incidents', (route) => route.fulfill({ json: {
-    featured: null, list: [], canManage: true, proposals: [],
+    featured: null, list: [], canManage: true,
+    proposals: [{ id: 'prop_create', tool: 'create_plugin', args: { slug: 'sample-plugin' } }],
     proposalDecisions: [
       result('prop_failed', 'failed', { path: 'themes/shop/style.css', error }),
       result('prop_succeeded', 'ran'),
@@ -71,6 +72,7 @@ test('Alerts keeps approval and execution separate after reload', async ({ page 
   } }))
   await page.goto('/site/shop/incidents')
   await page.reload()
+  await expect(page.getByText('Creating a plugin requires approval. A file-edit grant applies to existing files only.')).toBeVisible()
   const failed = page.getByRole('article').filter({ hasText: 'prop_failed' })
   await expect(failed.getByText('Approved', { exact: true })).toBeVisible()
   await expect(failed.getByText('Execution failed', { exact: true })).toBeVisible()
@@ -171,9 +173,9 @@ test('MCP supports both specific paths and all editable files on an existing tok
     if (route.request().method() === 'POST') {
       const first = changes === 1
       expect(route.request().postDataJSON()).toEqual(first
-        ? { siteId: 'shop', paths, hours: 12 }
+        ? { siteId: 'shop', paths, hours: 48 }
         : { siteId: 'shop', allFiles: true, hours: 24 })
-      editWindow = { siteId: 'shop', paths: first ? paths : null, expiresAt: Date.now() + (first ? 12 : 24) * 3600_000 }
+      editWindow = { siteId: 'shop', paths: first ? paths : null, expiresAt: Date.now() + (first ? 48 : 24) * 3600_000 }
       return route.fulfill({ json: { editWindow } })
     }
     expect(route.request().method()).toBe('DELETE')
@@ -189,15 +191,15 @@ test('MCP supports both specific paths and all editable files on an existing tok
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('combobox', { name: 'Site*' })).toHaveValue('shop')
   await expect(dialog.getByRole('option', { name: 'WordPress blog' })).toHaveCount(0)
-  await expect(dialog.getByRole('option', { name: / h$/ })).toHaveCount(24)
   const duration = dialog.getByRole('combobox', { name: 'Permission duration' })
+  await expect(duration.getByRole('option')).toHaveText(['24 h', '48 h', '72 h'])
   const scope = dialog.getByRole('combobox', { name: 'File scope' })
   const pathField = dialog.getByLabel('Exact paths relative to wp-content, one file per line')
   const start = dialog.getByRole('button', { name: 'Start temporary permission' })
   await expect(scope).toHaveValue('paths')
   await expect(start).toBeDisabled()
-  await expect(duration).toHaveValue('3')
-  await duration.selectOption('12')
+  await expect(duration).toHaveValue('24')
+  await duration.selectOption('48')
   await pathField.fill(paths.join('\n'))
   await start.click()
   await expect(page.getByText('Active until', { exact: false })).toBeVisible()
@@ -210,11 +212,11 @@ test('MCP supports both specific paths and all editable files on an existing tok
   await expect(pathField).toHaveCount(0)
   await duration.selectOption('24')
   await start.click()
-  await expect(page.getByText('All editable files on shop')).toBeVisible()
+  await expect(page.getByText('All existing editable files on shop')).toBeVisible()
   await page.reload()
-  await expect(page.getByText('All editable files on shop')).toBeVisible()
+  await expect(page.getByText('All existing editable files on shop')).toBeVisible()
   await page.getByRole('button', { name: 'End temporary permission' }).click()
-  await expect(page.getByText('All editable files on shop')).toHaveCount(0)
+  await expect(page.getByText('All existing editable files on shop')).toHaveCount(0)
   expect(changes).toBe(4)
 })
 
@@ -222,14 +224,14 @@ test('MCP creates a site-bound token with temporary edits and no path list', asy
   await page.setViewportSize({ width: 375, height: 780 })
   await setup(page, { lang: 'fa' })
   const mcpUrl = 'https://panel.example.test/api/mcp'
-  const editWindow = { siteId: 'shop', paths: null, expiresAt: Date.now() + 6 * 3600_000 }
+  const editWindow = { siteId: 'shop', paths: null, expiresAt: Date.now() + 72 * 3600_000 }
   let record
   let posts = 0
   await page.route('**/api/sites', (route) => route.fulfill({ json: sites.map((site, i) => ({ ...site, role: i ? 'admin' : 'owner' })) }))
   await page.route('**/api/account/mcp-tokens', (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ json: { tokens: record ? [record] : [], mcpUrl } })
     expect(route.request().method()).toBe('POST')
-    expect(route.request().postDataJSON()).toEqual({ name: 'Editor', fileEdit: { siteId: 'shop', allFiles: true, hours: 6 } })
+    expect(route.request().postDataJSON()).toEqual({ name: 'Editor', fileEdit: { siteId: 'shop', allFiles: true, hours: 72 } })
     posts += 1
     record = { id: 'mcpt_created', name: 'Editor', createdAt: Date.now(), siteScope: 'shop', editWindow }
     return route.fulfill({ status: 201, json: { token: 'dwmcp_test-fixture', record, mcpUrl } })
@@ -249,13 +251,15 @@ test('MCP creates a site-bound token with temporary edits and no path list', asy
   await expect(scope).toHaveValue('paths')
   await scope.selectOption({ label: 'همهٔ فایل‌های قابل‌ویرایش (موقت)' })
   await expect(pathField).toHaveCount(0)
-  await page.getByRole('combobox', { name: 'مدت مجوز' }).selectOption('6')
+  const duration = page.getByRole('combobox', { name: 'مدت مجوز' })
+  await expect(duration.getByRole('option')).toHaveText(['۲۴ ساعت', '۴۸ ساعت', '۷۲ ساعت'])
+  await duration.selectOption('72')
   await page.getByRole('button', { name: 'ساخت توکن' }).click()
-  await expect(page.getByText('همهٔ فایل‌های قابل ویرایش در shop')).toBeVisible()
+  await expect(page.getByText('همهٔ فایل‌های موجودِ قابل‌ویرایش در shop')).toBeVisible()
   await expect(page.getByRole('textbox', { name: 'توکن (به‌صورت Authorization: Bearer … بفرستید)' })).toHaveValue('dwmcp_test-fixture')
   await expect(page.getByRole('button', { name: 'پایان‌دادن به مجوز موقت' })).toBeVisible()
   await page.reload()
-  await expect(page.getByText('همهٔ فایل‌های قابل ویرایش در shop')).toBeVisible()
+  await expect(page.getByText('همهٔ فایل‌های موجودِ قابل‌ویرایش در shop')).toBeVisible()
   expect(posts).toBe(1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375)
   await page.setViewportSize({ width: 1440, height: 900 })

@@ -68,6 +68,9 @@ if (!dsn) {
           { name: 'site_info', description: 'info', inputSchema: { type: 'object' } },
           { name: 'flush_cache', description: 'update', inputSchema: { type: 'object' } },
           { name: 'db_query', description: 'sql', inputSchema: { type: 'object' } },
+          { name: 'edit_file', description: 'Edit a file', inputSchema: { type: 'object' } },
+          { name: 'edit_file_with_backup', description: 'Edit and back up a file', inputSchema: { type: 'object' } },
+          { name: 'create_plugin', description: 'Create a plugin', inputSchema: { type: 'object' } },
         ] } }))
       }
       const { name, arguments: args } = rpc.params
@@ -197,7 +200,11 @@ if (!dsn) {
     // The site is found by its address as well as by its id.
     const catalogue = callText(await rpc(token, 'tools/call', { name: 'site_tools', arguments: { site: wpUrl } }))
     const kinds = Object.fromEntries(catalogue.tools.map((t) => [t.name, t.kind]))
-    assert.deepEqual(kinds, { site_info: 'read', flush_cache: 'mutating', db_query: 'sensitive' })
+    assert.deepEqual(kinds, {
+      site_info: 'read', flush_cache: 'mutating', db_query: 'sensitive',
+      edit_file: 'sensitive', edit_file_with_backup: 'sensitive', create_plugin: 'sensitive',
+    })
+    assert.equal(catalogue.site.directEditTools, undefined)
 
     reached.length = 0
     const read = await rpc(token, 'tools/call', { name: 'call_site_tool', arguments: { site: siteId, tool: 'site_info' } })
@@ -324,14 +331,14 @@ if (!dsn) {
     const otherSite = await pairedSite(auth)
     const { token, record } = await newToken(auth)
     const url = `/account/mcp-tokens/${record.id}/edit-window`
-    const grant = { siteId, allFiles: true, hours: 24 }
+    const grant = { siteId, allFiles: true, hours: 48 }
     const activate = (body = grant, headers = auth) => send(url, { method: 'POST', headers, body: JSON.stringify(body) })
     const end = (expiresAt) => send(url, { method: 'DELETE', headers: auth, body: JSON.stringify({ expiresAt }) })
     const queuedEdit = { ...wpEdit, search: 'already pending' }
     const queued = callText(await siteTool(token, siteId, 'edit_file', queuedEdit))
 
     reached.length = 0
-    for (const hours of [0, 25, 1.5, '3']) assert.equal((await activate({ ...grant, hours })).status, 400)
+    for (const hours of [0, 25, 73, 1.5, '48']) assert.equal((await activate({ ...grant, hours })).status, 400)
     assert.equal((await activate({ ...grant, paths: [] })).status, 400)
     assert.equal((await activate({ siteId, hours: 24 })).status, 400)
     const stranger = await account()
@@ -344,13 +351,14 @@ if (!dsn) {
     assert.equal(activated.status, 200, JSON.stringify(activated.body))
     const { editWindow } = activated.body
     assert.equal(editWindow.paths, null)
-    assert.ok(editWindow.expiresAt >= before + 24 * 3600_000 && editWindow.expiresAt <= Date.now() + 24 * 3600_000)
+    assert.ok(editWindow.expiresAt >= before + grant.hours * 3600_000 && editWindow.expiresAt <= Date.now() + grant.hours * 3600_000)
     assert.equal((await activate()).status, 409)
     assert.equal(callText(await siteTool(token, siteId, 'edit_file', queuedEdit)).proposalId, queued.proposalId)
     assert.equal(callText(await siteTool(token, siteId, 'edit_file_with_backup', queuedEdit)).proposalId, queued.proposalId)
     const toolList = callText(await rpc(token, 'tools/call', { name: 'site_tools', arguments: { site: siteId } }))
     assert.equal(toolList.site.directEditExpiresAt, editWindow.expiresAt)
     assert.equal(toolList.site.directEditScope, 'all_editable_files')
+    assert.deepEqual(toolList.site.directEditTools, ['edit_file', 'edit_file_with_backup'])
     reached.length = 0
     const direct = callText(await siteTool(token, siteId, 'edit_file', wpEdit))
     assert.equal(direct.ran, 'edit_file_with_backup')
@@ -381,11 +389,11 @@ if (!dsn) {
     const { auth } = await account()
     const siteId = await pairedSite(auth)
     const otherSite = await pairedSite(auth)
-    const grant = { siteId, allFiles: true, hours: 3 }
+    const grant = { siteId, allFiles: true, hours: 72 }
     const create = (fileEdit, headers = auth) => send('/account/mcp-tokens', {
       method: 'POST', headers, body: JSON.stringify({ name: 'Timed editor', fileEdit }),
     })
-    for (const fileEdit of [{ siteId, allFiles: true }, { ...grant, hours: 25 }, { ...grant, paths: [] }, { siteId, paths: [] }]) {
+    for (const fileEdit of [{ siteId, allFiles: true }, { ...grant, hours: 73 }, { ...grant, paths: [] }, { siteId, paths: [] }]) {
       assert.equal((await create(fileEdit)).status, 400)
     }
     const stranger = await account()
@@ -398,16 +406,26 @@ if (!dsn) {
     assert.equal(record.fileEdit, null)
     assert.equal(record.editWindow.siteId, siteId)
     assert.equal(record.editWindow.paths, null)
-    assert.ok(record.editWindow.expiresAt >= before + 3 * 3600_000)
-    assert.ok(record.editWindow.expiresAt <= Date.now() + 3 * 3600_000)
+    assert.ok(record.editWindow.expiresAt >= before + grant.hours * 3600_000)
+    assert.ok(record.editWindow.expiresAt <= Date.now() + grant.hours * 3600_000)
     const visibleSiteIds = async () => callText(await rpc(token, 'tools/call', {
       name: 'list_sites', arguments: {},
     })).sites.map(({ id }) => id)
     assert.deepEqual(await visibleSiteIds(), [siteId])
 
+    const catalogue = callText(await rpc(token, 'tools/call', { name: 'site_tools', arguments: { site: siteId } }))
+    const pluginCreation = catalogue.tools.find((t) => t.name === 'create_plugin')
+    assert.equal(pluginCreation.kind, 'sensitive')
+    assert.match(pluginCreation.description, /File-edit grants cover existing files only/)
+
     reached.length = 0
     const edit = callText(await siteTool(token, siteId, 'edit_file', wpEdit))
     assert.equal(edit.ran, 'edit_file_with_backup')
+    const creation = callText(await siteTool(token, siteId, 'create_plugin', { slug: 'sample-plugin' }))
+    assert.equal(creation.ran, false)
+    assert.equal(creation.requiresApproval, true)
+    assert.equal(creation.approvalReason, 'plugin_creation')
+    assert.match(creation.message, /File-edit grants cover existing files only/)
     assert.equal((await siteTool(token, otherSite, 'site_info')).body.result.isError, true)
     assert.equal(callText(await siteTool(token, siteId, 'restore_file_edit', { backup_id: edit.backup_id })).requiresApproval, true)
     assert.deepEqual(reached, ['edit_file_with_backup'])

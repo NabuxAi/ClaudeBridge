@@ -13,6 +13,7 @@
   },
   "ignore": "نادیده گرفتن",
   "pendingProposals": "درخواست‌های منتظر تأیید",
+  "pluginCreationApproval": "ساخت افزونهٔ تازه تأیید لازم دارد. مجوز ویرایش فایل فقط برای فایل‌های موجود است.",
   "proposalDecisions": "نتیجهٔ درخواست‌های اخیر",
   "decisionApproved": "تأیید شد",
   "decisionRejected": "رد شد",

@@ -213,6 +213,10 @@ for UI convenience.
   initial 1–24 hour grant for all files eligible for backed-up editing. The
   grant can be ended or renewed on that site. Expiry leaves the token bound
   to the selected site. The token and initial grant are stored together.
+- Platform `0.14.0` offers 24, 48, and 72 hour edit windows at token creation
+  and renewal. The API still accepts the original integer durations up to
+  24 hours. `site_tools` lists the edit tools covered by an active grant.
+  Token settings and Alerts explain that `create_plugin` requires approval.
 - Iran ↔ international peer relay (`peer-relay.js`, `POST /v1/relay/forward`):
   connector calls a server cannot deliver are re-sent through the partner server.
   Off unless both `PEER_RELAY_URL` and `PEER_RELAY_SECRET` are set.
@@ -1575,7 +1579,7 @@ unreachable, so a throwaway stack was used):
 
 ### Platform release versions (2026-11-02)
 
-- Current platform version: **0.13.2** (temporary file edits at MCP token creation, 2026-11-26), shared by `hub/package.json` and
+- Current platform version: **0.14.0** (longer MCP file-edit grants and clearer approval messages, 2026-11-28), shared by `hub/package.json` and
 
   `server/package.json` and their lockfile root entries. `PanelFrame.jsx` imports
   the hub package version for the visible sidebar footer; do not hardcode a

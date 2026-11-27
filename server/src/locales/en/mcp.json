@@ -4,7 +4,7 @@
   "defaultName": "AI client",
   "invalidFileEditGrant": "Select a site and enter 1 to 50 exact plugin or theme file paths relative to wp-content.",
   "fileEditOwnerRequired": "Select a site you own on this panel.",
-  "editWindowDuration": "Select a duration from 1 to 24 whole hours.",
+  "editWindowDuration": "Choose 24, 48, or 72 hours.",
   "invalidEditWindow": "Select one site and explicitly allow all editable files.",
   "editWindowUnavailable": "This token or temporary permission cannot be updated. Reload the token list to check its current status.",
   "editWindowStarted": "Temporary MCP file edit permission activated for {hours} h",

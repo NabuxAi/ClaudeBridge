@@ -36,12 +36,14 @@ import { fileEditGrant, validateFileEditGrant, validateEditWindowGrant, isGrante
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 const SERVER_INFO = { name: 'digiwp-hub', version: '1.0.0' }
+const PLUGIN_CREATION_APPROVAL = 'Creating a new plugin requires approval in the site Alerts page. File-edit grants cover existing files only.'
 
 const INSTRUCTIONS =
   'DigiWP hub: manage every WordPress site you can reach from one connection. ' +
   'Call list_sites first, then site_tools to see what a site offers, then call_site_tool. ' +
   'Sites are reached through a signed relay (and through the partner server inside or outside Iran when a site cannot be reached directly). ' +
-  'Sensitive tools require approval in the site Alerts page. Site owners can grant backed-up file edits. Check site_tools for the grant scope and any expiry.'
+  'Sensitive tools require approval in the site Alerts page. Check site_tools for any backed-up file-edit grant and use its listed edit tools for existing files. ' +
+  PLUGIN_CREATION_APPROVAL
 
 const TOOLS = [
   {
@@ -52,7 +54,7 @@ const TOOLS = [
   },
   {
     name: 'site_tools',
-    description: 'List the tools one site offers (from its WP Claude Bridge plugin), each marked read / mutating / sensitive. `site` is a site id, its address, or its host name.',
+    description: 'List the tools one site offers, each marked read / mutating / sensitive. Check directEditTools, the path scope and any expiry before editing an existing file. `site` is a site id, address, or host name.',
     inputSchema: {
       type: 'object',
       properties: { site: { type: 'string', description: 'Site id, URL or host, from list_sites.' } },
@@ -63,7 +65,7 @@ const TOOLS = [
   },
   {
     name: 'call_site_tool',
-    description: 'Run one tool on one site. Read-only tools run for every member; changes run for the owner and admins. Sensitive tools need approval in Alerts. An active edit window permits edit_file and edit_file_with_backup within its scope. A permanent scoped token permits edit_file on its listed paths. Granted edits always save a backup. Pass a wp-content-relative path, for example plugins/example/main.php.',
+    description: 'Run one tool on one site. Read-only tools run for every member. Changes run for the owner and admins. Sensitive tools require approval in Alerts. A file-edit grant authorizes backed-up edits to existing files within its scope using the edit tools listed by site_tools. Pass a wp-content-relative path, for example plugins/example/main.php. ' + PLUGIN_CREATION_APPROVAL,
     inputSchema: {
       type: 'object',
       properties: {
@@ -237,13 +239,18 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
   if (name === 'site_tools') {
     const tools = await connector.listTools(target)
     const grant = fileEditGrant(user, site)
+    const canBackUpEdits = tools.some(({ name }) => name === 'edit_file_with_backup')
     const editAccess = grant ? {
       ...(grant.paths === null ? { directEditScope: 'all_editable_files' } : { directEditPaths: grant.paths }),
       ...(grant.expiresAt ? { directEditExpiresAt: grant.expiresAt } : {}),
+      directEditTools: canBackUpEdits ? tools.map(({ name }) => name).filter((name) => isFileEditTool(name, grant.expiresAt)) : [],
     } : {}
     return textResult({
       site: { ...describeSite(site), ...editAccess },
-      tools: tools.map((t) => ({ name: t.name, kind: classify(t.name), description: t.description, inputSchema: t.inputSchema })),
+      tools: tools.map((t) => ({
+        name: t.name, kind: classify(t.name), inputSchema: t.inputSchema,
+        description: t.name === 'create_plugin' ? `${t.description} ${PLUGIN_CREATION_APPROVAL}` : t.description,
+      })),
     })
   }
 
@@ -257,8 +264,7 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
     return textResult(`Only the site owner or an admin can run "${tool}" (${kind}); with view-only access you can run read-only tools.`, true)
   }
 
-  const directEditTool = tool === 'edit_file' || (tool === 'edit_file_with_backup' && user.editWindow)
-  if (directEditTool && isGrantedEdit(user, site, toolArgs)) {
+  if (isFileEditTool(tool, user.editWindow) && isGrantedEdit(user, site, toolArgs)) {
     const pending = await proposals.findPending(site.id, tool, toolArgs)
     if (pending) return approvalResult(pending, site.id, tool)
     if (user.editWindow) {
@@ -290,14 +296,20 @@ export async function runTool(user, name, args = {}, { federated = false } = {})
   return result && Array.isArray(result.content) ? result : textResult(result)
 }
 
+function isFileEditTool(name, temporary) {
+  return name === 'edit_file' || (name === 'edit_file_with_backup' && Boolean(temporary))
+}
+
 function approvalResult(proposal, siteId, tool) {
   const link = panelLink(siteId)
+  const queued = `"${tool}" is waiting for approval in the site's Alerts page${link ? ` (${link})` : ''}.`
   return textResult({
     ran: false,
     requiresApproval: true,
     proposalId: proposal?.id || null,
     ...(link ? { approvalUrl: link } : {}),
-    message: `"${tool}" is waiting for approval in the site's Alerts page${link ? ` (${link})` : ''}.`,
+    ...(tool === 'create_plugin' ? { approvalReason: 'plugin_creation' } : {}),
+    message: tool === 'create_plugin' ? `${queued} ${PLUGIN_CREATION_APPROVAL}` : queued,
   })
 }
 

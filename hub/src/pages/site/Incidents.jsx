@@ -236,6 +236,7 @@ export default function Incidents() {
                 <strong><bdi>{proposal.tool}</bdi></strong>
               </div>
               {proposal.args?.path && <div dir="ltr" style={{ textAlign: 'start', overflowWrap: 'anywhere' }}>{proposal.args.path}</div>}
+              {proposal.tool === 'create_plugin' && <div>{t('incidents.pluginCreationApproval')}</div>}
               {proposal.reason && <div>{proposal.reason}</div>}
               {canManage && (
                 <>

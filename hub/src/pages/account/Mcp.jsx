@@ -9,10 +9,10 @@ import { t, date, dateTime, digits } from '../../lib/i18n.js'
 const fmtDateTime = (ts) => dateTime(ts, { dateStyle: 'short', timeStyle: 'short' })
 const fmtDate = (ts) => date(ts)
 const parsePaths = (paths) => paths.split(/\r?\n/).map((path) => path.trim()).filter(Boolean)
-const defaultEditHours = '3'
-const editDurationOptions = () => Array.from({ length: 24 }, (_, i) => ({
-  value: String(i + 1),
-  label: t('accountSecurity.mcp.editWindowHours', { hours: digits(i + 1) }),
+const defaultEditHours = '24'
+const editDurationOptions = () => [24, 48, 72].map((hours) => ({
+  value: String(hours),
+  label: t('accountSecurity.mcp.editWindowHours', { hours: digits(hours) }),
 }))
 
 function describeApiError(e, fallback, notFound) {

@@ -19,7 +19,10 @@ export async function validateFileEditGrant(userId, grant) {
 }
 
 export async function validateEditWindowGrant(userId, { siteId, paths, allFiles, hours }) {
-  if (!Number.isInteger(hours) || hours < 1 || hours > 24) throw httpError(400, 'mcp.editWindowDuration')
+  // Preserve shorter durations for clients using the original API.
+  if (!Number.isInteger(hours) || hours < 1 || (hours > 24 && hours !== 48 && hours !== 72)) {
+    throw httpError(400, 'mcp.editWindowDuration')
+  }
   // Older clients can still open a scoped window. An unrestricted list of
   // editable paths requires an explicit allFiles choice in the request.
   if (allFiles === undefined) return { ...await validateFileEditGrant(userId, { siteId, paths }), hours }
